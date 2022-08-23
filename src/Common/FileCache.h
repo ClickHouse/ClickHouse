@@ -150,9 +150,10 @@ private:
 
     std::optional<ThreadPool> async_write_threadpool;
     ssize_t background_download_current_memory_usage = 0;
+    std::mutex background_download_memory_usage_mutex;
 
     ThreadPool & getThreadPoolForAsyncWrite();
-    void incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & cache_lock);
+    void incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & background_download_memory_usage_mutex);
 
     bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 

@@ -499,7 +499,7 @@ ThreadPool & FileCache::getThreadPoolForAsyncWrite()
     return *async_write_threadpool;
 }
 
-void FileCache::incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & /* cache_lock */)
+void FileCache::incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & /* background_download_memory_usage_mutex */)
 {
     background_download_current_memory_usage += increment;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheBackgroundDownloadSize, increment);
@@ -539,18 +539,21 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
 {
     auto query_context = enable_filesystem_query_cache_limit ? getCurrentQueryContext(cache_lock) : nullptr;
     if (!query_context)
+    {
         return tryReserveForMainList(key, offset, size, nullptr, cache_lock);
-
+    }
     /// The maximum cache capacity of the request is not reached, thus the
     //// cache block is evicted from the main LRU queue by tryReserveForMainList().
     else if (query_context->getCacheSize() + size <= query_context->getMaxCacheSize())
+    {
         return tryReserveForMainList(key, offset, size, query_context, cache_lock);
-
+    }
     /// When skip_download_if_exceeds_query_cache is true, there is no need
     /// to evict old data, skip the cache and read directly from remote fs.
     else if (query_context->isSkipDownloadIfExceed())
+    {
         return false;
-
+    }
     /// The maximum cache size of the query is reached, the cache will be
     /// evicted from the history cache accessed by the current query.
     else
@@ -942,9 +945,10 @@ void FileCache::remove(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
-                            key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
+                key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
         }
     }
 }
@@ -1081,9 +1085,8 @@ void FileCache::reduceSizeToDownloaded(
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 
-    assert(file_segment->reserved_size >= downloaded_size);
-    size_t reserved_but_not_downloaded = file_segment->reserved_size - downloaded_size;
-    cell->queue_iterator->incrementSize(-static_cast<Int64>(reserved_but_not_downloaded), cache_lock);
+    assert(file_segment->reserved_size == downloaded_size);
+    // assert(cell->size() == cell->queue_iterator->size());
 }
 
 bool FileCache::isLastFileSegmentHolder(
@@ -1252,9 +1255,18 @@ void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lo
                 ErrorCodes::LOGICAL_ERROR,
                 "Cache is in inconsistent state: LRU queue contains entries with no cache cell (assertCorrectness())");
         }
-        assert(cell->size() == size);
+
+        if (cell->size() != size)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected {} == {} size ({})",
+                cell->size(), size, cell->file_segment->getInfoForLog());
+        }
+
         total_size += size;
     }
+
     assert(total_size == main_priority->getCacheSize(cache_lock));
     assert(main_priority->getCacheSize(cache_lock) <= max_size);
     assert(main_priority->getElementsNum(cache_lock) <= max_element_size);

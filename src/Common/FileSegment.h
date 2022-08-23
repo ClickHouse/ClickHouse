@@ -183,6 +183,10 @@ public:
 
     bool isDetached() const;
 
+    void assertCorrectness() const;
+
+    bool isBackgroundDownloadFailedOrCancelled() const;
+
     /**
      * ========== Methods for _only_ file segment's `writer` ======================
      */
@@ -222,12 +226,13 @@ public:
     /// [[noreturn]] void throwIfDetached() const;
 
 private:
-    size_t availableSizeUnlocked(std::unique_lock<std::mutex> & /* segment_lock */) const { return reserved_size - downloaded_size; }
+    size_t availableSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     String getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
     void setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock);
     void setInternalDownloaderUnlocked(const DownloaderId & new_downloader_id, std::unique_lock<std::mutex> & /* download_lock */);
+    void setDownloadState(State state, bool is_internal);
 
     bool lastFileSegmentHolder() const;
     void resetDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock);
