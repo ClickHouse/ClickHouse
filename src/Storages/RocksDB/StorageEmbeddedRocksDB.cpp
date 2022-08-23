@@ -180,7 +180,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     {
         rocksdb_dir = context_->getPath() + relative_data_path_;
     }
-    else {
+    else
+    {
         rocksdb_dir = rocksdb_dir_;
     }
     if (!attach)
