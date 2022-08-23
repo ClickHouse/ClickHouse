@@ -14,21 +14,23 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_STATE;
+}
+
 // KV store using (Zoo|CH)Keeper
-class StorageKeeperMap final : public IStorage, public IKeyValueEntity
+class StorageKeeperMap final : public IStorage, public IKeyValueEntity, WithContext
 {
 public:
     StorageKeeperMap(
-        ContextPtr context,
+        ContextPtr context_,
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata,
         bool attach,
         std::string_view primary_key_,
-        std::string_view root_path_,
-        const std::string & hosts,
-        bool create_missing_root_path,
-        size_t keys_limit,
-        bool remove_existing_data);
+        const std::string & root_path_,
+        bool create_missing_root_path);
 
     Pipe read(
         const Names & column_names,
@@ -41,7 +43,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
     void drop() override;
 
     std::string getName() const override { return "KeeperMap"; }
@@ -65,16 +67,54 @@ public:
     std::string fullPathForKey(std::string_view key) const;
 
     const std::string & lockPath() const;
-    UInt64 keysLimit() const;
+    std::optional<bool> isTableValid() const;
+
+    template <bool throw_on_error>
+    void checkTable() const
+    {
+        auto is_table_valid = isTableValid();
+        if (!is_table_valid.has_value())
+        {
+            static constexpr std::string_view error_msg = "Failed to activate table because of connection issues. It will be activated "
+                                                          "once a connection is established and metadata is verified";
+            if constexpr (throw_on_error)
+                throw Exception(ErrorCodes::INVALID_STATE, error_msg);
+            else
+            {
+                LOG_ERROR(log, fmt::runtime(error_msg));
+                return;
+            }
+        }
+
+        if (!*is_table_valid)
+        {
+            static constexpr std::string_view error_msg
+                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DETACH table";
+            if constexpr (throw_on_error)
+                throw Exception(ErrorCodes::INVALID_STATE, error_msg);
+            else
+            {
+                LOG_ERROR(log, fmt::runtime(error_msg));
+                return;
+            }
+        }
+    }
 
 private:
     std::string root_path;
     std::string primary_key;
     std::string metadata_path;
     std::string lock_path;
-    UInt64 keys_limit{0};
+    std::string tables_path;
+    std::string dropped_path;
 
-    mutable zkutil::ZooKeeperPtr zookeeper_client;
+    std::string zookeeper_name;
+
+    mutable std::mutex zookeeper_mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
+
+    mutable std::mutex init_mutex;
+    mutable std::optional<bool> table_is_valid;
 
     Poco::Logger * log;
 };
