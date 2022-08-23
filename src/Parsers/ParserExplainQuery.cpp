@@ -87,7 +87,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         explain_query->setTableFunction(table_function);
         explain_query->setTableOverride(table_override);
     }
-    if (kind == ASTExplainQuery::ExplainKind::QueryTree)
+    else if (kind == ASTExplainQuery::ExplainKind::QueryTree)
     {
         if (select_p.parse(pos, query, expected))
             explain_query->setExplainedQuery(std::move(query));

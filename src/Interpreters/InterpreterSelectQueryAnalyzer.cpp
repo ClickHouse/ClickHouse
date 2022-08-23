@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 
+#include <Columns/getLeastSuperColumn.h>
+
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
 
@@ -24,6 +26,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -43,6 +46,9 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -81,6 +87,8 @@ namespace ErrorCodes
   * TODO: Support projections
   * TODO: Support read in order optimization
   * TODO: Simplify actions chain
+  * TODO: UNION storage limits
+  * TODO: Interpreter resources
   */
 
 namespace
@@ -99,6 +107,35 @@ namespace
     WriteBufferFromOwnString query_pipeline_buffer;
     query_plan.explainPipeline(query_pipeline_buffer, explain_pipeline);
     return query_pipeline_buffer.str();
+}
+
+Block getCommonHeaderForUnion(const Blocks & headers)
+{
+    size_t num_selects = headers.size();
+    Block common_header = headers.front();
+    size_t num_columns = common_header.columns();
+
+    for (size_t query_num = 1; query_num < num_selects; ++query_num)
+    {
+        if (headers[query_num].columns() != num_columns)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                            "Different number of columns in UNION elements: {} and {}",
+                            common_header.dumpNames(),
+                            headers[query_num].dumpNames());
+    }
+
+    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+
+    for (size_t column_num = 0; column_num < num_columns; ++column_num)
+    {
+        for (size_t i = 0; i < num_selects; ++i)
+            columns[i] = &headers[i].getByPosition(column_num);
+
+        ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
+        result_elem = getLeastSuperColumn(columns);
+    }
+
+    return common_header;
 }
 
 class ActionsChainNode;
@@ -894,7 +931,7 @@ private:
                 const auto & function_node = node->as<FunctionNode &>();
 
                 WriteBufferFromOwnString buffer;
-                buffer << function_node.getFunctionName();
+                buffer << "__function_" + function_node.getFunctionName();
 
                 const auto & function_parameters_nodes = function_node.getParameters().getNodes();
 
@@ -972,6 +1009,8 @@ public:
         switch (join_tree_node_type)
         {
             case QueryTreeNodeType::QUERY:
+                [[fallthrough]];
+            case QueryTreeNodeType::UNION:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
@@ -1055,9 +1094,10 @@ public:
 
         if (column_source_node_type != QueryTreeNodeType::TABLE &&
             column_source_node_type != QueryTreeNodeType::TABLE_FUNCTION &&
-            column_source_node_type != QueryTreeNodeType::QUERY)
+            column_source_node_type != QueryTreeNodeType::QUERY &&
+            column_source_node_type != QueryTreeNodeType::UNION)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected table, table function or query column source. Actual {}",
+                "Expected table, table function, query or union column source. Actual {}",
                 column_source_node->formatASTForErrorMessage());
 
         auto [source_columns_set_it, inserted] = it->second.source_columns_names.insert(column_node->getColumnName());
@@ -1115,6 +1155,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     auto * table_node = table_expression->as<TableNode>();
     auto * table_function_node = table_expression->as<TableFunctionNode>();
     auto * query_node = table_expression->as<QueryNode>();
+    auto * union_node = table_expression->as<UnionNode>();
 
     QueryPlan query_plan;
 
@@ -1168,7 +1209,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
             query_plan.addStep(std::move(read_from_pipe));
         }
     }
-    else if (query_node)
+    else if (query_node || union_node)
     {
         InterpreterSelectQueryAnalyzer interpeter(table_expression, select_query_options, planner_context.query_context);
         interpeter.initializeQueryPlanIfNeeded();
@@ -1176,7 +1217,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function or query. Actual {}", table_expression->formatASTForErrorMessage());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function, query or union. Actual {}", table_expression->formatASTForErrorMessage());
     }
 
     auto rename_actions_dag = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
@@ -1975,6 +2016,8 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
     {
         case QueryTreeNodeType::QUERY:
             [[fallthrough]];
+        case QueryTreeNodeType::UNION:
+            [[fallthrough]];
         case QueryTreeNodeType::TABLE:
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -2009,25 +2052,12 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query(query_)
     , select_query_options(select_query_options_)
 {
-    if (auto * select_with_union_query_typed = query->as<ASTSelectWithUnionQuery>())
+    if (query->as<ASTSelectWithUnionQuery>() || query->as<ASTSelectQuery>())
     {
-        auto & select_lists = select_with_union_query_typed->list_of_selects->as<ASTExpressionList &>();
-
-        if (select_lists.children.size() == 1)
-        {
-            query = select_lists.children[0];
-        }
-        else
-        {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "UNION is not supported");
-        }
     }
     else if (auto * subquery = query->as<ASTSubquery>())
     {
         query = subquery->children[0];
-    }
-    else if (auto * select_query_typed = query_->as<ASTSelectQuery>())
-    {
     }
     else
     {
@@ -2052,10 +2082,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , select_query_options(select_query_options_)
 {
-    if (query_tree_->getNodeType() != QueryTreeNodeType::QUERY)
+    if (query_tree->getNodeType() != QueryTreeNodeType::QUERY &&
+        query_tree->getNodeType() != QueryTreeNodeType::UNION)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Expected query node. Actual {}",
-            query_tree_->formatASTForErrorMessage());
+            "Expected QUERY or UNION node. Actual {}",
+            query_tree->formatASTForErrorMessage());
 
 }
 
@@ -2084,9 +2115,84 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    auto & query_node = query_tree->as<QueryNode &>();
-
     auto current_context = getContext();
+
+    if (auto * union_query_tree = query_tree->as<UnionNode>())
+    {
+        auto union_mode = union_query_tree->getUnionMode();
+        if (union_mode == SelectUnionMode::Unspecified)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION mode must be initialized");
+
+        std::vector<std::unique_ptr<QueryPlan>> query_plans;
+        Blocks query_plans_headers;
+
+        for (auto & query_node : union_query_tree->getQueries().getNodes())
+        {
+            InterpreterSelectQueryAnalyzer interpeter(query_node, select_query_options, current_context);
+            interpeter.initializeQueryPlanIfNeeded();
+            auto query_node_plan = std::make_unique<QueryPlan>(std::move(interpeter).extractQueryPlan());
+            query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
+            query_plans.push_back(std::move(query_node_plan));
+        }
+
+        Block union_common_header = getCommonHeaderForUnion(query_plans_headers);
+        DataStreams query_plans_streams;
+        query_plans_streams.reserve(query_plans.size());
+
+        for (auto & query_node_plan : query_plans)
+        {
+            if (blocksHaveEqualStructure(query_node_plan->getCurrentDataStream().header, union_common_header))
+                continue;
+
+            auto actions_dag = ActionsDAG::makeConvertingActions(
+                    query_node_plan->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                    union_common_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Position);
+            auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentDataStream(), std::move(actions_dag));
+            converting_step->setStepDescription("Conversion before UNION");
+            query_node_plan->addStep(std::move(converting_step));
+
+            query_plans_streams.push_back(query_node_plan->getCurrentDataStream());
+        }
+
+        const auto & settings = current_context->getSettingsRef();
+        auto max_threads = settings.max_threads;
+
+        if (union_mode == SelectUnionMode::ALL || union_mode == SelectUnionMode::DISTINCT)
+        {
+            auto union_step = std::make_unique<UnionStep>(std::move(query_plans_streams), max_threads);
+            query_plan.unitePlans(std::move(union_step), std::move(query_plans));
+
+            if (union_query_tree->getUnionMode() == SelectUnionMode::DISTINCT)
+            {
+                /// Add distinct transform
+                SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
+                auto distinct_step = std::make_unique<DistinctStep>(
+                    query_plan.getCurrentDataStream(),
+                    limits,
+                    0 /*limit hint*/,
+                    query_plan.getCurrentDataStream().header.getNames(),
+                    false /*pre distinct*/,
+                    settings.optimize_distinct_in_order);
+
+                query_plan.addStep(std::move(distinct_step));
+            }
+        }
+        else if (union_mode == SelectUnionMode::INTERSECT || union_mode == SelectUnionMode::EXCEPT)
+        {
+            IntersectOrExceptStep::Operator intersect_or_except_operator = IntersectOrExceptStep::Operator::INTERSECT;
+            if (union_mode == SelectUnionMode::EXCEPT)
+                intersect_or_except_operator = IntersectOrExceptStep::Operator::EXCEPT;
+
+            auto union_step = std::make_unique<IntersectOrExceptStep>(std::move(query_plans_streams), intersect_or_except_operator, max_threads);
+            query_plan.unitePlans(std::move(union_step), std::move(query_plans));
+        }
+
+        return;
+    }
+
+    auto & query_node = query_tree->as<QueryNode &>();
 
     SelectQueryInfo select_query_info;
     select_query_info.original_query = query;
@@ -2096,13 +2202,13 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
     planner_context.query_context = getContext();
 
     CollectTableExpressionIdentifiersVisitor collect_table_expression_identifiers_visitor;
-    collect_table_expression_identifiers_visitor.visit(query_node.getFrom(), planner_context);
+    collect_table_expression_identifiers_visitor.visit(query_node.getJoinTree(), planner_context);
 
     CollectSourceColumnsVisitor::Data data {planner_context};
     CollectSourceColumnsVisitor collect_source_columns_visitor(data);
     collect_source_columns_visitor.visit(query_tree);
 
-    query_plan = buildQueryPlanForJoinTreeNode(query_node.getFrom(), select_query_info, select_query_options, planner_context);
+    query_plan = buildQueryPlanForJoinTreeNode(query_node.getJoinTree(), select_query_info, select_query_options, planner_context);
     std::optional<std::vector<size_t>> action_chain_node_parent_indices;
 
     if (query_node.hasWhere())
@@ -2167,6 +2273,14 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
 
     planner_context.projection_actions->project(projection_names);
 
+    // std::cout << "Chain dump before finalize" << std::endl;
+    // std::cout << planner_context.actions_chain.dump() << std::endl;
+
+    planner_context.actions_chain.finalize();
+
+    // std::cout << "Chain dump after finalize" << std::endl;
+    // std::cout << planner_context.actions_chain.dump() << std::endl;
+
     if (query_node.hasWhere())
     {
         auto & where_actions_chain_node = planner_context.actions_chain.at(planner_context.where_actions_chain_node_index);
@@ -2185,14 +2299,6 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
     auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), planner_context.projection_actions);
     projection_step->setStepDescription("Projection");
     query_plan.addStep(std::move(projection_step));
-
-    // std::cout << "Chain dump before finalize" << std::endl;
-    // std::cout << planner_context.actions_chain.dump() << std::endl;
-
-    planner_context.actions_chain.finalize();
-
-    // std::cout << "Chain dump after finalize" << std::endl;
-    // std::cout << planner_context.actions_chain.dump() << std::endl;
 }
 
 }

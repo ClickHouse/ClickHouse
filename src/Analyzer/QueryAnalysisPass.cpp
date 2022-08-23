@@ -45,6 +45,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
@@ -174,7 +175,6 @@ namespace ErrorCodes
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
-  * TODO: UNION
   * TODO: JOIN support SELF JOIN with MergeTree. JOIN support matchers.
   * TODO: WINDOW functions
   * TODO: Table expression modifiers final, sample_size, sample_offset
@@ -736,19 +736,25 @@ public:
     {
         IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
 
-        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+        auto node_type = node->getNodeType();
+
+        if (node_type == QueryTreeNodeType::UNION)
+        {
+            resolveUnion(node, scope);
+        }
+        else if (node_type == QueryTreeNodeType::QUERY)
         {
             resolveQuery(node, scope);
         }
-        else if (node->getNodeType() == QueryTreeNodeType::LIST)
+        else if (node_type == QueryTreeNodeType::LIST)
         {
             resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         }
-        else if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
+        else if (node_type == QueryTreeNodeType::FUNCTION)
         {
             resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         }
-        else if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+        else if (node_type == QueryTreeNodeType::LAMBDA)
         {
             resolveLambda(node, {}, scope);
         }
@@ -813,6 +819,8 @@ private:
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
+
+    void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
     /// Query analyzer context
     ContextPtr context;
@@ -1250,11 +1258,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTable(const IdentifierLo
 {
     auto * table_node = table_expression_node->as<TableNode>();
     auto * query_node = table_expression_node->as<QueryNode>();
+    auto * union_node = table_expression_node->as<UnionNode>();
     auto * table_function_node = table_expression_node->as<TableFunctionNode>();
 
-    if (!table_node && !table_function_node && !query_node)
+    if (!table_node && !table_function_node && !query_node && !union_node)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Unexpected table expression. Expected table, table function or query node. Actual {}. In scope {}",
+        "Unexpected table expression. Expected table, table function, query or union node. Actual {}. In scope {}",
         table_expression_node->formatASTForErrorMessage(),
         scope.scope_node->formatASTForErrorMessage());
 
@@ -1273,12 +1282,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTable(const IdentifierLo
         database_name = table_storage_id.database_name;
         table_expression_name = table_storage_id.getFullNameNotQuoted();
     }
-    else if (query_node)
+    else if (query_node || union_node)
     {
-        table_name = query_node->getCTEName();
+        table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
 
-        if (query_node->hasAlias())
-            table_expression_name = query_node->getAlias();
+        if (table_expression_node->hasAlias())
+            table_expression_name = table_expression_node->getAlias();
     }
     else if (table_function_node)
     {
@@ -1555,14 +1564,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const Ident
     switch (join_tree_node_type)
     {
         case QueryTreeNodeType::JOIN:
-        {
             return tryResolveIdentifierFromJoin(identifier_lookup, join_tree_node, scope);
-        }
         case QueryTreeNodeType::ARRAY_JOIN:
-        {
             return tryResolveIdentifierFromArrayJoin(identifier_lookup, join_tree_node, scope);
-        }
         case QueryTreeNodeType::QUERY:
+            [[fallthrough]];
+        case QueryTreeNodeType::UNION:
             [[fallthrough]];
         case QueryTreeNodeType::TABLE:
             [[fallthrough]];
@@ -1580,7 +1587,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const Ident
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Scope FROM section expected table, table function, query, join or array join. Actual {}. In scope {}",
+                "Scope FROM section expected table, table function, query, union, join or array join. Actual {}. In scope {}",
                 join_tree_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
@@ -1609,10 +1616,10 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const Identifie
         return resolved_identifier;
 
     auto * query_scope_node = scope.scope_node->as<QueryNode>();
-    if (!query_scope_node || !query_scope_node->getFrom())
+    if (!query_scope_node || !query_scope_node->getJoinTree())
         return {};
 
-    const auto & join_tree_node = query_scope_node->getFrom();
+    const auto & join_tree_node = query_scope_node->getJoinTree();
     return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
 }
 
@@ -1949,7 +1956,7 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
         }
 
         /// If there are no parent scope that has tables or query scope does not have FROM section
-        if (!scope_query_node || !scope_query_node->getFrom())
+        if (!scope_query_node || !scope_query_node->getJoinTree())
         {
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Unqualified matcher {} cannot be resolved. There are no table sources. In scope {}",
@@ -1959,9 +1966,9 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
 
         NamesAndTypesList initial_matcher_columns;
 
-        auto * from_query_node = scope_query_node->getFrom()->as<QueryNode>();
-        auto * from_table_node = scope_query_node->getFrom()->as<TableNode>();
-        auto * from_table_function_node = scope_query_node->getFrom()->as<TableFunctionNode>();
+        auto * from_query_node = scope_query_node->getJoinTree()->as<QueryNode>();
+        auto * from_table_node = scope_query_node->getJoinTree()->as<TableNode>();
+        auto * from_table_function_node = scope_query_node->getJoinTree()->as<TableFunctionNode>();
 
         if (from_query_node)
         {
@@ -1996,14 +2003,14 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unqualified matcher resolve unexpected FROM section {}",
-                scope_query_node->getFrom()->formatASTForErrorMessage());
+                scope_query_node->getJoinTree()->formatASTForErrorMessage());
         }
 
         for (auto & column : initial_matcher_columns)
         {
             const auto & column_name = column.name;
             if (matcher_node_typed.isMatchingColumn(column_name))
-                matcher_expression_nodes.push_back(std::make_shared<ColumnNode>(column, scope_query_node->getFrom()));
+                matcher_expression_nodes.push_back(std::make_shared<ColumnNode>(column, scope_query_node->getJoinTree()));
         }
     }
 
@@ -2828,6 +2835,16 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
 
             break;
         }
+        case QueryTreeNodeType::UNION:
+        {
+            IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+            resolveUnion(node, subquery_scope);
+
+            if (!allow_table_expression)
+                evaluateScalarSubquery(node);
+
+            break;
+        }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -2971,6 +2988,11 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 break;
             }
+            case QueryTreeNodeType::UNION:
+            {
+                scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
+                break;
+            }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
@@ -2999,7 +3021,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             default:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Query FROM section expected table, table function, query, ARRAY JOIN or JOIN. Actual {} {}. In scope {}",
+                    "Query FROM section expected table, table function, query, UNION, ARRAY JOIN or JOIN. Actual {} {}. In scope {}",
                     current_join_tree_node->getNodeTypeName(),
                     current_join_tree_node->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
@@ -3013,11 +3035,12 @@ void QueryAnalyzer::initializeTableExpressionColumns(QueryTreeNodePtr & table_ex
 {
     auto * table_node = table_expression_node->as<TableNode>();
     auto * query_node = table_expression_node->as<QueryNode>();
+    auto * union_node = table_expression_node->as<UnionNode>();
     auto * table_function_node = table_expression_node->as<TableFunctionNode>();
 
-    if (!table_node && !table_function_node && !query_node)
+    if (!table_node && !table_function_node && !query_node && !union_node)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Unexpected table expression. Expected table, table function or query node. Actual {}. In scope {}",
+        "Unexpected table expression. Expected table, table function, query or union node. Actual {}. In scope {}",
         table_expression_node->formatASTForErrorMessage(),
         scope.scope_node->formatASTForErrorMessage());
 
@@ -3084,9 +3107,9 @@ void QueryAnalyzer::initializeTableExpressionColumns(QueryTreeNodePtr & table_ex
 
         storage_columns.column_name_to_column_node = std::move(column_name_to_column_node);
     }
-    else if (query_node)
+    else if (query_node || union_node)
     {
-        auto column_names_and_types = query_node->computeProjectionColumns();
+        auto column_names_and_types = query_node ? query_node->computeProjectionColumns() : union_node->computeProjectionColumns();
         storage_columns.column_name_to_column_node.reserve(column_names_and_types.size());
 
         for (const auto & column_name_and_type : column_names_and_types)
@@ -3138,6 +3161,12 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             resolveQuery(join_tree_node, subquery_scope);
             break;
         }
+        case QueryTreeNodeType::UNION:
+        {
+            IdentifierResolveScope subquery_scope(join_tree_node, &scope);
+            resolveUnion(join_tree_node, subquery_scope);
+            break;
+        }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
             auto & table_function_node = join_tree_node->as<TableFunctionNode &>();
@@ -3178,8 +3207,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             {
                 if (argument_node->getNodeType() == QueryTreeNodeType::MATCHER)
                 {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Matcher as table function argument is not supported {}. In scope {}",
                         join_tree_node->formatASTForErrorMessage(),
                         scope.scope_node->formatASTForErrorMessage());
@@ -3341,7 +3369,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         }
     }
 
-    if (isTableExpression(join_tree_node.get()))
+    auto join_tree_node_type = join_tree_node->getNodeType();
+    if (join_tree_node_type == QueryTreeNodeType::QUERY ||
+        join_tree_node_type == QueryTreeNodeType::UNION ||
+        join_tree_node_type == QueryTreeNodeType::TABLE ||
+        join_tree_node_type == QueryTreeNodeType::TABLE_FUNCTION)
         initializeTableExpressionColumns(join_tree_node, scope);
 
     add_table_expression_alias_into_scope(join_tree_node);
@@ -3419,17 +3451,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       */
     scope.use_identifier_lookup_to_result_cache = false;
 
-    if (query_node_typed.getFrom())
+    if (query_node_typed.getJoinTree())
     {
         TableExpressionsAliasVisitor::Data table_expressions_visitor_data{scope};
         TableExpressionsAliasVisitor table_expressions_visitor(table_expressions_visitor_data);
 
-        table_expressions_visitor.visit(query_node_typed.getFrom());
+        table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
-        initializeQueryJoinTreeNode(query_node_typed.getFrom(), scope);
+        initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
         scope.alias_name_to_table_expression_node.clear();
 
-        resolveQueryJoinTreeNode(query_node_typed.getFrom(), scope, visitor);
+        resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
     }
 
     scope.use_identifier_lookup_to_result_cache = true;
@@ -3506,13 +3538,38 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 }
 
+void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
+{
+    auto & union_node_typed = union_node->as<UnionNode &>();
+    auto & queries_nodes = union_node_typed.getQueries().getNodes();
+
+    for (auto & query_node : queries_nodes)
+    {
+        IdentifierResolveScope subquery_scope(query_node, &scope /*parent_scope*/);
+        auto query_node_type = query_node->getNodeType();
+
+        if (query_node_type == QueryTreeNodeType::QUERY)
+        {
+            resolveQuery(query_node, subquery_scope);
+        }
+        else if (query_node_type == QueryTreeNodeType::UNION)
+        {
+            resolveUnion(query_node, subquery_scope);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "UNION unsupported node {}. In scope {}",
+                query_node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+    }
+}
+
 }
 
 void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    if (query_tree_node->getNodeType() != QueryTreeNodeType::QUERY)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryAnalysis pass requires query node");
-
     QueryAnalyzer analyzer(std::move(context));
     analyzer.resolve(query_tree_node);
 }

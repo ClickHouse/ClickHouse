@@ -63,10 +63,10 @@ String QueryNode::getName() const
     buffer << " SELECT ";
     buffer << getProjection().getName();
 
-    if (getFrom())
+    if (getJoinTree())
     {
         buffer << " FROM ";
-        buffer << getFrom()->getName();
+        buffer << getJoinTree()->getName();
     }
 
     if (getPrewhere())
@@ -107,10 +107,10 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     buffer << std::string(indent + 2, ' ') << "PROJECTION\n";
     getProjection().dumpTreeImpl(buffer, format_state, indent + 4);
 
-    if (getFrom())
+    if (getJoinTree())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "JOIN TREE\n";
-        getFrom()->dumpTreeImpl(buffer, format_state, indent + 4);
+        getJoinTree()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (getPrewhere())
@@ -129,7 +129,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
-    return is_subquery == rhs_typed.is_subquery && cte_name == rhs_typed.cte_name;
+    return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -151,7 +151,7 @@ ASTPtr QueryNode::toASTImpl() const
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, children[projection_child_index]->toAST());
 
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    addTableExpressionIntoTablesInSelectQuery(tables_in_select_query_ast, children[from_child_index]);
+    addTableExpressionIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree());
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())

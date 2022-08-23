@@ -43,12 +43,6 @@ bool isNameOfInFunction(const std::string & function_name)
     return is_special_function_in;
 }
 
-bool isTableExpression(const IQueryTreeNode * node)
-{
-    auto node_type = node->getNodeType();
-    return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION || node_type == QueryTreeNodeType::QUERY;
-}
-
 static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
 {
     ASTPtr table_expression_node_ast;
