@@ -34,7 +34,7 @@ class Unfreezer
 public:
     Unfreezer(ContextPtr context);
     PartitionCommandsResultInfo unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory);
-    BlockIO system_unfreeze(const String & backup_name);
+    BlockIO systemUnfreeze(const String & backup_name);
 private:
     ContextPtr local_context;
     zkutil::ZooKeeperPtr zookeeper;
