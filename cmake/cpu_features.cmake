@@ -30,7 +30,13 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs")
+    CHECK_C_COMPILER_FLAG("-march=armv8-a+lse" HAS_ARMV8_LSE)
+    if(HAS_ARMV8_LSE)
+        message(STATUS " HAS_ARMV8_LSE yes")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs+lse")
+    else()
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs")
+    endif(HAS_ARMV8_LSE)
 
 elseif (ARCH_PPC64LE)
     # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
