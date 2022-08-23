@@ -25,7 +25,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "print startofyear(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT toDateTime64(toStartOfYear(toDateTime64('2017-01-01 10:10:17', 9, 'UTC'), 'UTC'), 9, 'UTC') + toIntervalYear(-1)"
+            "SELECT parseDateTime64BestEffortOrNull(toStartOfYear(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 'UTC'), 9, 'UTC') + toIntervalYear(-1)"
         },
         {
             "print monthofyear(datetime(2015-12-14))",
@@ -64,7 +64,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT now64(9, 'UTC')"
         },
         {
-
             "print now(1d)",
             "SELECT now64(9, 'UTC') + 86400."
         },
@@ -74,36 +73,35 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },  
         {
             "print endofday(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalDay(-1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalDay(-1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofday(datetime(2017-01-01 10:10:17), 1)",
-            "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalDay(1 + 1)) - toIntervalMicrosecond(1)"
-
+            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalDay(1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofmonth(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalMonth(-1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalMonth(-1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofmonth(datetime(2017-01-01 10:10:17), 1)",
-            "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalMonth(1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalMonth(1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofweek(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalWeek(-1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalWeek(-1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofweek(datetime(2017-01-01 10:10:17), 1)",
-            "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalWeek(1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalWeek(1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofyear(datetime(2017-01-01 10:10:17), -1) ",
-            "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalYear(-1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalYear(-1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
            "print endofyear(datetime(2017-01-01 10:10:17), 1)" ,
-           "SELECT (toDateTime(toStartOfDay(toDateTime64('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalYear(1 + 1)) - toIntervalMicrosecond(1)"
+           "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalYear(1 + 1)) - toIntervalMicrosecond(1)"
         },
         {
             "print make_datetime(2017,10,01)",
@@ -131,11 +129,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))",
-            "SELECT dateDiff('year', toDateTime64('2017-01-01', 9, 'UTC'), toDateTime64('2000-12-31', 9, 'UTC')) * -1"
+            "SELECT dateDiff('year', parseDateTime64BestEffortOrNull('2017-01-01', 9, 'UTC'), parseDateTime64BestEffortOrNull('2000-12-31', 9, 'UTC')) * -1"
         },
         {
             "print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))",
-            "SELECT dateDiff('minute', toDateTime64('2017-10-30 23:05:01', 9, 'UTC'), toDateTime64('2017-10-30 23:00:59', 9, 'UTC')) * -1"
+            "SELECT dateDiff('minute', parseDateTime64BestEffortOrNull('2017-10-30 23:05:01', 9, 'UTC'), parseDateTime64BestEffortOrNull('2017-10-30 23:00:59', 9, 'UTC')) * -1"
         },
         {
             "print datetime(null)",
@@ -181,6 +179,5 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "print datetime_add('day',1,datetime(2017-10-30 01:02:03.7654321))",
             "SELECT parseDateTime64BestEffortOrNull('2017-10-30 01:02:03.7654321', 9, 'UTC') + toIntervalDay(1)"
         }
-
 
 })));   
