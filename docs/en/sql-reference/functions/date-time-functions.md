@@ -268,7 +268,7 @@ Result:
 
 :::Attention
 The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is `Date` or `DateTime`. 
-Though these functions can take `Date32` and `DateTime64` values as an argument, passing them a time point that is out of the normal range (years 1970 - 2148) will give wrong result.
+Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
 In case argument is out of normal range:
   * `1970-01-01 (00:00:00)` will be returned for values prior to 1970,
   * `2106-02-07 08:28:15` will be taken as argument when actual argument is above this timestamp and return type is `DateTime`,
