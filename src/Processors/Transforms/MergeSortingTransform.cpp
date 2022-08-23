@@ -214,8 +214,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         if (!reservation)
             throw Exception("Not enough space for external sort in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        auto files_num_counter = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::TemporaryFilesForSort);
-        temporary_files.emplace_back(std::make_unique<TemporaryFileOnDisk>(reservation->getDisk(), std::move(files_num_counter)));
+        temporary_files.emplace_back(std::make_unique<TemporaryFileOnDisk>(reservation->getDisk(), CurrentMetrics::TemporaryFilesForSort));
 
         const std::string & path = temporary_files.back()->path();
         merge_sorter

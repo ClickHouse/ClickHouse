@@ -23,6 +23,7 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
@@ -1060,13 +1061,13 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    std::unique_ptr<TemporaryFile> createTempFile(size_t max_temp_file_size) const;
+    TemporaryFileOnDiskHolder createTempFile(size_t max_temp_file_size) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
     struct TemporaryFiles
     {
-        std::vector<std::unique_ptr<TemporaryFile>> files;
+        std::vector<TemporaryFileOnDiskHolder> files;
         size_t sum_size_uncompressed = 0;
         size_t sum_size_compressed = 0;
         mutable std::mutex mutex;

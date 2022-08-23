@@ -1,6 +1,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Poco/TemporaryFile.h>
-
+#include <Common/CurrentMetrics.h>
 
 namespace ProfileEvents
 {
@@ -10,13 +10,18 @@ namespace ProfileEvents
 namespace DB
 {
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, std::unique_ptr<CurrentMetrics::Increment> increment_)
-    : TemporaryFileOnDisk(disk_, disk_->getPath(), std::move(increment_))
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
+    : TemporaryFileOnDisk(disk_, disk_->getPath())
 {}
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_, std::unique_ptr<CurrentMetrics::Increment> increment_)
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Value metric_scope)
+    : TemporaryFileOnDisk(disk_)
+{
+    sub_metric_increment.emplace(metric_scope);
+}
+
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_)
     : disk(disk_)
-    , sub_metric_increment(std::move(increment_))
 {
     /// is is possible to use with disk other than DickLocal ?
     disk->createDirectories(prefix_);

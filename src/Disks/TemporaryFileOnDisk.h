@@ -22,8 +22,9 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class TemporaryFileOnDisk
 {
 public:
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_, std::unique_ptr<CurrentMetrics::Value> increment_);
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_, std::unique_ptr<CurrentMetrics::Increment> increment_);
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_);
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Value metric_scope);
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_);
 
     ~TemporaryFileOnDisk();
 
@@ -38,7 +39,7 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TotalTemporaryFiles};
     /// Specified if we know what for file is used (sort/aggregate/join).
-    std::unique_ptr<CurrentMetrics::Increment> sub_metric_increment;
+    std::optional<CurrentMetrics::Increment> sub_metric_increment = {};
 };
 
 using TemporaryFileOnDiskHolder = std::unique_ptr<TemporaryFileOnDisk>;

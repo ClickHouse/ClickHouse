@@ -30,9 +30,10 @@ namespace DB
 
 namespace
 {
+
 TemporaryFileOnDiskHolder flushToFile(const DiskPtr & disk, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
 {
-    auto tmp_file = std::make_unsigned<TemporaryFileOnDisk>(disk, std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::TemporaryFilesForJoin));
+    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, CurrentMetrics::TemporaryFilesForJoin);
     auto write_stat = TemporaryFileStream::write(tmp_file->getPath(), header, std::move(pipeline), codec);
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, write_stat.compressed_bytes);
