@@ -14,7 +14,7 @@
 #include <Storages/Hive/StorageHive.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Common/logger_useful.h>
 
 namespace DB

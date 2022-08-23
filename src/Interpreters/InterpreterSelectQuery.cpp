@@ -608,11 +608,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (storage)
         {
+            query_info.filter_asts.clear();
+
             /// Fix source_header for filter actions.
             if (row_policy_filter)
             {
                 filter_info = generateFilterActions(
                     table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+
+                query_info.filter_asts.push_back(row_policy_filter);
             }
 
             if (query_info.additional_filter_ast)
@@ -621,6 +625,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns);
 
                 additional_filter_info->do_remove_column = true;
+
+                query_info.filter_asts.push_back(query_info.additional_filter_ast);
             }
 
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
@@ -1177,7 +1183,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
 
-    /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
+    /// Do I need to aggregate in a separate row that has not passed max_rows_to_group_by?
     bool aggregate_overflow_row =
         expressions.need_aggregate &&
         query.group_by_with_totals &&
@@ -1425,7 +1431,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentDataStream(),
-                            order_descr,
+                            std::move(order_descr),
                             settings.max_block_size,
                             0 /* LIMIT */,
                             SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
@@ -1433,7 +1439,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             settings.remerge_sort_lowered_memory_bytes_ratio,
                             settings.max_bytes_before_external_sort,
                             this->context->getTemporaryVolume(),
-                            settings.min_free_disk_space_for_temporary_data);
+                            settings.min_free_disk_space_for_temporary_data,
+                            settings.optimize_sorting_by_input_stream_properties);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", is_right ? "right" : "left"));
                         plan.addStep(std::move(sorting_step));
                     };
@@ -2002,8 +2009,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && storage
         && storage->getName() != "MaterializedMySQL"
         && !storage->hasLightweightDeletedMask()
-        && !row_policy_filter
-        && !query_info.additional_filter_ast
+        && query_info.filter_asts.empty()
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -2103,7 +2109,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query.limit_with_ties
         && !query.prewhere()
         && !query.where()
-        && !query_info.additional_filter_ast
+        && query_info.filter_asts.empty()
         && !query.groupBy()
         && !query.having()
         && !query.orderBy()
@@ -2566,7 +2572,8 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 settings.remerge_sort_lowered_memory_bytes_ratio,
                 settings.max_bytes_before_external_sort,
                 context->getTemporaryVolume(),
-                settings.min_free_disk_space_for_temporary_data);
+                settings.min_free_disk_space_for_temporary_data,
+                settings.optimize_sorting_by_input_stream_properties);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
@@ -2624,7 +2631,8 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         settings.remerge_sort_lowered_memory_bytes_ratio,
         settings.max_bytes_before_external_sort,
         context->getTemporaryVolume(),
-        settings.min_free_disk_space_for_temporary_data);
+        settings.min_free_disk_space_for_temporary_data,
+        settings.optimize_sorting_by_input_stream_properties);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
@@ -2633,19 +2641,12 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 
 void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const std::string & description)
 {
-    auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, context);
-    UInt64 limit = getLimitForSorting(query, context);
+    const auto & query = getSelectQuery();
+    SortDescription sort_description = getSortDescription(query, context);
+    const UInt64 limit = getLimitForSorting(query, context);
+    const auto max_block_size = context->getSettingsRef().max_block_size;
 
-    executeMergeSorted(query_plan, order_descr, limit, description);
-}
-
-void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description)
-{
-    const Settings & settings = context->getSettingsRef();
-
-    auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit);
-
+    auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), std::move(sort_description), max_block_size, limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
