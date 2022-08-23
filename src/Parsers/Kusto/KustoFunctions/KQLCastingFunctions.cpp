@@ -68,9 +68,9 @@ bool ToString::convertImpl(String & out, IParser::Pos & pos)
 } 
 bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
-     String res = String(pos->begin, pos->end);
-     out = res;
-     return false;
+    String res = String(pos->begin, pos->end);
+    out = res;
+    return false;
 }
 
 
