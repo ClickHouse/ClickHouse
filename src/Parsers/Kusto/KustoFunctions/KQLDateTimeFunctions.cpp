@@ -15,11 +15,13 @@
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 #include <format>
+#include <regex>
 
 namespace DB::ErrorCodes
 {
 extern const int SYNTAX_ERROR;
 }
+
 namespace DB
 {
 
@@ -67,7 +69,7 @@ bool DatetimeAdd::convertImpl(String & out, IParser::Pos & pos)
     {
         //period.remove
         period.erase( 0, 1 ); // erase the first quote
-        period.erase( period.size() - 2 ); // erase the last quuote(Since token includes trailing space alwayas as per implememtation) 
+        period.erase( period.size() - 2 ); // erase the last quote(Since token includes trailing space alwayas as per implememtation) 
     }
     ++pos;
     const String offset = getConvertedArgument(fn_name, pos);
@@ -88,7 +90,8 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     String part = Poco::toUpper(getConvertedArgument(fn_name, pos));
-    if ( part.front() == '\"' || part.front() == '\'' )
+    
+    if (part.front() == '\"' || part.front() == '\'' )
     {
         //period.remove
         part.erase( 0, 1 ); // erase the first quote
@@ -100,13 +103,12 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
          ++pos;
          date = getConvertedArgument(fn_name, pos);
     }
-    
     String format;
     
     if(part == "YEAR" )
         format = "%G";
     else if (part == "QUARTER" ) 
-            format = "%Q";
+        format = "%Q";
     else if (part == "MONTH")
         format = "%m";
     else if (part == "WEEK_OF_YEAR")
@@ -122,9 +124,9 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
     else if (part == "SECOND")
         format = "%S";
     else 
-        return false;
-    
-    out = std::format("formatDateTime(toDateTime64({}, 9, 'UTC'), '{}' )", date, format);
+        throw Exception("Unexpected argument " + part + " for " + fn_name, ErrorCodes::SYNTAX_ERROR);   
+
+    out = std::format("formatDateTime({}, '{}' )", date, format);
 
     return true;
 }
@@ -263,16 +265,162 @@ bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
 
 bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    String formatspecifier;
+    ++pos;
+    const auto datetime = getConvertedArgument(fn_name, pos);
+    ++pos;
+    auto format = getConvertedArgument(fn_name, pos);
+
+    //remove quotes and end space from format argument. 
+    if (format.front() == '\"' || format.front() == '\'' )
+    {
+        format.erase( 0, 1 ); // erase the first quote
+        format.erase( format.size() - 2 ); // erase the last quuote(Since token includes trailing space alwayas as per implememtation) 
+    }
+
+    std::vector<String> res;    
+    getTokens(format, res);
+    std::string::size_type i = 0;
+    size_t decimal =0;
+    while (i < format.size())
+    {
+        char c = format[i];
+        if(!isalpha(c))
+        {
+            //delimeter 
+            if (c == ' ' || c == '-' || c == '_' || c == '[' || c == ']' || c == '/' || c == ',' || c == '.' || c == ':')
+                formatspecifier = formatspecifier + c;
+            else
+                throw Exception("Invalid format delimeter in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+            ++i;
+        }
+        else
+        {
+            //format specifier
+            String arg = res.back();
+           
+            if(arg == "y" || arg == "yy" )
+              formatspecifier = formatspecifier + "%y";
+            else if (arg == "yyyy")
+                formatspecifier = formatspecifier + "%Y";
+            else if (arg == "M" || arg == "MM")
+                formatspecifier = formatspecifier + "%m";
+            else if (arg == "s" || arg == "ss")
+                formatspecifier = formatspecifier + "%S";
+            else if (arg == "m" || arg == "mm")
+                formatspecifier = formatspecifier + "%M";
+            else if (arg == "h" || arg == "hh")
+                formatspecifier = formatspecifier + "%I";
+            else if (arg == "H" || arg == "HH")
+                formatspecifier = formatspecifier + "%H";
+            else if (arg == "d")
+                formatspecifier = formatspecifier + "%e";
+            else if (arg == "dd")
+                formatspecifier = formatspecifier + "%d";
+            else if (arg == "tt")
+                formatspecifier = formatspecifier + "%p";
+            else if (arg.starts_with('f'))
+                decimal = arg.size();
+            else if (arg.starts_with('F'))
+                decimal = arg.size();
+            else 
+                throw Exception("Format specifier " + arg + " in function:" + fn_name + "is not supported", ErrorCodes::SYNTAX_ERROR);
+            res.pop_back();
+            i = i + arg.size();
+        } 
+    }
+    if(decimal > 0 && formatspecifier.find('.')!=String::npos)
+    {   
+    
+    out = std::format("concat("
+        "substring(toString(formatDateTime( {0} , '{1}' )),1, position(toString(formatDateTime({0},'{1}')),'.')) ,"
+        "substring(substring(toString({0}), position(toString({0}),'.')+1),1,{2}),"
+        "substring(toString(formatDateTime( {0},'{1}')), position(toString(formatDateTime({0},'{1}')),'.')+1 ,length (toString(formatDateTime({0},'{1}'))))) " ,datetime, formatspecifier,decimal);
+    }
+    else
+        out =  std::format("formatDateTime( {0},'{1}')" ,datetime, formatspecifier);
+    
+    return true;
 }
 
-bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
+bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)  
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos); 
+    if (fn_name.empty())
+        return false;
+    String formatspecifier;
+    ++pos;
+    const auto datetime = getConvertedArgument(fn_name, pos);
+    ++pos;
+    auto format = getConvertedArgument(fn_name, pos);
+    size_t decimal=0;
+    //remove quotes and end space from format argument. 
+    if (format.front() == '\"' || format.front() == '\'' )
+    {
+        format.erase( 0, 1 ); // erase the first quote
+        format.erase( format.size() - 2 ); // erase the last quuote(Since token includes trailing space alwayas as per implememtation) 
+    }   
+    std::vector<String> res;
+    getTokens(format, res);
+    size_t pad = 0;
+    std::string::size_type i = 0;
+
+    while (i < format.size())
+    {
+        char c = format[i];
+        if(!isalpha(c))
+        {
+            //delimeter 
+            if (c == ' ' || c == '-' || c == '_' || c == '[' || c == ']' || c == '/' || c == ',' || c == '.' || c == ':')
+                formatspecifier = formatspecifier + c;
+            else
+                throw Exception("Invalid format delimeter in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+            ++i;
+        }
+        else
+        {
+            //format specifier
+            String arg = res.back();
+            
+            if (arg == "s" || arg == "ss")
+                  formatspecifier = formatspecifier + "%S";
+            else if (arg == "m" || arg == "mm")
+                  formatspecifier = formatspecifier + "%M";
+            else if (arg == "h" || arg == "hh")
+                  formatspecifier = formatspecifier + "%I";
+            else if (arg == "H" || arg == "HH")
+                  formatspecifier = formatspecifier + "%H";
+            else if (arg == "d")
+                  formatspecifier = formatspecifier + "%e";
+            else if (arg == "dd")
+                  formatspecifier = formatspecifier + "%d";
+            else if (arg.starts_with('d') && arg.size() >2)
+            {       formatspecifier = formatspecifier + "%d";
+                   pad = arg.size() - 2 ;
+            }
+            else if (arg.starts_with('f'))
+                decimal = arg.size();
+            else if (arg.starts_with('F'))
+                decimal = arg.size();
+            else 
+                throw Exception("Format specifier " + arg + " in function:" + fn_name + "is not supported", ErrorCodes::SYNTAX_ERROR);
+            res.pop_back();
+            i = i + arg.size();
+        }  
+    }
+    if(decimal > 0 && formatspecifier.find('.')!=String::npos )
+    {  
+        out = std::format("leftPad(concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),1, position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'.')),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'.')+1,length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))))),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))+{3}+{2},'0')", datetime,formatspecifier,decimal,pad);
+    }
+    else if (decimal == 0 && formatspecifier.find('.')==String::npos)
+        out = std::format("leftPad(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))+{2},'0')", datetime,formatspecifier,pad);
+    else 
+        out = std::format("formatDateTime(toDateTime64({0},9,'UTC'),'{1}')", datetime,formatspecifier);
+    
+    return true;
 }
 
 bool GetMonth::convertImpl(String & out, IParser::Pos & pos)
@@ -292,9 +440,74 @@ bool HoursOfDay::convertImpl(String & out, IParser::Pos & pos)
 
 bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+     const String fn_name = getKQLFunctionName(pos);
+
+     if (fn_name.empty())
+         return false;
+
+     ++pos;
+     String datetime_str;
+     String hour ;
+     String day ;
+     String minute ;
+     String second ;
+     int arg_count = 0;
+    std::vector<String> args;
+    while (!pos->isEnd() && pos->type != TokenType::ClosingRoundBracket)
+    {
+        String arg = getConvertedArgument(fn_name, pos);
+        args.insert(args.begin(),arg);
+        if(pos->type == TokenType::Comma)
+            ++pos;
+        ++arg_count;
+    }
+
+    if (arg_count < 2 || arg_count > 4)
+         throw Exception("argument count out of bound in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);  
+
+    if(arg_count == 2)
+    {
+        hour = args.back();
+        args.pop_back();
+        minute = args.back();
+        args.pop_back();
+        datetime_str = hour.erase(hour.size() - 1) + ":" + minute.erase(minute.size() - 1) ;
+    }
+    else if (arg_count == 3)
+    {
+        hour = args.back();
+        args.pop_back();
+        minute = args.back();
+        args.pop_back();
+        second = args.back();
+        args.pop_back();
+
+        datetime_str = hour.erase(hour.size() - 1) + ":" + minute.erase(minute.size() - 1) + ":" + second.erase(second.size() - 1);
+    }
+    else if (arg_count == 4)
+    {
+        day =  args.back();
+        args.pop_back();
+        hour = args.back();
+        args.pop_back();
+        minute = args.back();
+        args.pop_back();
+        second = args.back();
+        args.pop_back();
+
+        datetime_str = hour.erase(hour.size() - 1) + ":" + minute.erase(minute.size() - 1) + ":" + second.erase(second.size() - 1);
+        day = day.erase(day.size() - 1) + ".";
+
+    }
+    else
+        throw Exception("argument count out of bound in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);  
+    
+    //Add dummy yyyy-mm-dd to parse datetime in CH
+    datetime_str = "0000-00-00 " + datetime_str;
+
+    out = std::format("CONCAT('{}',toString(SUBSTRING(toString(toTime(parseDateTime64BestEffortOrNull('{}', 9 ,'UTC' ))),12)))" ,day ,datetime_str );
+
+     return true;
 }
 
 bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
@@ -366,7 +579,7 @@ bool StartOfDay::convertImpl(String & out, IParser::Pos & pos)
          offset = getConvertedArgument(fn_name, pos);
 
     }
-    out = std::format("date_add(DAY,{}, toDateTime64((toStartOfDay({})) , 9 , 'UTC')) ", offset, datetime_str);
+    out = std::format("date_add(DAY,{}, parseDateTime64BestEffortOrNull((toStartOfDay({})) , 9 , 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -386,7 +599,7 @@ bool StartOfMonth::convertImpl(String & out, IParser::Pos & pos)
          offset = getConvertedArgument(fn_name, pos);
 
     }
-    out = std::format("date_add(MONTH,{}, toDateTime64((toStartOfMonth({})) , 9 , 'UTC')) ", offset, datetime_str);
+    out = std::format("date_add(MONTH,{}, parseDateTime64BestEffortOrNull((toStartOfMonth({})) , 9 , 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -406,7 +619,7 @@ bool StartOfWeek::convertImpl(String & out, IParser::Pos & pos)
          offset = getConvertedArgument(fn_name, pos);
 
     }  
-    out = std::format("date_add(Week,{}, toDateTime64((toStartOfWeek({})) , 9 , 'UTC')) ", offset, datetime_str);
+    out = std::format("date_add(Week,{}, parseDateTime64BestEffortOrNull((toStartOfWeek({})) , 9 , 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -425,7 +638,7 @@ bool StartOfYear::convertImpl(String & out, IParser::Pos & pos)
          ++pos;
          offset = getConvertedArgument(fn_name, pos);
     }
-    out = std::format("date_add(YEAR,{}, toDateTime64((toStartOfYear({}, 'UTC')) , 9 , 'UTC'))", offset, datetime_str);
+    out = std::format("date_add(YEAR,{}, parseDateTime64BestEffortOrNull((toStartOfYear({}, 'UTC')) , 9 , 'UTC'))", offset, datetime_str);
     return true;
 }
 
@@ -496,3 +709,4 @@ bool MonthOfYear::convertImpl(String & out, IParser::Pos & pos)
 }
 
 }
+
