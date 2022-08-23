@@ -1176,8 +1176,9 @@ Enables the quorum writes.
 
 -   If `insert_quorum < 2`, the quorum writes are disabled.
 -   If `insert_quorum >= 2`, the quorum writes are enabled.
+-   If `insert_quorum = 'auto'`, use majority number (`number_of_replicas / 2 + 1`) as quorum number.
 
-Default value: 0.
+Default value: 0 - disabled.
 
 Quorum writes
 
@@ -1195,16 +1196,6 @@ See also:
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
-
-## majority_insert_quorum {#settings-majority_insert_quorum}
-
-Use majority number as quorum number. Majority is defined as (number_of_replicas/2) + 1. If insert_quorum and majority_insert_quorum both are specified, max(insert_quorum , majority number) will be used as quorum.
-
-Default value: false
-
-See also:
-
--   [insert_quorum](#settings-insert_quorum)
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
@@ -1269,7 +1260,7 @@ Possible values:
 
 Default value: 1.
 
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)). 
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
 For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
