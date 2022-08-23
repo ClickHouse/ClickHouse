@@ -160,7 +160,7 @@ const std::vector<ASTPtr> & ConstraintsDescription::getConstraints() const
 
 std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::getAtomIds(const ASTPtr & ast) const
 {
-    const auto hash = ast->getTreeHash();
+    const auto hash = ComparisonGraph::getTreeHashWithoutAlias(ast);
     auto it = ast_to_atom_ids.find(hash);
     if (it != ast_to_atom_ids.end())
         return it->second;
@@ -226,7 +226,7 @@ void ConstraintsDescription::update()
     ast_to_atom_ids.clear();
     for (size_t i = 0; i < cnf_constraints.size(); ++i)
         for (size_t j = 0; j < cnf_constraints[i].size(); ++j)
-            ast_to_atom_ids[cnf_constraints[i][j].ast->getTreeHash()].push_back({i, j});
+            ast_to_atom_ids[ComparisonGraph::getTreeHashWithoutAlias(cnf_constraints[i][j].ast)].push_back({i, j});
 
     graph = buildGraph();
 }

@@ -67,7 +67,7 @@ ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
 
         auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::optional<size_t>
         {
-            const auto it = asts_graph.ast_hash_to_component.find(ast->getTreeHash());
+            const auto it = asts_graph.ast_hash_to_component.find(ComparisonGraph::getTreeHashWithoutAlias(ast));
             if (it != std::end(asts_graph.ast_hash_to_component))
             {
                 if (!std::any_of(
@@ -75,7 +75,7 @@ ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
                         std::cend(asts_graph.vertices[it->second].asts),
                         [ast](const ASTPtr & constraint_ast)
                         {
-                            return constraint_ast->getTreeHash() == ast->getTreeHash()
+                            return ComparisonGraph::getTreeHashWithoutAlias(constraint_ast) == ComparisonGraph::getTreeHashWithoutAlias(ast)
                                 && constraint_ast->getColumnName() == ast->getColumnName();
                         }))
                 {
@@ -86,7 +86,7 @@ ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
             }
             else
             {
-                asts_graph.ast_hash_to_component[ast->getTreeHash()] = asts_graph.vertices.size();
+                asts_graph.ast_hash_to_component[ComparisonGraph::getTreeHashWithoutAlias(ast)] = asts_graph.vertices.size();
                 asts_graph.vertices.push_back(EqualComponent{{ast}, std::nullopt});
                 asts_graph.edges.emplace_back();
                 return asts_graph.vertices.size() - 1;
@@ -135,8 +135,8 @@ ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
 
         if (func && not_equals_functions.contains(func->name))
         {
-            auto index_left = graph.ast_hash_to_component.at(func->arguments->children[0]->getTreeHash());
-            auto index_right = graph.ast_hash_to_component.at(func->arguments->children[1]->getTreeHash());
+            auto index_left = graph.ast_hash_to_component.at(ComparisonGraph::getTreeHashWithoutAlias(func->arguments->children[0]));
+            auto index_right = graph.ast_hash_to_component.at(ComparisonGraph::getTreeHashWithoutAlias(func->arguments->children[1]));
 
             if (index_left == index_right)
                 throw Exception(ErrorCodes::VIOLATED_CONSTRAINT,
@@ -176,8 +176,8 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     size_t finish = 0;
 
     /// TODO: check full ast
-    const auto it_left = graph.ast_hash_to_component.find(left->getTreeHash());
-    const auto it_right = graph.ast_hash_to_component.find(right->getTreeHash());
+    const auto it_left = graph.ast_hash_to_component.find(ComparisonGraph::getTreeHashWithoutAlias(left));
+    const auto it_right = graph.ast_hash_to_component.find(ComparisonGraph::getTreeHashWithoutAlias(right));
 
     if (it_left == std::end(graph.ast_hash_to_component) || it_right == std::end(graph.ast_hash_to_component))
     {
@@ -302,19 +302,19 @@ ASTs ComparisonGraph::getEqual(const ASTPtr & ast) const
 
 std::optional<size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) const
 {
-    const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
+    const auto hash_it = graph.ast_hash_to_component.find(ComparisonGraph::getTreeHashWithoutAlias(ast));
     if (hash_it == std::end(graph.ast_hash_to_component))
         return {};
 
     const size_t index = hash_it->second;
     if (std::any_of(
-        std::cbegin(graph.vertices[index].asts),
-        std::cend(graph.vertices[index].asts),
-        [ast](const ASTPtr & constraint_ast)
-        {
-            return constraint_ast->getTreeHash() == ast->getTreeHash() &&
-                   constraint_ast->getColumnName() == ast->getColumnName();
-        }))
+            std::cbegin(graph.vertices[index].asts),
+            std::cend(graph.vertices[index].asts),
+            [ast](const ASTPtr & constraint_ast)
+            {
+                return ComparisonGraph::getTreeHashWithoutAlias(constraint_ast) == ComparisonGraph::getTreeHashWithoutAlias(ast)
+                    && constraint_ast->getColumnName() == ast->getColumnName();
+            }))
     {
         return index;
     }
@@ -404,7 +404,7 @@ ComparisonGraph::CompareResult ComparisonGraph::inverseCompareResult(CompareResu
 
 std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
 {
-    const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
+    const auto hash_it = graph.ast_hash_to_component.find(ComparisonGraph::getTreeHashWithoutAlias(ast));
     if (hash_it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
 
@@ -419,7 +419,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph::getConstUpperBound(const 
     if (const auto * literal = ast->as<ASTLiteral>())
         return std::make_pair(literal->value, false);
 
-    const auto it = graph.ast_hash_to_component.find(ast->getTreeHash());
+    const auto it = graph.ast_hash_to_component.find(ComparisonGraph::getTreeHashWithoutAlias(ast));
     if (it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
 
@@ -436,7 +436,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph::getConstLowerBound(const 
     if (const auto * literal = ast->as<ASTLiteral>())
         return std::make_pair(literal->value, false);
 
-    const auto it = graph.ast_hash_to_component.find(ast->getTreeHash());
+    const auto it = graph.ast_hash_to_component.find(ComparisonGraph::getTreeHashWithoutAlias(ast));
     if (it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
 
@@ -637,4 +637,10 @@ std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph::buildCons
     return {lower, upper};
 }
 
+IAST::Hash ComparisonGraph::getTreeHashWithoutAlias(const ASTPtr & ast)
+{
+    /// When looking and replacing functions found in constraints we don't care about the top level function alias
+    const auto * f = ast->as<ASTFunction>();
+    return f ? f->getTreeHashWithoutAlias() : ast->getTreeHash();
+}
 }

@@ -139,6 +139,20 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
     ASTWithAlias::updateTreeHashImpl(hash_state);
 }
 
+IAST::Hash ASTFunction::getTreeHashWithoutAlias() const
+{
+    SipHash hash_state;
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state);
+
+    for (const auto & child : children)
+        child->updateTreeHash(hash_state);
+    IAST::Hash res;
+    hash_state.get128(res);
+    return res;
+}
+
 template <typename Container>
 static ASTPtr createLiteral(const ASTs & arguments)
 {

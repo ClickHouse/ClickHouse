@@ -67,6 +67,8 @@ public:
     /// Returns all expression in graph.
     std::vector<ASTs> getVertices() const;
 
+    static IAST::Hash getTreeHashWithoutAlias(const ASTPtr & ast);
+
 private:
     /// Strongly connected component
     struct EqualComponent
