@@ -14,7 +14,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `WINDOW` clause (`select ... from table window w as (partition by id)`)            | supported                                                                                                                                                                                   |
 | `ROWS` frame                                                                       | supported                                                                                                                                                                                   |
 | `RANGE` frame                                                                      | supported, the default                                                                                                                                                                      |
-| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | not supported, specify the number of seconds instead                                                                                                                                        |
+| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | not supported, specify the number of seconds instead (`RANGE` works with any numeric type).                                                                                                                                 |
 | `GROUPS` frame                                                                     | not supported                                                                                                                                                                               |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | all aggregate functions are supported                                                                                                                                                       |
 | `rank()`, `dense_rank()`, `row_number()`                                           | supported                                                                                                                                                                                   |
@@ -533,4 +533,57 @@ ORDER BY
 │ cpu_temp │ 2020-01-01 00:06:00 │    87 │                         87 │
 │ cpu_temp │ 2020-01-01 00:07:10 │    87 │                         87 │
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
+```
+
+### Moving / Sliding Average (per 10 days)
+
+Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)` we form a frame with the size of 10 units, and because of `toDate(ts)` the unit is a day.
+
+```sql
+CREATE TABLE sensors
+(
+    `metric` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory;
+
+insert into sensors values('ambient_temp', '2020-01-01 00:00:00', 16),
+                          ('ambient_temp', '2020-01-01 12:00:00', 16),
+                          ('ambient_temp', '2020-01-02 11:00:00', 9),
+                          ('ambient_temp', '2020-01-02 12:00:00', 9),                          
+                          ('ambient_temp', '2020-02-01 10:00:00', 10),
+                          ('ambient_temp', '2020-02-01 12:00:00', 10),
+                          ('ambient_temp', '2020-02-10 12:00:00', 12),                          
+                          ('ambient_temp', '2020-02-10 13:00:00', 12),
+                          ('ambient_temp', '2020-02-20 12:00:01', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16);
+
+SELECT
+    metric,
+    ts,
+    value,
+    round(avg(value) OVER (PARTITION BY metric ORDER BY toDate(ts) 
+       Range BETWEEN 10 PRECEDING AND CURRENT ROW),2) moving_avg_10_days_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+
+┌─metric───────┬──────────────────ts─┬─value─┬─moving_avg_10_days_temp─┐
+│ ambient_temp │ 2020-01-01 00:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-01-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-01-02 11:00:00 │     9 │                    12.5 │
+│ ambient_temp │ 2020-01-02 12:00:00 │     9 │                    12.5 │
+│ ambient_temp │ 2020-02-01 10:00:00 │    10 │                      10 │
+│ ambient_temp │ 2020-02-01 12:00:00 │    10 │                      10 │
+│ ambient_temp │ 2020-02-10 12:00:00 │    12 │                      11 │
+│ ambient_temp │ 2020-02-10 13:00:00 │    12 │                      11 │
+│ ambient_temp │ 2020-02-20 12:00:01 │    16 │                   13.33 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+└──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
