@@ -79,12 +79,12 @@ class ParserDynamicFuncTest : public ::testing::TestWithParam<std::tuple<std::sh
              "SELECT arraySort([4, 1, 3, 2]) AS t"
          },
          {
-             "print t = array_sort_asc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))",
-             "SELECT arraySort((x, y) -> y, [20, 10, 30], ['b', 'a', 'c']) AS t"
+             "print array_sort_asc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))",
+             "SELECT\n    arraySort(['b', 'a', 'c']) AS array0_sorted,\n    arraySort((x, y) -> y, [20, 10, 30], ['b', 'a', 'c']) AS array1_sorted"
          },
          {
-             "print t = array_sort_asc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))",
-             "SELECT arraySort((x, y) -> y, ['clickhouse', 'hello', 'world'], [2, 1, 3]) AS t"
+             "print array_sort_asc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))",
+             "SELECT\n    arraySort([2, 1, 3]) AS array0_sorted,\n    arraySort((x, y) -> y, ['clickhouse', 'hello', 'world'], [2, 1, 3]) AS array1_sorted"
          },
          {
              "print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , false)",
@@ -107,12 +107,12 @@ class ParserDynamicFuncTest : public ::testing::TestWithParam<std::tuple<std::sh
              "SELECT arrayReverseSort([4, 1, 3, 2]) AS t"
          },
          {
-             "print t = array_sort_desc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))",
-             "SELECT arrayReverseSort((x, y) -> y, [20, 10, 30], ['b', 'a', 'c']) AS t"
+             "print array_sort_desc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))",
+             "SELECT\n    arrayReverseSort(['b', 'a', 'c']) AS array0_sorted,\n    arrayReverseSort((x, y) -> y, [20, 10, 30], ['b', 'a', 'c']) AS array1_sorted"
          },
          {
-             "print t = array_sort_desc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))",
-             "SELECT arrayReverseSort((x, y) -> y, ['clickhouse', 'hello', 'world'], [2, 1, 3]) AS t"
+             "print array_sort_desc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))",
+             "SELECT\n    arrayReverseSort([2, 1, 3]) AS array0_sorted,\n    arrayReverseSort((x, y) -> y, ['clickhouse', 'hello', 'world'], [2, 1, 3]) AS array1_sorted"
          },
          {
              "print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , false)",
