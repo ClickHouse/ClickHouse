@@ -19,59 +19,59 @@
 namespace DB
 {
 
-bool ArgMax::convertImpl(String &out,IParser::Pos &pos)
+bool ArgMax::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"argMax");
 }
 
-bool ArgMin::convertImpl(String &out,IParser::Pos &pos)
+bool ArgMin::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"argMin");
 }
 
-bool Avg::convertImpl(String &out,IParser::Pos &pos)
+bool Avg::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"avg");
 }
 
-bool AvgIf::convertImpl(String &out,IParser::Pos &pos)
+bool AvgIf::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"avgIf");
 }
 
-bool BinaryAllAnd::convertImpl(String &out,IParser::Pos &pos)
+bool BinaryAllAnd::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"groupBitAnd");
 }
 
-bool BinaryAllOr::convertImpl(String &out,IParser::Pos &pos)
+bool BinaryAllOr::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"groupBitOr");
 }
 
-bool BinaryAllXor::convertImpl(String &out,IParser::Pos &pos)
+bool BinaryAllXor::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"groupBitXor");
 }
 
-bool BuildSchema::convertImpl(String &out,IParser::Pos &pos)
+bool BuildSchema::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
 
-bool Count::convertImpl(String &out,IParser::Pos &pos)
+bool Count::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"count");
 }
 
-bool CountIf::convertImpl(String &out,IParser::Pos &pos)
+bool CountIf::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"countIf");
 }
 
-bool DCount::convertImpl(String &out,IParser::Pos &pos)
+bool DCount::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -84,7 +84,7 @@ bool DCount::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool DCountIf::convertImpl(String &out,IParser::Pos &pos)
+bool DCountIf::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -98,21 +98,21 @@ bool DCountIf::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool MakeBag::convertImpl(String &out,IParser::Pos &pos)
+bool MakeBag::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
 
-bool MakeBagIf::convertImpl(String &out,IParser::Pos &pos)
+bool MakeBagIf::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
 
-bool MakeList::convertImpl(String &out,IParser::Pos &pos)
+bool MakeList::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -130,7 +130,7 @@ bool MakeList::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool MakeListIf::convertImpl(String &out,IParser::Pos &pos)
+bool MakeListIf::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -150,12 +150,12 @@ bool MakeListIf::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool MakeListWithNulls::convertImpl(String &out,IParser::Pos &pos)
+bool MakeListWithNulls::convertImpl(String & out,IParser::Pos & pos)
 {
-    return directMapping(out,pos,"groupArray"); //groupArray takes everything including NULLs
+    return directMapping(out,pos,"groupArray");
 }
 
-bool MakeSet::convertImpl(String &out,IParser::Pos &pos)
+bool MakeSet::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -169,11 +169,11 @@ bool MakeSet::convertImpl(String &out,IParser::Pos &pos)
         const auto max_size = getConvertedArgument(fn_name,pos);
         out = "groupUniqArray(" + max_size + ")(" + expr + ")";
     } else
-        out = "groupUniqArray(" + expr + ")";    
+        out = "groupUniqArray(" + expr + ")";
     return true;
 }
 
-bool MakeSetIf::convertImpl(String &out,IParser::Pos &pos)
+bool MakeSetIf::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -193,27 +193,27 @@ bool MakeSetIf::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool Max::convertImpl(String &out,IParser::Pos &pos)
+bool Max::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"max");
 }
 
-bool MaxIf::convertImpl(String &out,IParser::Pos &pos)
+bool MaxIf::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"maxIf");
 }
 
-bool Min::convertImpl(String &out,IParser::Pos &pos)
+bool Min::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"min");
 }
 
-bool MinIf::convertImpl(String &out,IParser::Pos &pos)
+bool MinIf::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"minIf");
 }
 
-bool Percentile::convertImpl(String &out,IParser::Pos &pos)
+bool Percentile::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -224,18 +224,15 @@ bool Percentile::convertImpl(String &out,IParser::Pos &pos)
     String column_name = getConvertedArgument(fn_name,pos);
     trim(column_name);
     
-    if(pos->type != TokenType::Comma)
-        return false;
     ++pos;
     String value = getConvertedArgument(fn_name,pos);
     trim(value);
 
     out = "quantile(" + value + "/100)(" + column_name + ")";
-    std::cout << "Mallik: " << out << std::endl;
     return true;
 }
 
-bool Percentilew::convertImpl(String &out,IParser::Pos &pos)
+bool Percentilew::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -258,7 +255,7 @@ bool Percentilew::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool Percentiles::convertImpl(String &out,IParser::Pos &pos)
+bool Percentiles::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -296,7 +293,7 @@ bool Percentiles::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool PercentilesArray::convertImpl(String &out,IParser::Pos &pos)
+bool PercentilesArray::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -310,10 +307,10 @@ bool PercentilesArray::convertImpl(String &out,IParser::Pos &pos)
     String value;
     while(pos->type != TokenType::ClosingRoundBracket)
     {
-        if(pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic" 
+        if(pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic"
             && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
             && pos->type != TokenType::ClosingSquareBracket){
-            
+
             value = String(pos->begin, pos->end);
             expr = expr + value + "/100";
 
@@ -339,7 +336,7 @@ bool PercentilesArray::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool Percentilesw::convertImpl(String &out,IParser::Pos &pos)
+bool Percentilesw::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -384,7 +381,7 @@ bool Percentilesw::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool PercentileswArray::convertImpl(String &out,IParser::Pos &pos)
+bool PercentileswArray::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -403,10 +400,11 @@ bool PercentileswArray::convertImpl(String &out,IParser::Pos &pos)
     String value;
     while(pos->type != TokenType::ClosingRoundBracket)
     {
-        if(pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic" 
+        if(pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic"
             && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
-            && pos->type != TokenType::ClosingSquareBracket){
-            
+            && pos->type != TokenType::ClosingSquareBracket)
+        {
+
             value = String(pos->begin, pos->end);
             expr = expr + value + "/100";
 
@@ -432,7 +430,7 @@ bool PercentileswArray::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool Stdev::convertImpl(String &out,IParser::Pos &pos)
+bool Stdev::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -444,7 +442,7 @@ bool Stdev::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool StdevIf::convertImpl(String &out,IParser::Pos &pos)
+bool StdevIf::convertImpl(String & out,IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -461,42 +459,41 @@ bool StdevIf::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool Sum::convertImpl(String &out,IParser::Pos &pos)
+bool Sum::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"sum");
 }
 
-bool SumIf::convertImpl(String &out,IParser::Pos &pos)
+bool SumIf::convertImpl(String & out,IParser::Pos & pos)
 {
     return directMapping(out,pos,"sumIf");
 }
 
-bool TakeAny::convertImpl(String &out,IParser::Pos &pos)
+bool TakeAny::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
 
-bool TakeAnyIf::convertImpl(String &out,IParser::Pos &pos)
+bool TakeAnyIf::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
 
-bool Variance::convertImpl(String &out,IParser::Pos &pos)
+bool Variance::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
 
-bool VarianceIf::convertImpl(String &out,IParser::Pos &pos)
+bool VarianceIf::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
-
 }
