@@ -388,7 +388,7 @@ struct ToDateTransform32Or64Signed
         if (from < 0)
             return 0;
 
-        auto day_num = time_zone.toDayNum(from);
+        auto day_num = time_zone.toDayNum(ExtendedDayNum(from));
         return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
     }
 };
