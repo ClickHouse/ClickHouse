@@ -2,6 +2,13 @@
     <storage_configuration>
         <disks>
             <!-- s3 disks -->
+            <s3_simple>
+                <type>s3</type>
+                <path>s3_simple/</path>
+                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </s3_simple>
             <s3_disk>
                 <type>s3</type>
                 <path>s3_disk/</path>
@@ -148,6 +155,13 @@
             </s3_cache_multi_2>
         </disks>
         <policies>
+            <s3_simple>
+                <volumes>
+                    <main>
+                        <disk>s3_simple</disk>
+                    </main>
+                </volumes>
+            </s3_simple>
             <s3_cache>
                 <volumes>
                     <main>
