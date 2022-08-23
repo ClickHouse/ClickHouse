@@ -85,7 +85,7 @@ public:
 
     /// Returns all sets that match the given ast hash not checking types
     /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey
-    std::vector<SetPtr> getByTreeHash(IAST::Hash ast_hash);
+    std::vector<SetPtr> getByTreeHash(const IAST & node);
 
     bool empty() const;
 

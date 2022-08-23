@@ -70,8 +70,11 @@ void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = se
 
 SetPtr & PreparedSets::get(const PreparedSetKey & key) { return sets[key]; }
 
-std::vector<SetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash)
+std::vector<SetPtr> PreparedSets::getByTreeHash(const IAST & node)
 {
+    const auto & subquery = node.as<ASTSubquery>();
+    /// For subqueries we store (and then have to match) only the hash of the contents since we don't care about the alias or CTE name
+    IAST::Hash ast_hash = subquery ? subquery->getContentHash() : node.getTreeHash();
     std::vector<SetPtr> res;
     for (const auto & it : this->sets)
     {

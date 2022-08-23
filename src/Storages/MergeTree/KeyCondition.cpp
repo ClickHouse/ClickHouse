@@ -303,7 +303,7 @@ public:
                 return true;
             };
 
-            for (const auto & set : sets->getByTreeHash(ast->getTreeHash()))
+            for (const auto & set : sets->getByTreeHash(*ast))
             {
                 if (types_match(set))
                     return set;

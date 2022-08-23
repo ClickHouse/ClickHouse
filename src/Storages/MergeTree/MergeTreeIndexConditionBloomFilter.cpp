@@ -697,7 +697,7 @@ SetPtr MergeTreeIndexConditionBloomFilter::getPreparedSet(const ASTPtr & node)
     }
     else
     {
-        for (const auto & set : query_info.prepared_sets->getByTreeHash(node->getTreeHash()))
+        for (const auto & set : query_info.prepared_sets->getByTreeHash(*node))
             if (set->hasExplicitSetElements())
                 return set;
     }
