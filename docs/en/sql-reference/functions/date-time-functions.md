@@ -273,7 +273,7 @@ In case argument is out of normal range:
   * If the argument is smaller than 1970, the result will be calculated from the argument `1970-01-01 (00:00:00)` instead.
   * If the return type is `DateTime` and the argument is larger than `2106-02-07 08:28:15`, the result will be calculated from the argument `2106-02-07 08:28:15` instead.
   * If the return type is `Date` and the argument is larger than `2149-06-06`, the result will be calculated from the argument `2149-06-06` instead.
-  * `2149-05-31` will be the result of execution of `toLastDayOfMonth` when argument is greater then `2149-05-31`.
+  *  If `toLastDayOfMonth` is called with an argument greater then `2149-05-31`, the result will be calculated from the argument `2149-05-31` instead.
 :::
 
 ## toStartOfYear
