@@ -1,9 +1,9 @@
 ---
 sidebar_position: 49
-sidebar_label: Data Backup
+sidebar_label: Data backup and restore
 ---
 
-# Data Backup
+# Data backup and restore
 
 While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can’t just drop tables with a MergeTree-like engine containing more than 50 Gb of data](server-configuration-parameters/settings.md#max-table-size-to-drop). However, these safeguards do not cover all possible cases and can be circumvented.
 
@@ -19,23 +19,123 @@ Keep in mind that if you backed something up and never tried to restore it, chan
 
 Often data that is ingested into ClickHouse is delivered through some sort of persistent queue, such as [Apache Kafka](https://kafka.apache.org). In this case it is possible to configure an additional set of subscribers that will read the same data stream while it is being written to ClickHouse and store it in cold storage somewhere. Most companies already have some default recommended cold storage, which could be an object store or a distributed filesystem like [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html).
 
-## Filesystem Snapshots {#filesystem-snapshots}
+## BACKUP DATABASE
 
-Some local filesystems provide snapshot functionality (for example, [ZFS](https://en.wikipedia.org/wiki/ZFS)), but they might not be the best choice for serving live queries. A possible solution is to create additional replicas with this kind of filesystem and exclude them from the [Distributed](../engines/table-engines/special/distributed.md) tables that are used for `SELECT` queries. Snapshots on such replicas will be out of reach of any queries that modify data. As a bonus, these replicas might have special hardware configurations with more disks attached per server, which would be cost-effective.
+Backup the `default` database and several of the `system` tables asynchronously:
+```sql
+BACKUP DATABASE default, TABLE system.users, \
+  TABLE system.roles, TABLE system.settings_profiles, \
+  TABLE system.row_policies, TABLE system.quotas \
+  TO Disk('backups', '1.zip') ASYNC
+```
 
-## clickhouse-copier {#clickhouse-copier}
+Backup the `test` database with a new name (`test2`):
+```sql
+BACKUP DATABASE test AS test2 TO Disk('backups', '1.zip')
+```
 
-[clickhouse-copier](../operations/utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
+Backup the database `test`:
+```sql
+BACKUP DATABASE test TO Disk('backups', '1.zip')
 
-For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
+## BACKUP TABLE
 
-## Manipulations with Parts {#manipulations-with-parts}
+Backup the table `mv_1`:
+```sql
+BACKUP TABLE mv_1 TO Disk('backups', '1.zip')
+```
 
-ClickHouse allows using the `ALTER TABLE ... FREEZE PARTITION ...` query to create a local copy of table partitions. This is implemented using hardlinks to the `/var/lib/clickhouse/shadow/` folder, so it usually does not consume extra disk space for old data. The created copies of files are not handled by ClickHouse server, so you can just leave them there: you will have a simple backup that does not require any additional external system, but it will still be prone to hardware issues. For this reason, it’s better to remotely copy them to another location and then remove the local copies. Distributed filesystems and object stores are still a good options for this, but normal attached file servers with a large enough capacity might work as well (in this case the transfer will occur via the network filesystem or maybe [rsync](https://en.wikipedia.org/wiki/Rsync)).
-Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...`
+Backup several of the `system` tables:
+```sql
+BACKUP TABLE system.users, TABLE system.roles, \
+  TABLE system.settings_profiles, TABLE system.row_policies, \
+  TABLE system.quotas TO Disk('backups', '1.zip')
+```
 
-For more information about queries related to partition manipulations, see the [ALTER documentation](../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
+Backup with a specific username:
+```sql
+BACKUP TABLE system.users, TABLE system.roles \
+  TO Disk('backups', '1.zip'), user="u2"
+```
 
-A third-party tool is available to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
+Backup a table with a new name:
+```sql
+BACKUP TABLE test.table AS test.table2 TO Disk('backups', '1.zip')
+```
 
-[Original article](https://clickhouse.com/docs/en/operations/backup/) <!--hide-->
+Backup a table asynchronously:
+```sql
+BACKUP TABLE test.table TO Disk('backups', '1.zip') ASYNC
+```
+
+### Compress and password protect a backup
+
+Use `lzma` compression, and password protect the backup:
+```sql
+BACKUP TABLE test.table TO Disk('backups', '1.zip') \
+  SETTINGS compression_method='lzma', compression_level=3, password='qwerty'
+```
+
+Add an `id` to the backup (the id is used during `RESTORE`):
+```sql
+BACKUP TABLE test.table TO Disk('backups', '1.zip') \
+  SETTINGS id='first' ASYNC
+```
+
+### Incremental table backup
+
+Incrementally backup a table:
+```sql
+BACKUP TABLE test.table2 TO {incremental_backup_name} \
+  SETTINGS base_backup = Disk('backups', '1.zip')
+```
+
+## Restore
+
+Restore specific partitions:
+```sql
+RESTORE TABLE test.table PARTITIONS '2', '3' FROM Disk('backups', '1.zip')
+```
+
+Restore all databases and tables from a specific backup:
+```sql
+RESTORE ALL FROM Disk('backups', '1.zip')
+```
+
+Restore based on a username:
+```sql
+RESTORE ALL FROM Disk('backups', '1.zip'), user="u1"
+
+Restore specific databases and tables asynchronously:
+```sql
+RESTORE DATABASE default, TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM Disk('backups', '1.zip') ASYNC
+```
+
+Restore and rename a table:
+```sql
+RESTORE DATABASE test2 AS test3 FROM Disk('backups', '1.zip')
+```
+
+Restore specific tables:
+```sql
+RESTORE TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM Disk('backups', '1.zip')
+
+RESTORE TABLE test.table2 FROM {incremental_backup_name}
+RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip')
+RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip')
+RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip'), user="u1"
+RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+RESTORE TABLE test.table FROM Disk('backups', '1.zip')
+RESTORE TABLE test.table FROM Disk('backups', '1.zip')
+RESTORE TABLE test.table FROM Disk('backups', '1.zip') ASYNC
+RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS allow_non_empty_tables=true
+RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS id='first'
+RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS id='second' ASYNC
+RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS password='qwerty'
+RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS structure_only=true
+RESTORE TABLE test.table FROM Disk('backups', '1.zip'), user="u1"
+RESTORE TEMPORARY TABLE temp_tbl FROM Disk('backups', '1.zip'),
+SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'
+SELECT status FROM system.backups WHERE id='{id2}'
+SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'
+SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'
