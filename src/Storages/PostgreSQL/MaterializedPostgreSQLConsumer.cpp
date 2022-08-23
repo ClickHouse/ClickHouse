@@ -45,6 +45,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
     , allow_automatic_update(allow_automatic_update_)
 {
+    commited = false;
     final_lsn = start_lsn;
     auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
     current_lsn = advanceLSN(tx);
@@ -53,6 +54,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
     for (const auto & [table_name, storage_info] : storages_info_)
         storages.emplace(table_name, storage_info);
+    LOG_TRACE(log, "Consumer created");
 }
 
 
@@ -443,6 +445,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             pos += unused_flags_len + commit_lsn_len + transaction_end_lsn_len + transaction_commit_timestamp_len;
 
             final_lsn = current_lsn;
+            commited = true;
             break;
         }
         case 'R': // Relation
@@ -593,6 +596,12 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
+    updateLsn();
+}
+
+
+void MaterializedPostgreSQLConsumer::updateLsn()
+{
     try
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -614,6 +623,7 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 
     final_lsn = result[0][0].as<std::string>();
     LOG_TRACE(log, "Advanced LSN up to: {}", getLSNValue(final_lsn));
+    commited = false;
     return final_lsn;
 }
 
@@ -771,7 +781,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 
             try
             {
-                // LOG_DEBUG(log, "Current message: {}", (*row)[1]);
+                LOG_DEBUG(log, "Current message: {}", (*row)[1]);
                 processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
             }
             catch (const Exception & e)
@@ -790,6 +800,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
     catch (const pqxx::broken_connection &)
     {
+        LOG_DEBUG(log, "Connection was brocken");
         connection->tryUpdateConnection();
         return false;
     }
@@ -825,6 +836,13 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     if (!tables_to_sync.empty())
         syncTables();
 
+    else 
+    {
+        if(commited)
+        {
+            updateLsn();
+        }
+    }
     return true;
 }
 
