@@ -30,12 +30,12 @@ std::string determineDefaultTimeZone()
 {
     namespace fs = std::filesystem;
 
-    const char * tzdir_env_var = std::getenv("TZDIR");
+    const char * tzdir_env_var = std::getenv("TZDIR"); // NOLINT(concurrency-mt-unsafe) // ok, because it does not run concurrently with other getenv calls
     fs::path tz_database_path = tzdir_env_var ? tzdir_env_var : "/usr/share/zoneinfo/";
 
     fs::path tz_file_path;
     std::string error_prefix;
-    const char * tz_env_var = std::getenv("TZ");
+    const char * tz_env_var = std::getenv("TZ"); // NOLINT(concurrency-mt-unsafe) // ok, because it does not run concurrently with other getenv calls
 
     /// In recent tzdata packages some files now are symlinks and canonical path resolution
     /// may give wrong timezone names - store the name as it is, if possible.

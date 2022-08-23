@@ -1183,7 +1183,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
 
-    /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
+    /// Do I need to aggregate in a separate row that has not passed max_rows_to_group_by?
     bool aggregate_overflow_row =
         expressions.need_aggregate &&
         query.group_by_with_totals &&

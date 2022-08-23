@@ -747,7 +747,14 @@ Default value: 268435456.
 
 Disables lagging replicas for distributed queries. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
 
-Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
+Sets the time in seconds. If a replica's lag is greater than or equal to the set value, this replica is not used.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Replica lags are not checked.
+
+To prevent the use of any replica with a non-zero lag, set this parameter to 1.
 
 Default value: 300.
 
@@ -1246,7 +1253,9 @@ Possible values:
 
 Default value: 1.
 
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)). 
+For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 ## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -1279,6 +1288,9 @@ Possilbe values:
 Default value: empty string (disabled)
 
 `insert_deduplication_token` is used for deduplication _only_ when not empty.
+
+For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 Example:
 
@@ -3300,7 +3312,7 @@ Possible values:
 
 Default value: `0`.
 
-## shutdown_wait_unfinished_queries
+## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
 
 Enables or disables waiting unfinished queries when shutdown server.
 
@@ -3311,13 +3323,13 @@ Possible values:
 
 Default value: 0.
 
-## shutdown_wait_unfinished
+## shutdown_wait_unfinished {#shutdown_wait_unfinished}
 
 The waiting time in seconds for currently handled connections when shutdown server.
 
 Default Value: 5.
 
-## memory_overcommit_ratio_denominator
+## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
 
 It represents soft memory limit in case when hard limit is reached on user level.
 This value is used to compute overcommit ratio for the query.
@@ -3326,7 +3338,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
 
-## memory_usage_overcommit_max_wait_microseconds
+## memory_usage_overcommit_max_wait_microseconds {#memory_usage_overcommit_max_wait_microseconds}
 
 Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
 If the timeout is reached and memory is not freed, an exception is thrown.
@@ -3334,7 +3346,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `5000000`.
 
-## memory_overcommit_ratio_denominator_for_user
+## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
 
 It represents soft memory limit in case when hard limit is reached on global level.
 This value is used to compute overcommit ratio for the query.
@@ -3342,6 +3354,36 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
+
+## schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
+
+Enable schemas cache for schema inference in `file` table function.
+
+Default value: `true`.
+
+## schema_inference_use_cache_for_s3 {schema_inference_use_cache_for_s3}
+
+Enable schemas cache for schema inference in `s3` table function.
+
+Default value: `true`.
+
+## schema_inference_use_cache_for_url {schema_inference_use_cache_for_url}
+
+Enable schemas cache for schema inference in `url` table function.
+
+Default value: `true`.
+
+## schema_inference_use_cache_for_hdfs {schema_inference_use_cache_for_hdfs}
+
+Enable schemas cache for schema inference in `hdfs` table function.
+
+Default value: `true`.
+
+## schema_inference_cache_require_modification_time_for_url {#schema_inference_cache_require_modification_time_for_url}
+
+Use schema from cache for URL with last modification time validation (for urls with Last-Modified header). If this setting is enabled and URL doesn't have Last-Modified header, schema from cache won't be used.
+
+Default value: `true`.
 
 ## compatibility {#compatibility}
 
@@ -3467,6 +3509,24 @@ Default value: `25'000`.
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
+
+## schema_inference_hints {#schema_inference_hints}
+
+The list of column names and types to use as hints in schema inference for formats without schema.
+
+Example:
+
+Query:
+```sql
+desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings schema_inference_hints='x UInt8, z IPv4';
+```
+
+Result:
+```sql
+x	UInt8					
+y	Nullable(String)					
+z	IPv4
+```
 
 ## date_time_input_format {#date_time_input_format}
 
