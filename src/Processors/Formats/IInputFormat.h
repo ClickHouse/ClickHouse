@@ -11,6 +11,16 @@ namespace DB
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
+struct InputFormatErrorRow
+{
+    String time;
+    size_t offset;
+    String reason;
+    String raw_data;
+};
+
+using InputFormatErrorRows = std::vector<InputFormatErrorRow>;
+
 /** Input format is a source, that reads data from ReadBuffer.
   */
 class IInputFormat : public ISource
@@ -55,12 +65,28 @@ public:
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
+    void addErrorRow(InputFormatErrorRow && error_row) { error_rows.emplace_back(error_row); }
+    InputFormatErrorRows & getErrorRows() { return error_rows; }
+
+    void addErrorRows(InputFormatErrorRows & source_error_rows)
+    {
+        multi_error_rows.emplace_back(InputFormatErrorRows());
+        multi_error_rows.back().swap(source_error_rows);
+    }
+    const std::list<InputFormatErrorRows> & getMultiErrorRows() { return multi_error_rows; }
+
+    bool isEmptyErrorRows() { return error_rows.empty(); }
+    bool isEmptyMultiErrorRows() { return multi_error_rows.empty(); }
+
 protected:
     ColumnMappingPtr column_mapping{};
 
 private:
     /// Number of currently parsed chunk (if parallel parsing is enabled)
     size_t current_unit_number = 0;
+
+    InputFormatErrorRows error_rows;
+    std::list<InputFormatErrorRows> multi_error_rows;
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };

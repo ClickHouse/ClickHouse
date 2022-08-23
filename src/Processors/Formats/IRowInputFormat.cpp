@@ -1,7 +1,9 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <DataTypes/ObjectUtils.h>
-#include <IO/WriteHelpers.h>    // toString
 #include <IO/WithFileName.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+#include <base/chrono_io.h>
 #include <Common/logger_useful.h>
 
 
@@ -104,6 +106,28 @@ Chunk IRowInputFormat::generate()
             }
             catch (Exception & e)
             {
+                /// Record error info for this row
+                String diagnostic;
+                String raw_data;
+                try
+                {
+                    std::tie(diagnostic, raw_data) = getDiagnosticAndRawData();
+                }
+                catch (const Exception & exception)
+                {
+                    diagnostic = "Cannot get diagnostic: " + exception.message();
+                    raw_data = "Cannot get raw data: " + exception.message();
+                }
+                catch (...)
+                {
+                    /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+                }
+                trimRight(diagnostic, '\n');
+
+                auto now_time = time(nullptr);
+
+                addErrorRow(InputFormatErrorRow{to_string(now_time), total_rows, diagnostic, raw_data});
+
                 /// Logic for possible skipping of errors.
 
                 if (!isParseError(e.code()))
