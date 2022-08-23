@@ -4,7 +4,9 @@ SELECT toDate(toInt32(toDate32('1930-01-01'))),
        toDate(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3))),
        toDate(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3))),
        toDate32(toInt32(toDate32('1900-01-01')) - 1),
-       toDate32(toInt32(toDate32('2299-12-31')) + 1);
+       toDate32(toInt32(toDate32('2299-12-31')) + 1),
+       toDateTime(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3))),
+       toDateTime(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3)));
 
 -- check conversion of extended range type to normal range type --
 SELECT toDate(toDate32('1930-01-01')),

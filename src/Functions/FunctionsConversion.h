@@ -324,7 +324,7 @@ struct ToDateTimeImpl
 
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
         return date_time <= 0xffffffff ? UInt32(date_time) : UInt32(0xffffffff);
     }
 
@@ -333,7 +333,7 @@ struct ToDateTimeImpl
         if (d < 0)
             return 0;
 
-        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
         return date_time <= 0xffffffff ? UInt32(date_time) : UInt32(0xffffffff);
     }
 
@@ -344,11 +344,10 @@ struct ToDateTimeImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        if (t.whole < 0)
+        if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
             return 0;
 
-        auto day_num = time_zone.toDayNum(t.whole);
-        return (day_num < DATE_LUT_MAX_DAY_NUM) ? t.whole : time_t(0xFFFFFFFF);
+        return time_zone.toDayNum(std::min(t.whole, time_t(0xFFFFFFFF)));
     }
 };
 

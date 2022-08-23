@@ -305,13 +305,15 @@ Returns the date.
 ## toMonday
 
 Rounds down a date or date with time to the nearest Monday.
+As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` return date `1970-01-01`.
 Returns the date.
 
 ## toStartOfWeek(t\[,mode\])
 
 Rounds down a date or date with time to the nearest Sunday or Monday by mode.
 Returns the date.
-The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` (and `1970-01-05` if `mode` is `1`) return date `1970-01-01`.
+The `mode` argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
 
 ## toStartOfDay
 
