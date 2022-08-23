@@ -19,7 +19,6 @@
 * Make the remote filesystem cache composable, allow not to evict certain files (regarding idx, mrk, ..), delete old cache version. Now it is possible to configure cache over Azure blob storage disk, over Local disk, over StaticWeb disk, etc. This PR is marked backward incompatible because cache configuration changes and in order for cache to work need to update the config file. Old cache will still be used with new configuration. The server will startup fine with the old cache configuration. Closes https://github.com/ClickHouse/ClickHouse/issues/36140. Closes https://github.com/ClickHouse/ClickHouse/issues/37889. ([Kseniia Sumarokova](https://github.com/kssenii)). [#36171](https://github.com/ClickHouse/ClickHouse/pull/36171))
 
 #### New Feature
-* Support SQL standard DELETE FROM syntax on merge tree tables and lightweight delete implementation for merge tree families. [#37893](https://github.com/ClickHouse/ClickHouse/pull/37893) ([Jianmei Zhang](https://github.com/zhangjmruc)) ([Alexander Gololobov](https://github.com/davenger)). Note: this new feature does not make ClickHouse an HTAP DBMS.
 * Query parameters can be set in interactive mode as `SET param_abc = 'def'` and transferred via the native protocol as settings. [#39906](https://github.com/ClickHouse/ClickHouse/pull/39906) ([Nikita Taranov](https://github.com/nickitat)).
 * Quota key can be set in the native protocol ([Yakov Olkhovsky](https://github.com/ClickHouse/ClickHouse/pull/39874)).
 * Added a setting `exact_rows_before_limit` (0/1). When enabled, ClickHouse will provide exact value for `rows_before_limit_at_least` statistic, but with the cost that the data before limit will have to be read completely. This closes [#6613](https://github.com/ClickHouse/ClickHouse/issues/6613). [#25333](https://github.com/ClickHouse/ClickHouse/pull/25333) ([kevin wan](https://github.com/MaxWk)).
@@ -33,6 +32,8 @@
 * Add formats `PrettyMonoBlock`, `PrettyNoEscapesMonoBlock`, `PrettyCompactNoEscapes`, `PrettyCompactNoEscapesMonoBlock`, `PrettySpaceNoEscapes`, `PrettySpaceMonoBlock`, `PrettySpaceNoEscapesMonoBlock`. [#39646](https://github.com/ClickHouse/ClickHouse/pull/39646) ([Kruglov Pavel](https://github.com/Avogar)).
 * Add new setting schema_inference_hints that allows to specify structure hints in schema inference for specific columns. Closes [#39569](https://github.com/ClickHouse/ClickHouse/issues/39569). [#40068](https://github.com/ClickHouse/ClickHouse/pull/40068) ([Kruglov Pavel](https://github.com/Avogar)).
 
+#### Experimental Feature
+* Support SQL standard DELETE FROM syntax on merge tree tables and lightweight delete implementation for merge tree families. [#37893](https://github.com/ClickHouse/ClickHouse/pull/37893) ([Jianmei Zhang](https://github.com/zhangjmruc)) ([Alexander Gololobov](https://github.com/davenger)). Note: this new feature does not make ClickHouse an HTAP DBMS.
 
 #### Performance Improvement
 * Improved memory usage during memory efficient merging of aggregation results. [#39429](https://github.com/ClickHouse/ClickHouse/pull/39429) ([Nikita Taranov](https://github.com/nickitat)).
