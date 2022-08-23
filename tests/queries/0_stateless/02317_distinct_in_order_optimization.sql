@@ -43,4 +43,34 @@ select distinct b,c from distinct_in_order order by c;
 select '-- distinct with non-key prefix and non-sorted column, order by non-sorted desc';
 select distinct b,c from distinct_in_order order by c desc;
 
+select '-- distinct with constants columns';
+-- { echoOn }
+select distinct 1 as x, 2 as y from distinct_in_order;
+select distinct 1 as x, 2 as y from distinct_in_order order by x;
+select distinct 1 as x, 2 as y from distinct_in_order order by x, y;
+select a, x from (select distinct a, 1 as x from distinct_in_order order by x) order by a;
+select distinct a, 1 as x, 2 as y from distinct_in_order order by a;
+select a, b, x, y from(select distinct a, b, 1 as x, 2 as y from distinct_in_order order by a) order by a, b;
+select distinct x, y from (select 1 as x, 2 as y from distinct_in_order order by x) order by y;
+select distinct a, b, x, y from (select a, b, 1 as x, 2 as y from distinct_in_order order by a) order by a, b;
+-- { echoOff }
+
 drop table if exists distinct_in_order sync;
+
+select '-- check that distinct in order returns the same result as ordinary distinct';
+drop table if exists distinct_cardinality_low sync;
+CREATE TABLE distinct_cardinality_low (low UInt64, medium UInt64, high UInt64) ENGINE MergeTree() ORDER BY (low, medium);
+INSERT INTO distinct_cardinality_low SELECT number % 1e1, number % 1e2, number % 1e3 FROM numbers_mt(1e4);
+
+drop table if exists distinct_in_order sync;
+drop table if exists ordinary_distinct sync;
+
+create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
+insert into distinct_in_order select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=1;
+create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
+insert into ordinary_distinct select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=0;
+select distinct * from distinct_in_order except select * from ordinary_distinct;
+
+drop table if exists distinct_in_order;
+drop table if exists ordinary_distinct;
+drop table if exists distinct_cardinality_low;

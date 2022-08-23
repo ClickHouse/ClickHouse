@@ -346,7 +346,7 @@ public:
     }
 
     /// Create a string inplace.
-    Field(const std::string_view & str) { create(str.data(), str.size()); } /// NOLINT
+    Field(std::string_view str) { create(str.data(), str.size()); } /// NOLINT
     Field(const String & str) { create(std::string_view{str}); } /// NOLINT
     Field(String && str) { create(std::move(str)); } /// NOLINT
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
@@ -403,7 +403,7 @@ public:
         return *this;
     }
 
-    Field & operator= (const std::string_view & str);
+    Field & operator= (std::string_view str);
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
     Field & operator= (String && str);
     Field & operator= (const char * str) { return *this = std::string_view{str}; }
@@ -631,7 +631,7 @@ public:
     }
 
     String dump() const;
-    static Field restoreFromDump(const std::string_view & dump_);
+    static Field restoreFromDump(std::string_view dump_);
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
@@ -929,7 +929,7 @@ Field::operator=(T && rhs)
     return *this;
 }
 
-inline Field & Field::operator=(const std::string_view & str)
+inline Field & Field::operator=(std::string_view str)
 {
     if (which != Types::String)
     {

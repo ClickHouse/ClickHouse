@@ -402,7 +402,7 @@ void MySQLDumpRowInputFormat::skipField()
 }
 
 MySQLDumpSchemaReader::MySQLDumpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(in_, format_settings_), format_settings(format_settings_), table_name(format_settings_.mysql_dump.table_name)
+    : IRowSchemaReader(in_, format_settings_), table_name(format_settings_.mysql_dump.table_name)
 {
 }
 
@@ -452,6 +452,9 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
     {
         return std::make_shared<MySQLDumpRowInputFormat>(buf, header, params, settings);
     });
+
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "MySQLDump", [](const FormatSettings & settings) { return "Table name: " + settings.mysql_dump.table_name; });
 }
 
 void registerMySQLSchemaReader(FormatFactory & factory)

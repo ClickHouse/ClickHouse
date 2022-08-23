@@ -228,7 +228,7 @@ namespace DB
         static constexpr auto name = "toModifiedJulianDayOrNull";
     };
 
-    void registerFunctionToModifiedJulianDay(FunctionFactory & factory)
+    REGISTER_FUNCTION(ToModifiedJulianDay)
     {
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>();
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>();

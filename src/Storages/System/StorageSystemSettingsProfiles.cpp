@@ -34,8 +34,11 @@ NamesAndTypesList StorageSystemSettingsProfiles::getNamesAndTypes()
 
 void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
+
     std::vector<UUID> ids = access_control.findAll<SettingsProfile>();
 
     size_t column_index = 0;

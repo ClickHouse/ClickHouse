@@ -56,6 +56,16 @@ public:
         return nested_func->getReturnType();
     }
 
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return nested_func->getNormalizedStateType();
+    }
+
     bool isVersioned() const override
     {
         return nested_func->isVersioned();

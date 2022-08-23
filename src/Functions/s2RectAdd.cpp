@@ -135,7 +135,7 @@ public:
 
 }
 
-void registerFunctionS2RectAdd(FunctionFactory & factory)
+REGISTER_FUNCTION(S2RectAdd)
 {
     factory.registerFunction<FunctionS2RectAdd>();
 }

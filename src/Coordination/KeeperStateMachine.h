@@ -6,6 +6,7 @@
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/logger_useful.h>
+#include <Coordination/KeeperContext.h>
 
 
 namespace DB
@@ -26,8 +27,8 @@ public:
         SnapshotsQueue & snapshots_queue_,
         const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
+        const KeeperContextPtr & keeper_context_,
         const std::string & superdigest_ = "",
-        bool digest_enabled_ = true,
         CommitCallback commit_callback_ = [](const KeeperStorage::RequestForSession &, uint64_t, uint64_t){});
 
     /// Read state from the latest snapshot
@@ -45,6 +46,10 @@ public:
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
     void rollback(uint64_t log_idx, nuraft::buffer & data) override;
+
+    // allow_missing - whether the transaction we want to rollback can be missing from storage
+    // (can happen in case of exception during preprocessing)
+    void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
@@ -143,9 +148,9 @@ private:
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
-    const bool digest_enabled;
-
     const CommitCallback commit_callback;
+
+    KeeperContextPtr keeper_context;
 };
 
 }

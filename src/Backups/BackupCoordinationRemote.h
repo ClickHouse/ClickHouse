@@ -3,7 +3,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
-#include <Backups/BackupCoordinationStatusSync.h>
+#include <Backups/BackupCoordinationStageSync.h>
 
 
 namespace DB
@@ -13,13 +13,13 @@ namespace DB
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
+    BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_);
     ~BackupCoordinationRemote() override;
 
-    void setStatus(const String & current_host, const String & new_status, const String & message) override;
-    void setErrorStatus(const String & current_host, const Exception & exception) override;
-    Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) override;
-    Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) override;
+    void setStage(const String & current_host, const String & new_stage, const String & message) override;
+    void setError(const String & current_host, const Exception & exception) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     void addReplicatedPartNames(
         const String & table_shared_id,
@@ -56,9 +56,9 @@ public:
     String getNextArchiveSuffix() override;
     Strings getAllArchiveSuffixes() const override;
 
-    void drop() override;
-
 private:
+    zkutil::ZooKeeperPtr getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
     void createRootNodes();
     void removeAllNodes();
     void prepareReplicatedTables() const;
@@ -66,10 +66,12 @@ private:
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
+    const bool remove_zk_nodes_in_destructor;
 
-    BackupCoordinationStatusSync status_sync;
+    std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::mutex mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper;
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
 };

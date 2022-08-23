@@ -8,9 +8,14 @@
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 
 #include <fstream>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskMemory.h>
@@ -39,6 +44,7 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_STAT;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -68,6 +74,8 @@ static void loadDiskLocalConfig(const String & name,
             throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         if (path.back() != '/')
             throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        if (path == context->getPath())
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path ('{}') cannot be equal to <path>. Use <default> disk instead.", path);
     }
 
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
@@ -593,6 +601,26 @@ catch (...)
     return false;
 }
 
+DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
+{
+    auto object_storage = std::make_shared<LocalObjectStorage>();
+    auto metadata_storage = std::make_shared<FakeMetadataStorageFromDisk>(
+        /* metadata_storage */std::static_pointer_cast<DiskLocal>(shared_from_this()),
+        object_storage,
+        /* object_storage_root_path */getPath());
+
+    return std::make_shared<DiskObjectStorage>(
+        getName(),
+        disk_path,
+        "Local",
+        metadata_storage,
+        object_storage,
+        DiskType::Local,
+        false,
+        /* threadpool_size */16
+    );
+}
+
 bool DiskLocal::setup()
 {
     try
@@ -667,6 +695,23 @@ bool DiskLocal::setup()
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
     return true;
+}
+
+struct stat DiskLocal::stat(const String & path) const
+{
+    struct stat st;
+    auto full_path = fs::path(disk_path) / path;
+    if (::stat(full_path.string().c_str(), &st) == 0)
+        return st;
+    DB::throwFromErrnoWithPath("Cannot stat file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+}
+
+void DiskLocal::chmod(const String & path, mode_t mode)
+{
+    auto full_path = fs::path(disk_path) / path;
+    if (::chmod(full_path.string().c_str(), mode) == 0)
+        return;
+    DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 void registerDiskLocal(DiskFactory & factory)

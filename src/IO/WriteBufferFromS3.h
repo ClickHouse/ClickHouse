@@ -7,18 +7,17 @@
 #include <memory>
 #include <vector>
 #include <list>
-#include <Common/logger_useful.h>
+
 #include <base/types.h>
-
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <Common/FileCache_fwd.h>
-#include <Common/FileSegment.h>
-
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
+
 
 namespace Aws::S3
 {
@@ -55,7 +54,7 @@ public:
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ScheduleFunc schedule_ = {},
-        FileCachePtr cache_ = nullptr);
+        const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;
 
@@ -85,8 +84,6 @@ private:
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
-
-    bool cacheEnabled() const;
 
     String bucket;
     String key;
@@ -119,10 +116,7 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 
-    FileCachePtr cache;
-    size_t current_download_offset = 0;
-    std::optional<FileSegmentsHolder> file_segments_holder;
-    static void finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> &);
+    WriteSettings write_settings;
 };
 
 }

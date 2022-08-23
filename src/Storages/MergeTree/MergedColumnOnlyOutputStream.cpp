@@ -39,7 +39,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        std::move(writer_settings),
+        writer_settings,
         index_granularity);
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
@@ -87,8 +87,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
             all_checksums.files.erase(removed_file);
     }
 
-    new_part->setColumns(columns);
-    new_part->setSerializationInfos(serialization_infos);
+    new_part->setColumns(columns, serialization_infos);
 
     return checksums;
 }

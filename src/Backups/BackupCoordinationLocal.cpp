@@ -13,20 +13,20 @@ using FileInfo = IBackupCoordination::FileInfo;
 BackupCoordinationLocal::BackupCoordinationLocal() = default;
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStatus(const String &, const String &, const String &)
+void BackupCoordinationLocal::setStage(const String &, const String &, const String &)
 {
 }
 
-void BackupCoordinationLocal::setErrorStatus(const String &, const Exception &)
+void BackupCoordinationLocal::setError(const String &, const Exception &)
 {
 }
 
-Strings BackupCoordinationLocal::waitStatus(const Strings &, const String &)
+Strings BackupCoordinationLocal::waitForStage(const Strings &, const String &)
 {
     return {};
 }
 
-Strings BackupCoordinationLocal::waitStatusFor(const Strings &, const String &, UInt64)
+Strings BackupCoordinationLocal::waitForStage(const Strings &, const String &, std::chrono::milliseconds)
 {
     return {};
 }

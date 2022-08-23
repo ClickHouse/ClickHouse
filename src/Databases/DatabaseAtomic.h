@@ -36,6 +36,7 @@ public:
             bool dictionary) override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & name) override;
@@ -47,11 +48,11 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
 
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
+    void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;

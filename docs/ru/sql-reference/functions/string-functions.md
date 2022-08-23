@@ -490,22 +490,21 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
 
 Возвращает сконвертированную из кодировки from в кодировку to строку s.
 
-## Base58Encode(plaintext[, alphabet_name]), Base58Decode(plaintext[, alphabet_name]) {#base58}
+## Base58Encode(plaintext), Base58Decode(encoded_text) {#base58}
 
-Принимает на вход строку или колонку строк и кодирует/раскодирует их с помощью схемы кодирования [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) с использованием указанного алфавита.
+Принимает на вход строку или колонку строк и кодирует/раскодирует их с помощью схемы кодирования [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) с использованием стандартного алфавита Bitcoin.
 
 **Синтаксис**
 
 ```sql
-base58Encode(decoded[, alphabet_name])
-base58Decode(encoded[, alphabet_name])
+encodeBase58(decoded)
+decodeBase58(encoded)
 ```
 
 **Аргументы**
 
 - `decoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md).
 - `encoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md). Если входная строка не является корректным кодом для какой-либо другой строки, возникнет исключение `1001`.
-- `alphabet_name` — Строковая константа. Указывает алфавит, для которого необходимо получить код. Может принимать одно из следующих значений: `gmp`, `bitcoin`, `ripple`, `flickr`. По умолчанию: `bitcoin`.
 
 **Возвращаемое значение**
 
@@ -518,16 +517,16 @@ base58Decode(encoded[, alphabet_name])
 Запрос:
 
 ``` sql
-SELECT base58Encode('encode', 'flickr');
-SELECT base58Decode('izCFiDUY', 'ripple');
+SELECT encodeBase58('encode');
+SELECT decodeBase58('izCFiDUY');
 ```
 
 Результат:
 ```text
-┌─base58Encode('encode', 'flickr')─┐
+┌─encodeBase58('encode', 'flickr')─┐
 │ SvyTHb1D                         │
 └──────────────────────────────────┘
-┌─base58Decode('izCFiDUY', 'ripple')─┐
+┌─decodeBase58('izCFiDUY', 'ripple')─┐
 │ decode                             │
 └────────────────────────────────────┘
 ```

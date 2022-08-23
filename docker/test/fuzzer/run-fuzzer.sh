@@ -69,6 +69,8 @@ function download
     wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
 
     chmod +x clickhouse
+    # clickhouse may be compressed - run once to decompress
+    ./clickhouse ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
 

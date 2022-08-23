@@ -19,7 +19,7 @@ namespace
     using FunctionMax2 = FunctionMathBinaryFloat64<BinaryFunctionVectorized<Max2Name, max>>;
 }
 
-void registerFunctionMax2(FunctionFactory & factory)
+REGISTER_FUNCTION(Max2)
 {
     factory.registerFunction<FunctionMax2>(FunctionFactory::CaseInsensitive);
 }

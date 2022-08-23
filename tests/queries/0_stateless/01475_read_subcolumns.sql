@@ -1,4 +1,4 @@
--- Tags: no-s3-storage
+-- Tags: no-s3-storage, no-random-settings
 
 SET use_uncompressed_cache = 0;
 

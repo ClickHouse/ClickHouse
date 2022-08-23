@@ -225,9 +225,9 @@ void ORCBlockOutputFormat::writeStrings(
         }
 
         string_orc_column.notNull[i] = 1;
-        const StringRef & string = string_column.getDataAt(i);
-        string_orc_column.data[i] = const_cast<char *>(string.data);
-        string_orc_column.length[i] = string.size;
+        const std::string_view & string = string_column.getDataAt(i).toView();
+        string_orc_column.data[i] = const_cast<char *>(string.data());
+        string_orc_column.length[i] = string.size();
     }
     string_orc_column.numElements = string_column.size();
 }
