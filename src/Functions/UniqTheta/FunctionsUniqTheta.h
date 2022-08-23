@@ -86,12 +86,24 @@ namespace DB
                         "Second argument for function " + getName() + " must be a uniqTheta but it has type " + arguments[1]->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            //todo:check
-            if (sketch_type0->getArgumentsDataTypes()[0]->getTypeId() != sketch_type1->getArgumentsDataTypes()[0]->getTypeId())
+            const DataTypes & arg_data_types0 = sketch_type0->getArgumentsDataTypes();
+            const DataTypes & arg_data_types1 = sketch_type1->getArgumentsDataTypes();
+            if (arg_data_types0.size() != arg_data_types1.size())
                 throw Exception(
-                        "The nested type in uniqThetas must be the same, but one is " + sketch_type0->getArgumentsDataTypes()[0]->getName()
-                        + ", and the other is " + sketch_type1->getArgumentsDataTypes()[0]->getName(),
+                        "The nested type in uniqThetas must be the same length, but one is " + std::to_string(arg_data_types0.size())
+                        + ", and the other is " + std::to_string(arg_data_types1.size()),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            size_t types_size = arg_data_types0.size();
+            for (size_t i = 0; i < types_size; ++i)
+            {
+                if (!arg_data_types0[i]->equals(*arg_data_types1[i]))
+                    throw Exception(
+                            "The " + std::to_string(i) + "th nested type in uniqThetas must be the same, but one is " + arg_data_types0[i]->getName()
+                            + ", and the other is " + arg_data_types1[i]->getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+
 
             return arguments[0];
         }
