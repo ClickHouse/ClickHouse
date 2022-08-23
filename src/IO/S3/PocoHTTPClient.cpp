@@ -26,6 +26,8 @@
 
 #include <boost/algorithm/string.hpp>
 
+static const int SUCCESS_RESPONSE_MIN = 200;
+static const int SUCCESS_RESPONSE_MAX = 299;
 
 namespace ProfileEvents
 {
@@ -129,7 +131,7 @@ namespace
     /// No comments:
     /// 1) https://aws.amazon.com/premiumsupport/knowledge-center/s3-resolve-200-internalerror/
     /// 2) https://github.com/aws/aws-sdk-cpp/issues/658
-    bool checkRequestCanReturn200AndErrorInBody(Aws::Http::HttpRequest & request)
+    bool checkRequestCanReturn2xxAndErrorInBody(Aws::Http::HttpRequest & request)
     {
         auto query_params = request.GetQueryStringParameters();
         if (request.HasHeader("z-amz-copy-source"))
@@ -351,7 +353,8 @@ void PocoHTTPClient::makeRequestInternal(
                     response->AddHeader(header_name, header_value);
             }
 
-            if (status_code == 200 && checkRequestCanReturn200AndErrorInBody(request))
+            /// Request is successful but for some special requests we can have actual error message in body
+            if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
                 std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
                                std::istreambuf_iterator<char>());
@@ -363,11 +366,11 @@ void PocoHTTPClient::makeRequestInternal(
                     LOG_WARNING(log, "Response for request contain <Error> tag in body, settings internal server error (500 code)");
                     response->SetResponseCode(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
                     status_code = static_cast<int32_t>(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
-                }
 
-                ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                if (status_code >= 500 && error_report)
-                    error_report(request_configuration);
+                    ProfileEvents::increment(select_metric(S3MetricType::Errors));
+                    if (error_report)
+                        error_report(request_configuration);
+                }
             }
             else
             {
@@ -382,10 +385,9 @@ void PocoHTTPClient::makeRequestInternal(
                     if (status_code >= 500 && error_report)
                         error_report(request_configuration);
                 }
-
-                response->SetResponseBody(response_body_stream, session);
-
             }
+
+            response->SetResponseBody(response_body_stream, session);
             return;
         }
         throw Exception(String("Too many redirects while trying to access ") + request.GetUri().GetURIString(),
