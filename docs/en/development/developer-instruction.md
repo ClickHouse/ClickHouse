@@ -267,6 +267,12 @@ The system will prepare ClickHouse binary builds for your pull request individua
 
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
 
+## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
+
+You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
+
+Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
+
 ## Faster builds for development: Split build configuration {#split-build}
 
 ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries, allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
@@ -277,6 +283,11 @@ ClickHouse is normally statically linked into a single static `clickhouse` binar
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
 -DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
+```
+
+Compressing the binary at the end of the build may take a while, disable the self-extraction feature via
+```
+-DENABLE_CLICKHOUSE_SELF_EXTRACTING=0
 ```
 
 In case of problems with any of the development options, you are on your own!

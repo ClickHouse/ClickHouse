@@ -1,7 +1,7 @@
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -107,6 +107,10 @@ void LocalObjectStorage::listPrefix(const std::string & path, RelativePathsWithS
 
 void LocalObjectStorage::removeObject(const StoredObject & object)
 {
+    /// For local object storage files are actually removed when "metadata" is removed.
+    if (!exists(object))
+        return;
+
     if (0 != unlink(object.absolute_path.data()))
         throwFromErrnoWithPath("Cannot unlink file " + object.absolute_path, object.absolute_path, ErrorCodes::CANNOT_UNLINK);
 }

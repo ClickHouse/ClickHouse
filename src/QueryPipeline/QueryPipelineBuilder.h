@@ -20,8 +20,7 @@ class QueryPlan;
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
-struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+class SubqueryForSet;
 
 struct SizeLimits;
 
@@ -93,6 +92,11 @@ public:
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
+
+    /// Concat some ports to have no more then size outputs.
+    /// This method is needed for Merge table engine in case of reading from many tables.
+    /// It prevents opening too many files at the same time.
+    void narrow(size_t size);
 
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.

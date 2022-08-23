@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     )
 
     ch_helper = ClickHouseHelper()
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     report_url = upload_results(
         s3_helper,
         pr_info.number,

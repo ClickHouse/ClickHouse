@@ -78,7 +78,7 @@ private:
     constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t alpha_map_elements_per_counter = 6;
-        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * alpha_map_elements_per_counter));
+        return 1ULL << (sizeof(uint64_t) * 8 - std::countl_zero(x * alpha_map_elements_per_counter));
     }
 
 public:

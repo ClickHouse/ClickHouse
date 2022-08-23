@@ -109,6 +109,7 @@ public:
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
+    void chmod(const String & path, mode_t mode) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 };
