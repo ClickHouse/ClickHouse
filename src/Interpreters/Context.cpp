@@ -93,6 +93,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <filesystem>
+#include <re2/re2.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -708,7 +709,10 @@ void Context::setUserDefinedPath(const String & path)
 void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
-    shared->addWarningMessage(msg);
+    auto suppress_re = getConfigRef().getString("logger.warning_supress_regex", "");
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)

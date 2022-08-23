@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <console>true</console>
+        <warning_supress_regex>It will work slowly\.$</warning_supress_regex>
+    </logger>
+    <profiles>
+        <default></default>
+    </profiles>
+    <tcp_port>9000</tcp_port>
+    <http_port>8123</http_port>
+
+    <path>.</path>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+    <quotas>
+        <default></default>
+    </quotas>
+</clickhouse>
