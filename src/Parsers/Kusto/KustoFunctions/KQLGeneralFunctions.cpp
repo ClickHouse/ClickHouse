@@ -40,7 +40,7 @@ bool Bin::convertImpl(String & out,IParser::Pos & pos)
 
     if (origal_expr == "datetime" || origal_expr == "date")
     {
-        out = std::format("parseDateTime64BestEffortOrNull(toInt64({0} / {1} ) * {1}, 9, 'UTC')", t, bin_size);
+        out = std::format("toDateTime64(toInt64({0} / {1} ) * {1}, 9, 'UTC')", t, bin_size);
     }
     else if (origal_expr == "timespan" || origal_expr =="time" || ParserKQLDateTypeTimespan().parseConstKQLTimespan(origal_expr))
     {
@@ -78,7 +78,7 @@ bool BinAt::convertImpl(String & out,IParser::Pos & pos)
 
     if (origal_expr == "datetime" || origal_expr == "date")
     {
-        out = std::format("parseDateTime64BestEffortOrNull({} + toInt64(({} - {}) / {} + {}) * {}, 9, 'UTC')", t1, t2, t1, bin_size, dir, bin_size);
+        out = std::format("toDateTime64({} + toInt64(({} - {}) / {} + {}) * {}, 9, 'UTC')", t1, t2, t1, bin_size, dir, bin_size);
     }
     else if (origal_expr == "timespan" || origal_expr =="time" || ParserKQLDateTypeTimespan().parseConstKQLTimespan(origal_expr))
     {
