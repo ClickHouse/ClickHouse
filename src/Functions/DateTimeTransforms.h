@@ -133,7 +133,7 @@ struct ToMondayImpl
 {
     static constexpr auto name = "toMonday";
 
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
         return time_zone.toFirstDayNumOfWeek(t);
@@ -143,7 +143,7 @@ struct ToMondayImpl
         //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
         return time_zone.toFirstDayNumOfWeek(t);
     }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
     }
