@@ -434,9 +434,10 @@ struct ToDate32Transform32Or64Signed
         static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
         if (from < daynum_min_offset)
             return daynum_min_offset;
-        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+
+        return (time_zone.toDayNum(from) < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? from
-            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+            : time_zone.toDayNum(std::min(time_t(from), time_t(DATE_LUT_MAX_EXTEND_DAY_NUM)));
     }
 };
 

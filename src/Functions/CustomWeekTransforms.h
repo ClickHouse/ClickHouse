@@ -81,7 +81,12 @@ struct ToStartOfWeekImpl
         if (d < 0)
             return 0;
 
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)), week_mode);
+        auto res = time_zone.toFirstDayNumOfWeek(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)), week_mode);
+
+        if (res < 0)
+            return 0;
+        else
+            return res;
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {

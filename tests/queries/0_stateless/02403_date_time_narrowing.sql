@@ -1,4 +1,4 @@
--- check conversion of overflown numbers to date/time --
+-- check conversion of numbers to date/time --
 SELECT toDate(toInt32(toDate32('1930-01-01'))),
        toDate(toInt32(toDate32('2151-01-01'))),
        toDate(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3))),
@@ -23,8 +23,7 @@ SELECT toDateTime(toDate('2141-01-01', 'UTC'), 'UTC');
 
 -- test DateTimeTransforms --
 SELECT 'toStartOfDay';
-SELECT toStartOfDay(toDate('1930-01-01', 'UTC'), 'UTC'),
-       toStartOfDay(toDate('2141-01-01', 'UTC'), 'UTC'),
+SELECT toStartOfDay(toDate('2141-01-01', 'UTC'), 'UTC'),
        toStartOfDay(toDate32('1930-01-01', 'UTC'), 'UTC'),
        toStartOfDay(toDate32('2141-01-01', 'UTC'), 'UTC'),
        toStartOfDay(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'), 'UTC'),
