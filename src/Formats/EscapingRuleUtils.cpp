@@ -804,11 +804,12 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
     String result;
     /// First, settings that are common for all text formats:
     result = fmt::format(
-        "schema_inference_hints={}, try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}",
+        "schema_inference_hints={}, try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, max_rows_to_read_for_schema_inference={}",
         settings.schema_inference_hints,
         settings.try_infer_integers,
         settings.try_infer_dates,
-        settings.try_infer_datetimes);
+        settings.try_infer_datetimes,
+        settings.max_rows_to_read_for_schema_inference);
 
     /// Second, format-specific settings:
     switch (escaping_rule)
