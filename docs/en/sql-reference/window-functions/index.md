@@ -14,7 +14,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `WINDOW` clause (`select ... from table window w as (partition by id)`)            | supported                                                                                                                                                                                   |
 | `ROWS` frame                                                                       | supported                                                                                                                                                                                   |
 | `RANGE` frame                                                                      | supported, the default                                                                                                                                                                      |
-| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | not supported, specify the number of seconds instead (range works with any numeric types).                                                                                                                                 |
+| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | not supported, specify the number of seconds instead (`RANGE` works with any numeric type).                                                                                                                                 |
 | `GROUPS` frame                                                                     | not supported                                                                                                                                                                               |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | all aggregate functions are supported                                                                                                                                                       |
 | `rank()`, `dense_rank()`, `row_number()`                                           | supported                                                                                                                                                                                   |
@@ -537,7 +537,7 @@ ORDER BY
 
 ### Moving / Sliding Average (per 10 days)
 
-Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)`, we form a frame with a size of 10 units, and because of `toDate(ts)` the unit is a day.
+Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)`, we form a frame with the size of 10 units, and because of `toDate(ts)` the unit is a day.
 
 ```sql
 CREATE TABLE sensors
