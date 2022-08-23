@@ -13,6 +13,8 @@ def delete(_bucket):
 
 @route("/<_bucket>/<_path:path>", ["GET", "POST", "PUT", "DELETE"])
 def server(_bucket, _path):
+    # CompleteMultipartUpload request
+    # We always returning 200 + error in body to simulate: https://aws.amazon.com/premiumsupport/knowledge-center/s3-resolve-200-internalerror/
     if request.query_string.startswith("uploadId="):
         response.status = 200
         response.content_type = "text/xml"
