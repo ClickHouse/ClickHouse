@@ -348,7 +348,7 @@ bool ParserKQLMakeSeries :: parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     makeSeries(kql_make_series, pos.max_depth);
-
+    
     Tokens token_subquery(kql_make_series.sub_query.c_str(), kql_make_series.sub_query.c_str() + kql_make_series.sub_query.size());
     IParser::Pos pos_subquery(token_subquery, pos.max_depth);
 

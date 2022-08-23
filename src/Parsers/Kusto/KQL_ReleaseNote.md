@@ -65,6 +65,24 @@
 - [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)
    `print unixtime_nanoseconds_todatetime(1546300800000000000)`
 
+- [datetime_part] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-partfunction)
+   `print datetime_part('day', datetime(2017-10-30 01:02:03.7654321))`
+
+- [datetime_add] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-addfunction)
+   `print datetime_add('day',1,datetime(2017-10-30 01:02:03.7654321))`
+
+-[format_timespan] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-timespanfunction)
+   `print format_timespan(time(1d), 'd-[hh:mm:ss]')`
+   `print format_timespan(time('12:30:55.123'), 'ddddd-[hh:mm:ss.ffff]')`
+
+-[format_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-datetimefunction)
+   `print format_datetime(todatetime('2009-06-15T13:45:30.6175425'), 'yy-M-dd [H:mm:ss.fff]')`
+   `print format_datetime(datetime(2015-12-14 02:03:04.12345), 'y-M-d h:m:s tt')`
+
+-[todatetime] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/todatetimefunction)
+   `print  todatetime('2014-05-25T08:20:03.123456Z')`
+   `print  todatetime('2014-05-25 20:03.123')`
+   
 # August 15, 2022
    **double quote support**  
    ``print res = strcat("double ","quote")``  
