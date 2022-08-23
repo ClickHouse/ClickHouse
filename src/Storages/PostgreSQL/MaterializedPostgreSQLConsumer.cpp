@@ -54,7 +54,6 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
     for (const auto & [table_name, storage_info] : storages_info_)
         storages.emplace(table_name, storage_info);
-    LOG_TRACE(log, "Consumer created");
 }
 
 
