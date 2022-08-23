@@ -87,14 +87,14 @@ public:
         return children[projection_child_index];
     }
 
-    const QueryTreeNodePtr & getFrom() const
+    const QueryTreeNodePtr & getJoinTree() const
     {
-        return children[from_child_index];
+        return children[join_tree_child_index];
     }
 
-    QueryTreeNodePtr & getFrom()
+    QueryTreeNodePtr & getJoinTree()
     {
-        return children[from_child_index];
+        return children[join_tree_child_index];
     }
 
     const QueryTreeNodePtr & getPrewhere() const
@@ -150,7 +150,7 @@ private:
 
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;
-    static constexpr size_t from_child_index = 2;
+    static constexpr size_t join_tree_child_index = 2;
     static constexpr size_t prewhere_child_index = 3;
     static constexpr size_t where_child_index = 4;
     static constexpr size_t group_by_child_index = 5;
