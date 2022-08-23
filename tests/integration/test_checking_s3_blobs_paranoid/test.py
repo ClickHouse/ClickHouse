@@ -8,6 +8,7 @@ import time
 from helpers.cluster import ClickHouseCluster
 import pytest
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
