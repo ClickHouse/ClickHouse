@@ -3,9 +3,9 @@
 namespace DB
 {
 
-bool DataSourceDescription::operator==(const DataSourceDescription & o) const
+bool DataSourceDescription::operator==(const DataSourceDescription & other) const
 {
-    return std::tie(type, description, is_encrypted) == std::tie(o.type, o.description, o.is_encrypted);
+    return std::tie(type, description, is_encrypted) == std::tie(other.type, other.description, other.is_encrypted);
 }
 
 }
