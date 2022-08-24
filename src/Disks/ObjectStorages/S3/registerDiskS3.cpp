@@ -15,9 +15,6 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
-#include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
-#include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
