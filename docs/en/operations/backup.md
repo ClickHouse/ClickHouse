@@ -19,6 +19,27 @@ Keep in mind that if you backed something up and never tried to restore it, chan
 
 Often data that is ingested into ClickHouse is delivered through some sort of persistent queue, such as [Apache Kafka](https://kafka.apache.org). In this case it is possible to configure an additional set of subscribers that will read the same data stream while it is being written to ClickHouse and store it in cold storage somewhere. Most companies already have some default recommended cold storage, which could be an object store or a distributed filesystem like [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html).
 
+## Configure a backup destination
+
+In the examples below you will see the backup destination specified like `Disk('backups', '1.zip')`.  To prepare the destination add a file to `/etc/clickhouse-server/config.d/backup_disk.xml`.  For example:
+
+```xml
+<clickhouse>                                                                                    
+    <storage_configuration>                                                                     
+        <disks>                                                                                 
+            <backups>                                                                           
+                <type>local</type>                                                              
+                <path>/backups/</path>                                                          
+            </backups>                                                                          
+        </disks>                                                                                
+    </storage_configuration>                                                                    
+    <backups>                                                                                   
+        <allowed_disk>backups</allowed_disk>                                                    
+        <allowed_path>/backups/</allowed_path>                                                  
+    </backups>                                                                                  
+</clickhouse>
+```
+
 ## BACKUP DATABASE
 
 Backup the `default` database and several of the `system` tables asynchronously:
@@ -125,14 +146,12 @@ RESTORE TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, 
 RESTORE TABLE test.table2 FROM {incremental_backup_name}
 ```
 
-```sql
-RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip')
-```
-
+Restore and rename while specifying a username:
 ```sql
 RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip'), user="u1"
 ```
 
+Restore and rename from an incremental backup:
 ```sql
 RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
 ```
