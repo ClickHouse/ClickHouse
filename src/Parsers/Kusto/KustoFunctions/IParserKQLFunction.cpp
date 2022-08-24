@@ -137,7 +137,7 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
             break;
     }
     for (auto token : tokens)
-        converted_arg = converted_arg + token + " ";
+        converted_arg = converted_arg.empty() ? token : converted_arg + " " + token ;
 
     return converted_arg;
 }
