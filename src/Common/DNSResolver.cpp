@@ -86,13 +86,10 @@ static void splitHostAndPort(const std::string & host_and_port, std::string & ou
 
 static DNSResolver::IPAddresses hostByName(const std::string & host)
 {
-    /// Family: AF_UNSPEC
-    /// AI_ALL is required for checking if client is allowed to connect from an address
-    auto flags = Poco::Net::DNS::DNS_HINT_AI_V4MAPPED | Poco::Net::DNS::DNS_HINT_AI_ALL;
     /// Do not resolve IPv6 (or IPv4) if no local IPv6 (or IPv4) addresses are configured.
     /// It should not affect client address checking, since client cannot connect from IPv6 address
     /// if server has no IPv6 addresses.
-    flags |= Poco::Net::DNS::DNS_HINT_AI_ADDRCONFIG;
+    auto flags = Poco::Net::DNS::DNS_HINT_AI_ADDRCONFIG;
 
     DNSResolver::IPAddresses addresses;
 
