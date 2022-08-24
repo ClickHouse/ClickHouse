@@ -119,23 +119,74 @@ RESTORE DATABASE test2 AS test3 FROM Disk('backups', '1.zip')
 Restore specific tables:
 ```sql
 RESTORE TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM Disk('backups', '1.zip')
+```
 
+```sql
 RESTORE TABLE test.table2 FROM {incremental_backup_name}
+```
+
+```sql
 RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip')
-RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip')
+```
+
+```sql
 RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip'), user="u1"
+```
+
+```sql
 RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip')
-RESTORE TABLE test.table FROM Disk('backups', '1.zip')
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip') ASYNC
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS allow_non_empty_tables=true
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS id='first'
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS id='second' ASYNC
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS password='qwerty'
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS structure_only=true
+```
+
+```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip'), user="u1"
+```
+
+```sql
 RESTORE TEMPORARY TABLE temp_tbl FROM Disk('backups', '1.zip'),
+```
+
+## Get backup status
+
+```sql
 SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'
+```
+
+```sql
 SELECT status FROM system.backups WHERE id='{id2}'
+```
+
+```sql
 SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'
+```
+
+```sql
 SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'
+```
