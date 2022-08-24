@@ -138,7 +138,7 @@ private:
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
 
-    bool commited;
+    bool committed = false;
 
     std::shared_ptr<postgres::Connection> connection;
 
