@@ -279,7 +279,7 @@ void StorageEmbeddedRocksDB::initDB()
     if (ttl > 0)
     {
         rocksdb::DBWithTTL * db;
-        status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl);
+        status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",

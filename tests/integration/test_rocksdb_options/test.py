@@ -42,6 +42,42 @@ def test_valid_options(start_cluster):
     DROP TABLE test;
     """
     )
+    node.query(
+        """
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(0, '/var/lib/clickhouse/store/test_rocksdb_read_only') PRIMARY KEY(key);
+    DROP TABLE test;
+    """
+    )
+    node.query(
+        """
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(10, '/var/lib/clickhouse/store/test_rocksdb_read_only', 1) PRIMARY KEY(key);
+    DROP TABLE test;
+    """
+    )
+    node.query(
+        """
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(0, '/var/lib/clickhouse/store/test_rocksdb_read_only') PRIMARY KEY(key);
+    INSERT INTO test (key, value) VALUES (0, 'a');
+    """
+    )
+    node.stop_clickhouse()
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -r /var/lib/clickhouse/store/test_rocksdb_read_only",
+        ]
+    )
+    node.start_clickhouse()
+    result = node.query(
+        """SELECT * FROM test;
+    """
+    )
+    assert result.strip() == "0\ta"
+    result = node.query(
+        """DROP TABLE test;
+    """
+    )
 
 
 def test_invalid_options(start_cluster):
