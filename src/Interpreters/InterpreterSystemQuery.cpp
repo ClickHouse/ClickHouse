@@ -45,6 +45,10 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageFile.h>
+#include <Storages/StorageS3.h>
+#include <Storages/StorageURL.h>
+#include <Storages/HDFS/StorageHDFS.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -326,6 +330,29 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
+        case Type::DROP_SCHEMA_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
+            std::unordered_set<String> caches_to_drop;
+            if (query.schema_cache_storage.empty())
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
+            else
+                caches_to_drop = {query.schema_cache_storage};
+
+            if (caches_to_drop.contains("FILE"))
+                StorageFile::getSchemaCache(getContext()).clear();
+#if USE_AWS_S3
+            if (caches_to_drop.contains("S3"))
+                StorageS3::getSchemaCache(getContext()).clear();
+#endif
+#if USE_HDFS
+            if (caches_to_drop.contains("HDFS"))
+                StorageHDFS::getSchemaCache(getContext()).clear();
+#endif
+            if (caches_to_drop.contains("URL"))
+                StorageURL::getSchemaCache(getContext()).clear();
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
@@ -546,7 +573,9 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
+    UUID uuid = table->getStorageID().uuid;
     table.reset();
+    database->waitDetachedTableNotInUse(uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -833,6 +862,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::DROP_SCHEMA_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;

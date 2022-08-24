@@ -418,6 +418,7 @@ else
                -e "TABLE_IS_READ_ONLY" \
                -e "Code: 1000, e.code() = 111, Connection refused" \
                -e "UNFINISHED" \
+               -e "NETLINK_ERROR" \
                -e "Renaming unexpected part" \
                -e "PART_IS_TEMPORARILY_LOCKED" \
                -e "and a merge is impossible: we didn't find" \

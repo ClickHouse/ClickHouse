@@ -349,7 +349,13 @@
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely") \
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")                                                                                                                                                                                                 \
+    \
+    M(SchemaInferenceCacheHits, "Number of times a schema from cache was used for schema inference") \
+    M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheEvictions, "Number of times a schema from cache was evicted due to overflow") \
+    M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data") \
+    \
     M(KeeperPacketsSent, "Packets sent by keeper server") \
     M(KeeperPacketsReceived, "Packets received by keeper server") \
     M(KeeperRequestTotal, "Total requests number on keeper server") \
