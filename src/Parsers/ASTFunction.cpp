@@ -144,7 +144,7 @@ IAST::Hash ASTFunction::getTreeHashWithoutAlias() const
     SipHash hash_state;
     hash_state.update(name.size());
     hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state); // NOLINT: This uses the grandparent method and not ASTWithAlias on purpose
 
     for (const auto & child : children)
         child->updateTreeHash(hash_state);
