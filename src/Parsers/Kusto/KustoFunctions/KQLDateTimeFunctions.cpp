@@ -65,11 +65,12 @@ bool DatetimeAdd::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String period = getConvertedArgument(fn_name, pos);
     //remove quotes from period.
+    trim(period);
     if ( period.front() == '\"' || period.front() == '\'' )
     {
         //period.remove
         period.erase( 0, 1 ); // erase the first quote
-        period.erase( period.size() - 2 ); // erase the last quote(Since token includes trailing space alwayas as per implememtation) 
+        period.erase( period.size() - 1 ); // erase the last quote
     }
     ++pos;
     const String offset = getConvertedArgument(fn_name, pos);
@@ -90,12 +91,12 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     String part = Poco::toUpper(getConvertedArgument(fn_name, pos));
-    
+    trim(part);
     if (part.front() == '\"' || part.front() == '\'' )
     {
         //period.remove
         part.erase( 0, 1 ); // erase the first quote
-        part.erase( part.size() - 2 ); // erase the last quuote
+        part.erase( part.size() - 1); // erase the last quote
     }
     String date;
     if (pos->type == TokenType::Comma)
@@ -273,12 +274,13 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
     const auto datetime = getConvertedArgument(fn_name, pos);
     ++pos;
     auto format = getConvertedArgument(fn_name, pos);
+    trim(format);
 
     //remove quotes and end space from format argument. 
     if (format.front() == '\"' || format.front() == '\'' )
     {
         format.erase( 0, 1 ); // erase the first quote
-        format.erase( format.size() - 2 ); // erase the last quuote(Since token includes trailing space alwayas as per implememtation) 
+        format.erase( format.size() - 1 ); // erase the last quote
     }
 
     std::vector<String> res;    
@@ -355,11 +357,12 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     auto format = getConvertedArgument(fn_name, pos);
     size_t decimal=0;
+    trim(format);
     //remove quotes and end space from format argument. 
     if (format.front() == '\"' || format.front() == '\'' )
     {
         format.erase( 0, 1 ); // erase the first quote
-        format.erase( format.size() - 2 ); // erase the last quuote(Since token includes trailing space alwayas as per implememtation) 
+        format.erase( format.size() - 1 ); // erase the last quote
     }   
     std::vector<String> res;
     getTokens(format, res);
@@ -467,7 +470,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         args.pop_back();
         minute = args.back();
         args.pop_back();
-        datetime_str = hour.erase(hour.size() - 1) + ":" + minute.erase(minute.size() - 1) ;
+        datetime_str = hour + ":" + minute ;
     }
     else if (arg_count == 3)
     {
@@ -478,7 +481,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         second = args.back();
         args.pop_back();
 
-        datetime_str = hour.erase(hour.size() - 1) + ":" + minute.erase(minute.size() - 1) + ":" + second.erase(second.size() - 1);
+        datetime_str = hour + ":" + minute + ":" + second;
     }
     else if (arg_count == 4)
     {
@@ -491,8 +494,8 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         second = args.back();
         args.pop_back();
 
-        datetime_str = hour.erase(hour.size() - 1) + ":" + minute.erase(minute.size() - 1) + ":" + second.erase(second.size() - 1);
-        day = day.erase(day.size() - 1) + ".";
+        datetime_str = hour + ":" + minute + ":" + second;
+        day = day + ".";
 
     }
     else
@@ -575,7 +578,7 @@ bool StartOfDay::convertImpl(String & out, IParser::Pos & pos)
          offset = getConvertedArgument(fn_name, pos);
 
     }
-    out = std::format("date_add(DAY,{}, parseDateTime64BestEffortOrNull((toStartOfDay({})) , 9 , 'UTC')) ", offset, datetime_str);
+    out = std::format("date_add(DAY,{}, parseDateTime64BestEffortOrNull(toString((toStartOfDay({}))) , 9 , 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -595,7 +598,7 @@ bool StartOfMonth::convertImpl(String & out, IParser::Pos & pos)
          offset = getConvertedArgument(fn_name, pos);
 
     }
-    out = std::format("date_add(MONTH,{}, parseDateTime64BestEffortOrNull((toStartOfMonth({})) , 9 , 'UTC')) ", offset, datetime_str);
+    out = std::format("date_add(MONTH,{}, parseDateTime64BestEffortOrNull(toString((toStartOfMonth({}))) , 9 , 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -615,7 +618,7 @@ bool StartOfWeek::convertImpl(String & out, IParser::Pos & pos)
          offset = getConvertedArgument(fn_name, pos);
 
     }  
-    out = std::format("date_add(Week,{}, parseDateTime64BestEffortOrNull((toStartOfWeek({})) , 9 , 'UTC')) ", offset, datetime_str);
+    out = std::format("date_add(Week,{}, parseDateTime64BestEffortOrNull(toString((toStartOfWeek({}))) , 9 , 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -634,7 +637,7 @@ bool StartOfYear::convertImpl(String & out, IParser::Pos & pos)
          ++pos;
          offset = getConvertedArgument(fn_name, pos);
     }
-    out = std::format("date_add(YEAR,{}, parseDateTime64BestEffortOrNull((toStartOfYear({}, 'UTC')) , 9 , 'UTC'))", offset, datetime_str);
+    out = std::format("date_add(YEAR,{}, parseDateTime64BestEffortOrNull(toString((toStartOfYear({}, 'UTC'))) , 9 , 'UTC'))", offset, datetime_str);
     return true;
 }
 

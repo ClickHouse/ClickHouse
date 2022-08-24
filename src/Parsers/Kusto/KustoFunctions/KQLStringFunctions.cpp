@@ -69,15 +69,15 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String search = getConvertedArgument(fn_name, pos);
 
-    String kind = "'normal' ";
+    String kind = "'normal'";
     if (pos->type == TokenType::Comma)
     {
         ++pos;
         kind = getConvertedArgument(fn_name,pos);
     }
-    assert (kind =="'normal' " || kind =="'regex' ");
+    assert (kind =="'normal'" || kind =="'regex'");
 
-    if (kind == "'normal' " )
+    if (kind == "'normal'" )
         out = "countSubstrings(" + source + ", " + search + ")";
     else
         out = "countMatches("+ source + ", " + search + ")";
