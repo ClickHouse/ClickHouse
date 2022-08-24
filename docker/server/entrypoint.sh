@@ -57,7 +57,15 @@ do
     # check if variable not empty
     [ -z "$dir" ] && continue
     # ensure directories exist
-    if ! mkdir -p "$dir"; then
+    if [ "$DO_CHOWN" = "1" ]; then
+        mkdir="mkdir"
+    else
+        # if DO_CHOWN=0 it means that the system does not map root user to "admin" permissions
+        # it mainly happens on NFS mounts where root==nobody for security reasons
+        # thus mkdir MUST run with user id/gid and not from nobody that has zero permissions
+        mkdir="/usr/bin/clickhouse su "${USER}:${GROUP}" mkdir"
+    fi
+    if ! $mkdir -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi
@@ -99,6 +107,13 @@ fi
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # port is needed to check if clickhouse-server is ready for connections
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
+    HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port)"
+    
+    if [ -n "$HTTP_PORT" ]; then
+        URL="http://127.0.0.1:$HTTP_PORT/ping"
+    else
+        URL="https://127.0.0.1:$HTTPS_PORT/ping"
+    fi
 
     # Listen only on localhost until the initialization is done
     /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
@@ -107,7 +122,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # check if clickhouse is ready to accept connections
     # will try to send ping clickhouse via http_port (max 12 retries by default, with 1 sec timeout and 1 sec delay between retries)
     tries=${CLICKHOUSE_INIT_TIMEOUT:-12}
-    while ! wget --spider -T 1 -q "http://127.0.0.1:$HTTP_PORT/ping" 2>/dev/null; do
+    while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
         if [ "$tries" -le "0" ]; then
             echo >&2 'ClickHouse init process failed.'
             exit 1

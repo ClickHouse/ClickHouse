@@ -30,6 +30,11 @@ static MutableColumns convertBlockStructure(
     MutableColumns result_columns;
     for (const auto & out_sample_col : result_sample_block)
     {
+        /// Some columns from result_sample_block may not be in source_sample_block,
+        /// e.g. if they will be calculated later based on joined columns
+        if (!source_sample_block.has(out_sample_col.name))
+            continue;
+
         auto i = source_sample_block.getPositionByName(out_sample_col.name);
         if (columns[i] == nullptr)
         {
@@ -58,24 +63,31 @@ static MutableColumns convertBlockStructure(
 
 DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
                                        const Block & right_sample_block_,
-                                       std::shared_ptr<IKeyValueStorage> storage_)
+                                       std::shared_ptr<const IKeyValueEntity> storage_)
     : table_join(table_join_)
     , storage(storage_)
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("DirectKeyValueJoin"))
 {
-    if (!table_join->oneDisjunct()
-        || table_join->getOnlyClause().key_names_left.size() != 1
-        || table_join->getOnlyClause().key_names_right.size() != 1)
+    if (!table_join->oneDisjunct() ||
+        table_join->getOnlyClause().key_names_left.size() != 1 ||
+        table_join->getOnlyClause().key_names_right.size() != 1)
     {
         throw DB::Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Not supported by direct JOIN");
     }
 
-    if (table_join->strictness() != JoinStrictness::All &&
-        table_join->strictness() != JoinStrictness::Any &&
-        table_join->strictness() != JoinStrictness::RightAny)
+    bool allowed_inner = isInner(table_join->kind()) && (table_join->strictness() == JoinStrictness::All ||
+                                                         table_join->strictness() == JoinStrictness::Any ||
+                                                         table_join->strictness() != JoinStrictness::RightAny);
+
+    bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == JoinStrictness::Any ||
+                                                       table_join->strictness() == JoinStrictness::All ||
+                                                       table_join->strictness() == JoinStrictness::Semi ||
+                                                       table_join->strictness() == JoinStrictness::Anti);
+    if (!allowed_inner && !allowed_left)
     {
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported by direct JOIN");
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Strictness {} and kind {} is not supported by direct JOIN",
+            table_join->strictness(), table_join->kind());
     }
 
     LOG_TRACE(log, "Using direct join");
@@ -101,12 +113,14 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
     if (!key_col.column)
         return;
 
-    NullMap null_map;
-    Chunk joined_chunk = storage->getByKeys({key_col}, null_map);
-
-    /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all columns.
     Block original_right_block = originalRightBlock(right_sample_block, *table_join);
-    Block sample_storage_block = storage->getInMemoryMetadataPtr()->getSampleBlock();
+    const Names & attribute_names = original_right_block.getNames();
+
+    NullMap null_map;
+    Chunk joined_chunk = storage->getByKeys({key_col}, null_map, attribute_names);
+
+    /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
+    Block sample_storage_block = storage->getSampleBlock(attribute_names);
     MutableColumns result_columns = convertBlockStructure(sample_storage_block, original_right_block, joined_chunk.mutateColumns(), null_map);
 
     for (size_t i = 0; i < result_columns.size(); ++i)
@@ -116,7 +130,18 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         block.insert(std::move(col));
     }
 
-    if (!isLeftOrFull(table_join->kind()))
+    bool is_semi_join = table_join->strictness() == JoinStrictness::Semi;
+    bool is_anti_join = table_join->strictness() == JoinStrictness::Anti;
+
+    if (is_anti_join)
+    {
+        /// invert null_map
+        for (auto & val : null_map)
+            val = !val;
+    }
+
+    /// Filter non joined rows
+    if (isInner(table_join->kind()) || (isLeft(table_join->kind()) && (is_semi_join || is_anti_join)))
     {
         MutableColumns dst_columns = block.mutateColumns();
         for (auto & col : dst_columns)

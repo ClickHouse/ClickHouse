@@ -351,4 +351,24 @@ void setModificationTime(const std::string & path, time_t time)
     if (utime(path.c_str(), &tb) != 0)
         DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
+
+bool isSymlink(const fs::path & path)
+{
+    /// Remove trailing slash before checking if file is symlink.
+    /// Let /path/to/link is a symlink to /path/to/target/dir/ directory.
+    /// In this case is_symlink("/path/to/link") is true,
+    /// but is_symlink("/path/to/link/") is false (it's a directory)
+    if (path.filename().empty())
+        return fs::is_symlink(path.parent_path());      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+    return fs::is_symlink(path);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
+fs::path readSymlink(const fs::path & path)
+{
+    /// See the comment for isSymlink
+    if (path.filename().empty())
+        return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+    return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
 }

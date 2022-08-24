@@ -135,28 +135,6 @@ export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
 hash cmake
 ```
 
-## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
-
-### Install Git {#install-git}
-
-``` bash
-sudo apt-get update
-sudo apt-get install git python debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
-```
-
-### Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
-
-``` bash
-git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
-cd ClickHouse
-```
-
-### Run Release Script {#run-release-script}
-
-``` bash
-./release
-```
-
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.

@@ -24,9 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-thread_local ThreadStatus * current_thread = nullptr;
-thread_local ThreadStatus * main_thread = nullptr;
+thread_local ThreadStatus constinit * current_thread = nullptr;
 
 #if !defined(SANITIZER)
 namespace
@@ -122,7 +120,7 @@ ThreadStatus::ThreadStatus()
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
-            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString(errno));
+            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
         }
         else
         {
@@ -130,7 +128,7 @@ ThreadStatus::ThreadStatus()
             struct sigaction action{};
             if (0 != sigaction(SIGSEGV, nullptr, &action))
             {
-                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString(errno));
+                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
             }
             else if (!(action.sa_flags & SA_ONSTACK))
             {
@@ -138,7 +136,7 @@ ThreadStatus::ThreadStatus()
 
                 if (0 != sigaction(SIGSEGV, &action, nullptr))
                 {
-                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString(errno));
+                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
                 }
             }
         }

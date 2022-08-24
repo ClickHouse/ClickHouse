@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
 set -xeo pipefail
 
-VENV=lambda-venv
-py_exec=$(which python3)
-py_version=$(basename "$(readlink -f "$py_exec")")
-rm -rf "$VENV" lambda-package.zip
-virtualenv "$VENV"
-source "$VENV/bin/activate"
-pip install -r requirements.txt
-PACKAGES="$VENV/lib/$py_version/site-packages"
-cp app.py "$PACKAGES/"
-( cd "$PACKAGES" && zip -r ../../../../lambda-package.zip . )
+WORKDIR=$(dirname "$0")
+cd "$WORKDIR"
 
-aws lambda update-function-code --function-name team-keys-lambda --zip-file fileb://lambda-package.zip
+PY_EXEC=python3.9
+LAMBDA_NAME=$(basename "$PWD")
+LAMBDA_NAME=${LAMBDA_NAME//_/-}
+PACKAGE=lambda-package
+rm -rf "$PACKAGE" "$PACKAGE".zip
+mkdir "$PACKAGE"
+cp app.py "$PACKAGE"
+if [ -f requirements.txt ]; then
+  VENV=lambda-venv
+  rm -rf "$VENV" lambda-package.zip
+  "$PY_EXEC" -m venv "$VENV"
+  # shellcheck disable=SC1091
+  source "$VENV/bin/activate"
+  pip install -r requirements.txt
+  cp -rT "$VENV/lib/$PY_EXEC/site-packages/" "$PACKAGE"
+  rm -r "$PACKAGE"/{pip,pip-*,setuptools,setuptools-*}
+fi
+( cd "$PACKAGE" && zip -9 -r ../"$PACKAGE".zip . )
+
+aws lambda update-function-code --function-name "$LAMBDA_NAME" --zip-file fileb://"$PACKAGE".zip
