@@ -100,12 +100,11 @@ bool BackupWriterDisk::supportNativeCopy(DataSourceDescription data_source_descr
 
 void BackupWriterDisk::copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to)
 {
+    if (!from_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot natively copy data to disk without source disk");
     auto file_path = path / file_name_to;
     disk->createDirectories(file_path.parent_path());
-    if (from_disk)
-        from_disk->copyFile(file_name_from, *disk, file_path);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot natively copy data to disk without source disk");
+    from_disk->copyFile(file_name_from, *disk, file_path);
 }
 
 }
