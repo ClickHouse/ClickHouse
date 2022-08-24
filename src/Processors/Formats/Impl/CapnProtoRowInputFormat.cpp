@@ -319,7 +319,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("CapnProto");
     factory.registerFileExtension("capnp", "CapnProto");
     factory.registerAdditionalInfoForSchemaCacheGetter(
-        "CapnProto", [](const FormatSettings & settings) { return "Format schema: " + settings.schema.format_schema; });
+        "CapnProto", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 void registerCapnProtoSchemaReader(FormatFactory & factory)

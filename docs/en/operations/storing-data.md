@@ -316,4 +316,8 @@ Use [http_max_single_read_retries](../operations/settings/settings.md#http-max-s
 
 ## Zero-copy Replication (not ready for production) {#zero-copy}
 
-ClickHouse supports zero-copy replication for `S3` and `HDFS` disks, which means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
+Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
+
+:::warning Zero-copy replication is not ready for production
+Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+:::
