@@ -55,6 +55,7 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
+            is_downloaded = true;
             break;
         }
         case (State::SKIP_CACHE):
