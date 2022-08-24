@@ -228,65 +228,34 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
     if(!ascending)
         reverse = "Reverse";
     ++pos;
-    std::vector<String> argument_list;
     String first_arg = getConvertedArgument(fn_name, pos);
+    
     if(pos->type == TokenType::Comma)
+        ++pos;
+    String second_arg;
+    if(pos->type != TokenType::ClosingRoundBracket  && String(pos->begin, pos->end) != "dynamic")
+    {
+        second_arg = getConvertedArgument(fn_name, pos);
+        out =  "if (" + second_arg + ", array" + reverse + "Sort(" + first_arg + "), concat( arraySlice(array" + reverse + "Sort(" + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1)))";
+        return out;
+    }
+    --pos;
+    std::vector<String> argument_list;
+    if(pos->type != TokenType::ClosingRoundBracket)
     {
         while(pos->type != TokenType::ClosingRoundBracket)
         {
             ++pos;
-            String second_arg = getConvertedArgument(fn_name, pos);
-            trim(second_arg);
-            if(second_arg == "true" || second_arg == "false")
-            {
-                if(second_arg == "true")
-                    out = "array" + reverse + "Sort(" + first_arg + ")";
-                else
-                {
-                    int nulls_total = 0;
-                    trim(first_arg);
-                    first_arg = removeNULLs(first_arg, "null", nulls_total);
-                    first_arg = removeNULLs(first_arg, "NULL", nulls_total);
-
-                    int index = first_arg.size() - 1;
-                    while(index > 0)
-                    {
-                        if(first_arg[index] == '\'' || first_arg[index] == '\"')
-                            break;
-                        if(first_arg[index] == ',')
-                        {
-                            first_arg[index] = ' ';
-                            break;
-                        }
-                        index -= 1;
-                    }
-                    String null_array = "[";
-                    if(nulls_total > 0)
-                    {
-                        while(nulls_total > 0)
-                        {
-                            null_array += "null";
-                            if(nulls_total > 1)
-                                null_array += ", ";
-                            nulls_total -= 1;
-                        }
-                        null_array += "]";
-                        out = "arrayConcat( " + null_array + " , array"+ reverse +"Sort( " + first_arg + " ) )";
-                    }
-                    else
-                        out = "array" + reverse + "Sort(" + first_arg + ")";
-
-                }
-            }
-            else
-            {
-                argument_list.push_back("array"+ reverse +"Sort((x, y) -> y, " + second_arg + "," + first_arg + ")");
-            }
+            second_arg = getConvertedArgument(fn_name, pos);
+            argument_list.push_back("array"+ reverse +"Sort((x, y) -> y, " + second_arg + "," + first_arg + ")");
         }
     }
     else
+    {
+        ++pos;
         out = "array"+ reverse +"Sort(" + first_arg + ")";
-    
+    }
+
     if(argument_list.size() > 0)
     {
         out = "array"+ reverse +"Sort(" + first_arg + ") AS array0_sorted, ";
@@ -300,19 +269,5 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
         out += " )";
     }
     return out;
-}
-
-String IParserKQLFunction::removeNULLs(String arg, String nullString, int & nullsTotal)
-{
-    size_t position = std::string::npos;
-    while (arg.find(nullString) != std::string::npos)
-    {
-        position  = arg.find(nullString);
-        arg.erase(position, 4);
-        if(arg[position] == ',')
-            arg[position] = ' ';
-        nullsTotal += 1;
-    }
-    return arg;
 }
 }
