@@ -1,15 +1,5 @@
 #pragma once
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunction.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/DateTimeTransforms.h>
-#include <Functions/TransformDateTime64.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-
+#include <Functions/IFunctionDateOrDateTime.h>
 
 namespace DB
 {
@@ -21,28 +11,26 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeToDateOrDate32 : public IFunction, WithContext
+class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>, WithContext
 {
 public:
     static constexpr auto name = Transform::name;
-    bool enable_date32_results = false;
-    static FunctionPtr create(ContextPtr context_)
-    {
-        return std::make_shared<FunctionDateOrDateTimeToDateOrDate32>(context_);
-    }
-     explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_) : WithContext(context_)
-     {
-        enable_date32_results = context_->getSettingsRef().enable_date32_results;
-     }
 
     String getName() const override
     {
         return name;
     }
+    bool enable_date32_results = false;
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        return std::make_shared<FunctionDateOrDateTimeToDateOrDate32>(context_);
+    }
+
+    explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_) : WithContext(context_)
+    {
+        enable_date32_results = context_->getSettingsRef().enable_date32_results;
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -100,9 +88,6 @@ public:
             return std::make_shared<DataTypeDate>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
@@ -132,47 +117,6 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    bool hasInformationAboutMonotonicity() const override
-    {
-        return true;
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
-            return { .is_monotonic = true, .is_always_monotonic = true };
-
-        const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
-        const IFunction::Monotonicity is_not_monotonic;
-
-        const DateLUTImpl * date_lut = &DateLUT::instance();
-        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(&type))
-            date_lut = &timezone->getTimeZone();
-
-        if (left.isNull() || right.isNull())
-            return is_not_monotonic;
-
-        /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
-
-        if (checkAndGetDataType<DataTypeDate>(&type))
-        {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), *date_lut)
-                == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), *date_lut)
-                ? is_monotonic : is_not_monotonic;
-        }
-        else if (checkAndGetDataType<DataTypeDate32>(&type))
-        {
-            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), *date_lut)
-                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), *date_lut)
-                   ? is_monotonic : is_not_monotonic;
-        }
-        else
-        {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), *date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), *date_lut)
-                ? is_monotonic : is_not_monotonic;
-        }
-    }
 };
 
 }
