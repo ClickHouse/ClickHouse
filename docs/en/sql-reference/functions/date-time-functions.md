@@ -266,8 +266,8 @@ Result:
 └────────────────┘
 ```
 
-:::note    
-The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
+:::note
+The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1900 - 2299) will give an incorrect result.
 :::
 
 ## toStartOfYear
@@ -291,7 +291,7 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-:::note    
+:::note
 The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
 :::
 
@@ -884,11 +884,84 @@ Result:
 └──────────────────────┘
 ```
 
+## now64
+
+Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
+
+**Syntax**
+
+``` sql
+now64([scale], [timezone])
+```
+
+**Arguments**
+
+-   `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Current date and time with sub-second precision.
+
+Type: [Datetime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+SELECT now64(), now64(9, 'Asia/Istanbul');
+```
+
+Result:
+
+``` text
+┌─────────────────now64()─┬─────now64(9, 'Asia/Istanbul')─┐
+│ 2022-08-21 19:34:26.196 │ 2022-08-21 22:34:26.196542766 │
+└─────────────────────────┴───────────────────────────────┘
+```
+
 ## nowInBlock
 
-Returns the current date and time at the moment of processing of each block of data. In contrast to the function `now`, it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
+
+**Syntax**
+
+``` sql
+nowInBlock([timezone])
+```
+
+**Arguments**
+
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Current date and time at the moment of processing of each block of data.
+
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+``` sql
+SELECT
+    now(),
+    nowInBlock(),
+    sleep(1)
+FROM numbers(3)
+SETTINGS max_block_size = 1
+FORMAT PrettyCompactMonoBlock
+```
+
+Result:
+
+``` text
+┌───────────────now()─┬────────nowInBlock()─┬─sleep(1)─┐
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:19 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
+└─────────────────────┴─────────────────────┴──────────┘
+```
 
 ## today
 
@@ -1068,7 +1141,10 @@ Query:
 
 ```sql
 WITH toDateTime('2021-04-14 11:22:33') AS date_value
-SELECT dateName('year', date_value), dateName('month', date_value), dateName('day', date_value);
+SELECT
+    dateName('year', date_value),
+    dateName('month', date_value),
+    dateName('day', date_value);
 ```
 
 Result:
@@ -1076,7 +1152,44 @@ Result:
 ```text
 ┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
 │ 2021                         │ April                         │ 14                          │
-└──────────────────────────────┴───────────────────────────────┴─────────────────────────────
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
+```
+
+## monthName
+
+Returns name of the month.
+
+**Syntax**
+
+``` sql
+monthName(date)
+```
+
+**Arguments**
+
+-   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+-   The name of the month.
+
+Type: [String](../../sql-reference/data-types/string.md#string)
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT monthName(date_value);
+```
+
+Result:
+
+```text
+┌─monthName(date_value)─┐
+│ April                 │
+└───────────────────────┘
 ```
 
 ## FROM\_UNIXTIME

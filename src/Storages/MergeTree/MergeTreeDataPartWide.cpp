@@ -49,7 +49,8 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartWide>(shared_from_this());
     return std::make_unique<MergeTreeReaderWide>(
-        ptr, columns_to_read, metadata_snapshot, uncompressed_cache,
+        ptr, columns_to_read,
+        metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }
@@ -64,7 +65,8 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
-        shared_from_this(), data_part_storage_builder, columns_list, metadata_snapshot, indices_to_recalc,
+        shared_from_this(), data_part_storage_builder,
+        columns_list, metadata_snapshot, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec_, writer_settings, computed_index_granularity);
 }
@@ -79,7 +81,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
-    getSerialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
 
@@ -167,9 +169,9 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
     {
         if (require_part_metadata)
         {
-            for (const NameAndTypePair & name_type : columns)
+            for (const auto & name_type : columns)
             {
-                getSerialization(name_type)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
                     String file_name = ISerialization::getFileNameForStream(name_type, substream_path);
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
@@ -194,9 +196,9 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
     {
         /// Check that all marks are nonempty and have the same size.
         std::optional<UInt64> marks_size;
-        for (const NameAndTypePair & name_type : columns)
+        for (const auto & name_type : columns)
         {
-            getSerialization(name_type)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 auto file_path = ISerialization::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
 
@@ -235,7 +237,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     };
 
     bool res = true;
-    getSerialization(column)->enumerateStreams([&](const auto & substream_path)
+    getSerialization(column.name)->enumerateStreams([&](const auto & substream_path)
     {
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
         if (!check_stream_exists(file_name))
@@ -248,7 +250,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;
-    getSerialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = ISerialization::getFileNameForStream(column, substream_path);
@@ -259,7 +261,7 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
 void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
-    for (const NameAndTypePair & column : columns)
+    for (const auto & column : columns)
     {
         ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;
@@ -270,7 +272,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         if (rows_count != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && getSerialization(column)->getKind() == ISerialization::Kind::DEFAULT)
+            && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
             if (rows_in_column != rows_count)

@@ -263,8 +263,8 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 └────────────────┘
 ```
 
-:::注意    
-下面描述的返回类型 `toStartOf` 函数是 `Date` 或 `DateTime`。尽管这些函数可以将 `DateTime64` 作为参数，但将超出正常范围（1925年-2283年）的 `DateTime64` 传递给它们会给出不正确的结果。
+:::注意
+下面描述的返回类型 `toStartOf` 函数是 `Date` 或 `DateTime`。尽管这些函数可以将 `DateTime64` 作为参数，但将超出正常范围（1900年-2299年）的 `DateTime64` 传递给它们会给出不正确的结果。
 :::
 
 ## toStartOfYear {#tostartofyear}

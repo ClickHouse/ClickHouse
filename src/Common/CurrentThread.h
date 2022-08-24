@@ -54,7 +54,12 @@ public:
     static void updatePerformanceCounters();
 
     static ProfileEvents::Counters & getProfileEvents();
-    static MemoryTracker * getMemoryTracker();
+    inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
+    {
+        if (unlikely(!current_thread))
+            return nullptr;
+        return &current_thread->memory_tracker;
+    }
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
