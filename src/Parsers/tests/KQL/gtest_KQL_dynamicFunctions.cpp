@@ -1,72 +1,7 @@
 #include <Parsers/tests/gtest_common.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <Interpreters/applyTableOverride.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ParserCreateUserQuery.h>
-#include <Parsers/ParserAlterQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserOptimizeQuery.h>
-#include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
-#include <string_view>
-#include <regex>
-#include <gtest/gtest.h>
 
-namespace
-{
-using namespace DB;
-using namespace std::literals;
-}
-
-class ParserDynamicFuncTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IParser>, ParserTestCase>>
- {};
-
- TEST_P(ParserDynamicFuncTest, ParseQuery)
- {  const auto & parser = std::get<0>(GetParam());
-     const auto & [input_text, expected_ast] = std::get<1>(GetParam());
-     ASSERT_NE(nullptr, parser);
-     if (expected_ast)
-     {
-         if (std::string(expected_ast).starts_with("throws"))
-         {
-             EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
-         }
-         else
-         {
-             ASTPtr ast;
-             ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
-             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
-                     && std::string("ATTACH access entity query") != parser->getName())
-             {
-                 EXPECT_EQ(expected_ast, serializeAST(*ast->clone(), false));
-             }
-             else
-             {
-                 if (input_text.starts_with("ATTACH"))
-                 {
-                     auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt();
-                     EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
-                 }
-                 else
-                 {
-                     EXPECT_TRUE(std::regex_match(serializeAST(*ast->clone(), false), std::regex(expected_ast)));
-                 }
-             }
-         }
-     }
-     else
-     {
-         ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
-     }
- }
-
- INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserDynamicFuncTest,
+INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
      ::testing::Combine(
          ::testing::Values(std::make_shared<DB::ParserKQLQuery>()),
          ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
@@ -99,6 +34,14 @@ class ParserDynamicFuncTest : public ::testing::TestWithParam<std::tuple<std::sh
              "SELECT arrayConcat([NULL, NULL, NULL], arraySort([])) AS t"
          },
          {
+             "print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , 1 < 2)",
+             "SELECT if(1 < 2, arraySort(['d', NULL, 'a', 'c', 'c']), concat(arraySlice(arraySort(['d', NULL, 'a', 'c', 'c']) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS t"
+         },
+         {
+             "print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2)",
+             "SELECT if(1 > 2, arraySort(['d', NULL, 'a', 'c', 'c']), concat(arraySlice(arraySort(['d', NULL, 'a', 'c', 'c']) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS t"
+         },
+         {
              "print t = array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c']))",
              "SELECT arrayReverseSort([NULL, 'd', 'a', 'c', 'c']) AS t"
          },
@@ -125,6 +68,13 @@ class ParserDynamicFuncTest : public ::testing::TestWithParam<std::tuple<std::sh
          {
              "print t = array_sort_desc( dynamic([null, null, null]) , false)",
              "SELECT arrayConcat([NULL, NULL, NULL], arrayReverseSort([])) AS t"
+         },
+         {
+             "print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , 1 < 2)",
+             "SELECT if(1 < 2, arrayReverseSort(['d', NULL, 'a', 'c', 'c']), concat(arraySlice(arrayReverseSort(['d', NULL, 'a', 'c', 'c']) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS t"
+         },
+         {
+             "print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2)",
+             "SELECT if(1 > 2, arrayReverseSort(['d', NULL, 'a', 'c', 'c']), concat(arraySlice(arrayReverseSort(['d', NULL, 'a', 'c', 'c']) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS t"
          }
-
  })));
