@@ -833,15 +833,14 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
 
     if (!tables_to_sync.empty())
-        syncTables();
-
-    else 
     {
-        if(commited)
-        {
-            updateLsn();
-        }
+        syncTables();
     }
+    else if (commited)
+    {
+        updateLsn();
+    }
+
     return true;
 }
 
