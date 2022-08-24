@@ -242,10 +242,12 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
         {
             auto out = writer->writeFile("a.txt");
             writeString(a_contents, *out);
+            out->finalize();
         }
         {
             auto out = writer->writeFile("b.txt");
             writeString(b_contents, *out);
+            out->finalize();
         }
     }
 
@@ -296,6 +298,7 @@ TEST_P(ArchiveReaderAndWriterTest, Password)
         {
             auto out = writer->writeFile("a.txt");
             writeString(contents, *out);
+            out->finalize();
         }
     }
 
