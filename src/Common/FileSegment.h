@@ -130,7 +130,7 @@ public:
 
     bool isDownloader() const;
 
-    bool isDownloaded() const { return is_downloaded.load(); }
+    bool isDownloaded() const;
 
     static String getCallerId();
 
@@ -187,6 +187,8 @@ private:
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
     bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
+    bool isDownloadedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+
     void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
 
     bool lastFileSegmentHolder() const;
@@ -236,7 +238,8 @@ private:
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
 
-    std::atomic<bool> is_downloaded{false};
+    bool is_downloaded{false};
+
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 

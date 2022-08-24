@@ -74,7 +74,12 @@ bool FileCache::isReadOnly()
 void FileCache::assertInitialized() const
 {
     if (!is_initialized)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
+    {
+        if (initialization_exception)
+            std::rethrow_exception(initialization_exception);
+        else
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
+    }
 }
 
 void FileCache::initialize()
@@ -90,27 +95,45 @@ void FileCache::initialize()
             }
             catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                initialization_exception = std::current_exception();
                 throw;
             }
         }
         else
+        {
             fs::create_directories(cache_base_path);
+        }
 
         is_initialized = true;
     }
 }
 
 void FileCache::useCell(
-    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const
+    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock)
 {
     auto file_segment = cell.file_segment;
 
-    if (file_segment->isDownloaded()
-        && fs::file_size(getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->isPersistent())) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. Current file segment: {}",
-                        file_segment->range().toString());
+    if (file_segment->isDownloaded())
+    {
+        fs::path path = file_segment->getPathInLocalCache();
+        if (!fs::exists(path))
+        {
+            remove(file_segment, cache_lock);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "File path does not exist, but file has DOWNLOADED state. {}",
+                file_segment->getInfoForLog());
+        }
+
+        if (fs::file_size(path) == 0)
+        {
+            remove(file_segment, cache_lock);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot have zero size downloaded file segments. {}",
+                file_segment->getInfoForLog());
+        }
+    }
 
     result.push_back(cell.file_segment);
 
@@ -221,7 +244,12 @@ FileSegments FileCache::getImpl(
 }
 
 FileSegments FileCache::splitRangeIntoCells(
-    const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock)
+    const Key & key,
+    size_t offset,
+    size_t size,
+    FileSegment::State state,
+    bool is_persistent,
+    std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
 
@@ -416,7 +444,7 @@ FileCache::FileSegmentCell * FileCache::addCell(
     if (files[key].contains(offset))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
+            "Cache cell already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             key.toString(), offset, size, dumpStructureUnlocked(key, cache_lock));
 
     auto skip_or_download = [&]() -> FileSegmentPtr
@@ -604,9 +632,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         auto remove_file_segment = [&](FileSegmentPtr file_segment, size_t file_segment_size)
         {
             query_context->remove(file_segment->key(), file_segment->offset(), file_segment_size, cache_lock);
-
-            std::lock_guard segment_lock(file_segment->mutex);
-            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+            remove(file_segment, cache_lock);
         };
 
         assert(trash.empty());
@@ -723,19 +749,13 @@ bool FileCache::tryReserveForMainList(
         }
     }
 
-    auto remove_file_segment = [&](FileSegmentPtr file_segment)
-    {
-        std::lock_guard segment_lock(file_segment->mutex);
-        remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-    };
-
     /// This case is very unlikely, can happen in case of exception from
     /// file_segment->complete(), which would be a logical error.
     assert(trash.empty());
     for (auto & cell : trash)
     {
         if (auto file_segment = cell->file_segment)
-            remove_file_segment(file_segment);
+            remove(file_segment, cache_lock);
     }
 
     if (is_overflow())
@@ -757,7 +777,7 @@ bool FileCache::tryReserveForMainList(
     for (auto & cell : to_evict)
     {
         if (auto file_segment = cell->file_segment)
-            remove_file_segment(file_segment);
+            remove(file_segment, cache_lock);
     }
 
     if (main_priority->getCacheSize(cache_lock) > (1ull << 63))
@@ -868,6 +888,12 @@ void FileCache::removeIfReleasable()
 #endif
 }
 
+void FileCache::remove(FileSegmentPtr file_segment, std::lock_guard<std::mutex> & cache_lock)
+{
+    std::lock_guard segment_lock(file_segment->mutex);
+    remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+}
+
 void FileCache::remove(
     Key key, size_t offset,
     std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
@@ -878,7 +904,7 @@ void FileCache::remove(
     if (!cell)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", key.toString(), offset);
 
-    bool is_persistent_file_segment = cell->file_segment->isPersistent();
+    auto cache_file_path = cell->file_segment->getPathInLocalCache();
 
     if (cell->queue_iterator)
     {
@@ -888,7 +914,6 @@ void FileCache::remove(
     auto & offsets = files[key];
     offsets.erase(offset);
 
-    auto cache_file_path = getPathInLocalCache(key, offset, is_persistent_file_segment);
     if (fs::exists(cache_file_path))
     {
         try
@@ -907,9 +932,10 @@ void FileCache::remove(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
-                            key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
+                key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
         }
     }
 }
@@ -1138,9 +1164,10 @@ FileCache::FileSegmentCell::FileSegmentCell(
             break;
         }
         default:
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
-                            FileSegment::stateToString(file_segment->download_state));
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
+                FileSegment::stateToString(file_segment->download_state));
     }
 }
 
