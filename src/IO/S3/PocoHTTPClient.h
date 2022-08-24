@@ -82,9 +82,8 @@ public:
 
     void SetResponseBody(std::string & response_body) /// NOLINT
     {
-        stringbuf.emplace(response_body);
         body_stream = Aws::Utils::Stream::ResponseStream(
-            Aws::New<SessionAwareIOStream<SessionPtr>>("http result string", nullptr, &stringbuf.value())
+            Aws::New<std::stringstream>("http result buf", response_body)
         );
     }
 
@@ -100,7 +99,6 @@ public:
 
 private:
     Aws::Utils::Stream::ResponseStream body_stream;
-    std::optional<std::stringbuf> stringbuf;
 };
 
 class PocoHTTPClient : public Aws::Http::HttpClient

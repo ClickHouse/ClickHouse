@@ -366,7 +366,6 @@ void PocoHTTPClient::makeRequestInternal(
                 {
                     LOG_WARNING(log, "Response for request contain <Error> tag in body, settings internal server error (500 code)");
                     response->SetResponseCode(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
-                    status_code = static_cast<int32_t>(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
 
                     ProfileEvents::increment(select_metric(S3MetricType::Errors));
                     if (error_report)
