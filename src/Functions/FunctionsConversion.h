@@ -334,12 +334,21 @@ struct ToDateTimeImpl
             return 0;
 
         auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
-        return date_time <= 0xffffffff ? UInt32(date_time) : UInt32(0xffffffff);
+        return date_time <= 0xffffffff ? date_time : 0xffffffff;
     }
 
     static inline UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
     {
         return dt;
+    }
+
+    static inline UInt32 execute(Int64 d, const DateLUTImpl & time_zone)
+    {
+        if (d < 0)
+            return 0;
+
+        auto date_time = time_zone.toDate(d);
+        return date_time <= 0xffffffff ? date_time : 0xffffffff;
     }
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & /*time_zone*/)
@@ -431,8 +440,9 @@ struct ToDate32Transform32Or64Signed
         static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
         if (from < daynum_min_offset)
             return daynum_min_offset;
-
-        return std::min(time_t(time_zone.toDayNum(from)), time_t(DATE_LUT_MAX_EXTEND_DAY_NUM));
+        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+            ? from
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -685,7 +695,6 @@ struct ToDateTime64Transform
 
     inline DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
-//        const auto dt = ToDateTimeImpl::execute(d, time_zone);
         const auto dt = time_zone.fromDayNum(ExtendedDayNum(d));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
