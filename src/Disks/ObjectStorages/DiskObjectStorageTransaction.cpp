@@ -4,7 +4,6 @@
 #include <ranges>
 #include <Common/logger_useful.h>
 
-
 namespace DB
 {
 
@@ -217,7 +216,6 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
             object_storage.removeObjects(objects_to_remove);
     }
 };
-
 
 
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
