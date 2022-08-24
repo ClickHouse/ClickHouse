@@ -39,10 +39,11 @@ struct DataSourceDescription
 {
     DataSourceType type;
     std::string description;
-    bool is_encrypted;
-    bool is_cached;
 
-    bool operator==(const DataSourceDescription & o) const;
+    bool is_encrypted = false;
+    bool is_cached = false;
+
+    bool operator==(const DataSourceDescription & other) const;
 };
 
 }
