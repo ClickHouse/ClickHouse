@@ -13,6 +13,8 @@
 #include <cstring>
 #include <iostream>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 #if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
@@ -359,6 +361,27 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #endif
 
+uint32_t get_inode(const char * self)
+{
+    std::ifstream maps("/proc/self/maps");
+    if (maps.fail())
+    {
+        perror("open maps");
+        return 0;
+    }
+
+    for (std::string line; std::getline(maps, line); )
+    {
+        std::stringstream ss(line);
+        std::string addr, mode, offset, id, path;
+        uint32_t inode = 0;
+        if (ss >> addr >> mode >> offset >> id >> inode >> path && path == self)
+            return inode;
+    }
+
+    return 0;
+}
+
 int main(int/* argc*/, char* argv[])
 {
     char self[4096] = {0};
@@ -381,6 +404,52 @@ int main(int/* argc*/, char* argv[])
     }
     else
         name = file_path;
+
+    uint32_t inode = get_inode(self);
+    if (inode == 0)
+    {
+        std::cerr << "Unable to obtain inode." << std::endl;
+        return 1;
+    }
+
+    std::stringstream lock_path;
+    lock_path << "/tmp/" << name << ".decompression." << inode << ".lock";
+    int lock = open(lock_path.str().c_str(), O_CREAT | O_RDWR, 0666);
+    if (lock < 0)
+    {
+        perror("lock open");
+        return 1;
+    }
+
+    if (lockf(lock, F_LOCK, 0))
+    {
+        perror("lockf");
+        return 1;
+    }
+
+    struct stat input_info;
+    if (0 != stat(self, &input_info))
+    {
+        perror("stat");
+        return 1;
+    }
+
+    /// if decompression was performed by another process
+    if (input_info.st_ino != inode)
+    {
+        struct stat lock_info;
+        if (0 != fstat(lock, &lock_info))
+        {
+            perror("fstat lock");
+            return 1;
+        }
+
+        if (lock_info.st_size == 1)
+            execv(self, argv);
+
+        printf("No target executable - decompression only was performed.\n");
+        return 0;
+    }
 
     int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
@@ -443,6 +512,8 @@ int main(int/* argc*/, char* argv[])
 
         if (has_exec)
         {
+            write(lock, "1", 1);
+
             execv(self, argv);
 
             /// This part of code will be reached only if error happened
