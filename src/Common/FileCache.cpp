@@ -109,7 +109,7 @@ void FileCache::useCell(
     if (file_segment->isDownloaded()
         && fs::file_size(getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->isPersistent())) == 0)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, 
+            ErrorCodes::LOGICAL_ERROR,
             "Cannot have zero size downloaded file segments. {}",
             file_segment->getInfoForLog());
 
