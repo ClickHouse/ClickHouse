@@ -537,10 +537,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
                 }
                 else
                 {
-                    LOG_DEBUG(
-                        log, 
-                        "Resize cell {} to downloaded: {} ({})", 
-                        range().toString(), current_downloaded_size, getInfoForLogImpl(segment_lock));
+                    LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), current_downloaded_size);
 
                     /**
                     * Only last holder of current file segment can resize the cell,
