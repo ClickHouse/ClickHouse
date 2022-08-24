@@ -30,7 +30,7 @@
       :read (try
              (assoc op
                :type :ok
-               :value (count (zk-list conn "/")))
+               :value (count (zk-list conn root-path)))
              (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :final-read (exec-with-retries 30 (fn []
                                     (assoc op
