@@ -44,10 +44,11 @@ print timespan(1tick);
 print timespan(1.5h) / timespan(30m);
 print '-- null';
 print isnull(null);
-print bool(null), dynamic(null), int(null), long(null), real(null), double(null);
+print bool(null), int(null), long(null), real(null), double(null);
 print '-- dynamic'; -- only support 1D array at the moment
 print dynamic([1,2,3]);
 print dynamic(['a', 'b', 'c']);
+-- print dynamic(null);
 
 print '-- cast functions'
 print '--tobool("true")'; -- == true

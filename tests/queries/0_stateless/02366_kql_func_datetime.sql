@@ -1,6 +1,5 @@
 set dialect = 'kusto';
 
-
 print '-- dayofmonth()';
 print dayofmonth(datetime(2015-12-31));
 print '-- dayofweek()';
@@ -13,29 +12,58 @@ print '-- getyear()';
 print getyear(datetime(2015-10-12));
 print '-- hoursofday()';
 print hourofday(datetime(2015-12-31 23:59:59.9));
-print '-- startofday()'
--- print startofday(datetime(2017-01-01 10:10:17));
+print '-- startofday()';
+print startofday(datetime(2017-01-01 10:10:17));
 print startofday(datetime(2017-01-01 10:10:17), -1);
 print startofday(datetime(2017-01-01 10:10:17), 1);
-print '-- startofmonth()';
--- print startofmonth(datetime(2017-01-01 10:10:17));
-print startofmonth(datetime(2017-01-01 10:10:17), -1);
-print startofmonth(datetime(2017-01-01 10:10:17), 1);
-print '-- startofweek()'
--- print startofweek(datetime(2017-01-01 10:10:17));
+print '-- endofday()';
+print endofday(datetime(2017-01-01 10:10:17));
+print endofday(datetime(2017-01-01 10:10:17), -1);
+print endofday(datetime(2017-01-01 10:10:17), 1);
+print '-- endofmonth()';
+print endofmonth(datetime(2017-01-01 10:10:17));
+print endofmonth(datetime(2017-01-01 10:10:17), -1);
+print endofmonth(datetime(2017-01-01 10:10:17), 1);
+print '-- startofweek()';
+print startofweek(datetime(2017-01-01 10:10:17));
 print startofweek(datetime(2017-01-01 10:10:17), -1);
 print startofweek(datetime(2017-01-01 10:10:17), 1);
-print '-- startofyear()'
--- print startofyear(datetime(2017-01-01 10:10:17));
+print '-- endofweek()';
+print endofweek(datetime(2017-01-01 10:10:17));
+print endofweek(datetime(2017-01-01 10:10:17), -1);
+print endofweek(datetime(2017-01-01 10:10:17), 1);
+print '-- startofyear()';
+print startofyear(datetime(2017-01-01 10:10:17));
 print startofyear(datetime(2017-01-01 10:10:17), -1);
 print startofyear(datetime(2017-01-01 10:10:17), 1);
+print '-- endofyear()';
+print endofyear(datetime(2017-01-01 10:10:17));
+print endofyear(datetime(2017-01-01 10:10:17), -1);
+print endofyear(datetime(2017-01-01 10:10:17), 1);
 print '-- unixtime_seconds_todatetime()';
 print unixtime_seconds_todatetime(1546300800);
+print '-- unixtime_microseconds_todatetime';
+print unixtime_microseconds_todatetime(1546300800000000);
+print '-- unixtime_milliseconds_todatetime()';
+print unixtime_milliseconds_todatetime(1546300800000);
+print '-- unixtime_nanoseconds_todatetime()';
+print unixtime_nanoseconds_todatetime(1546300800000000000);
 print '-- weekofyear()';
 print week_of_year(datetime(2000-01-01));
-print '-- monthofyear()'
+print '-- monthofyear()';
 print monthofyear(datetime(2015-12-31));
+print '-- weekofyear()';
+print week_of_year(datetime(2000-01-01));
 print '-- now()';
 print getyear(now(-2d))>1900;
-
-
+print '-- make_datetime()';
+print make_datetime(2017,10,01,12,10) == datetime(2017-10-01 12:10:00);
+print year_month_day_hour_minute = make_datetime(2017,10,01,12,10);
+print year_month_day_hour_minute_second = make_datetime(2017,10,01,12,11,0.1234567);
+print '-- ago()';
+-- print ago(1d) - now();
+print '-- datetime_diff()';
+print year = datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31)), quarter = datetime_diff('quarter',datetime(2017-07-01),datetime(2017-03-30)), month = datetime_diff('month',datetime(2017-01-01),datetime(2015-12-30)), week = datetime_diff('week',datetime(2017-10-29 00:00),datetime(2017-09-30 23:59)), day = datetime_diff('day',datetime(2017-10-29 00:00),datetime(2017-09-30 23:59)), hour = datetime_diff('hour',datetime(2017-10-31 01:00),datetime(2017-10-30 23:59)), minute = datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59)), second = datetime_diff('second',datetime(2017-10-30 23:00:10.100),datetime(2017-10-30 23:00:00.900));
+-- millisecond = datetime_diff('millisecond',datetime(2017-10-30 23:00:00.200100),datetime(2017-10-30 23:00:00.100900)),
+-- microsecond = datetime_diff('microsecond',datetime(2017-10-30 23:00:00.1009001),datetime(2017-10-30 23:00:00.1008009)),
+-- nanosecond = datetime_diff('nanosecond',datetime(2017-10-30 23:00:00.0000000),datetime(2017-10-30 23:00:00.0000007))
