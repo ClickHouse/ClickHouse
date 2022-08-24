@@ -168,7 +168,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
 
 /// Read data about files and decomrpess them.
-int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, char * decompressed_suffix, uint64_t * decompressed_umask)
+int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
@@ -226,8 +226,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         file_info = *reinterpret_cast<FileData*>(input + files_pointer);
         files_pointer += sizeof(FileData);
 
-        size_t file_name_len =
-            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13 + 7);
+        /// for output filename matching compressed allow additional 13 + 7 symbols for ".decompressed.XXXXXX" suffix
+        size_t file_name_len = file_info.exec ? strlen(name) + 13 + 7 + 1 : le64toh(file_info.name_length);
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
@@ -238,9 +238,22 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             strcat(file_name, path);
             strcat(file_name, "/");
         }
-        strcat(file_name, input + files_pointer);
+
+        bool same_name = false;
+        if (file_info.exec)
+        {
+            has_exec = true;
+            strcat(file_name, name);
+        }
+        else
+        {
+            if (strcmp(name, input + files_pointer) == 0)
+                same_name = true;
+            strcat(file_name, input + files_pointer);
+        }
+
         files_pointer += le64toh(file_info.name_length);
-        if (file_name_len != le64toh(file_info.name_length))
+        if (file_info.exec || same_name)
         {
             strcat(file_name, ".decompressed.XXXXXX");
             int fd = mkstemp(file_name);
@@ -377,11 +390,12 @@ int main(int/* argc*/, char* argv[])
     }
 
     bool have_compressed_analoge = false;
+    bool has_exec = false;
     char decompressed_suffix[7] = {0};
     uint64_t decompressed_umask = 0;
 
     /// Decompress all files
-    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge, decompressed_suffix, &decompressed_umask))
+    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge, has_exec, decompressed_suffix, &decompressed_umask))
     {
         printf("Error happened during decompression.\n");
         if (0 != close(input_fd))
@@ -427,10 +441,15 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
-        execv(self, argv);
+        if (has_exec)
+        {
+            execv(self, argv);
 
-        /// This part of code will be reached only if error happened
-        perror("execv");
-        return 1;
+            /// This part of code will be reached only if error happened
+            perror("execv");
+            return 1;
+        }
+
+        printf("No target executable - decompression only was performed.\n");
     }
 }
