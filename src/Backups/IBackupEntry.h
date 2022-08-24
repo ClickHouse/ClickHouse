@@ -29,7 +29,7 @@ public:
 
     virtual String getFilePath() const = 0;
 
-    virtual std::shared_ptr<IDisk> tryGetDiskIfExists() const = 0;
+    virtual DiskPtr tryGetDiskIfExists() const = 0;
 
     virtual DataSourceDescription getDataSourceDescription() const = 0;
 };

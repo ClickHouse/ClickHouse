@@ -29,7 +29,7 @@ public:
         return DataSourceDescription{DataSourceType::RAM, "", false, false};
     }
 
-    std::shared_ptr<IDisk> tryGetDiskIfExists() const override { return nullptr; }
+    DiskPtr tryGetDiskIfExists() const override { return nullptr; }
 
 private:
     const String data;

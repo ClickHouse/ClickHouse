@@ -25,7 +25,7 @@ public:
 
     String getFilePath() const override { return file_path; }
 
-    std::shared_ptr<IDisk> tryGetDiskIfExists() const override { return disk; }
+    DiskPtr tryGetDiskIfExists() const override { return disk; }
 private:
     const DiskPtr disk;
     const String file_path;

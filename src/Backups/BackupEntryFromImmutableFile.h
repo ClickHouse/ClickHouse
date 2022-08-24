@@ -32,7 +32,7 @@ public:
     String getFilePath() const override;
     DataSourceDescription getDataSourceDescription() const override;
 
-    std::shared_ptr<IDisk> tryGetDiskIfExists() const override { return disk; }
+    DiskPtr tryGetDiskIfExists() const override { return disk; }
 
 private:
     const DiskPtr disk;

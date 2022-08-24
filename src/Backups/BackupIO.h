@@ -38,7 +38,7 @@ public:
         return false;
     }
 
-    virtual void copyFileNative(std::shared_ptr<IDisk> from_disk, const String & file_name_from, const String & file_name_to);
+    virtual void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to);
 };
 
 }
