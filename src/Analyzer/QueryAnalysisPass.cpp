@@ -2276,7 +2276,7 @@ void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const Qu
   * 1. Resolve function parameters. Validate that each function parameter must be constant node.
   * 2. Resolve function arguments list, lambda expressions are allowed as function arguments.
   * 3. Initialize argument_columns, argument_types, function_lambda_arguments_indexes arrays from function arguments.
-  * 4. Try to resolve function name as identifier as function.
+  * 4. Try to resolve function node name identifier as function.
   * 5. If function name identifier was not resolved as function, try to lookup lambda from sql user defined functions factory.
   * 6. If function was resolve as lambda from step 4, or 5, then resolve lambda using function arguments and replace function node with lambda result.
   * After than function node is resolved.
@@ -2332,6 +2332,43 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
 
     resolveExpressionNodeList(function_node.getArgumentsNode(), scope, true /*allow_lambda_expression*/, is_special_function_in /*allow_table_expression*/);
 
+    /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
+    if (is_special_function_in)
+    {
+        auto & in_second_argument = function_node.getArguments().getNodes().at(1);
+        auto * table_node = in_second_argument->as<TableNode>();
+        auto * table_function_node = in_second_argument->as<TableFunctionNode>();
+        auto * query_node = in_second_argument->as<QueryNode>();
+        auto * union_node = in_second_argument->as<UnionNode>();
+
+        if (table_node || table_function_node)
+        {
+            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+            auto column_nodes_to_select = std::make_shared<ListNode>();
+
+            for (auto & column : columns_to_select)
+                column_nodes_to_select->getNodes().push_back(std::make_shared<ColumnNode>(column, in_second_argument));
+
+            auto in_second_argument_query_node = std::make_shared<QueryNode>();
+            in_second_argument_query_node->setIsSubquery(true);
+            in_second_argument_query_node->getProjectionNode() = std::move(column_nodes_to_select);
+            in_second_argument_query_node->getJoinTree() = std::move(in_second_argument);
+
+            in_second_argument = std::move(in_second_argument_query_node);
+        }
+        else if (query_node)
+        {
+            IdentifierResolveScope subquery_scope(in_second_argument, &scope /*parent_scope*/);
+            resolveQuery(in_second_argument, subquery_scope);
+        }
+        else if (union_node)
+        {
+            IdentifierResolveScope subquery_scope(in_second_argument, &scope /*parent_scope*/);
+            resolveUnion(in_second_argument, subquery_scope);
+        }
+    }
+
     /// Initialize function argument columns
 
     ColumnsWithTypeAndName argument_columns;
@@ -2358,8 +2395,9 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             function_lambda_arguments_indexes.push_back(function_argument_index);
         }
         else if (is_special_function_in && (function_argument->getNodeType() == QueryTreeNodeType::TABLE ||
-                function_argument->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION ||
-                function_argument->getNodeType() == QueryTreeNodeType::QUERY))
+            function_argument->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION ||
+            function_argument->getNodeType() == QueryTreeNodeType::QUERY ||
+            function_argument->getNodeType() == QueryTreeNodeType::UNION))
         {
             argument_column.type = std::make_shared<DataTypeSet>();
         }

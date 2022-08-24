@@ -40,7 +40,7 @@ public:
         return query_plan;
     }
 
-    void initializeQueryPlanIfNeeded();
+    void buildQueryPlanIfNeeded();
 
     QueryPlan && extractQueryPlan() &&
     {
