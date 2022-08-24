@@ -21,17 +21,8 @@
 - [percentiles](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
    `Customers | summarize percentiles(Age, 30, 40, 50, 60, 70) by FirstName`  
 
-- [percentiles_array](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
-   **do not support `range()` now**  
-   `Customers | summarize t = percentiles_array(Age, 10, 20, 30, 50) by FirstName`  
-   `Customers | summarize t = percentiles_array(Age, dynamic([10, 20, 30, 50])) by FirstName`
-
 - [percentilesw](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
    `DataTable | summarize t = percentilesw(Bucket, Frequency, 50, 75, 99.9)`  
-
-- [percentilesw_array](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
-   **do not support `range()` now**  
-   `DataTable| summarize t = percentilesw_array(Bucket, Frequency, dynamic([10, 50, 30]))`  
 
 - [percentile](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
    `Customers | summarize t = percentile(Age, 50) by FirstName`  
