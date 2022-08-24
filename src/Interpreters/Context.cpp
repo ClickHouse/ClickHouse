@@ -709,7 +709,7 @@ void Context::setUserDefinedPath(const String & path)
 void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
-    auto suppress_re = getConfigRef().getString("logger.warning_supress_regex", "");
+    auto suppress_re = getConfigRef().getString("warning_supress_regexp", "");
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
     if (!is_supressed)
         shared->addWarningMessage(msg);
