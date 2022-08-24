@@ -379,8 +379,9 @@ struct ToDateTransform32Or64
         if (from < 0)
             return 0;
 
-        auto day_num = time_zone.toDayNum(from);
-        return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
+        return (from < DATE_LUT_MAX_DAY_NUM)
+            ? from
+            : std::min(UInt64(time_zone.toDayNum(from)), UInt64(DATE_LUT_MAX_DAY_NUM));
     }
 };
 
@@ -398,6 +399,11 @@ struct ToDateTransform32Or64Signed
 
         auto day_num = time_zone.toDayNum(ExtendedDayNum(from));
         return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
+
+        return (from < DATE_LUT_MAX_DAY_NUM)
+            ? from
+            : std::min(UInt64(time_zone.toDayNum(from)), UInt64(0xFFFFFFFF));
+
     }
 };
 
@@ -426,7 +432,9 @@ struct ToDate32Transform32Or64
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        return std::min(time_t(time_zone.toDayNum(from)), time_t(DATE_LUT_MAX_EXTEND_DAY_NUM));
+        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+            ? from
+            : std::min(UInt64(time_zone.toDayNum(from)), UInt64(DATE_LUT_MAX_EXTEND_DAY_NUM));
     }
 };
 
@@ -442,7 +450,7 @@ struct ToDate32Transform32Or64Signed
             return daynum_min_offset;
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? from
-            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+            : time_zone.toDayNum(std::min(Int64(from), Int64(0xFFFFFFFF)));
     }
 };
 
@@ -544,14 +552,12 @@ struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & /* time_zone */)
     {
         if (from < 0)
             return 0;
-        else if (time_zone.toDayNum(from) > DATE_LUT_MAX_DAY_NUM)
-            return DATE_LUT_MAX_DAY_NUM;
-        else
-            return time_t(from);
+
+        return std::min(Int64(from), Int64(0xFFFFFFFF));
     }
 };
 
