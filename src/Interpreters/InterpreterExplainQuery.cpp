@@ -421,7 +421,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (getContext()->getSettingsRef().use_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
-                interpreter.initializeQueryPlanIfNeeded();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
@@ -465,7 +464,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (getContext()->getSettingsRef().use_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
-                    interpreter.initializeQueryPlanIfNeeded();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
                 else
