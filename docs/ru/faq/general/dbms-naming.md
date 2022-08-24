@@ -14,3 +14,4 @@ sidebar_position: 10
 
 :::info "Забавный факт"
     Спустя годы после того, как ClickHouse получил свое название, принцип комбинирования двух слов, каждое из которых имеет подходящий смысл, был признан лучшим способом назвать базу данных в [исследовании Andy Pavlo](https://www.cs.cmu.edu/~pavlo/blog/2020/03/on-naming-a-database-management-system.html), Associate Professor of Databases в Carnegie Mellon University. ClickHouse разделил награду "за лучшее название СУБД" с Postgres.
+:::

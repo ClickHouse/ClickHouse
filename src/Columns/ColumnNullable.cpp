@@ -273,22 +273,12 @@ llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, l
 
     b.CreateCondBr(lhs_or_rhs_are_null, lhs_or_rhs_are_null_block, lhs_rhs_are_not_null_block);
 
-    // if (unlikely(lval_is_null || rval_is_null))
-    // {
-    //     if (lval_is_null && rval_is_null)
-    //         return 0;
-    //     else
-    //         return lval_is_null ? null_direction_hint : -null_direction_hint;
-    // }
-
     b.SetInsertPoint(lhs_or_rhs_are_null_block);
     auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
     llvm::Value * lhs_and_rhs_are_null = b.CreateAnd(lhs_is_null_value, rhs_is_null_value);
     llvm::Value * lhs_is_null_result = b.CreateSelect(lhs_is_null_value, nan_direction_hint, b.CreateNeg(nan_direction_hint));
     llvm::Value * lhs_or_rhs_are_null_block_result = b.CreateSelect(lhs_and_rhs_are_null, lhs_equals_rhs_result, lhs_is_null_result);
     b.CreateBr(join_block);
-
-    // getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 
     b.SetInsertPoint(lhs_rhs_are_not_null_block);
     llvm::Value * lhs_rhs_are_not_null_block_result
@@ -791,6 +781,20 @@ ColumnPtr makeNullable(const ColumnPtr & column)
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+}
+
+ColumnPtr makeNullableSafe(const ColumnPtr & column)
+{
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->canBeInsideNullable())
+        return makeNullable(column);
+
+    return column;
 }
 
 }

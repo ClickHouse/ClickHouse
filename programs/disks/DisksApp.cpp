@@ -110,7 +110,7 @@ void DisksApp::init(std::vector<String> & common_arguments)
     if (options.count("help"))
     {
         printHelpMessage(options_description);
-        exit(0);
+        exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     if (!supported_commands.contains(command_name))
@@ -154,7 +154,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-        Poco::Logger::root().setChannel(new Poco::FileChannel(log_path));
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel(log_path)));
     }
 
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))

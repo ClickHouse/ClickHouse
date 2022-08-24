@@ -19,10 +19,6 @@
 #include <string>
 
 
-#ifdef MEMORY_TRACKER_DEBUG_CHECKS
-thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
-#endif
-
 namespace
 {
 
@@ -61,17 +57,17 @@ inline std::string_view toDescription(OvercommitResult result)
     switch (result)
     {
     case OvercommitResult::NONE:
-        return "Memory overcommit isn't used. OvercommitTracker isn't set.";
+        return "Memory overcommit isn't used. OvercommitTracker isn't set";
     case OvercommitResult::DISABLED:
-        return "Memory overcommit isn't used. Waiting time or orvercommit denominator are set to zero.";
+        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero";
     case OvercommitResult::MEMORY_FREED:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OvercommitResult::MEMORY_FREED shouldn't be asked for description");
     case OvercommitResult::SELECTED:
-        return "Query was selected to stop by OvercommitTracker.";
+        return "Query was selected to stop by OvercommitTracker";
     case OvercommitResult::TIMEOUTED:
-        return "Waiting timeout for memory to be freed is reached.";
+        return "Waiting timeout for memory to be freed is reached";
     case OvercommitResult::NOT_ENOUGH_FREED:
-        return "Memory overcommit has freed not enough memory.";
+        return "Memory overcommit has freed not enough memory";
     }
 }
 
@@ -170,23 +166,17 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         }
     }
 
-#ifdef MEMORY_TRACKER_DEBUG_CHECKS
-    if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
-    {
-        memory_tracker_always_throw_logical_error_on_allocation = false;
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
-    }
-#endif
-
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
     {
+        /// Revert
+        amount.fetch_sub(size, std::memory_order_relaxed);
+
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
-        amount.fetch_sub(size, std::memory_order_relaxed);
         throw DB::Exception(
             DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
             "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
@@ -223,6 +213,9 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 
         if (overcommit_result != OvercommitResult::MEMORY_FREED)
         {
+            /// Revert
+            amount.fetch_sub(size, std::memory_order_relaxed);
+
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
             ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
@@ -271,16 +264,12 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             level == VariableContext::Process ? this : query_tracker);
 }
 
-void MemoryTracker::alloc(Int64 size)
+void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 {
-    bool throw_if_memory_exceeded = true;
-    allocImpl(size, throw_if_memory_exceeded);
-}
-
-void MemoryTracker::allocNoThrow(Int64 size)
-{
-    bool throw_if_memory_exceeded = false;
-    allocImpl(size, throw_if_memory_exceeded);
+    if (untracked_memory > 0)
+        allocImpl(untracked_memory, /*throw_if_memory_exceeded*/ false);
+    else
+        free(-untracked_memory);
 }
 
 bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)

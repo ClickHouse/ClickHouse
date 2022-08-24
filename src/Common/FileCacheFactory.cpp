@@ -1,5 +1,5 @@
 #include "FileCacheFactory.h"
-#include "LRUFileCache.h"
+#include "FileCache.h"
 
 namespace DB
 {
@@ -53,7 +53,7 @@ FileCachePtr FileCacheFactory::getOrCreate(
         return it->second->cache;
     }
 
-    auto cache = std::make_shared<LRUFileCache>(cache_base_path, file_cache_settings);
+    auto cache = std::make_shared<FileCache>(cache_base_path, file_cache_settings);
     FileCacheData result{cache, file_cache_settings};
 
     auto cache_it = caches.insert(caches.end(), std::move(result));

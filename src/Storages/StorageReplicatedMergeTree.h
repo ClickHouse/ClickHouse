@@ -152,6 +152,8 @@ public:
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
+    bool hasLightweightDeletedMask() const override;
+
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
     void drop() override;
@@ -484,7 +486,8 @@ private:
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
-    void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
+    void setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
+                           ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.

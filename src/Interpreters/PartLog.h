@@ -5,6 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
 
 
 namespace DB
@@ -20,6 +21,14 @@ struct PartLogElement
         REMOVE_PART = 4,
         MUTATE_PART = 5,
         MOVE_PART = 6,
+    };
+
+    /// Copy of MergeAlgorithm since values are written to disk.
+    enum PartMergeAlgorithm
+    {
+        UNDECIDED = 0,
+        VERTICAL = 1,
+        HORIZONTAL = 2,
     };
 
     enum MergeReasonType
@@ -38,6 +47,7 @@ struct PartLogElement
 
     Type event_type = NEW_PART;
     MergeReasonType merge_reason = NOT_A_MERGE;
+    PartMergeAlgorithm merge_algorithm = UNDECIDED;
 
     time_t event_time = 0;
     Decimal64 event_time_microseconds = 0;
@@ -72,6 +82,8 @@ struct PartLogElement
     static std::string name() { return "PartLog"; }
 
     static MergeReasonType getMergeReasonType(MergeType merge_type);
+    static PartMergeAlgorithm getMergeAlgorithm(MergeAlgorithm merge_algorithm_);
+
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;

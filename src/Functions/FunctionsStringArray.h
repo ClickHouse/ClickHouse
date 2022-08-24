@@ -337,6 +337,7 @@ public:
     {
         pos = pos_;
         end = end_;
+        curr_split = 0;
     }
 
     bool get(Pos & token_begin, Pos & token_end)

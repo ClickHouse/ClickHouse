@@ -97,7 +97,7 @@ public:
 struct NameExtractURLParameters { static constexpr auto name = "extractURLParameters"; };
 using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
 
-void registerFunctionExtractURLParameters(FunctionFactory & factory)
+REGISTER_FUNCTION(ExtractURLParameters)
 {
     factory.registerFunction<FunctionExtractURLParameters>();
 }

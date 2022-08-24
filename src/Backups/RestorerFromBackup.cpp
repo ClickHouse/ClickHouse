@@ -1,5 +1,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
@@ -38,23 +39,10 @@ namespace ErrorCodes
 }
 
 
+namespace Stage = BackupCoordinationStage;
+
 namespace
 {
-    /// Finding databases and tables in the backup which we're going to restore.
-    constexpr const char * kFindingTablesInBackupStatus = "finding tables in backup";
-
-    /// Creating databases or finding them and checking their definitions.
-    constexpr const char * kCreatingDatabasesStatus = "creating databases";
-
-    /// Creating tables or finding them and checking their definition.
-    constexpr const char * kCreatingTablesStatus = "creating tables";
-
-    /// Inserting restored data to tables.
-    constexpr const char * kInsertingDataToTablesStatus = "inserting data to tables";
-
-    /// Error status.
-    constexpr const char * kErrorStatus = IRestoreCoordination::kErrorStatus;
-
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
     {
@@ -105,6 +93,7 @@ RestorerFromBackup::RestorerFromBackup(
     , restore_coordination(restore_coordination_)
     , backup(backup_)
     , context(context_)
+    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
 {
@@ -114,73 +103,56 @@ RestorerFromBackup::~RestorerFromBackup() = default;
 
 RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 {
-    try
-    {
-        /// run() can be called onle once.
-        if (!current_status.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
+    /// run() can be called onle once.
+    if (!current_stage.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
 
-        /// Find other hosts working along with us to execute this ON CLUSTER query.
-        all_hosts = BackupSettings::Util::filterHostIDs(
-            restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
+    /// Find other hosts working along with us to execute this ON CLUSTER query.
+    all_hosts = BackupSettings::Util::filterHostIDs(
+        restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
-        /// Do renaming in the create queries according to the renaming config.
-        renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
+    /// Do renaming in the create queries according to the renaming config.
+    renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
 
-        /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
-        findRootPathsInBackup();
+    /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
+    findRootPathsInBackup();
 
-        /// Find all the databases and tables which we will read from the backup.
-        setStatus(kFindingTablesInBackupStatus);
-        findDatabasesAndTablesInBackup();
+    /// Find all the databases and tables which we will read from the backup.
+    setStage(Stage::FINDING_TABLES_IN_BACKUP);
+    findDatabasesAndTablesInBackup();
 
-        /// Check access rights.
-        checkAccessForObjectsFoundInBackup();
+    /// Check access rights.
+    checkAccessForObjectsFoundInBackup();
 
-        if (mode == Mode::CHECK_ACCESS_ONLY)
-            return {};
+    if (mode == Mode::CHECK_ACCESS_ONLY)
+        return {};
 
-        /// Create databases using the create queries read from the backup.
-        setStatus(kCreatingDatabasesStatus);
-        createDatabases();
+    /// Create databases using the create queries read from the backup.
+    setStage(Stage::CREATING_DATABASES);
+    createDatabases();
 
-        /// Create tables using the create queries read from the backup.
-        setStatus(kCreatingTablesStatus);
-        createTables();
+    /// Create tables using the create queries read from the backup.
+    setStage(Stage::CREATING_TABLES);
+    createTables();
 
-        /// All what's left is to insert data to tables.
-        /// No more data restoring tasks are allowed after this point.
-        setStatus(kInsertingDataToTablesStatus);
-        return getDataRestoreTasks();
-    }
-    catch (...)
-    {
-        try
-        {
-            /// Other hosts should know that we've encountered an error.
-            setStatus(kErrorStatus, getCurrentExceptionMessage(false));
-        }
-        catch (...)
-        {
-        }
-        throw;
-    }
+    /// All what's left is to insert data to tables.
+    /// No more data restoring tasks are allowed after this point.
+    setStage(Stage::INSERTING_DATA_TO_TABLES);
+    return getDataRestoreTasks();
 }
 
-void RestorerFromBackup::setStatus(const String & new_status, const String & message)
+void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
-    if (new_status == kErrorStatus)
+    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    current_stage = new_stage;
+
+    if (restore_coordination)
     {
-        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), message);
-        if (restore_coordination)
-            restore_coordination->setStatus(restore_settings.host_id, new_status, message);
-    }
-    else
-    {
-        LOG_TRACE(log, "{}", toUpperFirst(new_status));
-        current_status = new_status;
-        if (restore_coordination)
-            restore_coordination->setStatusAndWait(restore_settings.host_id, new_status, message, all_hosts);
+        restore_coordination->setStage(restore_settings.host_id, new_stage, message);
+        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+            restore_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+        else
+            restore_coordination->waitForStage(all_hosts, new_stage);
     }
 }
 
@@ -838,14 +810,14 @@ std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencie
 
 void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 {
-    if (current_status == kInsertingDataToTablesStatus)
+    if (current_stage == Stage::INSERTING_DATA_TO_TABLES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
     data_restore_tasks.push_back(std::move(new_task));
 }
 
 void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
 {
-    if (current_status == kInsertingDataToTablesStatus)
+    if (current_stage == Stage::INSERTING_DATA_TO_TABLES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
     insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }

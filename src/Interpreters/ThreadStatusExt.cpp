@@ -343,7 +343,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    NOEXCEPT_SCOPE;
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
@@ -416,7 +416,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         LOG_TRACE(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
-            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString());
 
         os_thread_priority = 0;
     }

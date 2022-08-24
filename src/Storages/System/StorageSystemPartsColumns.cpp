@@ -117,7 +117,7 @@ void StorageSystemPartsColumns::processNextStorage(
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-        using State = IMergeTreeDataPart::State;
+        using State = MergeTreeDataPartState;
 
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
@@ -227,7 +227,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
 
-            auto serialization = part->getSerialization(column);
+            auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
 

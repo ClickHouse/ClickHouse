@@ -102,11 +102,39 @@ void Client::processError(const String & query) const
 }
 
 
+void Client::showWarnings()
+{
+    try
+    {
+        std::vector<String> messages = loadWarningMessages();
+        if (!messages.empty())
+        {
+            std::cout << "Warnings:" << std::endl;
+            for (const auto & message : messages)
+                std::cout << " * " << message << std::endl;
+            std::cout << std::endl;
+        }
+    }
+    catch (...)
+    {
+        /// Ignore exception
+    }
+}
+
 /// Make query to get all server warnings
 std::vector<String> Client::loadWarningMessages()
 {
+    /// Older server versions cannot execute the query loading warnings.
+    constexpr UInt64 min_server_revision_to_load_warnings = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
+
+    if (server_revision < min_server_revision_to_load_warnings)
+        return {};
+
     std::vector<String> messages;
-    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
+    connection->sendQuery(connection_parameters.timeouts,
+                          "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
+                          {} /* query_parameters */,
+                          "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
                           &global_context->getClientInfo(), false, {});
@@ -155,7 +183,7 @@ void Client::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
-    const char * home_path_cstr = getenv("HOME");
+    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
     if (home_path_cstr)
         home_path = home_path_cstr;
 
@@ -174,11 +202,11 @@ void Client::initialize(Poco::Util::Application & self)
       * may be statically allocated, and can be modified by a subsequent call to getenv(), putenv(3), setenv(3), or unsetenv(3).
       */
 
-    const char * env_user = getenv("CLICKHOUSE_USER");
+    const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
     if (env_user)
         config().setString("user", env_user);
 
-    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
     if (env_password)
         config().setString("password", env_password);
 
@@ -224,25 +252,9 @@ try
 
     connect();
 
-    /// Load Warnings at the beginning of connection
+    /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
-    {
-        try
-        {
-            std::vector<String> messages = loadWarningMessages();
-            if (!messages.empty())
-            {
-                std::cout << "Warnings:" << std::endl;
-                for (const auto & message : messages)
-                    std::cout << " * " << message << std::endl;
-                std::cout << std::endl;
-            }
-        }
-        catch (...)
-        {
-            /// Ignore exception
-        }
-    }
+        showWarnings();
 
     if (is_interactive && !delayed_interactive)
     {
@@ -368,7 +380,7 @@ void Client::connect()
     }
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
-    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false));
+    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -608,7 +620,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     stderr,
                     "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
-                exit(1);
+                _exit(1);
             }
 
             auto fuzzed_text = ast_to_process->formatForErrorMessage();
@@ -758,7 +770,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
                     fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
 
-                    exit(1);
+                    _exit(1);
                 }
             }
         }
@@ -897,7 +909,7 @@ void Client::processOptions(const OptionsDescription & options_description,
             auto exit_code = e.code() % 256;
             if (exit_code == 0)
                 exit_code = 255;
-            exit(exit_code);
+            _exit(exit_code);
         }
     }
 

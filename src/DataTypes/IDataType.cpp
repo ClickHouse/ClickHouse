@@ -179,10 +179,17 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
         custom_serialization = std::move(custom_desc_->serialization);
 }
 
-MutableSerializationInfoPtr IDataType::createSerializationInfo(
-    const SerializationInfo::Settings & settings) const
+MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfo::Settings & settings) const
 {
     return std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings);
+}
+
+SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
+{
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn());
+
+    return std::make_shared<SerializationInfo>(ISerialization::getKind(column), SerializationInfo::Settings{});
 }
 
 SerializationPtr IDataType::getDefaultSerialization() const

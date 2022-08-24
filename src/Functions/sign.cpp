@@ -43,7 +43,7 @@ struct FunctionUnaryArithmeticMonotonicity<NameSign>
     }
 };
 
-void registerFunctionSign(FunctionFactory & factory)
+REGISTER_FUNCTION(Sign)
 {
     factory.registerFunction<FunctionSign>(FunctionFactory::CaseInsensitive);
 }

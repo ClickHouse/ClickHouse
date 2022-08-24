@@ -4,9 +4,9 @@ JSONColumns
 	"b": ["String", "String", "String", "String", "String"],
 	"c": [[[[],"String"],[[],"gnirtS"]], [[[0],"String"],[[0],"gnirtS"]], [[[0,1],"String"],[[0,1],"gnirtS"]], [[[],"String"],[[0,1,2],"gnirtS"]], [[[0],"String"],[[],"gnirtS"]]]
 }
-a	Nullable(Float64)					
+a	Nullable(Int64)					
 b	Nullable(String)					
-c	Array(Tuple(Array(Nullable(Float64)), Nullable(String)))					
+c	Array(Tuple(Array(Nullable(Int64)), Nullable(String)))					
 0	String	[([],'String'),([],'gnirtS')]
 1	String	[([0],'String'),([0],'gnirtS')]
 2	String	[([0,1],'String'),([0,1],'gnirtS')]
@@ -18,9 +18,9 @@ JSONCompactColumns
 	["String", "String", "String", "String", "String"],
 	[[[[],"String"],[[],"gnirtS"]], [[[0],"String"],[[0],"gnirtS"]], [[[0,1],"String"],[[0,1],"gnirtS"]], [[[],"String"],[[0,1,2],"gnirtS"]], [[[0],"String"],[[],"gnirtS"]]]
 ]
-c1	Nullable(Float64)					
+c1	Nullable(Int64)					
 c2	Nullable(String)					
-c3	Array(Tuple(Array(Nullable(Float64)), Nullable(String)))					
+c3	Array(Tuple(Array(Nullable(Int64)), Nullable(String)))					
 0	String	[([],'String'),([],'gnirtS')]
 1	String	[([0],'String'),([0],'gnirtS')]
 2	String	[([0,1],'String'),([0,1],'gnirtS')]
@@ -74,9 +74,9 @@ JSONColumnsWithMetadata
 		"bytes_read": 20
 	}
 }
-b	Nullable(Float64)					
-a	Nullable(Float64)					
-c	Nullable(Float64)					
+b	Nullable(Int64)					
+a	Nullable(Int64)					
+c	Nullable(Int64)					
 d	Nullable(String)					
 1	3	\N	\N
 2	2	\N	\N
@@ -89,8 +89,8 @@ OK
 3	
 2	
 1	
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 c3	Nullable(String)					
 1	1	\N
 2	2	\N

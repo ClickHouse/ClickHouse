@@ -7,16 +7,20 @@ namespace DB
 RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStatus(const String &, const String &, const String &)
+void RestoreCoordinationLocal::setStage(const String &, const String &, const String &)
 {
 }
 
-Strings RestoreCoordinationLocal::setStatusAndWait(const String &, const String &, const String &, const Strings &)
+void RestoreCoordinationLocal::setError(const String &, const Exception &)
+{
+}
+
+Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &)
 {
     return {};
 }
 
-Strings RestoreCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const String &, const Strings &, UInt64)
+Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &, std::chrono::milliseconds)
 {
     return {};
 }

@@ -7,6 +7,7 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
+#include <bit>
 
 #include <type_traits>
 
@@ -836,7 +837,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(const std::string_view & str)
+inline T parseFromString(std::string_view str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -1027,15 +1028,17 @@ requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     readPODBinary(x, buf);
-
-    if constexpr (sizeof(x) == 1)
-        return;
-    else if constexpr (sizeof(x) == 2)
-        x = __builtin_bswap16(x);
-    else if constexpr (sizeof(x) == 4)
-        x = __builtin_bswap32(x);
-    else if constexpr (sizeof(x) == 8)
-        x = __builtin_bswap64(x);
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        if constexpr (sizeof(x) == 1)
+            return;
+        else if constexpr (sizeof(x) == 2)
+            x = __builtin_bswap16(x);
+        else if constexpr (sizeof(x) == 4)
+            x = __builtin_bswap32(x);
+        else if constexpr (sizeof(x) == 8)
+            x = __builtin_bswap64(x);
+    }
 }
 
 template <typename T>
@@ -1238,7 +1241,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
 
 
 /** Read serialized exception.
@@ -1338,7 +1341,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(const std::string_view & s)
+inline T parseWithSizeSuffix(std::string_view s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }

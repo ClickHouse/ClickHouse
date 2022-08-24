@@ -93,3 +93,35 @@ Predefined characters: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, 
 This implementation slightly differs from re2::RE2::QuoteMeta. It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
 For more information, see the link: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
+
+## translate(s, from, to)
+
+The function replaces characters in the string ‘s’ in accordance with one-to-one character mapping defined by ‘from’ and ‘to’ strings. ‘from’ and ‘to’ must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
+
+Example:
+
+``` sql
+SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
+```
+
+``` text
+┌─res───────────┐
+│ HELLO, WORLD! │
+└───────────────┘
+```
+
+## translateUTF8(string, from, to)
+
+Similar to previous function, but works with UTF-8 arguments. ‘from’ and ‘to’ must be valid constant UTF-8 strings of the same size.
+
+Example:
+
+``` sql
+SELECT translateUTF8('Hélló, Wórld¡', 'óé¡', 'oe!') AS res
+```
+
+``` text
+┌─res───────────┐
+│ Hello, World! │
+└───────────────┘
+```

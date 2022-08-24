@@ -71,7 +71,13 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 
 bool ExecutionThreadContext::executeTask()
 {
-    OpenTelemetrySpanHolder span("ExecutionThreadContext::executeTask() " + node->processor->getName());
+    std::unique_ptr<OpenTelemetrySpanHolder> span;
+
+    if (trace_processors)
+    {
+        span = std::make_unique<OpenTelemetrySpanHolder>("ExecutionThreadContext::executeTask() " + node->processor->getName());
+        span->addAttribute("thread_number", thread_number);
+    }
     std::optional<Stopwatch> execution_time_watch;
 
 #ifndef NDEBUG
@@ -93,17 +99,16 @@ bool ExecutionThreadContext::executeTask()
 
     if (profile_processors)
     {
-         UInt64 elapsed_microseconds =  execution_time_watch->elapsedMicroseconds();
-         node->processor->elapsed_us += elapsed_microseconds;
-         span.addAttribute("execution_time_ms", elapsed_microseconds);
-     }
+        UInt64 elapsed_microseconds =  execution_time_watch->elapsedMicroseconds();
+        node->processor->elapsed_us += elapsed_microseconds;
+        if (trace_processors)
+            span->addAttribute("execution_time_ms", elapsed_microseconds);
+    }
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
-    span.addAttribute("execution_time_ns", execution_time_watch->elapsed());
+    if (trace_processors)
+        span->addAttribute("execution_time_ns", execution_time_watch->elapsed());
 #endif
-
-    span.addAttribute("thread_number", thread_number);
-
     return node->exception == nullptr;
 }
 
