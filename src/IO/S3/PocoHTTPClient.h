@@ -82,9 +82,9 @@ public:
 
     void SetResponseBody(std::string & response_body) /// NOLINT
     {
-        body_stream = Aws::Utils::Stream::ResponseStream(
-            Aws::New<std::stringstream>("http result buf", response_body)
-        );
+        auto stream = Aws::New<std::stringstream>("http result buf", response_body); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        stream->exceptions(std::ios::failbit);
+        body_stream = Aws::Utils::Stream::ResponseStream(std::move(stream));  
     }
 
     Aws::IOStream & GetResponseBody() const override
