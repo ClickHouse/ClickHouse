@@ -4,7 +4,9 @@ import re
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", with_zookeeper=False, main_configs=["configs/log.xml"])
+node = cluster.add_instance(
+    "node", with_zookeeper=False, main_configs=["configs/log.xml"]
+)
 
 config = """<clickhouse>
     <logger>
