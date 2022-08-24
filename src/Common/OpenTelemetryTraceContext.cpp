@@ -57,8 +57,9 @@ void Span::addAttribute(const Exception & e) noexcept
     {
         this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
     }
-    catch(...)
+    catch (...)
     {
+        /// Ignore exceptions
     }
 }
 
@@ -71,8 +72,9 @@ void Span::addAttribute(std::exception_ptr e) noexcept
     {
         this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
     }
-    catch(...)
+    catch (...)
     {
+        /// Ignore exceptions
     }
 }
 
