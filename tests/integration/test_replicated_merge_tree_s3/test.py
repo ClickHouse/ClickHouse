@@ -138,7 +138,7 @@ def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_par
 def test_drop_cache_on_cluster(cluster):
     create_table(
         cluster,
-        additional_settings={"storage_policy":"s3_cache"},
+        additional_settings={"storage_policy": "s3_cache"},
     )
 
     insert(cluster, node_idxs=[1, 2, 3], verify=True)
@@ -147,7 +147,9 @@ def test_drop_cache_on_cluster(cluster):
     node2 = cluster.instances["node2"]
     node3 = cluster.instances["node3"]
 
-    node1.query(f"select * from clusterAllReplicas(cluster, default, {TABLE_NAME}) format Null")
+    node1.query(
+        f"select * from clusterAllReplicas(cluster, default, {TABLE_NAME}) format Null"
+    )
 
     assert int(node1.query("select count() from system.filesystem_cache")) > 0
     assert int(node2.query("select count() from system.filesystem_cache")) > 0
