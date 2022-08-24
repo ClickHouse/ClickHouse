@@ -71,11 +71,11 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 
 bool ExecutionThreadContext::executeTask()
 {
-    std::unique_ptr<OpenTelemetrySpanHolder> span;
+    std::unique_ptr<SpanHolder> span;
 
     if (trace_processors)
     {
-        span = std::make_unique<OpenTelemetrySpanHolder>("ExecutionThreadContext::executeTask() " + node->processor->getName());
+        span = std::make_unique<SpanHolder>("ExecutionThreadContext::executeTask() " + node->processor->getName());
         span->addAttribute("thread_number", thread_number);
     }
     std::optional<Stopwatch> execution_time_watch;

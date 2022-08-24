@@ -9,10 +9,12 @@
 
 namespace DB
 {
+namespace OpenTelemetry
+{
 
-thread_local OpenTelemetryThreadTraceContext current_thread_trace_context;
+thread_local TracingContextOnThread current_thread_trace_context;
 
-void OpenTelemetrySpan::addAttribute(std::string_view name, UInt64 value)
+void Span::addAttribute(std::string_view name, UInt64 value)
 {
     if (!this->isTraceEnabled() || name.empty())
         return;
@@ -20,13 +22,13 @@ void OpenTelemetrySpan::addAttribute(std::string_view name, UInt64 value)
     this->attributes.push_back(Tuple{name, toString(value)});
 }
 
-void OpenTelemetrySpan::addAttributeIfNotZero(std::string_view name, UInt64 value)
+void Span::addAttributeIfNotZero(std::string_view name, UInt64 value)
 {
     if (value != 0)
         addAttribute(name, value);
 }
 
-void OpenTelemetrySpan::addAttribute(std::string_view name, std::string_view value)
+void Span::addAttribute(std::string_view name, std::string_view value)
 {
     if (!this->isTraceEnabled() || name.empty())
         return;
@@ -34,7 +36,7 @@ void OpenTelemetrySpan::addAttribute(std::string_view name, std::string_view val
     this->attributes.push_back(Tuple{name, value});
 }
 
-void OpenTelemetrySpan::addAttribute(std::string_view name, std::function<String()> value_supplier)
+void Span::addAttribute(std::string_view name, std::function<String()> value_supplier)
 {
     if (!this->isTraceEnabled() || !value_supplier)
         return;
@@ -46,7 +48,7 @@ void OpenTelemetrySpan::addAttribute(std::string_view name, std::function<String
     this->attributes.push_back(Tuple{name, value});
 }
 
-void OpenTelemetrySpan::addAttribute(const Exception & e) noexcept
+void Span::addAttribute(const Exception & e) noexcept
 {
     if (!this->isTraceEnabled())
         return;
@@ -60,7 +62,7 @@ void OpenTelemetrySpan::addAttribute(const Exception & e) noexcept
     }
 }
 
-void OpenTelemetrySpan::addAttribute(std::exception_ptr e) noexcept
+void Span::addAttribute(std::exception_ptr e) noexcept
 {
     if (!this->isTraceEnabled() || e == nullptr)
         return;
@@ -74,7 +76,7 @@ void OpenTelemetrySpan::addAttribute(std::exception_ptr e) noexcept
     }
 }
 
-OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(std::string_view _operation_name)
+SpanHolder::SpanHolder(std::string_view _operation_name)
 {
     if (current_thread_trace_context.isTraceEnabled())
     {
@@ -90,7 +92,7 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(std::string_view _operation_nam
     }
 }
 
-void OpenTelemetrySpanHolder::finish()
+void SpanHolder::finish()
 {
     if (!this->isTraceEnabled())
         return;
@@ -121,12 +123,12 @@ void OpenTelemetrySpanHolder::finish()
     trace_id = UUID();
 }
 
-OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
+SpanHolder::~SpanHolder()
 {
     finish();
 }
 
-bool OpenTelemetryTraceContext::parseTraceparentHeader(std::string_view traceparent, String & error)
+bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String & error)
 {
     trace_id = 0;
 
@@ -185,7 +187,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(std::string_view tracepar
     return true;
 }
 
-String OpenTelemetryTraceContext::composeTraceparentHeader() const
+String TracingContext::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.
@@ -199,12 +201,12 @@ String OpenTelemetryTraceContext::composeTraceparentHeader() const
         static_cast<uint8_t>(trace_flags));
 }
 
-const OpenTelemetryThreadTraceContext & OpenTelemetryThreadTraceContext::current()
+const TracingContextOnThread & TracingContextOnThread::current()
 {
     return current_thread_trace_context;
 }
 
-void OpenTelemetryThreadTraceContext::reset()
+void TracingContextOnThread::reset()
 {
     this->trace_id = UUID();
     this->span_id = 0;
@@ -213,9 +215,9 @@ void OpenTelemetryThreadTraceContext::reset()
     this->span_log.reset();
 }
 
-OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
+TracingContextHolder::TracingContextHolder(
     std::string_view _operation_name,
-    OpenTelemetryTraceContext _parent_trace_context,
+    TracingContext _parent_trace_context,
     const Settings * settings_ptr,
     const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
 {
@@ -278,7 +280,7 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
     current_thread_trace_context.span_log = _span_log;
 }
 
-OpenTelemetryThreadTraceContextScope::~OpenTelemetryThreadTraceContextScope()
+TracingContextHolder::~TracingContextHolder()
 {
     if (this->root_span.isTraceEnabled())
     {
@@ -306,4 +308,5 @@ OpenTelemetryThreadTraceContextScope::~OpenTelemetryThreadTraceContextScope()
     }
 }
 
+}
 }
