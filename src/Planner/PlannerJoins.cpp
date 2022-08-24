@@ -221,8 +221,8 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
 {
     ActionsDAGPtr join_expression_actions = std::make_shared<ActionsDAG>(join_expression_input_columns);
 
-    PlannerActionsVisitor join_expression_visitor(join_expression_actions, planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_node.getJoinExpression());
+    PlannerActionsVisitor join_expression_visitor(planner_context);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_expression_actions, join_node.getJoinExpression());
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",

@@ -29,10 +29,16 @@ namespace DB
   * 8. Special functions handling:
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
+  *
   * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function
   * based on group by kind and group by keys positions.
-  * For function `in` and its variations arguments are resolved, but sets are not build. If left and right arguments are constants
-  * constant folding is performed.
+  *
+  * For function `in` and its variations arguments are resolved, but sets are not build.
+  * If left and right arguments are constants constant folding is performed.
+  * If right argument resolved as table function, or table, it is replaced with query that read only ordinary columns from underlying
+  * storage.
+  * Example: SELECT id FROM test_table WHERE id IN test_table_other;
+  * Result: SELECT id FROM test_table WHERE id IN (SELECT test_table_column FROM test_table_other);
   */
 class QueryAnalysisPass final : public IQueryTreePass
 {

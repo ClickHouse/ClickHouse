@@ -20,9 +20,8 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
 
     for (const auto & node : actions->getNodes())
     {
-        auto it = child_input_columns.find(node.result_name);
-
-        if (it == child_input_columns.end())
+        auto it = child_input_columns_copy.find(node.result_name);
+        if (it == child_input_columns_copy.end())
             continue;
 
         child_required_output_columns_names.insert(node.result_name);

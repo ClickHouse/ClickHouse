@@ -7,6 +7,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/Set.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -109,41 +110,57 @@ private:
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
 };
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
+struct SubqueryNodeForSet
+{
+    QueryTreeNodePtr subquery_node;
+    SetPtr set;
+};
 
 class GlobalPlannerContext
 {
 public:
     GlobalPlannerContext() = default;
 
-    void registerSet(UInt128 source_hash, SetPtr set)
+    using SetKeyToSet = std::unordered_map<String, SetPtr>;
+    using SetKeyToSubqueryNode = std::unordered_map<String, SubqueryNodeForSet>;
+
+    void registerSet(const String & key, const SetPtr & set)
     {
-        set_source_to_set.emplace(source_hash, set);
+        set_key_to_set.emplace(key, set);
     }
 
-    SetPtr getSet(UInt128 source_hash) const
+    SetPtr getSet(const String & key) const
     {
-        auto it = set_source_to_set.find(source_hash);
-        if (it == set_source_to_set.end())
+        auto it = set_key_to_set.find(key);
+        if (it == set_key_to_set.end())
             return nullptr;
 
         return it->second;
     }
 
-    void registerSubqueryForSet(String key, SubqueryForSet subquery_for_set)
+    void registerSubqueryNodeForSet(const String & key, const SubqueryNodeForSet & subquery_node_for_set)
     {
-        subqueries_for_sets.emplace(key, std::move(subquery_for_set));
+        auto node_type = subquery_node_for_set.subquery_node->getNodeType();
+        if (node_type != QueryTreeNodeType::QUERY &&
+            node_type != QueryTreeNodeType::UNION)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid node for set table expression. Expected query or union. Actual {}",
+                subquery_node_for_set.subquery_node->formatASTForErrorMessage());
+        if (!subquery_node_for_set.set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Set must be initialized");
+
+        set_key_to_subquery_node.emplace(key, subquery_node_for_set);
     }
 
-    const SubqueriesForSets & getSubqueriesForSets() const
+    const SetKeyToSubqueryNode & getSubqueryNodesForSets() const
     {
-        return subqueries_for_sets;
+        return set_key_to_subquery_node;
     }
 private:
-    std::unordered_map<UInt128, SetPtr, UInt128Hash> set_source_to_set;
+    SetKeyToSet set_key_to_set;
 
-    SubqueriesForSets subqueries_for_sets;
+    SetKeyToSubqueryNode set_key_to_subquery_node;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;

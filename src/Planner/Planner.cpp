@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -75,7 +76,6 @@ namespace ErrorCodes
   * TODO: Support ORDER BY, LIMIT
   * TODO: Support WINDOW FUNCTIONS
   * TODO: Support DISTINCT
-  * TODO: Support building sets for IN functions
   * TODO: Support trivial count optimization
   * TODO: Support totals, extremes
   * TODO: Support projections
@@ -132,7 +132,8 @@ public:
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected query, table, table function, join or array join query node. Actual {}",
+                    "Expected query, union, table, table function, join or array join query node. Actual {} {}",
+                    join_tree_node->getNodeTypeName(),
                     join_tree_node->formatASTForErrorMessage());
             }
         }
@@ -214,8 +215,8 @@ using CollectSourceColumnsVisitor = CollectSourceColumnsMatcher::Visitor;
 ActionsDAGPtr convertExpressionNodeIntoDAG(const QueryTreeNodePtr & expression_node, const ColumnsWithTypeAndName & inputs, const PlannerContextPtr & planner_context)
 {
     ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(inputs);
-    PlannerActionsVisitor actions_visitor(action_dag, planner_context);
-    auto expression_dag_index_nodes = actions_visitor.visit(expression_node);
+    PlannerActionsVisitor actions_visitor(planner_context);
+    auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
     action_dag->getOutputs().clear();
 
     for (auto & expression_dag_index_node : expression_dag_index_nodes)
@@ -294,8 +295,9 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     }
     else if (query_node || union_node)
     {
-        Planner subquery_planner(table_expression, select_query_options, planner_context->getQueryContext(), planner_context->getGlobalPlannerContext());
-        subquery_planner.initializeQueryPlanIfNeeded();
+        auto subquery_options = select_query_options.subquery();
+        Planner subquery_planner(table_expression, subquery_options, planner_context->getQueryContext(), planner_context->getGlobalPlannerContext());
+        subquery_planner.buildQueryPlanIfNeeded();
         query_plan = std::move(subquery_planner).extractQueryPlan();
     }
     else
@@ -604,7 +606,7 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
     auto left_plan_output_columns = left_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
     ActionsDAGPtr array_join_action_dag = std::make_shared<ActionsDAG>(left_plan_output_columns);
-    PlannerActionsVisitor actions_visitor(array_join_action_dag, planner_context);
+    PlannerActionsVisitor actions_visitor(planner_context);
 
     NameSet array_join_columns;
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
@@ -613,7 +615,7 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
         const auto & array_join_column_name = array_join_expression_column.getColumnName();
         array_join_columns.insert(array_join_column_name);
 
-        auto expression_dag_index_nodes = actions_visitor.visit(array_join_expression_column.getExpressionOrThrow());
+        auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
         {
             const auto * array_join_column_node = &array_join_action_dag->addAlias(*expression_dag_index_node, array_join_column_name);
@@ -670,6 +672,51 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
     }
 }
 
+void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQueryOptions & select_query_options, const PlannerContextPtr & planner_context)
+{
+    if (select_query_options.is_subquery)
+        return;
+
+    SubqueriesForSets subqueries_for_sets;
+    const auto & subquery_node_to_sets = planner_context->getGlobalPlannerContext()->getSubqueryNodesForSets();
+
+    for (auto [key, subquery_node_for_set] : subquery_node_to_sets)
+    {
+        /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
+          * Because the result of this query is not the result of the entire query.
+          * Constraints work instead
+          *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
+          *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
+          *  which are checked separately (in the Set, Join objects).
+          */
+        auto subquery_context = Context::createCopy(planner_context->getQueryContext());
+        Settings subquery_settings = planner_context->getQueryContext()->getSettings();
+        subquery_settings.max_result_rows = 0;
+        subquery_settings.max_result_bytes = 0;
+        /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
+        subquery_settings.extremes = false;
+        subquery_context->setSettings(subquery_settings);
+
+        auto subquery_options = select_query_options.subquery();
+        Planner subquery_planner(
+            subquery_node_for_set.subquery_node,
+            subquery_options,
+            planner_context->getQueryContext(),
+            planner_context->getGlobalPlannerContext());
+        subquery_planner.buildQueryPlanIfNeeded();
+
+        SubqueryForSet subquery_for_set;
+        subquery_for_set.set = subquery_node_for_set.set;
+        subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
+
+        subqueries_for_sets.emplace(key, std::move(subquery_for_set));
+    }
+
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), limits, planner_context->getQueryContext());
+}
+
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -704,7 +751,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             query_tree->formatASTForErrorMessage());
 }
 
-void Planner::initializeQueryPlanIfNeeded()
+void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
         return;
@@ -728,7 +775,7 @@ void Planner::initializeQueryPlanIfNeeded()
         for (auto & query_node : union_query_tree->getQueries().getNodes())
         {
             Planner query_planner(query_node, select_query_options, current_context);
-            query_planner.initializeQueryPlanIfNeeded();
+            query_planner.buildQueryPlanIfNeeded();
             auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
             query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
             query_plans.push_back(std::move(query_node_plan));
@@ -741,7 +788,10 @@ void Planner::initializeQueryPlanIfNeeded()
         for (auto & query_node_plan : query_plans)
         {
             if (blocksHaveEqualStructure(query_node_plan->getCurrentDataStream().header, union_common_header))
+            {
+                query_plans_streams.push_back(query_node_plan->getCurrentDataStream());
                 continue;
+            }
 
             auto actions_dag = ActionsDAG::makeConvertingActions(
                     query_node_plan->getCurrentDataStream().header.getColumnsWithTypeAndName(),
@@ -792,11 +842,10 @@ void Planner::initializeQueryPlanIfNeeded()
     }
 
     auto & query_node = query_tree->as<QueryNode &>();
-    auto query = query_node.toAST();
 
     SelectQueryInfo select_query_info;
-    select_query_info.original_query = query;
-    select_query_info.query = query;
+    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
+    select_query_info.query = select_query_info.original_query;
 
     CollectTableExpressionIdentifiersVisitor collect_table_expression_identifiers_visitor;
     collect_table_expression_identifiers_visitor.visit(query_node.getJoinTree(), *planner_context);
@@ -859,7 +908,7 @@ void Planner::initializeQueryPlanIfNeeded()
     size_t projection_action_step_index = actions_chain.getLastStepIndex();
 
     // std::cout << "Chain dump before finalize" << std::endl;
-    // std::cout << planner_context.actions_chain.dump() << std::endl;
+    // std::cout << actions_chain.dump() << std::endl;
 
     actions_chain.finalize();
 
@@ -884,6 +933,8 @@ void Planner::initializeQueryPlanIfNeeded()
     auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_chain[projection_action_step_index]->getActions());
     projection_step->setStepDescription("Projection");
     query_plan.addStep(std::move(projection_step));
+
+    addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context);
 }
 
 }
