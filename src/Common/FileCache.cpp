@@ -872,7 +872,7 @@ void FileCache::remove(
     Key key, size_t offset,
     std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
 {
-    LOG_TEST(log, "Remove. Key: {}, offset: {}", key.toString(), offset);
+    LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", key.toString(), offset);
 
     auto * cell = getCell(key, offset, cache_lock);
     if (!cell)
