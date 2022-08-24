@@ -98,7 +98,7 @@ struct TracingContextHolder
 
     TracingContextHolder(std::string_view _operation_name,
         const TracingContext& _parent_trace_context,
-        const std::weak_ptr<OpenTelemetrySpanLog>& _log) 
+        const std::weak_ptr<OpenTelemetrySpanLog>& _log)
         : TracingContextHolder(_operation_name,
             _parent_trace_context,
             nullptr,
