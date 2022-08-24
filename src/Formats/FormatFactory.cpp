@@ -63,10 +63,10 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
-    format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
+    format_settings.csv.enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
-    format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
-    format_settings.csv.input_format_use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
+    format_settings.csv.arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
+    format_settings.csv.use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
     format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
@@ -124,9 +124,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
-    format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
+    format_settings.tsv.enum_as_number = settings.input_format_tsv_enum_as_number;
     format_settings.tsv.null_representation = settings.format_tsv_null_representation;
-    format_settings.tsv.input_format_use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
+    format_settings.tsv.use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
     format_settings.tsv.skip_first_lines = settings.input_format_tsv_skip_first_lines;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
@@ -571,6 +571,25 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) co
 {
     const auto & target = getCreators(name);
     return target.supports_subset_of_columns;
+}
+
+void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
+    const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter)
+{
+    auto & target = dict[name].additional_info_for_schema_cache_getter;
+    if (target)
+        throw Exception("FormatFactory: additional info for schema cache getter " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(additional_info_for_schema_cache_getter);
+}
+
+String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    const auto & additional_info_getter = getCreators(name).additional_info_for_schema_cache_getter;
+    if (!additional_info_getter)
+        return "";
+
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    return additional_info_getter(format_settings);
 }
 
 bool FormatFactory::isInputFormat(const String & name) const
