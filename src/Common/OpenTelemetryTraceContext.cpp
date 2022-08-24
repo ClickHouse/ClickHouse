@@ -12,59 +12,71 @@ namespace DB
 
 thread_local OpenTelemetryThreadTraceContext current_thread_trace_context;
 
-void OpenTelemetrySpan::addAttribute(const std::string & name, UInt64 value)
+void OpenTelemetrySpan::addAttribute(std::string_view name, UInt64 value)
 {
-    if (trace_id == UUID() || name.empty())
+    if (!this->isTraceEnabled() || name.empty())
         return;
 
     this->attributes.push_back(Tuple{name, toString(value)});
 }
 
-void OpenTelemetrySpan::addAttribute(const std::string & name, const std::string & value)
+void OpenTelemetrySpan::addAttributeIfNotZero(std::string_view name, UInt64 value)
 {
-    if (trace_id == UUID() || name.empty() || value.empty())
+    if (value != 0)
+        addAttribute(name, value);
+}
+
+void OpenTelemetrySpan::addAttribute(std::string_view name, std::string_view value)
+{
+    if (!this->isTraceEnabled() || name.empty())
         return;
 
     this->attributes.push_back(Tuple{name, value});
 }
 
-void OpenTelemetrySpan::addAttribute(const std::string & name, std::function<std::string()> value_supplier)
+void OpenTelemetrySpan::addAttribute(std::string_view name, std::function<String()> value_supplier)
 {
     if (!this->isTraceEnabled() || !value_supplier)
         return;
 
-    std::string value = value_supplier();
+    String value = value_supplier();
     if (value.empty())
         return;
 
     this->attributes.push_back(Tuple{name, value});
 }
 
-void OpenTelemetrySpan::addAttribute(const Exception & e)
+void OpenTelemetrySpan::addAttribute(const Exception & e) noexcept
 {
-    if (trace_id == UUID())
+    if (!this->isTraceEnabled())
         return;
 
-    this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
-}
-
-void OpenTelemetrySpan::addAttribute(std::exception_ptr e)
-{
-    if (trace_id == UUID() || e == nullptr)
-        return;
-
-    this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
-}
-
-OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_name)
-{
-    if (current_thread_trace_context.trace_id == UUID())
+    try
     {
-        this->trace_id = 0;
-        this->span_id = 0;
-        this->parent_span_id = 0;
+        this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
     }
-    else
+    catch(...)
+    {
+    }
+}
+
+void OpenTelemetrySpan::addAttribute(std::exception_ptr e) noexcept
+{
+    if (!this->isTraceEnabled() || e == nullptr)
+        return;
+
+    try
+    {
+        this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
+    }
+    catch(...)
+    {
+    }
+}
+
+OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(std::string_view _operation_name)
+{
+    if (current_thread_trace_context.isTraceEnabled())
     {
         this->trace_id = current_thread_trace_context.trace_id;
         this->parent_span_id = current_thread_trace_context.span_id;
@@ -80,10 +92,10 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_
 
 void OpenTelemetrySpanHolder::finish()
 {
-    if (trace_id == UUID())
+    if (!this->isTraceEnabled())
         return;
 
-    // First of all, return old value of current span.
+    // First of all, restore old value of current span.
     assert(current_thread_trace_context.span_id == span_id);
     current_thread_trace_context.span_id = parent_span_id;
 
@@ -114,8 +126,7 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
     finish();
 }
 
-
-bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent, std::string & error)
+bool OpenTelemetryTraceContext::parseTraceparentHeader(std::string_view traceparent, String & error)
 {
     trace_id = 0;
 
@@ -174,8 +185,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     return true;
 }
 
-
-std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
+String OpenTelemetryTraceContext::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.
@@ -198,13 +208,13 @@ void OpenTelemetryThreadTraceContext::reset()
 {
     this->trace_id = UUID();
     this->span_id = 0;
-    this->trace_flags = 0;
+    this->trace_flags = TRACE_FLAG_NONE;
     this->tracestate = "";
     this->span_log.reset();
 }
 
 OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
-    const std::string & _operation_name,
+    std::string_view _operation_name,
     OpenTelemetryTraceContext _parent_trace_context,
     const Settings * settings_ptr,
     const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
@@ -232,9 +242,6 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
         current_thread_trace_context.span_id = this->root_span.span_id;
         return;
     }
-
-    this->root_span.trace_id = UUID();
-    this->root_span.span_id = 0;
 
     if (!_parent_trace_context.isTraceEnabled())
     {
@@ -267,7 +274,7 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
     /// set up trace context on current thread
     current_thread_trace_context = _parent_trace_context;
     current_thread_trace_context.span_id = this->root_span.span_id;
-    current_thread_trace_context.trace_flags = 1;
+    current_thread_trace_context.trace_flags = TRACE_FLAG_SAMPLED;
     current_thread_trace_context.span_log = _span_log;
 }
 
@@ -298,6 +305,5 @@ OpenTelemetryThreadTraceContextScope::~OpenTelemetryThreadTraceContextScope()
         current_thread_trace_context.span_id = this->root_span.parent_span_id;
     }
 }
-
 
 }
