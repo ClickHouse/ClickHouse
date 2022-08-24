@@ -117,19 +117,19 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 
 Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
-    planner.initializeQueryPlanIfNeeded();
+    planner.buildQueryPlanIfNeeded();
     return planner.getQueryPlan().getCurrentDataStream().header;
 }
 
 QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
 {
-    planner.initializeQueryPlanIfNeeded();
+    planner.buildQueryPlanIfNeeded();
     return std::move(planner).extractQueryPlan();
 }
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
-    planner.initializeQueryPlanIfNeeded();
+    planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
     QueryPlanOptimizationSettings optimization_settings;
