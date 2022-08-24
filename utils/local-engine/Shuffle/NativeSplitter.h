@@ -2,10 +2,11 @@
 #include <jni.h>
 #include <stack>
 #include <Shuffle/ShuffleSplitter.h>
+#include <Common/BlockIterator.h>
 
 namespace local_engine
 {
-class NativeSplitter
+class NativeSplitter : BlockIterator
 {
 public:
     struct Options
@@ -46,9 +47,8 @@ private:
 
 
     std::vector<std::shared_ptr<ColumnsBuffer>> partition_buffer;
-    std::stack<std::pair<int32_t, DB::Block *>> output_buffer;
+    std::stack<std::pair<int32_t, std::unique_ptr<DB::Block>>> output_buffer;
     int32_t next_partition_id = -1;
-    DB::Block * next_block = nullptr;
     jobject input;
 };
 

@@ -22,15 +22,15 @@ local_engine::ShuffleReader::ShuffleReader(std::unique_ptr<ReadBuffer> in_, bool
 }
 Block * local_engine::ShuffleReader::read()
 {
-    Block * cur_block = new Block(input_stream->read());
+    auto block = input_stream->read();
+    setCurrentBlock(block);
     if (header.columns() == 0)
-        header = cur_block->cloneEmpty();
-    if (cur_block->columns() == 0)
+        header = currentBlock().cloneEmpty();
+    if (currentBlock().columns() == 0)
     {
-        delete cur_block;
-        cur_block = new Block(header.cloneEmpty());
+        currentBlock() = header.cloneEmpty();
     }
-    return cur_block;
+    return &currentBlock();
 }
 ShuffleReader::~ShuffleReader()
 {

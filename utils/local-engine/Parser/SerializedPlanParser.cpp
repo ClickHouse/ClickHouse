@@ -1447,10 +1447,12 @@ std::unique_ptr<SparkRowInfo> LocalExecutor::writeBlockToSparkRow(Block & block)
 bool LocalExecutor::hasNext()
 {
     bool has_next;
-    if (!this->current_chunk || this->current_chunk->rows() == 0)
+    if (currentBlock().columns() == 0 || isConsumed())
     {
-        this->current_chunk = std::make_unique<Block>(this->header);
-        has_next = this->executor->pull(*this->current_chunk);
+        auto empty_block = header.cloneEmpty();
+        setCurrentBlock(empty_block);
+        has_next = this->executor->pull(currentBlock());
+        produce();
     }
     else
     {
@@ -1460,8 +1462,9 @@ bool LocalExecutor::hasNext()
 }
 SparkRowInfoPtr LocalExecutor::next()
 {
-    SparkRowInfoPtr row_info = writeBlockToSparkRow(*this->current_chunk);
-    this->current_chunk.reset();
+    checkNextValid();
+    SparkRowInfoPtr row_info = writeBlockToSparkRow(currentBlock());
+    produce();
     if (this->spark_buffer)
     {
         this->ch_column_to_spark_row->freeMem(spark_buffer->address, spark_buffer->size);
@@ -1475,17 +1478,19 @@ SparkRowInfoPtr LocalExecutor::next()
 
 Block * LocalExecutor::nextColumnar()
 {
+    checkNextValid();
     Block * columnar_batch;
-    if (this->current_chunk->columns() > 0)
+    if (currentBlock().columns() > 0)
     {
-        columnar_batch = new Block(*this->current_chunk);
-        this->current_chunk.reset();
+        columnar_batch = &currentBlock();
     }
     else
     {
-        columnar_batch = new Block(header.cloneEmpty());
-        this->current_chunk.reset();
+        auto empty_block = header.cloneEmpty();
+        setCurrentBlock(empty_block);
+        columnar_batch = &currentBlock();
     }
+    consume();
     return columnar_batch;
 }
 

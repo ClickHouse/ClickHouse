@@ -35,7 +35,7 @@ void NativeSplitter::split(DB::Block & block)
         if (first_cache_count < partitions[i].rows())
         {
             buffer->add(partitions[i], 0, first_cache_count);
-            output_buffer.emplace(std::pair(i, new Block(buffer->releaseColumns())));
+            output_buffer.emplace(std::pair(i, std::make_unique<Block>(buffer->releaseColumns())));
             buffer->add(partitions[i], first_cache_count, partitions[i].rows());
         }
         else
@@ -44,7 +44,7 @@ void NativeSplitter::split(DB::Block & block)
         }
         if (buffer->size() >= options.buffer_size)
         {
-            output_buffer.emplace(std::pair(i, new Block(buffer->releaseColumns())));
+            output_buffer.emplace(std::pair(i, std::make_unique<Block>(buffer->releaseColumns())));
         }
     }
 }
@@ -99,7 +99,8 @@ bool NativeSplitter::hasNext()
     if (!output_buffer.empty())
     {
         next_partition_id = output_buffer.top().first;
-        next_block = output_buffer.top().second;
+        setCurrentBlock(*output_buffer.top().second);
+        produce();
     }
     return !output_buffer.empty();
 }
@@ -108,7 +109,8 @@ DB::Block * NativeSplitter::next()
     if (!output_buffer.empty()) {
         output_buffer.pop();
     }
-    return next_block;
+    consume();
+    return &currentBlock();
 }
 int32_t NativeSplitter::nextPartitionId()
 {

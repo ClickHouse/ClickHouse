@@ -2,13 +2,14 @@
 #include <IO/ReadBuffer.h>
 #include <Formats/NativeReader.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Common/BlockIterator.h>
 #include <jni.h>
 
 
 namespace local_engine
 {
 class ReadBufferFromJavaInputStream;
-class ShuffleReader
+class ShuffleReader : BlockIterator
 {
 public:
     explicit ShuffleReader(std::unique_ptr<DB::ReadBuffer> in_, bool compressed);

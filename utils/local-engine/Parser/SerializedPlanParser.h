@@ -16,6 +16,7 @@
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/SourceFromJavaIter.h>
 #include <Parser/CHColumnToSparkRow.h>
+#include <Common/BlockIterator.h>
 
 namespace local_engine
 {
@@ -155,7 +156,7 @@ struct SparkBuffer
     size_t size;
 };
 
-class LocalExecutor
+class LocalExecutor : public BlockIterator
 {
 public:
     LocalExecutor() = default;
@@ -182,7 +183,6 @@ private:
     std::unique_ptr<PullingPipelineExecutor> executor;
     Block header;
     std::unique_ptr<CHColumnToSparkRow> ch_column_to_spark_row;
-    std::unique_ptr<Block> current_chunk;
     std::unique_ptr<SparkBuffer> spark_buffer;
 };
 }

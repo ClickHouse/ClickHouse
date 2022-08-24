@@ -435,9 +435,9 @@ jstring Java_io_glutenproject_vectorized_CHColumnVector_nativeGetString(
 // native block
 void Java_io_glutenproject_vectorized_CHNativeBlock_nativeClose(JNIEnv * env, jobject obj, jlong block_address)
 {
-    Block * block = reinterpret_cast<Block *>(block_address);
-    block->clear();
-    delete block;
+//    Block * block = reinterpret_cast<Block *>(block_address);
+//    block->clear();
+//    delete block;
 }
 
 jint Java_io_glutenproject_vectorized_CHNativeBlock_nativeNumRows(JNIEnv * env, jobject obj, jlong block_address)
