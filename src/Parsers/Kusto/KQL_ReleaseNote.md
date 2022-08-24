@@ -1,7 +1,7 @@
+
 ## KQL implemented features
 
 # August 29, 2022
-
 ## Dynamic functions
 - [array_concat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayconcatfunction)
    `print array_concat(dynamic([1, 2, 3]), dynamic([4, 5]), dynamic([6, 7, 8, 9])) == dynamic([1, 2, 3, 4, 5, 6, 7, 8, 9])`
@@ -46,7 +46,27 @@
    `print endofyear(datetime(2017-01-01 10:10:17), 1)`
    `print endofyear(datetime(2017-01-01 10:10:17))`
 
-## Aggregate Functions
+- [make_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-datetimefunction)
+   `print make_datetime(2017,10,01)`
+   `print make_datetime(2017,10,01,12,10)`
+   `print make_datetime(2017,10,01,12,11,0.1234567)`
+
+-  [datetime_diff](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-difffunction)
+   `print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))`
+   `print datetime_diff('quarter',datetime(2017-07-01),datetime(2017-03-30))`
+   `print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))` 
+
+- [unixtime_microseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-microseconds-todatetimefunction)
+   `print unixtime_microseconds_todatetime(1546300800000000)`    
+
+- [unixtime_milliseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-milliseconds-todatetimefunction)
+   `print unixtime_milliseconds_todatetime(1546300800000)`
+
+- [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)
+   `print unixtime_nanoseconds_todatetime(1546300800000000000)`  
+
+## Aggregate Functions  
+
 - [stdev](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdev-aggfunction)  
    `Customers | summarize t = stdev(Age) by FirstName`  
 
@@ -75,8 +95,59 @@
    `DataTable | summarize t = percentilew(Bucket, Frequency, 50)`  
 
 # August 15, 2022
+   **double quote support**  
+   ``print res = strcat("double ","quote")``  
+## Aggregate functions
+ - [bin_at](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binatfunction)  
+   `print res = bin_at(6.5, 2.5, 7)`  
+   `print res = bin_at(1h, 1d, 12h)`  
+   `print res = bin_at(datetime(2017-05-15 10:20:00.0), 1d, datetime(1970-01-01 12:00:00.0))`  
+   `print res = bin_at(datetime(2017-05-17 10:20:00.0), 7d, datetime(2017-06-04 00:00:00.0))`  
 
-## DateTpye
+ - [array_index_of](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayindexoffunction)  
+    *Supports only basic lookup. Do not support start_index, length and occurrence*  
+    `print output = array_index_of(dynamic(['John', 'Denver', 'Bob', 'Marley']), 'Marley')`  
+    `print output = array_index_of(dynamic([1, 2, 3]), 2)`  
+ - [array_sum](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/array-sum-function)  
+    `print output = array_sum(dynamic([2, 5, 3]))`  
+    `print output = array_sum(dynamic([2.5, 5.5, 3]))`  
+ - [array_length](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraylengthfunction)  
+    `print output = array_length(dynamic(['John', 'Denver', 'Bob', 'Marley']))`  
+    `print output = array_length(dynamic([1, 2, 3]))`
+
+## Conversion
+- [tobool / toboolean](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/toboolfunction)
+   `print tobool(true) == true`
+   `print toboolean(false) == false`
+   `print tobool(0) == false`
+   `print toboolean(19819823) == true`
+   `print tobool(-2) == true`
+   `print isnull(toboolean('a'))`
+   `print tobool('true') == true`
+   `print toboolean('false') == false`
+
+- [todouble / toreal](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/todoublefunction)
+   `print todouble(4) == 4`
+   `print toreal(4.2) == 4.2`
+   `print isnull(todouble('a'))`
+   `print toreal('-0.3') == -0.3`
+
+- [toint](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/tointfunction)
+   `print isnull(toint('a'))`  
+   `print toint(4) == 4`  
+   `print toint('4') == 4`  
+   `print isnull(toint(4.2))`  
+
+- [tostring](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/tostringfunction)
+   `print tostring(123) == '123'`  
+   `print tostring('asd') == 'asd'`  
+
+## Data Types
+ - [dynamic](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/dynamic)  
+    *Supports only 1D array*  
+    `print output = dynamic(['a', 'b', 'c'])`  
+    `print output = dynamic([1, 2, 3])`  
+ 
 - [bool,boolean](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/bool)  
    `print bool(1)`  
    `print boolean(0)`  
@@ -129,8 +200,6 @@
 `print trim_end('.com', 'bing.com')`  
 - [trim_start](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/trimstartfunction)  
 `print trim_start('[^\\w]+', strcat('-  ','Te st1','// $'))`  
-
-
 
 ## DateTimeFunctions
 - [startofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofyearfunction)  
@@ -230,12 +299,26 @@
    `print ipv4_is_match('192.168.1.1', '192.168.1.255') == false`  
    `print ipv4_is_match('192.168.1.1/24', '192.168.1.255/24') == true`  
    `print ipv4_is_match('192.168.1.1', '192.168.1.255', 24) == true`  
+- [ipv6_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv6-comparefunction)  
+   `print ipv6_compare('::ffff:7f00:1', '127.0.0.1') == 0`  
+   `print ipv6_compare('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995') < 0`  
+   `print ipv6_compare('192.168.1.1/24', '192.168.1.255/24') == 0`  
+   `print ipv6_compare('fe80::85d:e82c:9446:7994/127', 'fe80::85d:e82c:9446:7995/127') == 0`  
+   `print ipv6_compare('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995', 127) == 0`  
+- [ipv6_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv6-is-matchfunction)  
+   `print ipv6_is_match('::ffff:7f00:1', '127.0.0.1') == true`  
+   `print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995') == false`  
+   `print ipv6_is_match('192.168.1.1/24', '192.168.1.255/24') == true`  
+   `print ipv6_is_match('fe80::85d:e82c:9446:7994/127', 'fe80::85d:e82c:9446:7995/127') == true`  
+   `print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995', 127) == true`  
 - [parse_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4-maskfunction)  
    `print parse_ipv4_mask('127.0.0.1', 24) == 2130706432`  
    `print parse_ipv4_mask('192.1.168.2', 31) == 3221334018`  
    `print parse_ipv4_mask('192.1.168.3', 31) == 3221334018`  
    `print parse_ipv4_mask('127.2.3.4', 32) == 2130838276`  
-
+- [parse_ipv6_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv6-maskfunction)  
+   `print parse_ipv6_mask('127.0.0.1', 24) == '0000:0000:0000:0000:0000:ffff:7f00:0000'`  
+   `print parse_ipv6_mask('fe80::85d:e82c:9446:7994', 120) == 'fe80:0000:0000:0000:085d:e82c:9446:7900'`  
 
 # August 1, 2022
 
@@ -262,6 +345,7 @@
    OR 
       pass dialect setting with '--'. For example : 
       ` clickhouse-client --dialect='kusto_auto' -q "KQL query" `
+
 - **strcmp** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/strcmpfunction)  
    `print strcmp('abc','ABC')`
 
