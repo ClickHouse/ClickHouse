@@ -1,6 +1,50 @@
 ## KQL implemented features
 
-# August XX, 2022
+# August 29, 2022
+
+## Dynamic functions
+- [array_concat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayconcatfunction)
+   `print array_concat(dynamic([1, 2, 3]), dynamic([4, 5]), dynamic([6, 7, 8, 9])) == dynamic([1, 2, 3, 4, 5, 6, 7, 8, 9])`
+
+- [array_iff / array_iif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayifffunction)
+   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
+   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
+   `print array_iif(dynamic([true, false, true, false]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, null])`
+   `print array_iif(dynamic([1, 0, -1, 44, 0]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, 4, null])`
+
+- [array_slice](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayslicefunction)
+   `print array_slice(dynamic([1,2,3]), 1, 2) == dynamic([2, 3])`
+   `print array_slice(dynamic([1,2,3,4,5]), 2, -1) == dynamic([3, 4, 5])`
+   `print array_slice(dynamic([1,2,3,4,5]), -3, -2) == dynamic([3, 4])`
+
+- [array_split](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysplitfunction)
+   `print array_split(dynamic([1,2,3,4,5]), 2) == dynamic([[1,2],[3,4,5]])`
+   `print array_split(dynamic([1,2,3,4,5]), dynamic([1,3])) == dynamic([[1],[2,3],[4,5]])`
+
+## DateTimeFunctions
+
+- [ago](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/agofunction)
+   `print ago(2h)`
+
+- [endofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofdayfunction)
+   `print endofday(datetime(2017-01-01 10:10:17), -1)`
+   `print endofday(datetime(2017-01-01 10:10:17), 1)`
+   `print endofday(datetime(2017-01-01 10:10:17))`
+
+- [endofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofmonthfunction)
+   `print endofmonth(datetime(2017-01-01 10:10:17), -1)`
+   `print endofmonth(datetime(2017-01-01 10:10:17), 1)`
+   `print endofmonth(datetime(2017-01-01 10:10:17))`
+
+- [endofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofweekfunction)
+   `print endofweek(datetime(2017-01-01 10:10:17), 1)`
+   `print endofweek(datetime(2017-01-01 10:10:17), -1)`
+   `print endofweek(datetime(2017-01-01 10:10:17))` 
+
+- [endofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofyearfunction)
+   `print endofyear(datetime(2017-01-01 10:10:17), -1)`
+   `print endofyear(datetime(2017-01-01 10:10:17), 1)`
+   `print endofyear(datetime(2017-01-01 10:10:17))`
 
 ## Aggregate Functions
 - [stdev](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdev-aggfunction)  
