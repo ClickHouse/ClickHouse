@@ -2,6 +2,34 @@
 ## KQL implemented features
 
 # August 29, 2022
+## Aggregate Functions
+- [stdev](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdev-aggfunction)  
+   `Customers | summarize t = stdev(Age) by FirstName`  
+
+- [stdevif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdevif-aggfunction)  
+   `Customers | summarize t = stdevif(Age, Age < 10) by FirstName`  
+
+- [binary_all_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-and-aggfunction)  
+   `Customers | summarize t = binary_all_and(Age) by FirstName`  
+
+- [binary_all_or](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-or-aggfunction)  
+   `Customers | summarize t = binary_all_or(Age) by FirstName`  
+
+- [binary_all_xor](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-xor-aggfunction)  
+   `Customers | summarize t = binary_all_xor(Age) by FirstName`  
+
+- [percentiles](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `Customers | summarize percentiles(Age, 30, 40, 50, 60, 70) by FirstName`  
+
+- [percentilesw](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `DataTable | summarize t = percentilesw(Bucket, Frequency, 50, 75, 99.9)`  
+
+- [percentile](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `Customers | summarize t = percentile(Age, 50) by FirstName`  
+
+- [percentilew](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `DataTable | summarize t = percentilew(Bucket, Frequency, 50)`  
+
 ## Dynamic functions
 - [array_concat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayconcatfunction)
    `print array_concat(dynamic([1, 2, 3]), dynamic([4, 5]), dynamic([6, 7, 8, 9])) == dynamic([1, 2, 3, 4, 5, 6, 7, 8, 9])`
@@ -63,36 +91,7 @@
    `print unixtime_milliseconds_todatetime(1546300800000)`
 
 - [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)
-   `print unixtime_nanoseconds_todatetime(1546300800000000000)`  
-
-## Aggregate Functions  
-
-- [stdev](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdev-aggfunction)  
-   `Customers | summarize t = stdev(Age) by FirstName`  
-
-- [stdevif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdevif-aggfunction)  
-   `Customers | summarize t = stdevif(Age, Age < 10) by FirstName`  
-
-- [binary_all_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-and-aggfunction)  
-   `Customers | summarize t = binary_all_and(Age) by FirstName`  
-
-- [binary_all_or](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-or-aggfunction)  
-   `Customers | summarize t = binary_all_or(Age) by FirstName`  
-
-- [binary_all_xor](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-xor-aggfunction)  
-   `Customers | summarize t = binary_all_xor(Age) by FirstName`  
-
-- [percentiles](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
-   `Customers | summarize percentiles(Age, 30, 40, 50, 60, 70) by FirstName`  
-
-- [percentilesw](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
-   `DataTable | summarize t = percentilesw(Bucket, Frequency, 50, 75, 99.9)`  
-
-- [percentile](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
-   `Customers | summarize t = percentile(Age, 50) by FirstName`  
-
-- [percentilew](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
-   `DataTable | summarize t = percentilew(Bucket, Frequency, 50)`  
+   `print unixtime_nanoseconds_todatetime(1546300800000000000)`
 
 # August 15, 2022
    **double quote support**  
