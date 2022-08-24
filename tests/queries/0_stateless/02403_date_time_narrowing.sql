@@ -1,12 +1,12 @@
 -- check conversion of numbers to date/time --
 SELECT toDate(toInt32(toDate32('1930-01-01'))),
        toDate(toInt32(toDate32('2151-01-01'))),
-       toDate(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3))),
-       toDate(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3))),
+       toDate(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'))),
+       toDate(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC'))),
        toDate32(toInt32(toDate32('1900-01-01')) - 1),
        toDate32(toInt32(toDate32('2299-12-31')) + 1),
-       toDateTime(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3))),
-       toDateTime(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3)));
+       toDateTime(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC')), 'UTC'),
+       toDateTime(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC')), 'UTC');
 
 -- check conversion of extended range type to normal range type --
 SELECT toDate(toDate32('1930-01-01')),
@@ -34,8 +34,8 @@ SELECT toStartOfDay(toDate('2141-01-01', 'UTC'), 'UTC'),
 SELECT 'toStartOfWeek';
 SELECT toStartOfWeek(toDate('1970-01-01')),
        toStartOfWeek(toDate32('1970-01-01')),
-       toStartOfWeek(toDateTime('1970-01-01 10:10:10')),
-       toStartOfWeek(toDateTime64('1970-01-01 10:10:10.123', 3)),
+       toStartOfWeek(toDateTime('1970-01-01 10:10:10', 'UTC')),
+       toStartOfWeek(toDateTime64('1970-01-01 10:10:10.123', 3, 'UTC')),
        toStartOfWeek(toDate32('1930-01-01')),
        toStartOfWeek(toDate32('2151-01-01')),
        toStartOfWeek(toDateTime64('1930-01-01 12:12:12.123', 3)),
