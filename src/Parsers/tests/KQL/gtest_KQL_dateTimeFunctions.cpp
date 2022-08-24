@@ -169,7 +169,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "print format_timespan(time('12:30:55.123'), 'ddddd-[hh:mm:ss.ffff]')",
-            "SELECT leftPad(concat(substring(toString(formatDateTime(toDateTime64(1038655., 9, 'UTC'), '%d-[%I:%M:%S.]')), 1, position(toString(formatDateTime(toDateTime64(1038655., 9, 'UTC'), '%d-[%I:%M:%S.]')), '.')), substring(substring(toString(toDateTime64(1038655., 9, 'UTC')), position(toString(toDateTime64(1038655., 9, 'UTC')), '.') + 1), 1, 4), substring(toString(formatDateTime(toDateTime64(1038655., 9, 'UTC'), '%d-[%I:%M:%S.]')), position(toString(formatDateTime(toDateTime64(1038655., 9, 'UTC'), '%d-[%I:%M:%S.]')), '.') + 1, length(toString(formatDateTime(toDateTime64(1038655., 9, 'UTC'), '%d-[%I:%M:%S.]'))))), (length(toString(formatDateTime(toDateTime64(1038655., 9, 'UTC'), '%d-[%I:%M:%S.]'))) + 3) + 4, '0')"
+            "SELECT leftPad(concat(substring(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), 1, position(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), '.')), substring(substring(toString(toDateTime64(1038655.123, 9, 'UTC')), position(toString(toDateTime64(1038655.123, 9, 'UTC')), '.') + 1), 1, 4), substring(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), position(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), '.') + 1, length(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]'))))), (length(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]'))) + 3) + 4, '0')"
         },
         {
             "print datetime_part('day', datetime(2017-10-30 01:02:03.7654321))",

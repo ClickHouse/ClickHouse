@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <unordered_map>
 #include <format>
+#include <math.h> 
 
 namespace DB
 {
@@ -90,7 +91,8 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
         {"ticks", KQLTimespanUint::tick}
     };
 
-    uint16_t days = 0, hours = 0, minutes = 0, seconds = 0, milliseconds = 0;
+    uint16_t days = 0, hours = 0, minutes = 0, seconds = 0 , sec_scale_len = 0;
+    double nanoseconds = 00.00;
 
     const char * ptr = text.c_str();
 
@@ -161,19 +163,21 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
             number_len += sec_len + 1;
             if (*(ptr + number_len) == '.')
             {
-                auto milli_len = scanDigit(ptr + number_len + 1);
-                if (milli_len > 0)
+                sec_scale_len = scanDigit(ptr + number_len + 1);
+                if (sec_scale_len > 0)
                 {
-                    milliseconds = std::stoi(String(ptr + number_len + 1, ptr + number_len + 1 + milli_len));
+                    nanoseconds = std::stoi(String(ptr + number_len + 1, ptr + number_len + 1 + sec_scale_len));
 
-                    if (milliseconds > 1000)
+                    if (nanoseconds > 1000000000)
                         return false;
                 }
             }
         }
     }
+    auto exponent = 9 - sec_scale_len; // max supported length of fraction of seconds is 9 
+    nanoseconds = nanoseconds * pow(10, exponent );
 
-    time_span = days * 86400 + hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+    time_span = days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds /1000000000 );
     time_span_unit = KQLTimespanUint::second;
 
     return true;

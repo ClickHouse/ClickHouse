@@ -88,7 +88,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "print time('1.22:34:8.128')",
-            "SELECT 167648."
+            "SELECT 167648.128"
         },
         {
             "print time('1d')",

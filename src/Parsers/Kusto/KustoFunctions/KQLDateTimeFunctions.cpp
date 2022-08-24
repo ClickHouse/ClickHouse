@@ -322,9 +322,7 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
                 formatspecifier = formatspecifier + "%d";
             else if (arg == "tt")
                 formatspecifier = formatspecifier + "%p";
-            else if (arg.starts_with('f'))
-                decimal = arg.size();
-            else if (arg.starts_with('F'))
+            else if (arg.starts_with('f') || arg.starts_with('F'))
                 decimal = arg.size();
             else 
                 throw Exception("Format specifier " + arg + " in function:" + fn_name + "is not supported", ErrorCodes::SYNTAX_ERROR);
@@ -401,9 +399,7 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
             {       formatspecifier = formatspecifier + "%d";
                    pad = arg.size() - 2 ;
             }
-            else if (arg.starts_with('f'))
-                decimal = arg.size();
-            else if (arg.starts_with('F'))
+            else if (arg.starts_with('f') || arg.starts_with('F'))
                 decimal = arg.size();
             else 
                 throw Exception("Format specifier " + arg + " in function:" + fn_name + "is not supported", ErrorCodes::SYNTAX_ERROR);
@@ -650,6 +646,7 @@ bool UnixTimeMicrosecondsToDateTime::convertImpl(String & out, IParser::Pos & po
 
     ++pos;
     const String value = getConvertedArgument(fn_name, pos);
+
     out = std::format("fromUnixTimestamp64Micro({},'UTC')", value);
     return true;
 }
@@ -662,9 +659,9 @@ bool UnixTimeMillisecondsToDateTime::convertImpl(String & out, IParser::Pos & po
 
     ++pos;
     const String value = getConvertedArgument(fn_name, pos);
+    
     out = std::format("fromUnixTimestamp64Milli({},'UTC')", value);
     return true;
-
 }
 
 bool UnixTimeNanosecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
@@ -675,6 +672,7 @@ bool UnixTimeNanosecondsToDateTime::convertImpl(String & out, IParser::Pos & pos
 
     ++pos;
     const String value = getConvertedArgument(fn_name, pos);
+     
     out = std::format("fromUnixTimestamp64Nano({},'UTC')", value);
     return true;
 }
@@ -687,7 +685,9 @@ bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     const String value = getConvertedArgument(fn_name, pos);
+
     out = std::format("toDateTime64({},9,'UTC')", value);
+
     return true;
 }
 
