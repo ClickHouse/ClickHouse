@@ -460,8 +460,8 @@ void FileSegment::completeWithState(State state, bool auto_resize)
         {
             LOG_TRACE(
                 log,
-                 "Resize cell {} to downloaded: {} ({})", range().toString(),
-                  downloaded_size, file_segment->getInfoForLogImpl(segment_lock));
+                "Resize cell {} to downloaded: {} ({})",
+                range().toString(), downloaded_size, file_segment->getInfoForLogImpl(segment_lock));
 
             assert(downloaded_size <= range().size());
             segment_range = Range(segment_range.left, segment_range.left + downloaded_size - 1);
