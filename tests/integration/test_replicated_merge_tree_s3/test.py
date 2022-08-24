@@ -145,7 +145,7 @@ def test_drop_cache_on_cluster(cluster):
 
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
-    node3 = cluster.instances["node2"]
+    node3 = cluster.instances["node3"]
 
     node1.query(f"select * from clusterAllReplicas(cluster, default, {TABLE_NAME}) format Null")
 
