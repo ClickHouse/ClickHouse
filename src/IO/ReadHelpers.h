@@ -966,7 +966,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     else
         DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
 
-    negative_multiplier *= negative_multiplier;
+    datetime64 *= negative_multiplier;
 
 
     return ReturnType(true);
