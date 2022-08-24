@@ -6,9 +6,10 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-TESTS_PATH=$(dirname ${BASH_SOURCE})
+TESTS_PATH=$(dirname ${BASH_SOURCE[0]})
 set -ue
 
+# shellcheck disable=SC2010
 LAST_TEST_NO=$(ls -1 ${TESTS_PATH} | grep -P -o '^\d+' | sort -nr | head -1)
 
 # remove leading zeros, increment and add padding zeros to 5 digits
