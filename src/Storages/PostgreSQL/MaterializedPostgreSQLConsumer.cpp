@@ -45,7 +45,6 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
     , allow_automatic_update(allow_automatic_update_)
 {
-    committed = false;
     final_lsn = start_lsn;
     auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
     current_lsn = advanceLSN(tx);
@@ -780,7 +779,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 
             try
             {
-                LOG_DEBUG(log, "Current message: {}", (*row)[1]);
+                /// LOG_DEBUG(log, "Current message: {}", (*row)[1]);
                 processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
             }
             catch (const Exception & e)
