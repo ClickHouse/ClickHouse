@@ -116,7 +116,7 @@ public:
         return data_file_name;
     }
 
-    std::shared_ptr<IDisk> tryGetDiskIfExists() const override
+    DiskPtr tryGetDiskIfExists() const override
     {
         return nullptr;
     }

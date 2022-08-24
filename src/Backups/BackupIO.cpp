@@ -19,7 +19,7 @@ void IBackupWriter::copyFileThroughBuffer(std::unique_ptr<SeekableReadBuffer> &&
     write_buffer->finalize();
 }
 
-void IBackupWriter::copyFileNative(std::shared_ptr<IDisk> /* from_disk */, const String & /* file_name_from */, const String & /* file_name_to */)
+void IBackupWriter::copyFileNative(DiskPtr /* from_disk */, const String & /* file_name_from */, const String & /* file_name_to */)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Native copy not implemented for backup writer");
 }

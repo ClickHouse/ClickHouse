@@ -25,7 +25,7 @@ public:
         return getInternalBackupEntry()->getFilePath();
     }
 
-    std::shared_ptr<IDisk> tryGetDiskIfExists() const override
+    DiskPtr tryGetDiskIfExists() const override
     {
         return getInternalBackupEntry()->tryGetDiskIfExists();
     }
