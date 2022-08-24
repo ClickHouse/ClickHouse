@@ -370,7 +370,7 @@ uint32_t get_inode(const char * self)
         return 0;
     }
 
-    for (std::string line; std::getline(maps, line); )
+    for (std::string line; std::getline(maps, line);)
     {
         std::stringstream ss(line); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         std::string addr, mode, offset, id, path;
