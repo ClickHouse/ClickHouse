@@ -22,56 +22,74 @@ namespace ErrorCodes {
 StorageHudi::StorageHudi(
     const S3::URI & uri_,
     const String & access_key_,
-    const String & secret_access_key,
+    const String & secret_access_key_,
     const StorageID & table_id_,
-    ColumnsDescription /*columns_description_*/,
-    ConstraintsDescription /*constraints_description_*/,
-    const String & /*comment*/,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_
 ) : IStorage(table_id_)
-    , s3_configuration({uri_, access_key_, secret_access_key, {}, {}, {}})
+    , s3_configuration({uri_, access_key_, secret_access_key_, {}, {}, {}})
     , log(&Poco::Logger::get("StorageHudi (" + table_id_.table_name + ")"))
+    , query("")
+    , engine(nullptr)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
+    StorageInMemoryMetadata storage_metadata;
+
     updateS3Configuration(context_, s3_configuration);
-
-    const auto & client = s3_configuration.client;
+    
+    if (columns_.empty())
     {
-        Aws::S3::Model::ListObjectsV2Request request;
-        Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-        const auto key = "hudi";
-        bool is_finished{false};
-        const auto bucket{s3_configuration.uri.bucket};
-
-        request.SetBucket(bucket);
-        //request.SetPrefix(key);
-
-        while (!is_finished)
-        {
-            outcome = client->ListObjectsV2(request);
-            if (!outcome.IsSuccess())
-                throw Exception(
-                    ErrorCodes::S3_ERROR,
-                    "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                    quoteString(bucket),
-                    quoteString(key),
-                    backQuote(outcome.GetError().GetExceptionName()),
-                    quoteString(outcome.GetError().GetMessage()));
-
-            const auto & result_batch = outcome.GetResult().GetContents();
-            for (const auto & obj : result_batch)
-            {
-                const auto& filename = obj.GetKey();
-                LOG_DEBUG(log, "Found file: {}", filename);
-            }
-
-            request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-            is_finished = !outcome.GetResult().GetIsTruncated();
-        }
+        auto columns = StorageS3::getTableStructureFromData(
+            "Parquet",
+            uri_,
+            access_key_,
+            secret_access_key_,
+            "",
+            false,
+            std::nullopt,
+            context_
+        );
+        storage_metadata.setColumns(columns);
+    }
+    else 
+    {
+        storage_metadata.setColumns(columns_);
     }
 
+    storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
+    setInMemoryMetadata(storage_metadata);
 }
+
+Pipe StorageHudi::read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams)
+{
+    auto keys = getKeysFromS3();
+
+    auto new_query = generateQueryFromKeys(std::forward(keys));
+    // construct new engine
+    if (new_query != query) {
+        query = new_query;
+        auto new_query_uri = s3_configuration.uri.toString() + "/" + query;
+        engine = std::make_shared<StorageS3>(
+            S3::URI(Poco::URI(new_query_uri)),
+            
+        );
+    }
+
+    return engine->read(column_names, storage_snapshot, 
+                        query_info, context, processed_stage, 
+                        max_block_size, num_streams)
+
+    }
 
 void StorageHudi::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
@@ -118,6 +136,98 @@ void StorageHudi::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configurati
     upd.auth_settings = std::move(settings.auth_settings);
 }
 
+std::vector<std::string> StorageHudi::getKeysFromS3() {
+    std::vector<std::string> keys;
+
+    const auto & client = s3_configuration.client;
+    
+    Aws::S3::Model::ListObjectsV2Request request;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+
+    bool is_finished{false};
+    const auto bucket{s3_configuration.uri.bucket};
+    const std::string key = "";
+
+    request.SetBucket(bucket);
+
+    while (!is_finished)
+    {
+        outcome = client->ListObjectsV2(request);
+        if (!outcome.IsSuccess())
+            throw Exception(
+                ErrorCodes::S3_ERROR,
+                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
+                quoteString(bucket),
+                quoteString(key),
+                backQuote(outcome.GetError().GetExceptionName()),
+                quoteString(outcome.GetError().GetMessage()));
+
+        const auto & result_batch = outcome.GetResult().GetContents();
+        for (const auto & obj : result_batch)
+        {
+            const auto& filename = obj.GetKey();
+            keys.push_back(filename);
+            LOG_DEBUG(log, "Found file: {}", filename);
+        }
+
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+        is_finished = !outcome.GetResult().GetIsTruncated();
+    }
+
+    return keys;
+}
+
+std::string StorageHudi::generateQueryFromKeys(std::vector<std::string>&& keys) {
+    // filter only .parquet files
+    std::erase_if(keys, [](const std::string& s) {
+        if (s.size() >= 8) {
+            return s.substr(s.size() - 8) != ".parquet";
+        }
+        return true;
+    });
+
+    // for each partition path take only latest parquet file
+
+    std::unordered_map<std::string, std::pair<std::string, uint64_t>> latest_parquets;
+    
+    for (const auto& key : keys) {
+
+        auto slash = key.find_last_of("/");
+        std::string path;
+        if (slash == std::string::npos) {
+            path = "";
+        } else {
+            path = key.substr(0, slash);
+        }
+
+        uint64_t timestamp = std::stoul(key.substr(key.find_last_of("_")+1));
+
+        auto it = latest_parquets.find(path);
+        
+        if (it != latest_parquets.end()) {
+            if (it->second.second < timestamp) {
+                it->second = {key, timestamp};
+            }
+        } else {
+            latest_parquets[path] = {key, timestamp};
+        }
+    }
+
+    std::vector<std::string> filtered_keys;
+    std::transform(latest_parquets.begin(), latest_parquets.end(), std::back_inserter(filtered_keys), [](const auto& kv){return kv.second.first;});
+
+    std::string new_query;
+    
+    for (auto&& key : filtered_keys) {
+        if (!new_query.empty()) {
+            new_query += ",";
+        }
+        new_query += key;
+    }
+    new_query = "{" + new_query + "}";
+
+    return new_query;
+}
 
 
 void registerStorageHudi(StorageFactory & factory)
