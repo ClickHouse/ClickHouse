@@ -28,6 +28,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include "Core/UUID.h"
 
 #include <boost/algorithm/string/classification.hpp>
 #include <Poco/Base64Decoder.h>
@@ -275,6 +276,9 @@ StorageKeeperMap::StorageKeeperMap(
     , zookeeper_name(zkutil::extractZooKeeperName(root_path_))
     , log(&Poco::Logger::get("StorageKeeperMap"))
 {
+    if (table_id.uuid == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap cannot be used with '{}' database because UUID is needed. Please use Atomic or Replicated database", table_id.getDatabaseName());
+
     setInMemoryMetadata(metadata);
 
     if (root_path.empty())
@@ -287,7 +291,9 @@ StorageKeeperMap::StorageKeeperMap(
     metadata_path = metadata_path_fs;
     lock_path = metadata_path_fs / "lock";
     tables_path = metadata_path_fs / "tables";
+    table_path = fs::path(tables_path) / toString(table_id.uuid);
     dropped_path = metadata_path_fs / "dropped";
+    dropped_lock_path = fs::path(dropped_path) / "lock";
 
     if (attach)
     {
@@ -309,77 +315,49 @@ StorageKeeperMap::StorageKeeperMap(
         else
         {
             LOG_TRACE(log, "Creating root path {}", root_path);
-
-            size_t cur_pos = 0;
-            do
-            {
-                size_t search_start = cur_pos + 1;
-                cur_pos = root_path.find('/', search_start);
-                if (search_start == cur_pos)
-                    throw Exception("root_path is invalid, contains subsequent '/'", ErrorCodes::BAD_ARGUMENTS);
-
-                auto path = root_path.substr(0, cur_pos);
-                client->createIfNotExists(path, "");
-            } while (cur_pos != std::string_view::npos);
+            client->createAncestors(root_path);
+            client->createIfNotExists(root_path, "");
         }
     }
 
-
-    ZooKeeperLock lock(lock_path, client, true);
-
-    bool locked = false;
-    try
-    {
-        lock.lock();
-        locked = true;
-    }
-    catch (const Coordination::Exception & e)
-    {
-        if (e.code != Coordination::Error::ZNONODE)
-            throw;
-    }
-
-    {
-        Coordination::Stat stats;
-        auto exists = client->exists(root_path, &stats);
-        if (!exists)
-            throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path '{}' should exist, but was deleted from another source", root_path);
-    }
-
-
-    const auto set_tables_num = [&]
-    {
-        std::string tables_num_str;
-        auto exists = client->tryGet(tables_path, tables_num_str);
-
-        if (!exists)
-        {
-            client->create(tables_path, toString(1), zkutil::CreateMode::Persistent);
-        }
-        else
-        {
-            uint64_t tables_num = parse<uint64_t>(tables_num_str);
-            client->set(tables_path, toString(tables_num + 1), zkutil::CreateMode::Persistent);
-        }
-    };
-
-    // we have metadata and lock nodes, because they can't be deleted with the lock acquired
-    if (locked)
+    for (size_t i = 0; i < 1000; ++i)
     {
         if (client->exists(dropped_path))
         {
-            client->removeChildrenRecursive(root_path, getBaseName(metadata_path));
-            client->remove(dropped_path);
+            LOG_INFO(log, "Removing leftover nodes");
+            auto code = client->tryCreate(dropped_lock_path, "", zkutil::CreateMode::Ephemeral);
+
+            if (code == Coordination::Error::ZNONODE ||  code == Coordination::Error::ZNODEEXISTS)
+            {
+                LOG_INFO(log, "Someone else removed leftovers");
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                throw Coordination::Exception(code, dropped_lock_path);
+            }
+            else
+            {
+                auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(dropped_lock_path, *client);
+                if (!removeMetadataNodes(client, metadata_drop_lock))
+                    continue;
+            }
         }
 
-        set_tables_num();
-        return;
+        client->createIfNotExists(metadata_path, "");
+        client->createIfNotExists(tables_path, "");
+
+        auto code = client->tryCreate(table_path, "", zkutil::CreateMode::Persistent);
+
+        if (code == Coordination::Error::ZOK)
+            return;
+
+        if (code == Coordination::Error::ZNONODE)
+            LOG_INFO(log, "Metadata nodes were deleted in background, will retry");
+        else 
+            throw Coordination::Exception(code, table_path);
     }
 
-    client->createIfNotExists(metadata_path, "");
-    client->createIfNotExists(lock_path, "");
-    lock.lock();
-    set_tables_num();
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create metadata for table, becuase it is removed concurrently or becauyse of wrong root_path ({})", root_path);
 }
 
 
@@ -450,6 +428,37 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
     ZooKeeperLock keeper_lock(lock_path, client);
     client->removeChildrenRecursive(root_path, getBaseName(metadata_path));
+}
+
+bool StorageKeeperMap::removeMetadataNodes(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
+{
+    bool completely_removed = false;
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(dropped_path, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(metadata_path, -1));
+
+    Coordination::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
+    using enum Coordination::Error;
+    switch (code)
+    {
+        case ZOK:
+        {
+            metadata_drop_lock->setAlreadyRemoved();
+            completely_removed = true;
+            LOG_INFO(log, "Metadata in {} was successfully removed from ZooKeeper", metadata_path);
+            break;
+        }
+        case ZNONODE:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of metadata. It's a bug");
+        case ZNOTEMPTY:
+            LOG_ERROR(log, "Metadata was not completely removed from ZooKeeper");
+            break;
+        default:
+            zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+    return completely_removed;
 }
 
 void StorageKeeperMap::drop()
