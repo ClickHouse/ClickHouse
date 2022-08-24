@@ -83,7 +83,7 @@ struct TracingContextOnThread : TracingContext
 };
 
 /// Holder of tracing context.
-/// It should be initialized at the beginning of each thread execution. 
+/// It should be initialized at the beginning of each thread execution.
 /// And once it's destructed, it clears the context automatically.
 ///
 /// It's also the root of all spans on current thread execution.
