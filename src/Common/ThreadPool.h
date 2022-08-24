@@ -97,9 +97,9 @@ private:
     {
         Job job;
         int priority;
-        DB::OpenTelemetryThreadTraceContext thread_trace_context;
+        DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
-        JobWithPriority(Job job_, int priority_, const DB::OpenTelemetryThreadTraceContext& thread_trace_context_)
+        JobWithPriority(Job job_, int priority_, const DB::OpenTelemetry::TracingContextOnThread& thread_trace_context_)
             : job(job_), priority(priority_), thread_trace_context(thread_trace_context_) {}
 
         bool operator< (const JobWithPriority & rhs) const

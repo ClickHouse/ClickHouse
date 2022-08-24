@@ -933,7 +933,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
 
-    OpenTelemetryThreadTraceContextScopePtr thread_trace_context;
+    TracingContextHolderPtr thread_trace_context;
     SCOPE_EXIT({
         // make sure the response status is recorded
         if (thread_trace_context)
@@ -963,7 +963,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         // Setup tracing context for this thread
         auto context = session->sessionOrGlobalContext();
-        thread_trace_context = std::make_unique<OpenTelemetryThreadTraceContextScope>("HTTPHandler",
+        thread_trace_context = std::make_unique<TracingContextHolder>("HTTPHandler",
                                                                                       client_info.client_trace_context,
                                                                                       context->getSettingsRef(),
                                                                                       context->getOpenTelemetrySpanLog());

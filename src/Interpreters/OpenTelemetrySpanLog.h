@@ -7,11 +7,11 @@
 namespace DB
 {
 
-struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
+struct OpenTelemetrySpanLogElement : public Span
 {
     OpenTelemetrySpanLogElement() = default;
-    OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
-        : OpenTelemetrySpan(span) {}
+    OpenTelemetrySpanLogElement(const Span & span)
+        : Span(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
     static NamesAndTypesList getNamesAndTypes();

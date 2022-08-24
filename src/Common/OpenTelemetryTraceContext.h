@@ -6,8 +6,12 @@ namespace DB
 {
 
 struct Settings;
+class OpenTelemetrySpanLog;
 
-struct OpenTelemetrySpan
+namespace OpenTelemetry
+{
+
+struct Span
 {
     UUID trace_id{};
     UInt64 span_id = 0;
@@ -33,8 +37,6 @@ struct OpenTelemetrySpan
     }
 };
 
-class OpenTelemetrySpanLog;
-
 /// See https://www.w3.org/TR/trace-context/ for trace_flags definition
 enum TraceFlags : UInt8
 {
@@ -42,8 +44,8 @@ enum TraceFlags : UInt8
     TRACE_FLAG_SAMPLED = 1,
 };
 
-// The runtime info we need to create new OpenTelemetry spans.
-struct OpenTelemetryTraceContext
+/// The runtime info we need to create new OpenTelemetry spans.
+struct TracingContext
 {
     UUID trace_id{};
     UInt64 span_id = 0;
@@ -62,39 +64,42 @@ struct OpenTelemetryTraceContext
     }
 };
 
-/// Tracing context kept on thread local
-struct OpenTelemetryThreadTraceContext : OpenTelemetryTraceContext
+/// Tracing context kept on each thread
+struct TracingContextOnThread : TracingContext
 {
-    OpenTelemetryThreadTraceContext& operator =(const OpenTelemetryTraceContext& context)
+    TracingContextOnThread& operator =(const TracingContext& context)
     {
-        *(static_cast<OpenTelemetryTraceContext*>(this)) = context;
+        *(static_cast<TracingContext*>(this)) = context;
         return *this;
     }
 
     void reset();
 
-    static const OpenTelemetryThreadTraceContext& current();
+    static const TracingContextOnThread& current();
 
     /// Use weak_ptr instead of shared_ptr to hold a reference to the underlying system.opentelemetry_span_log table
     /// Since this object is kept on threads and passed across threads, a weak_ptr is more safe to prevent potential leak
     std::weak_ptr<OpenTelemetrySpanLog> span_log;
 };
 
-/// A scoped tracing context, is used to hold the tracing context at the beginning of each thread execution and clear the context automatically when the scope exists.
-/// It should be the root of all span logs for one tracing.
+/// Holder of tracing context.
+/// It should be initialized at the beginning of each thread execution. 
+/// And once it's destructed, it clears the context automatically.
 ///
-/// It's SAFE to construct this object multiple times on one same thread,
-/// but it's not encourage to do so because this is only a protection in case of code changes.
-struct OpenTelemetryThreadTraceContextScope
+/// It's also the root of all spans on current thread execution.
+///
+/// Although it's SAFE to construct this object multiple times on one same thread,
+/// but rememeber only use it at the beginning of one thread
+struct TracingContextHolder
 {
     /// Forbidden copy ctor and assignment to make the destructor safe
-    OpenTelemetryThreadTraceContextScope(const OpenTelemetryThreadTraceContextScope& scope) = delete;
-    OpenTelemetryThreadTraceContextScope& operator =(const OpenTelemetryThreadTraceContextScope& scope) = delete;
+    TracingContextHolder(const TracingContextHolder& scope) = delete;
+    TracingContextHolder& operator =(const TracingContextHolder& scope) = delete;
 
-    OpenTelemetryThreadTraceContextScope(std::string_view _operation_name,
-                                         const OpenTelemetryTraceContext& _parent_trace_context,
+    TracingContextHolder(std::string_view _operation_name,
+                                         const TracingContext& _parent_trace_context,
                                          const std::weak_ptr<OpenTelemetrySpanLog>& _log)
-        : OpenTelemetryThreadTraceContextScope(_operation_name,
+        : TracingContextHolder(_operation_name,
                                                _parent_trace_context,
                                                nullptr,
                                                _log)
@@ -102,9 +107,9 @@ struct OpenTelemetryThreadTraceContextScope
     }
 
     /// Initialize a tracing context on a child thread based on the context from the parent thread
-    OpenTelemetryThreadTraceContextScope(std::string_view _operation_name,
-                                         const OpenTelemetryThreadTraceContext& _parent_thread_trace_context)
-        : OpenTelemetryThreadTraceContextScope(_operation_name,
+    TracingContextHolder(std::string_view _operation_name,
+                                         const TracingContextOnThread& _parent_thread_trace_context)
+        : TracingContextHolder(_operation_name,
                                                _parent_thread_trace_context,
                                                nullptr,
                                                _parent_thread_trace_context.span_log)
@@ -112,39 +117,47 @@ struct OpenTelemetryThreadTraceContextScope
     }
 
     /// For servers like HTTP/TCP/GRPC to initialize tracing context on thread that process requests from clients
-    OpenTelemetryThreadTraceContextScope(std::string_view _operation_name,
-                                         OpenTelemetryTraceContext _parent_trace_context,
+    TracingContextHolder(std::string_view _operation_name,
+                                         TracingContext _parent_trace_context,
                                          const Settings& _settings,
                                          const std::weak_ptr<OpenTelemetrySpanLog>& _log)
-        : OpenTelemetryThreadTraceContextScope(_operation_name,
+        : TracingContextHolder(_operation_name,
                                                _parent_trace_context,
                                                &_settings,
                                                _log)
     {
     }
 
-    OpenTelemetryThreadTraceContextScope(std::string_view _operation_name,
-                                         OpenTelemetryTraceContext _parent_trace_context,
+    TracingContextHolder(std::string_view _operation_name,
+                                         TracingContext _parent_trace_context,
                                          const Settings* settings_ptr,
                                          const std::weak_ptr<OpenTelemetrySpanLog>& _log);
 
-    ~OpenTelemetryThreadTraceContextScope();
+    ~TracingContextHolder();
 
-    OpenTelemetrySpan root_span;
+    Span root_span;
 
 private:
     bool is_context_owner = true;
 };
 
-using OpenTelemetryThreadTraceContextScopePtr = std::unique_ptr<OpenTelemetryThreadTraceContextScope>;
+using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 
-/// A span holder is usually used in a function scope
-struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
+/// A span holder that creates span automatically in a (function) scope if tracing is enabled.
+/// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
+struct SpanHolder : public Span
 {
-    OpenTelemetrySpanHolder(std::string_view);
-    ~OpenTelemetrySpanHolder();
+    SpanHolder(std::string_view);
+    ~SpanHolder();
 
+    /// Finish a span explicitly if needed.
+    /// It's safe to call it multiple times
     void finish();
 };
 
 }
+
+using namespace OpenTelemetry;
+
+}
+
