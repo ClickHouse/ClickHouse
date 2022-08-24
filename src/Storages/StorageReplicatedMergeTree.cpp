@@ -277,7 +277,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
-    , attach_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
     , renaming_restrictions(renaming_restrictions_)
     , replicated_fetches_pool_size(getContext()->getSettingsRef().background_fetches_pool_size)
@@ -382,10 +381,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (attach)
     {
         LOG_INFO(log, "Table will be in readonly mode until initialization is finished");
-        attach_thread.setSkipSanityChecks(skip_sanity_checks);
-        attach_thread.start();
-        attach_thread.waitFirstTry();
-
+        attach_thread.emplace(*this);
+        attach_thread->setSkipSanityChecks(skip_sanity_checks);
         return;
     }
 
@@ -572,6 +569,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 {
     auto zookeeper = getZooKeeper();
+
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
 
     /// These 4 nodes used to be created in createNewZookeeperNodes() and they were moved to createTable()
@@ -819,16 +817,13 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
 
 void StorageReplicatedMergeTree::drop()
 {
+    assert(shutdown_called);
+
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
 
-    bool maybe_has_metadata_in_zookeeper = false;
-    {
-        std::lock_guard lock{initialization_mutex};
-        maybe_has_metadata_in_zookeeper = !initialization_done || !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
-    }
-
+    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
     if (maybe_has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
@@ -843,7 +838,6 @@ void StorageReplicatedMergeTree::drop()
         if (!zookeeper)
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        shutdown();
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings());
     }
 
@@ -1057,6 +1051,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
 {
     auto zookeeper = getZooKeeper();
+
     ReplicatedMergeTreeTableMetadata old_metadata(*this, metadata_snapshot);
 
     Coordination::Stat metadata_stat;
@@ -1113,6 +1108,7 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
 void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 {
     auto zookeeper = getZooKeeper();
+
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
 
     /// Parts in ZK.
@@ -1252,6 +1248,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
 {
     auto zookeeper = getZooKeeper();
+
     Coordination::Stat stat;
     String s = zookeeper->get(zookeeper_path + "/pinned_part_uuids", &stat);
 
@@ -3448,7 +3445,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 void StorageReplicatedMergeTree::startBeingLeader()
 {
     auto zookeeper = getZooKeeper();
-    assert(zookeeper);
+
     if (!getSettings()->replicated_can_become_leader)
     {
         LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
@@ -4156,13 +4153,11 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
 
 void StorageReplicatedMergeTree::startup()
 {
+    if (attach_thread)
     {
-        std::lock_guard lock(initialization_mutex);
-        if (!initialization_done)
-        {
-            startup_called = true;
-            return;
-        }
+        attach_thread->start();
+        attach_thread->waitFirstTry();
+        return;
     }
 
     startupImpl();
@@ -4236,7 +4231,8 @@ void StorageReplicatedMergeTree::shutdown()
     mutations_finalizing_task->deactivate();
     stopBeingLeader();
 
-    attach_thread.shutdown();
+    if (attach_thread)
+        attach_thread->shutdown();
     restarting_thread.shutdown();
     background_operations_assignee.finish();
     part_moves_between_shards_orchestrator.shutdown();
@@ -4977,11 +4973,8 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 {
     LOG_INFO(log, "Restoring replica metadata");
 
-    {
-        std::lock_guard lock(initialization_mutex);
-        if (!initialization_done)
-            throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
-    }
+    if (!initialization_done)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
     if (!is_readonly)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");

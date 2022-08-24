@@ -104,8 +104,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 bool ReplicatedMergeTreeRestartingThread::runImpl()
 {
-    auto zookeeper = storage.tryGetZooKeeper();
-    if (!storage.is_readonly && zookeeper && !zookeeper->expired())
+    if (!storage.is_readonly && !storage.getZooKeeper()->expired())
         return true;
 
     if (first_time)

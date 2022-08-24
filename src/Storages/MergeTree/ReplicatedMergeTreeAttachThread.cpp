@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include "Common/ZooKeeper/IKeeper.h"
+#include <Common/ZooKeeper/IKeeper.h>
 
 namespace DB
 {
@@ -48,22 +48,16 @@ void ReplicatedMergeTreeAttachThread::run()
     catch (const Exception & e)
     {
         if (const auto * coordination_exception = dynamic_cast<const Coordination::Exception *>(&e))
-        {
-            std::array retriable_errors{
-                Coordination::Error::ZCONNECTIONLOSS, Coordination::Error::ZSESSIONEXPIRED, Coordination::Error::ZOPERATIONTIMEOUT};
-            needs_retry = std::any_of(
-                retriable_errors.begin(), retriable_errors.end(), [&](const auto error) { return error == coordination_exception->code; });
-        }
+            needs_retry = Coordination::isHardwareError(coordination_exception->code);
 
-        if (!needs_retry)
+        if (needs_retry)
         {
-            LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", e.message());
-            std::lock_guard lock(storage.initialization_mutex);
-            storage.initialization_done = true;
+            LOG_ERROR(log, "Initialization failed. Error: {}", e.message());
         }
         else
         {
-            LOG_ERROR(log, "Initialization failed. Error: {}", e.message());
+            LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", e.message());
+            storage.initialization_done = true;
         }
     }
 
@@ -160,14 +154,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    std::unique_lock lock(storage.initialization_mutex);
-    if (storage.startup_called)
-    {
-        lock.unlock();
-        storage.startupImpl();
-        lock.lock();
-    }
-
+    storage.startupImpl();
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

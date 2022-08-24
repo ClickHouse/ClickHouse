@@ -447,13 +447,12 @@ private:
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
 
-    ReplicatedMergeTreeAttachThread attach_thread;
+    /// A thread that attaches the table using ZooKeeper
+    std::optional<ReplicatedMergeTreeAttachThread> attach_thread;
 
     PartMovesBetweenShardsOrchestrator part_moves_between_shards_orchestrator;
 
-    mutable std::mutex initialization_mutex;
-    TSA_GUARDED_BY(initialization_mutex) bool initialization_done{false};
-    TSA_GUARDED_BY(initialization_mutex) bool startup_called{false};
+    std::atomic<bool> initialization_done{false};
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
