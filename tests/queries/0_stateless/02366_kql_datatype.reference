@@ -35,7 +35,7 @@ inf
 3
 -- null
 1
-\N	[NULL]	\N	\N	\N	\N
+\N	\N	\N	\N	\N
 -- dynamic
 [1,2,3]
 ['a','b','c']

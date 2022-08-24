@@ -23,6 +23,7 @@ CREATE TABLE kql_table2
 ) ENGINE = Memory;
 INSERT INTO kql_table2 select * from kql(Customers|project FirstName,LastName,Age | filter FirstName=='Theodore');
 select * from kql_table2 limit 1;
+-- select * from kql(Customers | where FirstName !in ("test", "test2"));
 DROP TABLE IF EXISTS Customers;
 DROP TABLE IF EXISTS kql_table1;
 DROP TABLE IF EXISTS kql_table2;
