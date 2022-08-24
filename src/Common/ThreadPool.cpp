@@ -252,8 +252,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         setThreadName("ThreadPool");
 
         Job job;
-        DB::OpenTelemetryThreadTraceContext parent_thead_trace_context; // A copy of parent trace context
         bool need_shutdown = false;
+
+        /// A copy of parent trace context
+        DB::OpenTelemetryThreadTraceContext parent_thead_trace_context;
 
         {
             std::unique_lock lock(mutex);
@@ -278,7 +280,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
         if (!need_shutdown)
         {
-            // set up tracing context for this thread by its parent context
+            /// Set up tracing context for this thread by its parent context
             DB::OpenTelemetryThreadTraceContextScope thread_trace_context("ThreadPool::worker()" ,
                                                                           parent_thead_trace_context);
 
@@ -292,8 +294,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
                 if (thread_trace_context.root_span.isTraceEnabled())
                 {
-                    // Use the thread name as operation name so that the tracing log will be more clear.
-                    // the thread name is usually set in the jobs, we can only get the name after the job finishes
+                    /// Use the thread name as operation name so that the tracing log will be more clear.
+                    /// The thread name is usually set in the jobs, we can only get the name after the job finishes
                     std::string thread_name = getThreadName();
                     if (!thread_name.empty())
                         thread_trace_context.root_span.operation_name = thread_name;

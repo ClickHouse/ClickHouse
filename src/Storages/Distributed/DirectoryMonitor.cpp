@@ -871,8 +871,8 @@ private:
             const auto & distributed_header = readDistributedHeader(in, parent.log);
 
             OpenTelemetryThreadTraceContextScope thread_trace_context(__PRETTY_FUNCTION__,
-                                                                      distributed_header.client_info.client_trace_context,
-                                                                      parent.storage.getContext()->getOpenTelemetrySpanLog());
+                distributed_header.client_info.client_trace_context,
+                parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             if (!remote)
             {

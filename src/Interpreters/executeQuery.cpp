@@ -233,7 +233,7 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
-static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, std::shared_ptr<OpenTelemetrySpanHolder>& query_span)
+static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<OpenTelemetrySpanHolder>& query_span)
 {
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
