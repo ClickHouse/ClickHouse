@@ -97,41 +97,40 @@ struct TracingContextHolder
     TracingContextHolder& operator =(const TracingContextHolder& scope) = delete;
 
     TracingContextHolder(std::string_view _operation_name,
-                                         const TracingContext& _parent_trace_context,
-                                         const std::weak_ptr<OpenTelemetrySpanLog>& _log)
+        const TracingContext& _parent_trace_context,
+        const std::weak_ptr<OpenTelemetrySpanLog>& _log) 
         : TracingContextHolder(_operation_name,
-                                               _parent_trace_context,
-                                               nullptr,
-                                               _log)
+            _parent_trace_context,
+            nullptr,
+            _log)
     {
     }
 
     /// Initialize a tracing context on a child thread based on the context from the parent thread
-    TracingContextHolder(std::string_view _operation_name,
-                                         const TracingContextOnThread& _parent_thread_trace_context)
+    TracingContextHolder(std::string_view _operation_name, const TracingContextOnThread & _parent_thread_trace_context)
         : TracingContextHolder(_operation_name,
-                                               _parent_thread_trace_context,
-                                               nullptr,
-                                               _parent_thread_trace_context.span_log)
+            _parent_thread_trace_context,
+            nullptr,
+            _parent_thread_trace_context.span_log)
     {
     }
 
     /// For servers like HTTP/TCP/GRPC to initialize tracing context on thread that process requests from clients
     TracingContextHolder(std::string_view _operation_name,
-                                         TracingContext _parent_trace_context,
-                                         const Settings& _settings,
-                                         const std::weak_ptr<OpenTelemetrySpanLog>& _log)
+        TracingContext _parent_trace_context,
+        const Settings & _settings,
+        const std::weak_ptr<OpenTelemetrySpanLog> & _log)
         : TracingContextHolder(_operation_name,
-                                               _parent_trace_context,
-                                               &_settings,
-                                               _log)
+            _parent_trace_context,
+            &_settings,
+            _log)
     {
     }
 
     TracingContextHolder(std::string_view _operation_name,
-                                         TracingContext _parent_trace_context,
-                                         const Settings* settings_ptr,
-                                         const std::weak_ptr<OpenTelemetrySpanLog>& _log);
+        TracingContext _parent_trace_context,
+        const Settings* settings_ptr,
+        const std::weak_ptr<OpenTelemetrySpanLog> & _log);
 
     ~TracingContextHolder();
 

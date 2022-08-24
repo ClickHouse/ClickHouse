@@ -281,8 +281,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         if (!need_shutdown)
         {
             /// Set up tracing context for this thread by its parent context
-            DB::TracingContextHolder thread_trace_context("ThreadPool::worker()" ,
-                                                                          parent_thead_trace_context);
+            DB::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thead_trace_context);
 
             try
             {
