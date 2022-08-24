@@ -26,9 +26,12 @@ print datetime('2014-05-25T08:20:03.123456');
 print datetime('2014-11-08 15:55:55');
 print datetime('2014-11-08 15:55');
 print datetime('2014-11-08');
--- print datetime(null);
--- print datetime('2014-05-25T08:20:03.123456Z');
--- print datetime('2014-11-08 15:55:55.123456Z');
+print datetime(null);
+print datetime('2014-05-25T08:20:03.123456Z');
+print datetime('2014-11-08 15:55:55.123456Z');
+print '-- time'
+print time('14.02:03:04.12345');
+print time('12:30:55.123');
 print '-- guid'
 print guid(74be27de-1e4e-49d9-b579-fe0b331d3642)
 -- print guid(null)
@@ -78,12 +81,14 @@ print toint('abc');
 print '-- tostring()';
 print tostring(123);
 print tostring(null) == '';
+print '-- todatetime()';
+print todatetime("2015-12-24") == datetime(2015-12-24);
+print todatetime('abc') == null;
+print '-- make_timespan()';
+print v1=make_timespan(1,12), v2=make_timespan(1,12,30), v3=make_timespan(1,12,30,55.123);
 
 -- TODO:
 -- print '-- totimespan()';
 -- print totimespan('0.00:01:00');
 -- print totimespan('abc') == null;
--- print '-- todatetime()';
--- print todatetime('2015-12-24');
--- print todatetime('abc') == null;
 

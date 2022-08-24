@@ -60,6 +60,12 @@ print '-- make_datetime()';
 print make_datetime(2017,10,01,12,10) == datetime(2017-10-01 12:10:00);
 print year_month_day_hour_minute = make_datetime(2017,10,01,12,10);
 print year_month_day_hour_minute_second = make_datetime(2017,10,01,12,11,0.1234567);
+print '-- format_datetime';
+print format_datetime(datetime(2015-12-14 02:03:04.12345), 'y-M-d h:m:s.fffffff');
+print v1=format_datetime(datetime(2017-01-29 09:00:05),'yy-MM-dd [HH:mm:ss]'), v2=format_datetime(datetime(2017-01-29 09:00:05), 'yyyy-M-dd [H:mm:ss]'), v3=format_datetime(datetime(2017-01-29 09:00:05), 'yy-MM-dd [hh:mm:ss tt]');
+print '-- format_timespan()';
+print format_timespan(time('14.02:03:04.12345'), 'h:m:s.fffffff');
+-- print v1=format_timespan(time('29.09:00:05.12345'), 'dd.hh:mm:ss:FF'), v2=format_timespan(time('29.09:00:05.12345'), 'ddd.h:mm:ss [fffffff]');
 print '-- ago()';
 -- print ago(1d) - now();
 print '-- datetime_diff()';
@@ -67,3 +73,10 @@ print year = datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31)), qu
 -- millisecond = datetime_diff('millisecond',datetime(2017-10-30 23:00:00.200100),datetime(2017-10-30 23:00:00.100900)),
 -- microsecond = datetime_diff('microsecond',datetime(2017-10-30 23:00:00.1009001),datetime(2017-10-30 23:00:00.1008009)),
 -- nanosecond = datetime_diff('nanosecond',datetime(2017-10-30 23:00:00.0000000),datetime(2017-10-30 23:00:00.0000007))
+print '-- datetime_part()';
+print year = datetime_part("year", datetime(2017-10-30 01:02:03.7654321)),quarter = datetime_part("quarter", datetime(2017-10-30 01:02:03.7654321)),month = datetime_part("month", datetime(2017-10-30 01:02:03.7654321)),weekOfYear = datetime_part("week_of_year", datetime(2017-10-30 01:02:03.7654321)),day = datetime_part("day", datetime(2017-10-30 01:02:03.7654321)),dayOfYear = datetime_part("dayOfYear", datetime(2017-10-30 01:02:03.7654321)),hour = datetime_part("hour", datetime(2017-10-30 01:02:03.7654321)),minute = datetime_part("minute", datetime(2017-10-30 01:02:03.7654321)),second = datetime_part("second", datetime(2017-10-30 01:02:03.7654321));
+-- millisecond = datetime_part("millisecond", dt),
+-- microsecond = datetime_part("microsecond", dt),
+-- nanosecond = datetime_part("nanosecond", dt)
+print '-- datetime_add()';
+print  year = datetime_add('year',1,make_datetime(2017,1,1)),quarter = datetime_add('quarter',1,make_datetime(2017,1,1)),month = datetime_add('month',1,make_datetime(2017,1,1)),week = datetime_add('week',1,make_datetime(2017,1,1)),day = datetime_add('day',1,make_datetime(2017,1,1)),hour = datetime_add('hour',1,make_datetime(2017,1,1)),minute = datetime_add('minute',1,make_datetime(2017,1,1)),second = datetime_add('second',1,make_datetime(2017,1,1));
