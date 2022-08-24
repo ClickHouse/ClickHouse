@@ -573,7 +573,9 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
+    UUID uuid = table->getStorageID().uuid;
     table.reset();
+    database->waitDetachedTableNotInUse(uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing

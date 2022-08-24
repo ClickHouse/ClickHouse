@@ -1478,11 +1478,13 @@ def test_wrong_format_usage(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10e6)"
     )
+    # size(test_wrong_format.native) = 10e6*8+16(header) ~= 76MiB
 
+    # ensure that not all file will be loaded into memory
     result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage=1000"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage='10Mi'"
     )
 
     assert "Not a Parquet file" in result
