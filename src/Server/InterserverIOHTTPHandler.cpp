@@ -94,10 +94,14 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
     auto write_response = [&](const std::string & message)
     {
-        if (response.sent())
-            return;
-
         auto & out = *used_output.out;
+
+        if (response.sent())
+        {
+            out.finalize();
+            return;
+        }
+
         try
         {
             writeString(message, out);
