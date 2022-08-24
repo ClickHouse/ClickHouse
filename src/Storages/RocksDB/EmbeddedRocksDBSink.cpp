@@ -2,7 +2,7 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <rocksdb/db.h>
+#include <rocksdb/utilities/db_ttl.h>
 
 
 namespace DB

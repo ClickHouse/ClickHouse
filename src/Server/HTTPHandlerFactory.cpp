@@ -169,10 +169,20 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     replicas_status_handler->allowGetAndHeadRequest();
     factory.addHandler(replicas_status_handler);
 
-    auto web_ui_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server, "play.html");
-    web_ui_handler->attachNonStrictPath("/play");
-    web_ui_handler->allowGetAndHeadRequest();
-    factory.addHandler(web_ui_handler);
+    auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    play_handler->attachNonStrictPath("/play");
+    play_handler->allowGetAndHeadRequest();
+    factory.addHandler(play_handler);
+
+    auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    dashboard_handler->attachNonStrictPath("/dashboard");
+    dashboard_handler->allowGetAndHeadRequest();
+    factory.addHandler(dashboard_handler);
+
+    auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    js_handler->attachNonStrictPath("/js/");
+    js_handler->allowGetAndHeadRequest();
+    factory.addHandler(js_handler);
 }
 
 void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics)
