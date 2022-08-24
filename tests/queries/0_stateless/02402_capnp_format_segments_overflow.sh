@@ -9,7 +9,7 @@ USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonex
 mkdir -p $USER_FILES_PATH/test_02402
 cp $CURDIR/data_capnp/overflow.capnp $USER_FILES_PATH/test_02402/
 
-SCHEMADIR=$(clickhouse-client --query "select * from file('test_02402/overflow.capnp', 'CapnProto', 'val1 char') settings format_schema='nonexist:Message'" 2>&1 | grep Exception | grep -oP "path = \K.*(?=/nonexist.capnp)")
+SCHEMADIR=/$(clickhouse-client --query "select * from file('test_02402/overflow.capnp', 'CapnProto', 'val1 char') settings format_schema='nonexist:Message'" 2>&1 | grep Exception | grep -oP "path = \K.*(?=/nonexist.capnp)")
 
 CLIENT_SCHEMADIR=$CURDIR/format_schemas
 SERVER_SCHEMADIR=test_02402
