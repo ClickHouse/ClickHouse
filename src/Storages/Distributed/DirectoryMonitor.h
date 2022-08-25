@@ -78,6 +78,8 @@ public:
 private:
     void run();
 
+    std::map<std::string, int> files_retry {{"0", 0}};
+    void getFilesRetry(const std::map<UInt64, std::string> & files);
     std::map<UInt64, std::string> getFiles();
     bool processFiles(const std::map<UInt64, std::string> & files);
     void processFile(const std::string & file_path);
@@ -112,6 +114,7 @@ private:
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;
+    const int max_retries;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;
