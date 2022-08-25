@@ -37,6 +37,10 @@ class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
+
 class QueryPipelineBuilder
 {
 public:

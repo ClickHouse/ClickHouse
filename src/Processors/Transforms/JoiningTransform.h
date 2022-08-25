@@ -171,8 +171,7 @@ private:
     JoinPtr join;
     Chunk chunk;  // not needed as a class member
     Blocks input_headers;
-
-
+    String left_col_name;
 };
 
 }

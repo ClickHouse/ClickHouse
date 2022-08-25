@@ -988,7 +988,6 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
     ActionsDAGPtr & converting_join_columns)
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
-
     JoinPtr join = makeJoin(/***/syntax->ast_join, left_sample_columns, converting_join_columns);
 
     if (converting_join_columns)
@@ -1096,8 +1095,6 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     }
     LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), "<<<<<");
     Names original_right_column_names;
-
-
 
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());

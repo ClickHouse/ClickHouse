@@ -23,7 +23,7 @@ select  'parallel merge join', * from  (select number as f1, 'aaa_' || number::S
 
 
 {% for right_tbl_max in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] -%}
-select  'hash joins', * from  (select number as f1, 'aaa_' || number::String as var1 from numbers(10)) j1_o
+select  'parallel merge join', * from  (select number as f1, 'aaa_' || number::String as var1 from numbers(10)) j1_o
 {% for right_tbl_num in range(right_tbl_max) -%}
           join (select number as f1, 'bbb{{right_tbl_num}}'  as varb{{right_tbl_num}} from numbers(45)) j{{right_tbl_num}} using(f1)
 {% endfor -%}

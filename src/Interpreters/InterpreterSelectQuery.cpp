@@ -796,8 +796,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     const auto str = analysis_result.dump();
     LOG_TRACE(log, "analysis_result.dump() {}", str);
 
-
-
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
         auto header = source_header;

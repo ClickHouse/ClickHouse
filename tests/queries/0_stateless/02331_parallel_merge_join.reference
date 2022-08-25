@@ -1,70 +1,272 @@
-max_block_isze=1	0	aaa_0	bbb
-max_block_isze=1	2	aaa_2	bbb
-max_block_isze=1	4	aaa_4	bbb
-max_block_isze=1	6	aaa_6	bbb
-max_block_isze=1	8	aaa_8	bbb
-max_block_isze=2	0	aaa_0	bbb
-max_block_isze=2	2	aaa_2	bbb
-max_block_isze=2	4	aaa_4	bbb
-max_block_isze=2	6	aaa_6	bbb
-max_block_isze=2	8	aaa_8	bbb
-max_block_isze=3	0	aaa_0	bbb
-max_block_isze=3	2	aaa_2	bbb
-max_block_isze=3	4	aaa_4	bbb
-max_block_isze=3	6	aaa_6	bbb
-max_block_isze=3	8	aaa_8	bbb
-max_block_isze=4	0	aaa_0	bbb
-max_block_isze=4	2	aaa_2	bbb
-max_block_isze=4	4	aaa_4	bbb
-max_block_isze=4	6	aaa_6	bbb
-max_block_isze=4	8	aaa_8	bbb
-max_block_isze=5	0	aaa_0	bbb
-max_block_isze=5	2	aaa_2	bbb
-max_block_isze=5	4	aaa_4	bbb
-max_block_isze=5	6	aaa_6	bbb
-max_block_isze=5	8	aaa_8	bbb
-max_block_isze=6	0	aaa_0	bbb
-max_block_isze=6	2	aaa_2	bbb
-max_block_isze=6	4	aaa_4	bbb
-max_block_isze=6	6	aaa_6	bbb
-max_block_isze=6	8	aaa_8	bbb
-max_block_isze=7	0	aaa_0	bbb
-max_block_isze=7	2	aaa_2	bbb
-max_block_isze=7	4	aaa_4	bbb
-max_block_isze=7	6	aaa_6	bbb
-max_block_isze=7	8	aaa_8	bbb
-max_block_isze=8	0	aaa_0	bbb
-max_block_isze=8	2	aaa_2	bbb
-max_block_isze=8	4	aaa_4	bbb
-max_block_isze=8	6	aaa_6	bbb
-max_block_isze=8	8	aaa_8	bbb
-max_block_isze=9	0	aaa_0	bbb
-max_block_isze=9	2	aaa_2	bbb
-max_block_isze=9	4	aaa_4	bbb
-max_block_isze=9	6	aaa_6	bbb
-max_block_isze=9	8	aaa_8	bbb
-max_block_isze=10	0	aaa_0	bbb
-max_block_isze=10	2	aaa_2	bbb
-max_block_isze=10	4	aaa_4	bbb
-max_block_isze=10	6	aaa_6	bbb
-max_block_isze=10	8	aaa_8	bbb
-max_block_isze=11	0	aaa_0	bbb
-max_block_isze=11	2	aaa_2	bbb
-max_block_isze=11	4	aaa_4	bbb
-max_block_isze=11	6	aaa_6	bbb
-max_block_isze=11	8	aaa_8	bbb
-max_block_isze=12	0	aaa_0	bbb
-max_block_isze=12	2	aaa_2	bbb
-max_block_isze=12	4	aaa_4	bbb
-max_block_isze=12	6	aaa_6	bbb
-max_block_isze=12	8	aaa_8	bbb
-max_block_isze=4096	0	aaa_0	bbb
-max_block_isze=4096	2	aaa_2	bbb
-max_block_isze=4096	4	aaa_4	bbb
-max_block_isze=4096	6	aaa_6	bbb
-max_block_isze=4096	8	aaa_8	bbb
-max_block_isze=56535	0	aaa_0	bbb
-max_block_isze=56535	2	aaa_2	bbb
-max_block_isze=56535	4	aaa_4	bbb
-max_block_isze=56535	6	aaa_6	bbb
-max_block_isze=56535	8	aaa_8	bbb
+max_block_size=1	0	aaa_0	bbb
+max_block_size=1	2	aaa_2	bbb
+max_block_size=1	4	aaa_4	bbb
+max_block_size=1	6	aaa_6	bbb
+max_block_size=1	8	aaa_8	bbb
+max_block_size=2	0	aaa_0	bbb
+max_block_size=2	2	aaa_2	bbb
+max_block_size=2	4	aaa_4	bbb
+max_block_size=2	6	aaa_6	bbb
+max_block_size=2	8	aaa_8	bbb
+max_block_size=3	0	aaa_0	bbb
+max_block_size=3	2	aaa_2	bbb
+max_block_size=3	4	aaa_4	bbb
+max_block_size=3	6	aaa_6	bbb
+max_block_size=3	8	aaa_8	bbb
+max_block_size=4	0	aaa_0	bbb
+max_block_size=4	2	aaa_2	bbb
+max_block_size=4	4	aaa_4	bbb
+max_block_size=4	6	aaa_6	bbb
+max_block_size=4	8	aaa_8	bbb
+max_block_size=5	0	aaa_0	bbb
+max_block_size=5	2	aaa_2	bbb
+max_block_size=5	4	aaa_4	bbb
+max_block_size=5	6	aaa_6	bbb
+max_block_size=5	8	aaa_8	bbb
+max_block_size=6	0	aaa_0	bbb
+max_block_size=6	2	aaa_2	bbb
+max_block_size=6	4	aaa_4	bbb
+max_block_size=6	6	aaa_6	bbb
+max_block_size=6	8	aaa_8	bbb
+max_block_size=7	0	aaa_0	bbb
+max_block_size=7	2	aaa_2	bbb
+max_block_size=7	4	aaa_4	bbb
+max_block_size=7	6	aaa_6	bbb
+max_block_size=7	8	aaa_8	bbb
+max_block_size=8	0	aaa_0	bbb
+max_block_size=8	2	aaa_2	bbb
+max_block_size=8	4	aaa_4	bbb
+max_block_size=8	6	aaa_6	bbb
+max_block_size=8	8	aaa_8	bbb
+max_block_size=9	0	aaa_0	bbb
+max_block_size=9	2	aaa_2	bbb
+max_block_size=9	4	aaa_4	bbb
+max_block_size=9	6	aaa_6	bbb
+max_block_size=9	8	aaa_8	bbb
+max_block_size=10	0	aaa_0	bbb
+max_block_size=10	2	aaa_2	bbb
+max_block_size=10	4	aaa_4	bbb
+max_block_size=10	6	aaa_6	bbb
+max_block_size=10	8	aaa_8	bbb
+max_block_size=11	0	aaa_0	bbb
+max_block_size=11	2	aaa_2	bbb
+max_block_size=11	4	aaa_4	bbb
+max_block_size=11	6	aaa_6	bbb
+max_block_size=11	8	aaa_8	bbb
+max_block_size=12	0	aaa_0	bbb
+max_block_size=12	2	aaa_2	bbb
+max_block_size=12	4	aaa_4	bbb
+max_block_size=12	6	aaa_6	bbb
+max_block_size=12	8	aaa_8	bbb
+max_block_size=4096	0	aaa_0	bbb
+max_block_size=4096	2	aaa_2	bbb
+max_block_size=4096	4	aaa_4	bbb
+max_block_size=4096	6	aaa_6	bbb
+max_block_size=4096	8	aaa_8	bbb
+max_block_size=56535	0	aaa_0	bbb
+max_block_size=56535	2	aaa_2	bbb
+max_block_size=56535	4	aaa_4	bbb
+max_block_size=56535	6	aaa_6	bbb
+max_block_size=56535	8	aaa_8	bbb
+0	aaa_0	bbb	bbb
+6	aaa_6	bbb	bbb
+parallel merge join	0	aaa_0	bbb0
+parallel merge join	1	aaa_1	bbb0
+parallel merge join	2	aaa_2	bbb0
+parallel merge join	3	aaa_3	bbb0
+parallel merge join	4	aaa_4	bbb0
+parallel merge join	5	aaa_5	bbb0
+parallel merge join	6	aaa_6	bbb0
+parallel merge join	7	aaa_7	bbb0
+parallel merge join	8	aaa_8	bbb0
+parallel merge join	9	aaa_9	bbb0
+parallel merge join	0	aaa_0	bbb0	bbb1
+parallel merge join	1	aaa_1	bbb0	bbb1
+parallel merge join	2	aaa_2	bbb0	bbb1
+parallel merge join	3	aaa_3	bbb0	bbb1
+parallel merge join	4	aaa_4	bbb0	bbb1
+parallel merge join	5	aaa_5	bbb0	bbb1
+parallel merge join	6	aaa_6	bbb0	bbb1
+parallel merge join	7	aaa_7	bbb0	bbb1
+parallel merge join	8	aaa_8	bbb0	bbb1
+parallel merge join	9	aaa_9	bbb0	bbb1
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2	bbb3
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2	bbb3
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2	bbb3
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2	bbb3
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2	bbb3
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2	bbb3
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2	bbb3
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2	bbb3
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2	bbb3
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2	bbb3
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2	bbb3	bbb4
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8
+parallel merge join	0	aaa_0	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	1	aaa_1	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	2	aaa_2	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	3	aaa_3	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	4	aaa_4	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	5	aaa_5	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	6	aaa_6	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	7	aaa_7	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	8	aaa_8	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	9	aaa_9	bbb0	bbb1	bbb2	bbb3	bbb4	bbb5	bbb6	bbb7	bbb8	bbb9
+parallel merge join	0	aaa_0	bbb0
+parallel merge join	1	aaa_1	bbb0
+parallel merge join	2	aaa_2	bbb0
+parallel merge join	3	aaa_3	bbb0
+parallel merge join	4	aaa_4	bbb0
+parallel merge join	5	aaa_5	bbb0
+parallel merge join	6	aaa_6	bbb0
+parallel merge join	7	aaa_7	bbb0
+parallel merge join	8	aaa_8	bbb0
+parallel merge join	9	aaa_9	bbb0
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2	0	bbb3
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2	1	bbb3
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2	2	bbb3
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2	3	bbb3
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2	4	bbb3
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2	5	bbb3
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2	6	bbb3
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2	7	bbb3
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2	8	bbb3
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2	9	bbb3
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2	0	bbb3	0	bbb4
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2	1	bbb3	1	bbb4
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2	2	bbb3	2	bbb4
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2	3	bbb3	3	bbb4
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2	4	bbb3	4	bbb4
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2	5	bbb3	5	bbb4
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2	6	bbb3	6	bbb4
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2	7	bbb3	7	bbb4
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2	8	bbb3	8	bbb4
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2	9	bbb3	9	bbb4
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2	0	bbb3	0	bbb4	0	bbb5
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2	1	bbb3	1	bbb4	1	bbb5
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2	2	bbb3	2	bbb4	2	bbb5
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2	3	bbb3	3	bbb4	3	bbb5
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2	4	bbb3	4	bbb4	4	bbb5
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2	5	bbb3	5	bbb4	5	bbb5
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2	6	bbb3	6	bbb4	6	bbb5
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2	7	bbb3	7	bbb4	7	bbb5
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2	8	bbb3	8	bbb4	8	bbb5
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2	9	bbb3	9	bbb4	9	bbb5
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2	0	bbb3	0	bbb4	0	bbb5	0	bbb6
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2	1	bbb3	1	bbb4	1	bbb5	1	bbb6
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2	2	bbb3	2	bbb4	2	bbb5	2	bbb6
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2	3	bbb3	3	bbb4	3	bbb5	3	bbb6
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2	4	bbb3	4	bbb4	4	bbb5	4	bbb6
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2	5	bbb3	5	bbb4	5	bbb5	5	bbb6
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2	6	bbb3	6	bbb4	6	bbb5	6	bbb6
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2	7	bbb3	7	bbb4	7	bbb5	7	bbb6
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2	8	bbb3	8	bbb4	8	bbb5	8	bbb6
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2	9	bbb3	9	bbb4	9	bbb5	9	bbb6
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2	0	bbb3	0	bbb4	0	bbb5	0	bbb6	0	bbb7
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2	1	bbb3	1	bbb4	1	bbb5	1	bbb6	1	bbb7
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2	2	bbb3	2	bbb4	2	bbb5	2	bbb6	2	bbb7
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2	3	bbb3	3	bbb4	3	bbb5	3	bbb6	3	bbb7
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2	4	bbb3	4	bbb4	4	bbb5	4	bbb6	4	bbb7
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2	5	bbb3	5	bbb4	5	bbb5	5	bbb6	5	bbb7
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2	6	bbb3	6	bbb4	6	bbb5	6	bbb6	6	bbb7
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2	7	bbb3	7	bbb4	7	bbb5	7	bbb6	7	bbb7
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2	8	bbb3	8	bbb4	8	bbb5	8	bbb6	8	bbb7
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2	9	bbb3	9	bbb4	9	bbb5	9	bbb6	9	bbb7
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2	0	bbb3	0	bbb4	0	bbb5	0	bbb6	0	bbb7	0	bbb8
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2	1	bbb3	1	bbb4	1	bbb5	1	bbb6	1	bbb7	1	bbb8
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2	2	bbb3	2	bbb4	2	bbb5	2	bbb6	2	bbb7	2	bbb8
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2	3	bbb3	3	bbb4	3	bbb5	3	bbb6	3	bbb7	3	bbb8
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2	4	bbb3	4	bbb4	4	bbb5	4	bbb6	4	bbb7	4	bbb8
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2	5	bbb3	5	bbb4	5	bbb5	5	bbb6	5	bbb7	5	bbb8
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2	6	bbb3	6	bbb4	6	bbb5	6	bbb6	6	bbb7	6	bbb8
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2	7	bbb3	7	bbb4	7	bbb5	7	bbb6	7	bbb7	7	bbb8
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2	8	bbb3	8	bbb4	8	bbb5	8	bbb6	8	bbb7	8	bbb8
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2	9	bbb3	9	bbb4	9	bbb5	9	bbb6	9	bbb7	9	bbb8
+parallel merge join	0	aaa_0	0	bbb0	0	bbb1	0	bbb2	0	bbb3	0	bbb4	0	bbb5	0	bbb6	0	bbb7	0	bbb8	0	bbb9
+parallel merge join	1	aaa_1	1	bbb0	1	bbb1	1	bbb2	1	bbb3	1	bbb4	1	bbb5	1	bbb6	1	bbb7	1	bbb8	1	bbb9
+parallel merge join	2	aaa_2	2	bbb0	2	bbb1	2	bbb2	2	bbb3	2	bbb4	2	bbb5	2	bbb6	2	bbb7	2	bbb8	2	bbb9
+parallel merge join	3	aaa_3	3	bbb0	3	bbb1	3	bbb2	3	bbb3	3	bbb4	3	bbb5	3	bbb6	3	bbb7	3	bbb8	3	bbb9
+parallel merge join	4	aaa_4	4	bbb0	4	bbb1	4	bbb2	4	bbb3	4	bbb4	4	bbb5	4	bbb6	4	bbb7	4	bbb8	4	bbb9
+parallel merge join	5	aaa_5	5	bbb0	5	bbb1	5	bbb2	5	bbb3	5	bbb4	5	bbb5	5	bbb6	5	bbb7	5	bbb8	5	bbb9
+parallel merge join	6	aaa_6	6	bbb0	6	bbb1	6	bbb2	6	bbb3	6	bbb4	6	bbb5	6	bbb6	6	bbb7	6	bbb8	6	bbb9
+parallel merge join	7	aaa_7	7	bbb0	7	bbb1	7	bbb2	7	bbb3	7	bbb4	7	bbb5	7	bbb6	7	bbb7	7	bbb8	7	bbb9
+parallel merge join	8	aaa_8	8	bbb0	8	bbb1	8	bbb2	8	bbb3	8	bbb4	8	bbb5	8	bbb6	8	bbb7	8	bbb8	8	bbb9
+parallel merge join	9	aaa_9	9	bbb0	9	bbb1	9	bbb2	9	bbb3	9	bbb4	9	bbb5	9	bbb6	9	bbb7	9	bbb8	9	bbb9
