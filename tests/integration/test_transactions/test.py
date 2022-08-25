@@ -114,9 +114,9 @@ def test_rollback_unfinished_on_restart1(start_cluster):
 
 def test_rollback_unfinished_on_restart2(start_cluster):
     node.query(
-        "create table mt (n int, m int) engine=MergeTree order by n partition by n % 2"
+        "create table mt2 (n int, m int) engine=MergeTree order by n partition by n % 2"
     )
-    node.query("insert into mt values (1, 10), (2, 20)")
+    node.query("insert into mt2 values (1, 10), (2, 20)")
     tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
 
     # it will hold a snapshot and avoid parts cleanup
@@ -126,12 +126,12 @@ def test_rollback_unfinished_on_restart2(start_cluster):
 
     tx(1, "begin transaction")
     tid1 = tx(1, "select transactionID()").strip()
-    tx(1, "alter table mt drop partition id '1'")
+    tx(1, "alter table mt2 drop partition id '1'")
     tx(1, "commit")
 
     tx(1, "begin transaction")
     tid2 = tx(1, "select transactionID()").strip()
-    tx(1, "insert into mt values (3, 30), (4, 40)")
+    tx(1, "insert into mt2 values (3, 30), (4, 40)")
     tx(1, "commit")
 
     node.query("system flush logs")
@@ -151,13 +151,13 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     tid4 = tx(2, "select transactionID()").strip()
     tx(
         2,
-        "optimize table mt partition id '0' final settings optimize_throw_if_noop = 1",
+        "optimize table mt2 partition id '0' final settings optimize_throw_if_noop = 1",
     )
 
     # check that uncommitted insert will be rolled back on restart
     tx(3, "begin transaction")
     tid5 = tx(3, "select transactionID()").strip()
-    tx(3, "insert into mt values (6, 70)")
+    tx(3, "insert into mt2 values (6, 70)")
 
     tid6 = tx(4, "select transactionID()").strip()
     tx(4, "commit")
@@ -171,11 +171,11 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     node.restart_clickhouse(kill=True)
 
     assert (
-        node.query("select *, _part from mt order by n")
+        node.query("select *, _part from mt2 order by n")
         == "2\t20\t0_2_2_0\n3\t30\t1_3_3_0\n4\t40\t0_4_4_0\n"
     )
     res = node.query(
-        "select name, active, creation_tid, 'csn' || toString(creation_csn) || '_', removal_tid, 'csn' || toString(removal_csn) || '_' from system.parts where table='mt' order by name"
+        "select name, active, creation_tid, 'csn' || toString(creation_csn) || '_', removal_tid, 'csn' || toString(removal_csn) || '_' from system.parts where table='mt2' order by name"
     )
     res = res.replace(tid0, "tid0")
     res = res.replace(tid1, "tid1").replace("csn" + csn1 + "_", "csn_1")
