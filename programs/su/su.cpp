@@ -108,7 +108,7 @@ try
     if (argc < 3)
     {
         std::cout << "Usage: ./clickhouse su user:group ..." << std::endl;
-        exit(0);
+        exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     std::string_view user_and_group = argv[1];

@@ -766,7 +766,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             /// Write the header.
             const std::string_view header = header_buf.stringView();
             writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
-            writeStringBinary(StringRef(header), out);
+            writeStringBinary(header, out);
             writePODBinary(CityHash_v1_0_2::CityHash128(header.data(), header.size()), out);
 
             stream.write(block);
