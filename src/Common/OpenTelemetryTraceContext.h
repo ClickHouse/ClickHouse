@@ -88,8 +88,7 @@ struct TracingContextOnThread : TracingContext
 ///
 /// It's also the root of all spans on current thread execution.
 ///
-/// Although it's SAFE to construct this object multiple times on one same thread,
-/// but rememeber only use it at the beginning of one thread
+/// Although it's SAFE to construct this object multiple times on one same thread, it shoud be created at the beginning of one thread execution.
 struct TracingContextHolder
 {
     /// Forbidden copy ctor and assignment to make the destructor safe
