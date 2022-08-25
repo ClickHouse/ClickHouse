@@ -2,6 +2,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Storages/StorageNull.h>
 #include <Storages/StorageView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -38,7 +39,14 @@ void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, C
             getName());
 
     const auto & arguments = function->arguments->children;
-    auto * select = arguments[0]->as<ASTSelectWithUnionQuery>();
+    auto select_argument = arguments[0];
+    auto * subquery = arguments[0]->as<ASTSubquery>();
+
+    if (subquery)
+        select_argument = subquery->children[0];
+
+    auto * select = select_argument->as<ASTSelectWithUnionQuery>();
+
     if (!select)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a SELECT query as its first argument", getName());
     create.set(create.select, select->clone());

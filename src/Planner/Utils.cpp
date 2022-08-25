@@ -1,6 +1,7 @@
 #include <Planner/Utils.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Columns/getLeastSuperColumn.h>
@@ -68,11 +69,20 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto result_ast = query_node_typed.toAST();
 
-    if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
-        result_ast = select_with_union->list_of_selects->children.at(0);
+    while (true)
+    {
+        if (auto * select_query = result_ast->as<ASTSelectQuery>())
+            break;
+        else if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
+            result_ast = select_with_union->list_of_selects->children.at(0);
+        else if (auto * subquery = result_ast->as<ASTSubquery>())
+            result_ast = subquery->children.at(0);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid conversion to select query");
+    }
 
-    if (auto * subquery = result_ast->as<ASTSubquery>())
-        result_ast = subquery->children.at(0);
+    if (result_ast == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid conversion to select query");
 
     return result_ast;
 }

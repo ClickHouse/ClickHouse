@@ -3252,7 +3252,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         scope.scope_node->formatASTForErrorMessage());
                 }
 
-                resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                auto * function_node = argument_node->as<FunctionNode>();
+                if (function_node && table_function_factory.hasNameOrAlias(function_node->getFunctionName()))
+                    continue;
+
+                resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
             }
 
             auto table_function_ast = table_function_node.toAST();
