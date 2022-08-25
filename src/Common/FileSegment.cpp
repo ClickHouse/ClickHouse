@@ -829,7 +829,7 @@ void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
             /// and therefore cannot be concurrently accessed. Nevertheless, it can be
             /// accessed by cache system tables if someone read from them,
             /// therefore we need a mutex.
-            std::lock_guard segment_lock(file_segment.mutex);
+            std::scoped_lock lock(cache->mutex, file_segment.mutex);
 
             assert(file_segment.downloaded_size <= file_segment.range().size());
             file_segment.segment_range = FileSegment::Range(
