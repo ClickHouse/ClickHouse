@@ -1845,6 +1845,26 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    if args.report_coverage:
+        value = clickhouse_execute(
+            args,
+            """
+                SELECT name
+                FROM system.functions
+                WHERE NOT is_aggregate AND origin = 'System' AND alias_to = ''
+                    AND name NOT IN
+                    (
+                        SELECT arrayJoin(used_functions) FROM system.query_log WHERE event_date >= yesterday()
+                    )
+                ORDER BY name
+            """
+        )
+
+        if value != "":
+            print("\nThe following functions were not covered by tests:\n\n")
+            sys.stdout.buffer.write(value)
+            print("\n")
+
     sys.exit(exit_code.value)
 
 
@@ -2124,6 +2144,12 @@ if __name__ == "__main__":
         default=20,
         type=int,
         help="Max number of failed tests in a row (stop tests if higher)",
+    )
+    parser.add_argument(
+        "--report-coverage",
+        action="store_true",
+        default=False,
+        help="Check what high-level server components were covered by tests",
     )
     args = parser.parse_args()
 
