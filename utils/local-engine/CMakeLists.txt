@@ -1,4 +1,5 @@
 set(ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
+set(THRIFT_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src")
 
 # Find java/jni
 include(FindJava)
@@ -29,6 +30,9 @@ include_directories(
         ${JNI_INCLUDE_DIRS}
         ${CMAKE_CURRENT_BINARY_DIR}/proto
         ${ARROW_INCLUDE_DIR}
+        ${THRIFT_INCLUDE_DIR}
+        ${CMAKE_BINARY_DIR}/contrib/thrift-cmake
+        ${CMAKE_BINARY_DIR}/contrib/arrow-cmake/cpp/src
         ${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src
         ${ClickHouse_SOURCE_DIR}/utils/local-engine
         ${ClickHouse_SOURCE_DIR}/src
