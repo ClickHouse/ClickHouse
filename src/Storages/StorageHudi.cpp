@@ -1,16 +1,16 @@
-
+#include <Storages/StorageHudi.h>
+#include <Common/config.h>
 #include <Common/logger_useful.h>
 
-#include <Storages/StorageHudi.h>
+#include <IO/S3Common.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
 
+#include <QueryPipeline/Pipe.h>
 
 namespace DB {
 
@@ -29,38 +29,55 @@ StorageHudi::StorageHudi(
     const String & comment,
     ContextPtr context_
 ) : IStorage(table_id_)
-    , s3_configuration({uri_, access_key_, secret_access_key_, {}, {}, {}})
+    , base_configuration({uri_, access_key_, secret_access_key_, {}, {}, {}})
     , log(&Poco::Logger::get("StorageHudi (" + table_id_.table_name + ")"))
-    , query("")
-    , engine(nullptr)
 {
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
+    updateS3Configuration(context_, base_configuration);
 
-    updateS3Configuration(context_, s3_configuration);
+    auto keys = getKeysFromS3();
+
+    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys));
     
+    LOG_DEBUG(log, "New uri: {}", new_uri);
+
+    auto s3_uri = S3::URI(Poco::URI(new_uri));
+//    StorageS3::S3Configuration s3_configuration{s3_uri, access_key_, secret_access_key_, {}, {}, {}};
+
     if (columns_.empty())
     {
         auto columns = StorageS3::getTableStructureFromData(
-            "Parquet",
-            uri_,
+            String("Parquet"),
+            s3_uri,
             access_key_,
             secret_access_key_,
             "",
             false,
-            std::nullopt,
+            {},
             context_
-        );
+            );
         storage_metadata.setColumns(columns);
     }
-    else 
-    {
+    else
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+
+    s3engine = std::make_shared<StorageS3>(
+        s3_uri,
+        access_key_,
+        secret_access_key_,
+        table_id_,
+        String("Parquet"), // format name
+        base_configuration.rw_settings,
+        columns_,
+        constraints_,
+        comment,
+        context_,
+        std::nullopt
+    );
 }
 
 Pipe StorageHudi::read(
@@ -72,24 +89,18 @@ Pipe StorageHudi::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    auto keys = getKeysFromS3();
+    updateS3Configuration(context, base_configuration);
 
-    auto new_query = generateQueryFromKeys(std::forward(keys));
-    // construct new engine
-    if (new_query != query) {
-        query = new_query;
-        auto new_query_uri = s3_configuration.uri.toString() + "/" + query;
-        engine = std::make_shared<StorageS3>(
-            S3::URI(Poco::URI(new_query_uri)),
-            
-        );
-    }
+    //auto keys = getKeysFromS3();
 
-    return engine->read(column_names, storage_snapshot, 
+    //auto new_uri = base_configuration.uri.uri.toString() + "/" + generateQueryFromKeys(std::forward(keys));
+    //s3_configuration.uri = S3::URI(Poco::URI(new_uri));
+
+    return s3engine->read(column_names, storage_snapshot, 
                         query_info, context, processed_stage, 
-                        max_block_size, num_streams)
+                        max_block_size, num_streams);
 
-    }
+}
 
 void StorageHudi::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
@@ -139,13 +150,13 @@ void StorageHudi::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configurati
 std::vector<std::string> StorageHudi::getKeysFromS3() {
     std::vector<std::string> keys;
 
-    const auto & client = s3_configuration.client;
+    const auto & client = base_configuration.client;
     
     Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
     bool is_finished{false};
-    const auto bucket{s3_configuration.uri.bucket};
+    const auto bucket{base_configuration.uri.bucket};
     const std::string key = "";
 
     request.SetBucket(bucket);
@@ -167,7 +178,7 @@ std::vector<std::string> StorageHudi::getKeysFromS3() {
         {
             const auto& filename = obj.GetKey();
             keys.push_back(filename);
-            LOG_DEBUG(log, "Found file: {}", filename);
+            //LOG_DEBUG(log, "Found file: {}", filename);
         }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
@@ -256,7 +267,12 @@ void registerStorageHudi(StorageFactory & factory)
                 args.constraints,
                 args.comment,
                 args.getContext());
-        });
+        },
+        {
+        .supports_settings = true,
+        .supports_schema_inference = true,
+        .source_access_type = AccessType::S3,
+    });
 }
 
 }

@@ -17,7 +17,7 @@ namespace Aws::S3
 namespace DB
 {
 
-class StorageHudi final : public IStorage {
+class StorageHudi : public IStorage {
 public:
     StorageHudi(
         const S3::URI& uri_,
@@ -49,10 +49,9 @@ private:
     std::string generateQueryFromKeys(std::vector<std::string>&& keys);
 
 private:
-    StorageS3::S3Configuration s3_configuration;
+    StorageS3::S3Configuration base_configuration;
+    std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
-    std::string query;
-    std::shared_ptr<StorageS3> engine;
 };
 
 }
