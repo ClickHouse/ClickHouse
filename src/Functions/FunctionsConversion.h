@@ -356,7 +356,7 @@ struct ToDateTimeImpl
         if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
             return 0;
 
-        return std::min(t.whole, time_t(0xFFFFFFFF));
+        return std::min<Int64>(t.whole, Int64(0xFFFFFFFF));
     }
 };
 
@@ -381,7 +381,7 @@ struct ToDateTransform32Or64
 
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
-            : std::min(UInt64(time_zone.toDayNum(from)), UInt64(DATE_LUT_MAX_DAY_NUM));
+            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(DATE_LUT_MAX_DAY_NUM));
     }
 };
 
@@ -402,7 +402,7 @@ struct ToDateTransform32Or64Signed
 
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
-            : std::min(UInt64(time_zone.toDayNum(from)), UInt64(0xFFFFFFFF));
+            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(0xFFFFFFFF));
 
     }
 };
@@ -434,7 +434,7 @@ struct ToDate32Transform32Or64
     {
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? from
-            : std::min(UInt64(time_zone.toDayNum(from)), UInt64(DATE_LUT_MAX_EXTEND_DAY_NUM));
+            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(DATE_LUT_MAX_EXTEND_DAY_NUM));
     }
 };
 
@@ -450,7 +450,7 @@ struct ToDate32Transform32Or64Signed
             return daynum_min_offset;
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? from
-            : time_zone.toDayNum(std::min(Int64(from), Int64(0xFFFFFFFF)));
+            : time_zone.toDayNum(std::min<Int64>(Int64(from), Int64(0xFFFFFFFF)));
     }
 };
 
@@ -530,7 +530,7 @@ struct ToDateTimeTransform64
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        return std::min(time_t(from), time_t(0xFFFFFFFF));
+        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
     }
 };
 
@@ -557,7 +557,7 @@ struct ToDateTimeTransform64Signed
         if (from < 0)
             return 0;
 
-        return std::min(Int64(from), Int64(0xFFFFFFFF));
+        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
     }
 };
 
