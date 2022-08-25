@@ -152,7 +152,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
 
         // this scheduleImpl is called in the parent thread,
         // the tracing context on this thread is used as parent context for the sub-thread that runs the job
-        const auto &current_thread_context = DB::TracingContextOnThread::current();
+        const auto &current_thread_context = DB::OpenTelemetry::TracingContextOnThread::current();
         jobs.emplace(std::move(job), priority, current_thread_context);
         ++scheduled_jobs;
         new_job_or_shutdown.notify_one();
@@ -255,7 +255,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         bool need_shutdown = false;
 
         /// A copy of parent trace context
-        DB::TracingContextOnThread parent_thead_trace_context;
+        DB::OpenTelemetry::TracingContextOnThread parent_thead_trace_context;
 
         {
             std::unique_lock lock(mutex);
@@ -267,7 +267,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// boost::priority_queue does not provide interface for getting non-const reference to an element
                 /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
                 job = std::move(const_cast<Job &>(jobs.top().job));
-                parent_thead_trace_context = std::move(const_cast<DB::TracingContextOnThread &>(jobs.top().thread_trace_context));
+                parent_thead_trace_context = std::move(const_cast<DB::OpenTelemetry::TracingContextOnThread &>(jobs.top().thread_trace_context));
                 jobs.pop();
             }
             else
@@ -281,7 +281,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         if (!need_shutdown)
         {
             /// Set up tracing context for this thread by its parent context
-            DB::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thead_trace_context);
+            DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thead_trace_context);
 
             try
             {

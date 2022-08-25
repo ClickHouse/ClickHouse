@@ -609,7 +609,7 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    TracingContextHolderPtr thread_trace_context;
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
     Stopwatch watch;
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
@@ -629,7 +629,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
             formatReadableQuantity(distributed_header.rows),
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
-        thread_trace_context = std::make_unique<TracingContextHolder>(__PRETTY_FUNCTION__,
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
             distributed_header.client_info.client_trace_context,
             this->storage.getContext()->getOpenTelemetrySpanLog());
 
@@ -870,7 +870,7 @@ private:
             ReadBufferFromFile in(file_path->second);
             const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-            TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
+            OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
                 distributed_header.client_info.client_trace_context,
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
@@ -909,7 +909,7 @@ private:
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
 
                 // this function is called in a separated thread, so we set up the trace context from the file
-                TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
+                OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
                     distributed_header.client_info.client_trace_context,
                     parent.storage.getContext()->getOpenTelemetrySpanLog());
 
