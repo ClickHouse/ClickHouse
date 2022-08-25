@@ -54,7 +54,7 @@ public:
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32>::execute(
                     arguments, result_type, input_rows_count, Transform{});
             else
-                return CustomWeekTransformImpl<DataTypeDate, DataTypeDate32>::execute(
+                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(
                     arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime())
             return CustomWeekTransformImpl<DataTypeDateTime, DataTypeDate>::execute(
