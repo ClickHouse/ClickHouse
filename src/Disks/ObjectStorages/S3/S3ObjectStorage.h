@@ -48,13 +48,23 @@ public:
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         String version_id_,
         const S3Capabilities & s3_capabilities_,
-        String bucket_)
+        String bucket_,
+        String connection_string)
         : bucket(bucket_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
     {
+        data_source_description.type = DataSourceType::S3;
+        data_source_description.description = connection_string;
+        data_source_description.is_cached = false;
+        data_source_description.is_encrypted = false;
+    }
+
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return data_source_description;
     }
 
     std::string getName() const override { return "S3ObjectStorage"; }
@@ -169,6 +179,8 @@ private:
     S3Capabilities s3_capabilities;
 
     const String version_id;
+
+    DataSourceDescription data_source_description;
 };
 
 }
