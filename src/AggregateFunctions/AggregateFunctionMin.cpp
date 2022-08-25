@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/HelpersMinMaxAny.h>
+#include <AggregateFunctions/AggregateFunctionMin.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/HelpersMinMaxAny.h>
 
 
 namespace DB
@@ -11,9 +13,21 @@ namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionMin(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *settings)
 {
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & argument_type = argument_types[0];
+
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return std::make_shared<AggregateFunctionMin<TYPE>>(argument_type);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    // TODO: Work on the rest of the types
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionMinData>(name, argument_types, parameters, settings));
+
 }
 
 AggregateFunctionPtr createAggregateFunctionArgMin(
