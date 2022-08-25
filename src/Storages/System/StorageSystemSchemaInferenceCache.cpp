@@ -44,16 +44,13 @@ NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
 static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cache, const String & storage_name)
 {
     auto s3_schema_cache_data = schema_cache.getAll();
-    String source;
-    String format;
-    String additional_format_info;
+
     for (const auto & [key, schema_info] : s3_schema_cache_data)
     {
-        splitSchemaCacheKey(key, source, format, additional_format_info);
         res_columns[0]->insert(storage_name);
-        res_columns[1]->insert(source);
-        res_columns[2]->insert(format);
-        res_columns[3]->insert(additional_format_info);
+        res_columns[1]->insert(key.source);
+        res_columns[2]->insert(key.format);
+        res_columns[3]->insert(key.additional_format_info);
         res_columns[4]->insert(schema_info.registration_time);
         res_columns[5]->insert(getSchemaString(schema_info.columns));
     }

@@ -54,6 +54,7 @@ def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
         hosts=cluster.get_instance_ip(nodename) + ":9181",
         timeout=timeout,
+        connection_retry=KazooRetry(max_tries=10),
         command_retry=KazooRetry(max_tries=10),
     )
 
@@ -93,9 +94,9 @@ def wait_nodes(nodes):
 
 
 def wait_and_assert_data(zk, path, data):
-    while zk.exists(path) is None:
+    while zk.retry(zk.exists, path) is None:
         time.sleep(0.1)
-    assert zk.get(path)[0] == data.encode()
+    assert zk.retry(zk.get, path)[0] == data.encode()
 
 
 def close_zk(zk):

@@ -34,6 +34,9 @@ namespace Nested
 
     /// Get all nested tables names from a block.
     std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
+
+    /// Extract all column names that are nested for specifying table.
+    Names getAllNestedColumnsForTable(const Block & block, const std::string & table_name);
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.

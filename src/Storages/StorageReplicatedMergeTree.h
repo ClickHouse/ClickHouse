@@ -4,7 +4,6 @@
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -136,8 +135,6 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -286,7 +283,7 @@ public:
     DataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType disk_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, DataSourceType data_source_type) const;
 
     inline String getReplicaName() const { return replica_name; }
 
@@ -467,8 +464,6 @@ private:
 
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
-
-    static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
