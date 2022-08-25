@@ -54,12 +54,6 @@ SELECT toStartOfMonth(toDate32('1930-01-01', 'UTC')),
        toStartOfMonth(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'), 'UTC'),
        toStartOfMonth(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC'), 'UTC');
 
-SELECT 'toStartOfMonth';
-SELECT toStartOfMonth(toDate32('1930-01-01', 'UTC')),
-       toStartOfMonth(toDate32('2151-01-01', 'UTC')),
-       toStartOfMonth(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'), 'UTC'),
-       toStartOfMonth(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC'), 'UTC');
-
 SELECT 'toLastDayOfMonth';
 SELECT toLastDayOfMonth(toDate('2149-06-03')),
        toLastDayOfMonth(toDate32('1930-01-01', 'UTC')),
