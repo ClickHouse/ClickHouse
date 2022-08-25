@@ -32,6 +32,8 @@ private:
         const std::string & table_name, const String & compression_method_) const override;
     const char * getStorageTypeName() const override { return "URL"; }
 
+    String getFormatFromFirstArgument() override;
+
     ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders() const;
 
     URLBasedDataSourceConfiguration configuration;
