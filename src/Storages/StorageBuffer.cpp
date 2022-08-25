@@ -195,10 +195,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
-
-        if (destination.get() == this)
-            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+        auto destination = getDestinationTable();
 
         /// TODO: Find a way to support projections for StorageBuffer
         query_info.ignore_projections = true;
@@ -223,11 +220,7 @@ void StorageBuffer::read(
 
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
-
-        if (destination.get() == this)
-            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
-
+        auto destination = getDestinationTable();
         auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
@@ -521,13 +514,7 @@ public:
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        StoragePtr destination;
-        if (storage.destination_id)
-        {
-            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
-            if (destination.get() == &storage)
-                throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
-        }
+        StoragePtr destination = storage.getDestinationTable();
 
         size_t bytes = block.bytes();
 
@@ -631,12 +618,11 @@ bool StorageBuffer::mayBenefitFromIndexForIn(
     if (!destination_id)
         return false;
 
-    auto destination = DatabaseCatalog::instance().getTable(destination_id, query_context);
+    auto destination = getDestinationTable();
+    if (destination)
+        return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
 
-    if (destination.get() == this)
-        throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
-
-    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
+    return false;
 }
 
 
@@ -705,8 +691,8 @@ bool StorageBuffer::supportsPrewhere() const
 {
     if (!destination_id)
         return false;
-    auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
-    if (dest && dest.get() != this)
+    auto dest = getDestinationTable();
+    if (dest)
         return dest->supportsPrewhere();
     return false;
 }
@@ -834,7 +820,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, getContext()));
+        writeBlockToDestination(block_to_write, getDestinationTable());
     }
     catch (...)
     {
@@ -1010,10 +996,10 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
-    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    auto destination = getDestinationTable();
 
-    if (underlying)
-        underlying_rows = underlying->totalRows(settings);
+    if (destination)
+        underlying_rows = destination->totalRows(settings);
     if (!underlying_rows)
         return underlying_rows;
 
@@ -1042,6 +1028,17 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     setInMemoryMetadata(new_metadata);
 }
 
+StoragePtr StorageBuffer::getDestinationTable() const
+{
+    if (!destination_id)
+        return {};
+
+    auto destination = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    if (destination.get() == this)
+        throw Exception("Destination table is myself. Will lead to infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+    return destination;
+}
 
 void registerStorageBuffer(StorageFactory & factory)
 {
