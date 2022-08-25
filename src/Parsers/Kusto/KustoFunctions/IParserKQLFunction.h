@@ -52,5 +52,6 @@ protected:
     static void validateEndOfFunction(const String & fn_name, IParser::Pos & pos);
     static String getKQLFunctionName(IParser::Pos & pos);
     static String ArraySortHelper(String & out, IParser::Pos & pos, bool ascending);
+    static int getNullCounts(String arg);
 };
 }
