@@ -87,6 +87,9 @@ StorageNATS::StorageNATS(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
+    nats_context = addSettings(getContext());
+    nats_context->makeQueryContext();
+
     try
     {
         connection = std::make_shared<NATSConnectionManager>(configuration, log);
@@ -135,7 +138,7 @@ String StorageNATS::getTableBasedName(String name, const StorageID & table_id)
 }
 
 
-ContextMutablePtr StorageNATS::createNewContext(ContextPtr local_context, bool query_context) const
+ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
@@ -155,8 +158,6 @@ ContextMutablePtr StorageNATS::createNewContext(ContextPtr local_context, bool q
         if (!setting_name.starts_with("nats_"))
             modified_context->setSetting(setting_name, setting.getValue());
     }
-    if (query_context)
-        modified_context->makeQueryContext();
 
     return modified_context;
 }
@@ -292,6 +293,7 @@ void StorageNATS::read(
     std::lock_guard lock(loop_mutex);
 
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    auto modified_context = addSettings(local_context);
 
     if (!connection->isConnected())
     {
@@ -302,7 +304,6 @@ void StorageNATS::read(
     Pipes pipes;
     pipes.reserve(num_created_consumers);
 
-    auto modified_context = createNewContext(local_context);
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1);
@@ -334,14 +335,14 @@ void StorageNATS::read(
     {
         auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
         query_plan.addStep(std::move(read_step));
-        query_plan.addInterpreterContext(createNewContext(local_context));
+        query_plan.addInterpreterContext(modified_context);
     }
 }
 
 
 SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    auto modified_context = createNewContext(local_context);
+    auto modified_context = addSettings(local_context);
     std::string subject = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
                           ? modified_context->getSettingsRef().stream_like_engine_insert_queue.value
                           : "";
@@ -611,7 +612,7 @@ bool StorageNATS::streamToViews()
     insert->table_id = table_id;
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, createNewContext(getContext(), true), false, true, true);
+    InterpreterInsertQuery interpreter(insert, nats_context, false, true, true);
     auto block_io = interpreter.execute();
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -629,7 +630,7 @@ bool StorageNATS::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         LOG_DEBUG(log, "Current queue size: {}", buffers[0]->queueSize());
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, createNewContext(getContext(), true), column_names, block_size);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
