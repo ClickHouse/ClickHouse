@@ -573,6 +573,25 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) co
     return target.supports_subset_of_columns;
 }
 
+void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
+    const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter)
+{
+    auto & target = dict[name].additional_info_for_schema_cache_getter;
+    if (target)
+        throw Exception("FormatFactory: additional info for schema cache getter " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(additional_info_for_schema_cache_getter);
+}
+
+String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    const auto & additional_info_getter = getCreators(name).additional_info_for_schema_cache_getter;
+    if (!additional_info_getter)
+        return "";
+
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    return additional_info_getter(format_settings);
+}
+
 bool FormatFactory::isInputFormat(const String & name) const
 {
     auto it = dict.find(name);
