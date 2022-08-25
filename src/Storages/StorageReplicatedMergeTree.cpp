@@ -817,8 +817,6 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
 
 void StorageReplicatedMergeTree::drop()
 {
-    assert(shutdown_called);
-
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
