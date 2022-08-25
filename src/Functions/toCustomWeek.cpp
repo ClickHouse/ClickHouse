@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/CustomWeekTransforms.h>
 #include <Functions/FunctionCustomWeekToSomething.h>
+#include <Functions/FunctionCustomWeekToDateOrDate32.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
@@ -9,7 +10,7 @@ namespace DB
 {
 using FunctionToWeek = FunctionCustomWeekToSomething<DataTypeUInt8, ToWeekImpl>;
 using FunctionToYearWeek = FunctionCustomWeekToSomething<DataTypeUInt32, ToYearWeekImpl>;
-using FunctionToStartOfWeek = FunctionCustomWeekToSomething<DataTypeDate, ToStartOfWeekImpl>;
+using FunctionToStartOfWeek = FunctionCustomWeekToDateOrDate32<ToStartOfWeekImpl>;
 
 REGISTER_FUNCTION(ToCustomWeek)
 {

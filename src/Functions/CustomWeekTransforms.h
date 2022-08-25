@@ -60,7 +60,7 @@ struct ToStartOfWeekImpl
 {
     static constexpr auto name = "toStartOfWeek";
 
-    static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
@@ -68,7 +68,7 @@ struct ToStartOfWeekImpl
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
-    static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline Int32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
