@@ -219,20 +219,53 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
     return arg;
 }
 
+int IParserKQLFunction::getNullCounts(String arg)
+{
+    int nullCount = 0;
+    size_t i;
+    String temp;
+    for(i = 0; i < arg.size(); i++)
+        if(arg[i] != ' ')
+            temp += arg[i];
+    arg = temp;
+    temp = "";
+    for(i = 0; i < arg.size(); i++)
+        if(arg[i] == '(')
+            break;
+
+    while(i < arg.size())
+    {
+        if(arg[i] != ',' && arg[i] != ')')
+            temp += arg[i];
+        else
+        {
+            if(temp == "NULL" || temp == "null")
+                nullCount += 1;
+            temp = "";    
+        }
+        i += 1;
+    }
+    return nullCount;
+}
+
 String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool ascending)
 {
     String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return "false";
+
     String reverse;
+    String second_arg;
+    String expr;
+
     if(!ascending)
         reverse = "Reverse";
     ++pos;
     String first_arg = getConvertedArgument(fn_name, pos);
-    
+    int nullCount = getNullCounts(first_arg);
     if(pos->type == TokenType::Comma)
         ++pos;
-    String second_arg;
+
     if(pos->type != TokenType::ClosingRoundBracket  && String(pos->begin, pos->end) != "dynamic")
     {
         second_arg = getConvertedArgument(fn_name, pos);
@@ -246,8 +279,14 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
         while(pos->type != TokenType::ClosingRoundBracket)
         {
             ++pos;
+            if(String(pos->begin, pos->end) != "dynamic")
+            {
+                expr = getConvertedArgument(fn_name, pos);
+                std::cout << "MALLIK expr here: " << expr << std::endl;
+                break;
+            }
             second_arg = getConvertedArgument(fn_name, pos);
-            argument_list.push_back("array"+ reverse +"Sort((x, y) -> y, " + second_arg + "," + first_arg + ")");
+            argument_list.push_back("array"+ reverse +"Sort((x, y) -> y, " + second_arg );
         }
     }
     else
@@ -258,13 +297,24 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
 
     if(argument_list.size() > 0)
     {
-        out = "array"+ reverse +"Sort(" + first_arg + ") AS array0_sorted, ";
+        String temp_first_arg = first_arg;
+        if(nullCount > 0 && expr.empty())   
+            expr = "true";
+        if(nullCount > 0)
+            first_arg =  "if (" + expr + ", array" + reverse + "Sort(" + first_arg + "), concat( arraySlice(array" + reverse + "Sort(" + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1) ) )"; 
+        else
+            first_arg = "array" + reverse + "Sort(" + first_arg + ")";
+            
+        out = first_arg + " AS array0_sorted";
+        
         for(size_t i = 0; i < argument_list.size(); i++)
         {
-            out += argument_list[i] + "AS array" + std::to_string(i + 1)+ "_sorted";
-
-            if(i < argument_list.size() - 1)
-                out += " , ";
+            out += " , ";
+            if(nullCount > 0)
+                out +=  "If ( " + expr + "," + argument_list[i] + "," + temp_first_arg + "), arrayConcat( arraySlice( " + argument_list[i] + "," + temp_first_arg + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice( " + argument_list[i] + "," + temp_first_arg + ") , 1, length( " + temp_first_arg + ") - " + std::to_string(nullCount) + ") ) )" + "AS array" + std::to_string(i + 1)+ "_sorted";
+            else
+                out += argument_list[i] + "," + temp_first_arg + ")" + "AS array" + std::to_string(i + 1)+ "_sorted";
+            
         }
         out += " )";
     }
