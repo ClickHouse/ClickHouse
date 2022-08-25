@@ -575,6 +575,7 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
 {
     WriteBufferFromOwnString info;
     info << "File segment: " << range().toString() << ", ";
+    info << "key: " << key().toString() << ", ";
     info << "state: " << download_state << ", ";
     info << "downloaded size: " << getDownloadedSize(segment_lock) << ", ";
     info << "reserved size: " << reserved_size << ", ";
@@ -700,7 +701,7 @@ void FileSegment::detach(
     download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
     downloader_id.clear();
 
-    LOG_TEST(log, "Detached file segment: {}", getInfoForLogImpl(segment_lock));
+    LOG_DEBUG(log, "Detached file segment: {}", getInfoForLogImpl(segment_lock));
 }
 
 void FileSegment::markAsDetached(std::lock_guard<std::mutex> & /* segment_lock */)
