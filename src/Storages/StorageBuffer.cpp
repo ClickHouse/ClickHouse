@@ -705,9 +705,11 @@ bool StorageBuffer::supportsPrewhere() const
 {
     if (!destination_id)
         return false;
-    auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
-    if (dest && dest.get() != this)
-        return dest->supportsPrewhere();
+
+    auto destination = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    if (destination && destination.get() != this)
+        return destination->supportsPrewhere();
+
     return false;
 }
 
@@ -1010,14 +1012,12 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
-    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    auto destination = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
 
-    if (underlying)
-        underlying_rows = underlying->totalRows(settings);
-    if (!underlying_rows)
-        return underlying_rows;
+    if (destination && destination.get() != this)
+        underlying_rows = destination->totalRows(settings);
 
-    return total_writes.rows + *underlying_rows;
+    return total_writes.rows + underlying_rows.value_or(0);
 }
 
 std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) const
