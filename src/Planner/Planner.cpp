@@ -93,6 +93,53 @@ namespace ErrorCodes
 namespace
 {
 
+StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
+{
+    StreamLocalLimits limits;
+    limits.mode = LimitsMode::LIMITS_TOTAL;
+    limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
+    limits.speed_limits.max_execution_time = settings.max_execution_time;
+    limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+    /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+      *  because the initiating server has a summary of the execution of the request on all servers.
+      *
+      * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+      *  additionally on each remote server, because these limits are checked per block of data processed,
+      *  and remote servers may process way more blocks of data than are received by initiator.
+      *
+      * The limits to throttle maximum execution speed is also checked on all servers.
+      */
+    if (options.to_stage == QueryProcessingStage::Complete)
+    {
+        limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+        limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+    }
+
+    limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+    limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+    limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+    return limits;
+}
+
+StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options)
+{
+    const auto & settings = context.getSettingsRef();
+
+    StreamLocalLimits limits;
+    SizeLimits leaf_limits;
+
+    /// Set the limits and quota for reading data, the speed and time of the query.
+    if (!options.ignore_limits)
+    {
+        limits = getLimitsForStorage(settings, options);
+        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf, settings.read_overflow_mode_leaf);
+    }
+
+    return {limits, leaf_limits};
+}
+
 class CollectAggregateFunctionNodesMatcher
 {
 public:
@@ -995,6 +1042,10 @@ void Planner::buildQueryPlanIfNeeded()
     select_query_info.original_query = queryNodeToSelectQuery(query_tree);
     select_query_info.query = select_query_info.original_query;
 
+    StorageLimitsList storage_limits;
+    storage_limits.push_back(getStorageLimits(*current_context, select_query_options));
+    select_query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
+
     CollectTableExpressionIdentifiersVisitor collect_table_expression_identifiers_visitor;
     collect_table_expression_identifiers_visitor.visit(query_node.getJoinTree(), *planner_context);
 
@@ -1075,7 +1126,11 @@ void Planner::buildQueryPlanIfNeeded()
             projection_action_dag_nodes_size,
             projection_nodes_size);
 
-    NamesWithAliases projection_names;
+    Names projection_names;
+    projection_names.reserve(projection_nodes_size);
+
+    NamesWithAliases projection_names_with_aliases;
+    projection_names_with_aliases.reserve(projection_nodes_size);
 
     for (size_t i = 0; i < projection_nodes_size; ++i)
     {
@@ -1084,13 +1139,15 @@ void Planner::buildQueryPlanIfNeeded()
         const auto * action_dag_node = projection_action_dag_nodes[i];
         const auto & actions_dag_node_name = action_dag_node->result_name;
 
+        projection_names.push_back(actions_dag_node_name);
+
         if (node->hasAlias())
-            projection_names.push_back({actions_dag_node_name, node->getAlias()});
+            projection_names_with_aliases.push_back({actions_dag_node_name, node->getAlias()});
         else
-            projection_names.push_back({actions_dag_node_name, node_name});
+            projection_names_with_aliases.push_back({actions_dag_node_name, node_name});
     }
 
-    projection_actions->project(projection_names);
+    projection_actions->project(projection_names_with_aliases);
 
     actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(projection_actions)));
     size_t projection_action_step_index = actions_chain.getLastStepIndex();
@@ -1202,8 +1259,29 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(aggregating_step));
     }
 
-    // std::cout << "Query plan dump" << std::endl;
-    // std::cout << dumpQueryPlan(query_plan) << std::endl;
+    if (query_node.isDistinct())
+    {
+        const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+        UInt64 limit_hint_for_distinct = 0;
+        bool pre_distinct = true;
+
+        SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
+        auto distinct_step = std::make_unique<DistinctStep>(
+            query_plan.getCurrentDataStream(),
+            limits,
+            limit_hint_for_distinct,
+            projection_names,
+            pre_distinct,
+            settings.optimize_distinct_in_order);
+
+        if (pre_distinct)
+            distinct_step->setStepDescription("Preliminary DISTINCT");
+        else
+            distinct_step->setStepDescription("DISTINCT");
+
+        query_plan.addStep(std::move(distinct_step));
+    }
 
     auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_chain[projection_action_step_index]->getActions());
     projection_step->setStepDescription("Projection");

@@ -47,6 +47,16 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
+    void setIsDistinct(bool is_distinct_value)
+    {
+        is_distinct = is_distinct_value;
+    }
+
+    bool isDistinct() const
+    {
+        return is_distinct;
+    }
+
     const ListNode & getWith() const
     {
         return children[with_child_index]->as<const ListNode &>();
@@ -176,6 +186,7 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_distinct = false;
     std::string cte_name;
 
     static constexpr size_t with_child_index = 0;

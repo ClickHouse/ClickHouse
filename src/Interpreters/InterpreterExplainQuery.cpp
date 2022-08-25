@@ -405,6 +405,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (settings.dump_ast)
             {
                 buf << '\n';
+                buf << '\n';
                 query_tree->toAST()->format(IAST::FormatSettings(buf, false));
             }
 

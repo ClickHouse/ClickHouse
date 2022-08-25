@@ -116,7 +116,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(const ASTPtr & s
     else if (select_or_union_query->as<ASTSelectQuery>())
         query_node = buildSelectExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/);
     else
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "UNION query {} is not supported", select_or_union_query->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported", select_or_union_query->formatForErrorMessage());
 
     return query_node;
 }
@@ -190,6 +190,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_name.empty());
     current_query_tree->setCTEName(cte_name);
+    current_query_tree->setIsDistinct(select_query_typed.distinct);
 
     current_query_tree->getJoinTree() = buildJoinTree(select_query_typed.tables());
     current_query_tree->setOriginalAST(select_query);
@@ -386,7 +387,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
     }
     else
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only literals and constants are supported as expression. Actual {}", expression->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Invalid expression. Expected identifier, literal, matcher, function, subquery. Actual {}",
+            expression->formatForErrorMessage());
     }
 
     result->setAlias(expression->tryGetAlias());
@@ -451,7 +454,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 {
                     const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList>()->children;
                     for (const auto & argument : function_arguments_list)
-                        node->getArguments().getNodes().push_back(buildExpression(argument));
+                    {
+                        if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
+                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, true /*is_subquery*/, {} /*cte_name*/));
+                        else
+                            node->getArguments().getNodes().push_back(buildExpression(argument));
+                    }
                 }
 
                 node->setAlias(table_function_expression.tryGetAlias());
