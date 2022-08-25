@@ -99,6 +99,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     buffer << ", is_subquery: " << is_subquery;
     buffer << ", is_cte: " << is_cte;
+    buffer << ", is_distinct: " << is_distinct;
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
@@ -141,7 +142,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
-    return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name;
+    return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_distinct == rhs_typed.is_distinct;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -151,11 +152,14 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
 
     state.update(cte_name.size());
     state.update(cte_name);
+
+    state.update(is_distinct);
 }
 
 ASTPtr QueryNode::toASTImpl() const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
+    select_query->distinct = is_distinct;
 
     if (!getWith().getNodes().empty())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());

@@ -194,7 +194,7 @@ ASTPtr IQueryTreeNode::toAST() const
 {
     auto converted_node = toASTImpl();
 
-    if (auto * ast_with_alias = typeid_cast<ASTWithAlias *>(converted_node.get()))
+    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
 
     return converted_node;
