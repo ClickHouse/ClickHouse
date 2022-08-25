@@ -32,7 +32,7 @@ friend class FileSegment;
 friend class IFileCachePriority;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
-friend struct FileSegment::AsynchronousWriteState::Buffer;
+friend struct FileSegment::BackgroundDownload::Buffer;
 
 struct QueryContext;
 using QueryContextPtr = std::shared_ptr<QueryContext>;
