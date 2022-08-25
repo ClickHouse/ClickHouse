@@ -36,7 +36,7 @@ AzureObjectStorage::AzureObjectStorage(
 
 std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    return getRandomASCIIString(32);
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
