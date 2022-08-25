@@ -33,6 +33,7 @@ class AccessControl;
   *           <max_memory_usage>
   *               <min>200000</min>
   *               <max>20000000000</max>
+  *               <max_in_readonly>10000000000</max_in_readonly>
   *           </max_memory_usage>
   *           <force_index_by_date>
   *               <readonly/>
@@ -43,10 +44,11 @@ class AccessControl;
   *
   * This class also checks that we are not in the read-only mode.
   * If a setting cannot be change due to the read-only mode this class throws an exception.
-  * The value of `readonly` value is understood as follows:
-  * 0 - everything allowed.
-  * 1 - only read queries can be made; you can not change the settings.
-  * 2 - you can only do read queries and you can change the settings, except for the `readonly` setting.
+  * The value of `readonly` is understood as follows:
+  * 0 - not read-only mode, no additional checks.
+  * 1 - only read queries, as well as changing explicitly allowed settings.
+  * 2 - only read queries and you can change the settings, except for the `readonly` setting.
+  *
   */
 class SettingsConstraints
 {
@@ -70,8 +72,14 @@ public:
     void setReadOnly(std::string_view setting_name, bool read_only);
     bool isReadOnly(std::string_view setting_name) const;
 
+    void setMinValueInReadOnly(std::string_view setting_name, const Field & min_value_in_readonly);
+    Field getMinValueInReadOnly(std::string_view setting_name) const;
+
+    void setMaxValueInReadOnly(std::string_view setting_name, const Field & max_value_in_readonly);
+    Field getMaxValueInReadOnly(std::string_view setting_name) const;
+
     void set(std::string_view setting_name, const Field & min_value, const Field & max_value, bool read_only);
-    void get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const;
+    void get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only, Field & min_value_in_readonly, Field & max_value_in_readonly) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -93,6 +101,11 @@ private:
         bool read_only = false;
         Field min_value;
         Field max_value;
+
+        // Allowed range in `readonly=1` mode.
+        // NOTE: only reasonable to be a subset of [min_value; max_value] range, although there is no enforcement.
+        Field min_value_in_readonly;
+        Field max_value_in_readonly;
 
         bool operator ==(const Constraint & other) const;
         bool operator !=(const Constraint & other) const { return !(*this == other); }

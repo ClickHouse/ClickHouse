@@ -81,6 +81,36 @@ bool SettingsConstraints::isReadOnly(std::string_view setting_name) const
 }
 
 
+void SettingsConstraints::setMinValueInReadOnly(std::string_view setting_name, const Field & min_value_in_readonly)
+{
+    getConstraintRef(setting_name).min_value_in_readonly = Settings::castValueUtil(setting_name, min_value_in_readonly);
+}
+
+Field SettingsConstraints::getMinValueInReadOnly(std::string_view setting_name) const
+{
+    const auto * ptr = tryGetConstraint(setting_name);
+    if (ptr)
+        return ptr->min_value_in_readonly;
+    else
+        return {};
+}
+
+
+void SettingsConstraints::setMaxValueInReadOnly(std::string_view setting_name, const Field & max_value_in_readonly)
+{
+    getConstraintRef(setting_name).max_value_in_readonly = Settings::castValueUtil(setting_name, max_value_in_readonly);
+}
+
+Field SettingsConstraints::getMaxValueInReadOnly(std::string_view setting_name) const
+{
+    const auto * ptr = tryGetConstraint(setting_name);
+    if (ptr)
+        return ptr->max_value_in_readonly;
+    else
+        return {};
+}
+
+
 void SettingsConstraints::set(std::string_view setting_name, const Field & min_value, const Field & max_value, bool read_only)
 {
     auto & ref = getConstraintRef(setting_name);
@@ -89,7 +119,7 @@ void SettingsConstraints::set(std::string_view setting_name, const Field & min_v
     ref.read_only = read_only;
 }
 
-void SettingsConstraints::get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const
+void SettingsConstraints::get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only, Field & min_value_in_readonly, Field & max_value_in_readonly) const
 {
     const auto * ptr = tryGetConstraint(setting_name);
     if (ptr)
@@ -97,12 +127,16 @@ void SettingsConstraints::get(std::string_view setting_name, Field & min_value, 
         min_value = ptr->min_value;
         max_value = ptr->max_value;
         read_only = ptr->read_only;
+        min_value_in_readonly = ptr->min_value_in_readonly;
+        max_value_in_readonly = ptr->max_value_in_readonly;
     }
     else
     {
         min_value = Field{};
         max_value = Field{};
         read_only = false;
+        min_value_in_readonly = Field{};
+        max_value_in_readonly = Field{};
     }
 }
 
@@ -117,6 +151,10 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
             constraint.max_value = other_constraint.max_value;
         if (other_constraint.read_only)
             constraint.read_only = true;
+        if (!other_constraint.min_value_in_readonly.isNull())
+            constraint.min_value_in_readonly = other_constraint.min_value_in_readonly;
+        if (!other_constraint.max_value_in_readonly.isNull())
+            constraint.max_value_in_readonly = other_constraint.max_value_in_readonly;
     }
 }
 
@@ -180,10 +218,8 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         }
     };
 
-    bool cannot_compare = false;
-    auto less = [&](const Field & left, const Field & right)
+    auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
-        cannot_compare = false;
         if (reaction == THROW_ON_VIOLATION)
             return applyVisitor(FieldVisitorAccurateLess{}, left, right);
         else
@@ -194,8 +230,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
             }
             catch (...)
             {
-                cannot_compare = true;
-                return false;
+                return true;
             }
         }
     };
@@ -248,17 +283,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     }
 
     /** The `readonly` value is understood as follows:
-      * 0 - everything allowed.
-      * 1 - only read queries can be made; you can not change the settings.
-      * 2 - You can only do read queries and you can change the settings, except for the `readonly` setting.
+      * 0 - no read-only restrictions.
+      * 1 - only read requests, as well as changing explicitly allowed settings.
+      * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
       */
-    if (current_settings.readonly == 1)
-    {
-        if (reaction == THROW_ON_VIOLATION)
-            throw Exception("Cannot modify '" + setting_name + "' setting in readonly mode", ErrorCodes::READONLY);
-        else
-            return false;
-    }
 
     if (current_settings.readonly > 1 && setting_name == "readonly")
     {
@@ -269,6 +297,58 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     }
 
     const Constraint * constraint = tryGetConstraint(setting_name);
+    if (current_settings.readonly == 1)
+    {
+        if (!constraint || (constraint->min_value_in_readonly.isNull() && constraint->max_value_in_readonly.isNull())) {
+            if (reaction == THROW_ON_VIOLATION)
+                throw Exception("Cannot modify '" + setting_name + "' setting in readonly mode", ErrorCodes::READONLY);
+            else
+                return false;
+        }
+
+        const Field & min_value = constraint->min_value_in_readonly;
+        const Field & max_value = constraint->max_value_in_readonly;
+        if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+                throw Exception("Cannot modify '" + setting_name + "' setting in readonly mode", ErrorCodes::READONLY);
+            else
+                return false;
+        }
+
+        // Check left bound
+        if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+            {
+                throw Exception(
+                    "Setting " + setting_name + " in readonly mode shouldn't be less than " + applyVisitor(FieldVisitorToString(), constraint->min_value_in_readonly),
+                    ErrorCodes::READONLY);
+            }
+            else
+            {
+                new_value = min_value; // to ensure `min` clamping will not cancel `min_in_readonly` clamp
+                change.value = min_value;
+            }
+       }
+
+        // Check right bound
+        if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+            {
+                throw Exception(
+                    "Setting " + setting_name + " in readonly mode shouldn't be greater than " + applyVisitor(FieldVisitorToString(), constraint->max_value_in_readonly),
+                    ErrorCodes::READONLY);
+            }
+            else
+            {
+                new_value = max_value; // to ensure `max` clamping will not cancel `max_in_readonly` clamp
+                change.value = max_value;
+            }
+        }
+    }
+
     if (constraint)
     {
         if (constraint->read_only)
@@ -281,7 +361,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
 
         const Field & min_value = constraint->min_value;
         const Field & max_value = constraint->max_value;
-        if (!min_value.isNull() && !max_value.isNull() && (less(max_value, min_value) || cannot_compare))
+        if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
         {
             if (reaction == THROW_ON_VIOLATION)
                 throw Exception("Setting " + setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
@@ -289,7 +369,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
                 return false;
         }
 
-        if (!min_value.isNull() && (less(new_value, min_value) || cannot_compare))
+        if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
         {
             if (reaction == THROW_ON_VIOLATION)
             {
@@ -301,7 +381,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
                 change.value = min_value;
         }
 
-        if (!max_value.isNull() && (less(max_value, new_value) || cannot_compare))
+        if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
         {
             if (reaction == THROW_ON_VIOLATION)
             {
@@ -342,7 +422,9 @@ const SettingsConstraints::Constraint * SettingsConstraints::tryGetConstraint(st
 
 bool SettingsConstraints::Constraint::operator==(const Constraint & other) const
 {
-    return (read_only == other.read_only) && (min_value == other.min_value) && (max_value == other.max_value)
+    return (read_only == other.read_only)
+        && (min_value == other.min_value) && (max_value == other.max_value)
+        && (min_value_in_readonly == other.min_value_in_readonly) && (max_value_in_readonly == other.max_value_in_readonly)
         && (*setting_name == *other.setting_name);
 }
 
