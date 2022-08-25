@@ -137,7 +137,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         metadata_snapshot->getSampleBlock(),
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(local_context),
-        chooseCompressionMethod(uri, compression_method));
+        compression_method);
 }
 
 bool StorageXDBC::supportsSubsetOfColumns() const

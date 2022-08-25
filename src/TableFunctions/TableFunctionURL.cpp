@@ -113,7 +113,12 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
-        return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
+        return StorageURL::getTableStructureFromData(format, 
+            filename,
+            chooseCompressionMethod(filename, compression_method),
+            getHeaders(),
+            std::nullopt,
+            context);
 
     return parseColumnsListFromString(structure, context);
 }
