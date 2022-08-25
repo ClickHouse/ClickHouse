@@ -119,9 +119,7 @@ void WriteBufferFromS3::allocateBuffer()
     last_part_size = 0;
 }
 
-WriteBufferFromS3::~WriteBufferFromS3()
-{
-}
+WriteBufferFromS3::~WriteBufferFromS3() = default;
 
 void WriteBufferFromS3::preFinalize()
 {
