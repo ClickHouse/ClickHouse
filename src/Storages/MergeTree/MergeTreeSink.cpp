@@ -38,11 +38,6 @@ void MergeTreeSink::onFinish()
     finishDelayedChunk();
 }
 
-void MergeTreeSink::onException()
-{
-    finishDelayedChunk();
-}
-
 struct MergeTreeSink::DelayedChunk
 {
     struct Partition
