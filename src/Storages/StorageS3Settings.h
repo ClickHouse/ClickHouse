@@ -60,6 +60,7 @@ struct S3Settings
         size_t upload_part_size_multiply_parts_count_threshold = 0;
         size_t max_single_part_upload_size = 0;
         size_t max_connections = 0;
+        bool check_objects_after_upload = false;
 
         ReadWriteSettings() = default;
         explicit ReadWriteSettings(const Settings & settings);
@@ -71,7 +72,8 @@ struct S3Settings
                 && upload_part_size_multiply_factor == other.upload_part_size_multiply_factor
                 && upload_part_size_multiply_parts_count_threshold == other.upload_part_size_multiply_parts_count_threshold
                 && max_single_part_upload_size == other.max_single_part_upload_size
-                && max_connections == other.max_connections;
+                && max_connections == other.max_connections
+                && check_objects_after_upload == other.check_objects_after_upload;
         }
 
         void updateFromSettingsIfEmpty(const Settings & settings);

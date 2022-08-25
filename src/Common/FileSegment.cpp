@@ -55,6 +55,7 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
+            is_downloaded = true;
             break;
         }
         case (State::SKIP_CACHE):
@@ -728,7 +729,7 @@ void FileSegment::detach(
     download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
     downloader_id.clear();
 
-    LOG_TEST(log, "Detached file segment: {}", getInfoForLogImpl(segment_lock));
+    LOG_DEBUG(log, "Detached file segment: {}", getInfoForLogImpl(segment_lock));
 }
 
 void FileSegment::markAsDetached(std::lock_guard<std::mutex> & /* segment_lock */)
