@@ -1245,6 +1245,18 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         if (done_count <= finished_mutations_to_keep)
             return 0;
 
+        for (auto it = begin_it; it != end_it; ++it)
+        {
+            if (!it->second.tid.isPrehistoric())
+            {
+                done_count = std::distance(begin_it, it);
+                break;
+            }
+        }
+
+        if (done_count <= finished_mutations_to_keep)
+            return 0;
+
         size_t to_delete_count = done_count - finished_mutations_to_keep;
 
         auto it = begin_it;
