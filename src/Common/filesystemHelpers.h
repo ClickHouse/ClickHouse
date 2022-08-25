@@ -26,6 +26,8 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
 #endif
 String getBlockDeviceId([[maybe_unused]] const String & path);
 
+std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path);
+
 enum class BlockDeviceType
 {
     UNKNOWN = 0, // we were unable to determine device type

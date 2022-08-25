@@ -14,6 +14,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class BackupEntryFromImmutableFile : public IBackupEntry
 {
 public:
+
     /// The constructor is allowed to not set `file_size_` or `checksum_`, in that case it will be calculated from the data.
     BackupEntryFromImmutableFile(
         const DiskPtr & disk_,
@@ -28,8 +29,10 @@ public:
     std::optional<UInt128> getChecksum() const override { return checksum; }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
 
-    String getFilePath() const { return file_path; }
-    DiskPtr getDisk() const { return disk; }
+    String getFilePath() const override;
+    DataSourceDescription getDataSourceDescription() const override;
+
+    DiskPtr tryGetDiskIfExists() const override { return disk; }
 
 private:
     const DiskPtr disk;
