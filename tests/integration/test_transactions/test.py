@@ -111,6 +111,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         "1_6_6_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
     )
 
+
 def test_rollback_unfinished_on_restart2(start_cluster):
     node.query(
         "create table mt (n int, m int) engine=MergeTree order by n partition by n % 2"
@@ -170,8 +171,8 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     node.restart_clickhouse(kill=True)
 
     assert (
-            node.query("select *, _part from mt order by n")
-            == "2\t20\t0_2_2_0\n3\t30\t1_3_3_0\n4\t40\t0_4_4_0\n"
+        node.query("select *, _part from mt order by n")
+        == "2\t20\t0_2_2_0\n3\t30\t1_3_3_0\n4\t40\t0_4_4_0\n"
     )
     res = node.query(
         "select name, active, creation_tid, 'csn' || toString(creation_csn) || '_', removal_tid, 'csn' || toString(removal_csn) || '_' from system.parts where table='mt' order by name"
@@ -183,11 +184,11 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     res = res.replace(tid5, "tid5")
     res = res.replace(tid6, "tid6").replace("csn" + csn6 + "_", "csn_6")
     assert (
-            res
-            == "0_2_2_0\t1\ttid0\tcsn1_\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
-               "0_2_4_1\t0\ttid4\tcsn18446744073709551615_\ttid0\tcsn0_\n"
-               "0_4_4_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
-               "0_5_5_0\t0\ttid5\tcsn18446744073709551615_\ttid0\tcsn0_\n"
-               "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
-               "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
+        res
+        == "0_2_2_0\t1\ttid0\tcsn1_\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
+        "0_2_4_1\t0\ttid4\tcsn18446744073709551615_\ttid0\tcsn0_\n"
+        "0_4_4_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
+        "0_5_5_0\t0\ttid5\tcsn18446744073709551615_\ttid0\tcsn0_\n"
+        "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
+        "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
     )
