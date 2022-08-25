@@ -88,6 +88,7 @@ namespace DB
 
             const DataTypes & arg_data_types0 = sketch_type0->getArgumentsDataTypes();
             const DataTypes & arg_data_types1 = sketch_type1->getArgumentsDataTypes();
+
             if (arg_data_types0.size() != arg_data_types1.size())
                 throw Exception(
                         "The nested type in uniqThetas must be the same length, but one is " + std::to_string(arg_data_types0.size())
