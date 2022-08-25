@@ -522,13 +522,6 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
             download_state = State::PARTIALLY_DOWNLOADED;
 
         resetDownloaderImpl(segment_lock);
-
-        if (cache_writer)
-        {
-            cache_writer->finalize();
-            cache_writer.reset();
-            remote_file_reader.reset();
-        }
     }
 
     switch (download_state)
