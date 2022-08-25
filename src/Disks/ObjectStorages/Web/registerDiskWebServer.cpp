@@ -47,7 +47,6 @@ void registerDiskWebServer(DiskFactory & factory)
             "DiskWebServer",
             metadata_storage,
             object_storage,
-            DiskType::WebServer,
             /* send_metadata */false,
             /* threadpool_size */16);
     };
