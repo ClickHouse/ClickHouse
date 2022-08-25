@@ -116,8 +116,8 @@ void FileCache::useCell(
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot have zero size downloaded file segments. Current file segment: {}",
-            file_segment->range().toString());
+            "Cannot have zero size downloaded file segments. {}",
+            file_segment->getInfoForLog());
     }
 
     result.push_back(cell.file_segment);
@@ -910,7 +910,7 @@ void FileCache::remove(
     Key key, size_t offset,
     std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & /* segment_lock */)
 {
-    LOG_DEBUG(log, "Remove. Key: {}, offset: {}", key.toString(), offset);
+    LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", key.toString(), offset);
 
     auto * cell = getCell(key, offset, cache_lock);
     if (!cell)

@@ -2,6 +2,8 @@
 
 #if USE_AWS_S3
 
+#include <IO/S3Common.h>
+
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
@@ -25,6 +27,7 @@
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 #include <Common/getRandomASCIIString.h>
+
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 
@@ -369,6 +372,15 @@ void S3ObjectStorage::copyObjectImpl(
     }
 
     throwIfError(outcome);
+
+    auto settings_ptr = s3_settings.get();
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObjectMultipartImpl(
@@ -450,6 +462,14 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
         throwIfError(outcome);
     }
+
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObject( // NOLINT
@@ -511,7 +531,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         getClient(config, config_prefix, context),
         getSettings(config, config_prefix, context),
-        version_id, s3_capabilities, new_namespace);
+        version_id, s3_capabilities, new_namespace,
+        S3::URI(Poco::URI(config.getString(config_prefix + ".endpoint"))).endpoint);
 }
 
 }

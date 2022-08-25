@@ -1193,6 +1193,7 @@ String FileSegment::getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment
 {
     WriteBufferFromOwnString info;
     info << "File segment: " << range().toString() << ", ";
+    info << "key: " << key().toString() << ", ";
     info << "state: " << download_state << ", ";
     info << "downloaded size: " << getDownloadedSizeUnlocked(segment_lock) << ", ";
     info << "reserved size: " << reserved_size << ", ";
