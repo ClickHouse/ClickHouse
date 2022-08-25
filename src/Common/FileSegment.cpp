@@ -824,7 +824,7 @@ void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
             /// file_segment->complete(DOWNLOADED) is not enough, because file segment capacity
             /// was initially set with a margin as `max_file_segment_size`. => We need to always
             /// resize to actual size after download finished.
-            
+
             /// Current file segment is downloaded as a part of write-through cache
             /// and therefore cannot be concurrently accessed. Nevertheless, it can be
             /// accessed by cache system tables if someone read from them,
@@ -833,7 +833,7 @@ void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
 
             assert(file_segment.downloaded_size <= file_segment.range().size());
             file_segment.segment_range = FileSegment::Range(
-                file_segment.segment_range.left, 
+                file_segment.segment_range.left,
                 file_segment.segment_range.left + file_segment.downloaded_size - 1);
             file_segment.reserved_size = file_segment.downloaded_size;
         }
