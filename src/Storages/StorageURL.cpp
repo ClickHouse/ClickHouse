@@ -967,6 +967,16 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 
+    /// Make sure compressionMethod is correct
+    try
+    {
+        chooseCompressionMethod(configuration.url, configuration.compression_method);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, e.what());
+    }
+
     if (configuration.format == "auto")
         configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
 
