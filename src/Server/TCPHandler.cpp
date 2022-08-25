@@ -219,7 +219,7 @@ void TCPHandler::runImpl()
 
         /// Initialized later.
         std::optional<CurrentThread::QueryScope> query_scope;
-        TracingContextHolderPtr thread_trace_context;
+        OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
@@ -246,10 +246,10 @@ void TCPHandler::runImpl()
                 continue;
 
             /// Set up tracing context for this query on current thread
-            thread_trace_context = std::make_unique<TracingContextHolder>("TCPHandler",
-                                                                                          query_context->getClientInfo().client_trace_context,
-                                                                                          query_context->getSettingsRef(),
-                                                                                          query_context->getOpenTelemetrySpanLog());
+            thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
+                query_context->getClientInfo().client_trace_context,
+                query_context->getSettingsRef(),
+                query_context->getOpenTelemetrySpanLog());
 
             query_scope.emplace(query_context);
 

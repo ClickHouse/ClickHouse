@@ -484,13 +484,13 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
-    SpanHolder span("Connection::sendQuery()");
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()");
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
 
     ClientInfo new_client_info;
-    const auto &current_trace_context = TracingContextOnThread::current();
+    const auto &current_trace_context = OpenTelemetry::TracingContextOnThread::current();
     if (client_info && current_trace_context.isTraceEnabled())
     {
         // use current span as the parent of remote span

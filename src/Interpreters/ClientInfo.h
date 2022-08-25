@@ -63,7 +63,7 @@ public:
     Decimal64 initial_query_start_time_microseconds{};
 
     /// OpenTelemetry trace context we received from client, or which we are going to send to server.
-    TracingContext client_trace_context;
+    OpenTelemetry::TracingContext client_trace_context;
 
     /// All below are parameters related to initial query.
 

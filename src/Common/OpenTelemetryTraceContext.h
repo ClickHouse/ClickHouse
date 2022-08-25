@@ -24,6 +24,7 @@ struct Span
     void addAttribute(std::string_view name, UInt64 value);
     void addAttributeIfNotZero(std::string_view name, UInt64 value);
     void addAttribute(std::string_view name, std::string_view value);
+    void addAttributeIfNotEmpty(std::string_view name, std::string_view value);
     void addAttribute(std::string_view name, std::function<String()> value_supplier);
 
     /// Following two methods are declared as noexcept to make sure they're exception safe
@@ -154,8 +155,6 @@ struct SpanHolder : public Span
 };
 
 }
-
-using namespace OpenTelemetry;
 
 }
 

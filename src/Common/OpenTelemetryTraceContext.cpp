@@ -36,6 +36,14 @@ void Span::addAttribute(std::string_view name, std::string_view value)
     this->attributes.push_back(Tuple{name, value});
 }
 
+void Span::addAttributeIfNotEmpty(std::string_view name, std::string_view value)
+{
+    if (!this->isTraceEnabled() || name.empty() || value.empty())
+        return;
+
+    this->attributes.push_back(Tuple{name, value});
+}
+
 void Span::addAttribute(std::string_view name, std::function<String()> value_supplier)
 {
     if (!this->isTraceEnabled() || !value_supplier)

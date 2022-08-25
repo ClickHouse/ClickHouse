@@ -233,7 +233,7 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
-static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<SpanHolder> & query_span)
+static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span)
 {
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
@@ -345,7 +345,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
-    std::shared_ptr<SpanHolder> query_span = std::make_shared<SpanHolder>("query");
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
 
     const auto current_time = std::chrono::system_clock::now();
 
@@ -667,12 +667,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             {
-                std::unique_ptr<SpanHolder> span;
+                std::unique_ptr<OpenTelemetry::SpanHolder> span;
                 if (query_span->isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
                     std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
-                    span = std::make_unique<SpanHolder>(class_name + "::execute()");
+                    span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();
             }
@@ -930,8 +930,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 query_span->addAttribute("db.statement", elem.query);
                 query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
-                query_span->addAttribute("clickhouse.tracestate", TracingContextOnThread::current().tracestate);
                 query_span->addAttribute("clickhouse.query_status", "QueryFinish");
+                query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::TracingContextOnThread::current().tracestate);
                 query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
                 query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
                 query_span->addAttributeIfNotZero("clickhouse.written_rows", info.written_rows);
