@@ -127,7 +127,7 @@ def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_par
         additional_settings={"min_rows_for_wide_part": min_rows_for_wide_part},
     )
 
-    insert(node_idxs=[1, 2, 3], verify=True)
+    insert(cluster, node_idxs=[1, 2, 3], verify=True)
 
     minio = cluster.minio_client
     assert len(list(minio.list_objects(cluster.minio_bucket, "data/"))) == 3 * (
