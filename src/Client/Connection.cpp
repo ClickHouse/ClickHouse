@@ -490,7 +490,7 @@ void Connection::sendQuery(
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
 
     ClientInfo new_client_info;
-    const auto &current_trace_context = OpenTelemetry::TracingContextOnThread::current();
+    const auto &current_trace_context = OpenTelemetry::CurrentContext();
     if (client_info && current_trace_context.isTraceEnabled())
     {
         // use current span as the parent of remote span
