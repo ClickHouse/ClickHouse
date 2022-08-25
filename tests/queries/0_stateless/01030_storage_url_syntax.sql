@@ -62,5 +62,5 @@ create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint',
 drop table test_table_url;
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint', 'JSONEachRow', 'zip')
-; -- { serverError 36 }
+; -- { serverError 48 }
 
