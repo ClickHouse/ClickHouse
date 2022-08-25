@@ -7500,7 +7500,7 @@ void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_nam
     String id = part_id;
     boost::replace_all(id, "/", "_");
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), toString(disk->getType()), getTableSharedID(),
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), toString(disk->getDataSourceDescription().type), getTableSharedID(),
         part_name, zookeeper_path);
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
@@ -7690,11 +7690,11 @@ DataPartStoragePtr StorageReplicatedMergeTree::tryToFetchIfShared(
     const String & path)
 {
     const auto settings = getSettings();
-    auto disk_type = disk->getType();
+    auto data_source_description = disk->getDataSourceDescription();
     if (!(disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication))
         return nullptr;
 
-    String replica = getSharedDataReplica(part, disk_type);
+    String replica = getSharedDataReplica(part, data_source_description.type);
 
     /// We can't fetch part when none replicas have this part on a same type remote disk
     if (replica.empty())
@@ -7703,9 +7703,8 @@ DataPartStoragePtr StorageReplicatedMergeTree::tryToFetchIfShared(
     return executeFetchShared(replica, part.name, disk, path);
 }
 
-
 String StorageReplicatedMergeTree::getSharedDataReplica(
-    const IMergeTreeDataPart & part, DiskType disk_type) const
+    const IMergeTreeDataPart & part, DataSourceType data_source_type) const
 {
     String best_replica;
 
@@ -7713,7 +7712,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return "";
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), toString(disk_type), getTableSharedID(), part.name,
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), toString(data_source_type), getTableSharedID(), part.name,
             zookeeper_path);
 
     std::set<String> replicas;
@@ -7824,7 +7823,7 @@ std::optional<String> StorageReplicatedMergeTree::getZeroCopyPartPath(const Stri
     if (!disk || !disk->supportZeroCopyReplication())
         return std::nullopt;
 
-    return getZeroCopyPartPath(*getSettings(), toString(disk->getType()), getTableSharedID(), part_name, zookeeper_path)[0];
+    return getZeroCopyPartPath(*getSettings(), toString(disk->getDataSourceDescription().type), getTableSharedID(), part_name, zookeeper_path)[0];
 }
 
 std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk)
@@ -8229,7 +8228,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
             String id = disk->getUniqueId(checksums);
             bool can_remove = false;
             std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
-                detached_replica_name, toString(disk->getType()), zookeeper, local_context->getReplicatedMergeTreeSettings(), &Poco::Logger::get("StorageReplicatedMergeTree"),
+                detached_replica_name, toString(disk->getDataSourceDescription().type), zookeeper, local_context->getReplicatedMergeTreeSettings(), &Poco::Logger::get("StorageReplicatedMergeTree"),
                 detached_zookeeper_path);
 
             keep_shared = !can_remove;
