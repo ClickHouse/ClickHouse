@@ -18,6 +18,8 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"readonly", std::make_shared<DataTypeUInt8>()},
+        {"min_in_readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"max_in_readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"type", std::make_shared<DataTypeString>()},
     };
 }
@@ -40,8 +42,9 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[3]->insert(setting.getDescription());
 
         Field min, max;
+        Field min_in_readonly, max_in_readonly;
         bool read_only = false;
-        constraints.get(setting_name, min, max, read_only);
+        constraints.get(setting_name, min, max, read_only, min_in_readonly, max_in_readonly);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -57,10 +60,18 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
                 read_only = true;
         }
 
+        /// These two columns can accept strings only.
+        if (!min_in_readonly.isNull())
+            min_in_readonly = Settings::valueToStringUtil(setting_name, min_in_readonly);
+        if (!max_in_readonly.isNull())
+            max_in_readonly = Settings::valueToStringUtil(setting_name, max_in_readonly);
+
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
         res_columns[6]->insert(read_only);
-        res_columns[7]->insert(setting.getTypeName());
+        res_columns[7]->insert(min_in_readonly);
+        res_columns[8]->insert(max_in_readonly);
+        res_columns[9]->insert(setting.getTypeName());
     }
 }
 

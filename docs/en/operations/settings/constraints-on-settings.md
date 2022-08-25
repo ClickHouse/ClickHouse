@@ -31,7 +31,7 @@ The constraints are defined as the following:
 ```
 
 If the user tries to violate the constraints an exception is thrown and the setting isn’t changed.
-There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all.
+There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all. Also for `readonly = 1` mode there are two additional types of constraints: `min_in_readonly` and `max_in_readonly`, see details below.
 
 **Example:** Let `users.xml` includes lines:
 
@@ -66,6 +66,32 @@ SET force_index_by_date=1;
 Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be greater than 20000000000.
 Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be less than 5000000000.
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
+```
+
+## Constraints in read-only mode {#settings-readonly-constraints}
+Read-only mode is enabled by `readonly` setting:
+- `readonly=0`: No read-only restrictions.
+- `readonly=1`: Only read queries are allowed and settings cannot be changes unless explicitly allowed.
+- `readonly=2`: Only read queries are allowed, but settings can be changed, except for `readonly` setting itself.
+
+In both read-only modes settings constraints are applied and additionally in `readonly=1` mode some settings changes can be explicitly allowed in the following way:
+``` xml
+<profiles>
+  <user_name>
+    <constraints>
+      <setting_name_1>
+        <min_in_readonly>lower_boundary</min_in_readonly>
+      </setting_name_1>
+      <setting_name_2>
+        <max_in_readonly>upper_boundary</max_in_readonly>
+      </setting_name_2>
+      <setting_name_3>
+        <min_in_readonly>lower_boundary</min_in_readonly>
+        <max_in_readonly>upper_boundary</max_in_readonly>
+      </setting_name_3>
+    </constraints>
+  </user_name>
+</profiles>
 ```
 
 **Note:** the `default` profile has special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they’re overridden explicitly for these users.

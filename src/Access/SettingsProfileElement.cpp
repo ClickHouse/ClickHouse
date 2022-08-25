@@ -214,6 +214,10 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
                 res.setMaxValue(elem.setting_name, elem.max_value);
             if (elem.readonly)
                 res.setReadOnly(elem.setting_name, *elem.readonly);
+            if (!elem.min_value_in_readonly.isNull())
+                res.setMinValueInReadOnly(elem.setting_name, elem.min_value_in_readonly);
+            if (!elem.max_value_in_readonly.isNull())
+                res.setMaxValueInReadOnly(elem.setting_name, elem.max_value_in_readonly);
         }
     }
     return res;

@@ -449,6 +449,10 @@ namespace
                     profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly")
                     profile_element.readonly = true;
+                else if (constraint_type == "min_in_readonly")
+                    profile_element.min_value_in_readonly = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                else if (constraint_type == "max_in_readonly")
+                    profile_element.max_value_in_readonly = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else
                     throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
