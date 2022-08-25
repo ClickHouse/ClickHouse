@@ -97,6 +97,11 @@ public:
         return children[join_tree_child_index];
     }
 
+    bool hasPrewhere() const
+    {
+        return children[prewhere_child_index] != nullptr;
+    }
+
     const QueryTreeNodePtr & getPrewhere() const
     {
         return children[prewhere_child_index];
@@ -120,6 +125,31 @@ public:
     QueryTreeNodePtr & getWhere()
     {
         return children[where_child_index];
+    }
+
+    bool hasGroupBy() const
+    {
+        return !getGroupBy().getNodes().empty();
+    }
+
+    const ListNode & getGroupBy() const
+    {
+        return children[group_by_child_index]->as<ListNode &>();
+    }
+
+    ListNode & getGroupBy()
+    {
+        return children[group_by_child_index]->as<ListNode &>();
+    }
+
+    const QueryTreeNodePtr & getGroupByNode() const
+    {
+        return children[group_by_child_index];
+    }
+
+    QueryTreeNodePtr & getGroupByNode()
+    {
+        return children[group_by_child_index];
     }
 
     /// Compute query node columns using projection section

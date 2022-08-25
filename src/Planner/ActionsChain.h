@@ -43,15 +43,34 @@ using ActionsChainSteps = std::vector<ActionsChainStepPtr>;
 class ActionsChainStep
 {
 public:
+    /// Available output columns strategy for actions chain step
+    enum class AvailableOutputColumnsStrategy
+    {
+        ALL_NODES,
+        OUTPUT_NODES
+    };
+
     /** Initialize actions step with actions dag.
       * Input column names initialized using actions dag nodes with INPUT type.
-      * Avaiable output columns initialized using actions dag output nodes with INPUT, FUNCTION, ALIAS, ARRAY_JOIN types.
-      * If available_output_columns_only_aliases is set to true, then only aliases from actions dag will be used
-      * as available output columns.
+      *
+      * If available output columns strategy is ALL_NODES, then avaiable output columns initialized using actions dag nodes
+      * with INPUT, FUNCTION, ALIAS, ARRAY_JOIN types.
+      * If available output columns strategy is OUTPUT_NODES, then available output columns initialized using actions dag output nodes
+      * with INPUT, FUNCTION, ALIAS, ARRAY_JOIN types.
       */
-    explicit ActionsChainStep(ActionsDAGPtr actions_, bool available_output_columns_only_aliases_ = false)
+    explicit ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_ = AvailableOutputColumnsStrategy::ALL_NODES)
         : actions(std::move(actions_))
-        , available_output_columns_only_aliases(available_output_columns_only_aliases_)
+        , available_output_columns_strategy(available_output_columns_stategy_)
+    {
+        initialize();
+    }
+
+    explicit ActionsChainStep(ActionsDAGPtr actions_,
+        AvailableOutputColumnsStrategy available_output_columns_stategy_,
+        const ColumnsWithTypeAndName & additional_output_columns_)
+        : actions(std::move(actions_))
+        , available_output_columns_strategy(available_output_columns_stategy_)
+        , additional_output_columns(additional_output_columns_)
     {
         initialize();
     }
@@ -104,13 +123,15 @@ private:
 
     ActionsDAGPtr actions;
 
-    bool available_output_columns_only_aliases;
+    AvailableOutputColumnsStrategy available_output_columns_strategy;
 
     NameSet input_columns_names;
 
     NameSet child_required_output_columns_names;
 
     ColumnsWithTypeAndName available_output_columns;
+
+    ColumnsWithTypeAndName additional_output_columns;
 };
 
 /// Query actions chain
