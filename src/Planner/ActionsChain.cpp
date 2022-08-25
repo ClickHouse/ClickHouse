@@ -40,6 +40,13 @@ void ActionsChainStep::dump(WriteBuffer & buffer) const
 {
     buffer << "DAG" << '\n';
     buffer << actions->dumpDAG();
+
+    if (!additional_output_columns.empty())
+    {
+        buffer << "Additional output columns " << additional_output_columns.size() << '\n';
+        for (const auto & column : additional_output_columns)
+            buffer << "Name " << column.name << " type " << column.type->getName() << '\n';
+    }
     if (!child_required_output_columns_names.empty())
     {
         buffer << "Child required output columns " << boost::join(child_required_output_columns_names, ", ");
@@ -62,22 +69,30 @@ void ActionsChainStep::initialize()
 
     available_output_columns.clear();
 
-    for (const auto & node : actions->getNodes())
+    if (available_output_columns_strategy == AvailableOutputColumnsStrategy::ALL_NODES)
     {
-        if (available_output_columns_only_aliases)
+        for (const auto & node : actions->getNodes())
         {
-            if (node.type == ActionsDAG::ActionType::ALIAS)
+            if (node.type == ActionsDAG::ActionType::INPUT ||
+                node.type == ActionsDAG::ActionType::FUNCTION ||
+                node.type == ActionsDAG::ActionType::ALIAS ||
+                node.type == ActionsDAG::ActionType::ARRAY_JOIN)
                 available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
-
-            continue;
         }
-
-        if (node.type == ActionsDAG::ActionType::INPUT ||
-            node.type == ActionsDAG::ActionType::FUNCTION ||
-            node.type == ActionsDAG::ActionType::ALIAS ||
-            node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-            available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
     }
+    else if (available_output_columns_strategy == AvailableOutputColumnsStrategy::OUTPUT_NODES)
+    {
+        for (const auto & node : actions->getOutputs())
+        {
+            if (node->type == ActionsDAG::ActionType::INPUT ||
+                node->type == ActionsDAG::ActionType::FUNCTION ||
+                node->type == ActionsDAG::ActionType::ALIAS ||
+                node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+                available_output_columns.emplace_back(node->column, node->result_type, node->result_name);
+        }
+    }
+
+    available_output_columns.insert(available_output_columns.end(), additional_output_columns.begin(), additional_output_columns.end());
 }
 
 void ActionsChain::finalize()

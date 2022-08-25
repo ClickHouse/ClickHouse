@@ -2002,7 +2002,8 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
         else
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unqualified matcher resolve unexpected FROM section {}",
+                "Unqualified matcher {} resolve unexpected FROM section {}",
+                matcher_node_typed.formatASTForErrorMessage(),
                 scope_query_node->getJoinTree()->formatASTForErrorMessage());
         }
 
@@ -3506,16 +3507,19 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     /// Resolve query node sections.
 
-    if (query_node_typed.getWithNode())
+    if (!query_node_typed.getWith().getNodes().empty())
         resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    resolveExpressionNodeList(query_node_typed.getProjectionNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.getPrewhere())
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.getWhere())
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (!query_node_typed.getGroupBy().getNodes().empty())
+        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    resolveExpressionNodeList(query_node_typed.getProjectionNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
       * and CTE for other sections to use.

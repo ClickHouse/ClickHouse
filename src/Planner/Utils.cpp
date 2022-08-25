@@ -8,6 +8,8 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
 
 namespace DB
 {

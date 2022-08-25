@@ -81,6 +81,14 @@ public:
         return storage;
     }
 
+    const StoragePtr & getStorageOrThrow() const
+    {
+        if (!storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function node is not resolved");
+
+        return storage;
+    }
+
     /// Resolve table function with table_function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context);
 

@@ -26,6 +26,7 @@ QueryNode::QueryNode()
     children.resize(children_size);
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
+    children[group_by_child_index] = std::make_shared<ListNode>();
 }
 
 NamesAndTypesList QueryNode::computeProjectionColumns() const
@@ -81,6 +82,11 @@ String QueryNode::getName() const
         buffer << getWhere()->getName();
     }
 
+    if (!getGroupBy().getNodes().empty())
+    {
+        buffer << getGroupBy().getName();
+    }
+
     return buffer.str();
 }
 
@@ -124,6 +130,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << '\n' << std::string(indent + 2, ' ') << "WHERE\n";
         getWhere()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (!getGroupBy().getNodes().empty())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "GROUP BY\n";
+        getGroupBy().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
@@ -146,7 +158,7 @@ ASTPtr QueryNode::toASTImpl() const
     auto select_query = std::make_shared<ASTSelectQuery>();
 
     if (!getWith().getNodes().empty())
-        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWithNode()->toAST());
+        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, children[projection_child_index]->toAST());
 
@@ -159,6 +171,9 @@ ASTPtr QueryNode::toASTImpl() const
 
     if (getWhere())
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST());
+
+    if (!getGroupBy().getNodes().empty())
+        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST());
 
     auto result_select_query = std::make_shared<ASTSelectWithUnionQuery>();
     result_select_query->union_mode = SelectUnionMode::Unspecified;

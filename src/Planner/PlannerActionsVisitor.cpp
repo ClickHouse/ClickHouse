@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 
 namespace DB
 {
@@ -164,8 +165,6 @@ private:
 
     NodeNameAndNodeMinLevel visitFunction(const QueryTreeNodePtr & node);
 
-    String calculateActionsDAGNodeName(const IQueryTreeNode * node);
-
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<const IQueryTreeNode *, std::string> node_to_node_name;
     const PlannerContextPtr planner_context;
@@ -214,7 +213,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
 {
-    auto column_node_name = calculateActionsDAGNodeName(node.get());
+    auto column_node_name = calculateActionsDAGNodeName(node.get(), *planner_context, node_to_node_name);
     const auto & column_node = node->as<ColumnNode &>();
 
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
@@ -234,7 +233,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node)
 {
-    auto constant_node_name = calculateActionsDAGNodeName(node.get());
+    auto constant_node_name = calculateActionsDAGNodeName(node.get(), *planner_context, node_to_node_name);
     const auto & constant_node = node->as<ConstantNode &>();
     const auto & literal = constant_node.getConstantValue();
 
@@ -303,7 +302,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
     }
 
-    auto lambda_node_name = calculateActionsDAGNodeName(node.get());
+    auto lambda_node_name = calculateActionsDAGNodeName(node.get(), *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         lambda_actions, captured_column_names, lambda_arguments_names_and_types, result_type, lambda_expression_node_name);
     actions_stack.pop_back();
@@ -450,7 +449,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         level = std::max(level, node_min_level);
     }
 
-    auto function_node_name = calculateActionsDAGNodeName(node.get());
+    auto function_node_name = calculateActionsDAGNodeName(node.get(), *planner_context, node_to_node_name);
 
     if (function_node.isAggregateFunction())
     {
@@ -495,11 +494,22 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {function_node_name, level};
 }
 
-String PlannerActionsVisitorImpl::calculateActionsDAGNodeName(const IQueryTreeNode * node)
-{
-    auto it = node_to_node_name.find(node);
+}
 
-    if (it != node_to_node_name.end())
+PlannerActionsVisitor::PlannerActionsVisitor(const PlannerContextPtr & planner_context_)
+    : planner_context(planner_context_)
+{}
+
+ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAGPtr actions_dag, QueryTreeNodePtr expression_node)
+{
+    PlannerActionsVisitorImpl actions_visitor_impl(actions_dag, planner_context);
+    return actions_visitor_impl.visit(expression_node);
+}
+
+String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name)
+{
+    auto it = node_to_name.find(node);
+    if (it != node_to_name.end())
         return it->second;
 
     String result;
@@ -509,7 +519,7 @@ String PlannerActionsVisitorImpl::calculateActionsDAGNodeName(const IQueryTreeNo
     {
         case QueryTreeNodeType::COLUMN:
         {
-            const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
+            const auto * column_identifier = planner_context.getColumnNodeIdentifierOrNull(node);
             result = column_identifier ? *column_identifier : node->getName();
 
             break;
@@ -537,7 +547,7 @@ String PlannerActionsVisitorImpl::calculateActionsDAGNodeName(const IQueryTreeNo
                 for (size_t i = 0; i < function_parameters_nodes_size; ++i)
                 {
                     const auto & function_parameter_node = function_parameters_nodes[i];
-                    calculateActionsDAGNodeName(function_parameter_node.get());
+                    calculateActionsDAGNodeName(function_parameter_node.get(), planner_context);
 
                     if (i + 1 != function_parameters_nodes_size)
                         buffer << ", ";
@@ -554,7 +564,7 @@ String PlannerActionsVisitorImpl::calculateActionsDAGNodeName(const IQueryTreeNo
             for (size_t i = 0; i < function_arguments_nodes_size; ++i)
             {
                 const auto & function_argument_node = function_arguments_nodes[i];
-                buffer << calculateActionsDAGNodeName(function_argument_node.get());
+                buffer << calculateActionsDAGNodeName(function_argument_node.get(), planner_context);
 
                 if (i + 1 != function_arguments_nodes_size)
                     buffer << ", ";
@@ -582,26 +592,20 @@ String PlannerActionsVisitorImpl::calculateActionsDAGNodeName(const IQueryTreeNo
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Actions visitor invalid query tree node {}",
+                "Invalid action query tree node {}",
                 node->formatASTForErrorMessage());
         }
     }
 
-    node_to_node_name.emplace(node, result);
+    node_to_name.emplace(node, result);
 
     return result;
 }
 
-}
-
-PlannerActionsVisitor::PlannerActionsVisitor(const PlannerContextPtr & planner_context_)
-    : planner_context(planner_context_)
-{}
-
-ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAGPtr actions_dag, QueryTreeNodePtr expression_node)
+String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context)
 {
-    PlannerActionsVisitorImpl actions_visitor_impl(actions_dag, planner_context);
-    return actions_visitor_impl.visit(expression_node);
+    QueryTreeNodeToName empty_map;
+    return calculateActionsDAGNodeName(node, planner_context, empty_map);
 }
 
 }
