@@ -384,7 +384,7 @@ bool FileSegment::reserve(size_t size)
         if (reserved)
         {
             std::lock_guard segment_lock(mutex);
-            reserved_size += size;
+            reserved_size += size_to_reserve;
         }
     }
 
