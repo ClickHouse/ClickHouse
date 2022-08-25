@@ -87,6 +87,7 @@ private:
 
     const FormatSettings format_settings;
     std::unique_ptr<JSONColumnsReaderBase> reader;
+    Names column_names_from_settings;
 };
 
 }

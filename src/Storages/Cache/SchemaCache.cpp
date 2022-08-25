@@ -17,21 +17,21 @@ SchemaCache::SchemaCache(size_t max_elements_) : max_elements(max_elements_)
 {
 }
 
-void SchemaCache::add(const String & key, const ColumnsDescription & columns)
+void SchemaCache::add(const Key & key, const ColumnsDescription & columns)
 {
     std::lock_guard lock(mutex);
     addUnlocked(key, columns);
 }
 
 
-void SchemaCache::addMany(const Strings & keys, const ColumnsDescription & columns)
+void SchemaCache::addMany(const Keys & keys, const ColumnsDescription & columns)
 {
     std::lock_guard lock(mutex);
     for (const auto & key : keys)
         addUnlocked(key, columns);
 }
 
-void SchemaCache::addUnlocked(const String & key, const ColumnsDescription & columns)
+void SchemaCache::addUnlocked(const Key & key, const ColumnsDescription & columns)
 {
     /// Do nothing if this key is already in cache;
     if (data.contains(key))
@@ -54,7 +54,7 @@ void SchemaCache::checkOverflow()
     ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheEvictions);
 }
 
-std::optional<ColumnsDescription> SchemaCache::tryGet(const String & key, LastModificationTimeGetter get_last_mod_time)
+std::optional<ColumnsDescription> SchemaCache::tryGet(const Key & key, LastModificationTimeGetter get_last_mod_time)
 {
     std::lock_guard lock(mutex);
     auto it = data.find(key);
@@ -101,10 +101,10 @@ void SchemaCache::clear()
     queue.clear();
 }
 
-std::unordered_map<String, SchemaCache::SchemaInfo> SchemaCache::getAll()
+std::unordered_map<SchemaCache::Key, SchemaCache::SchemaInfo, SchemaCache::KeyHash> SchemaCache::getAll()
 {
     std::lock_guard lock(mutex);
-    std::unordered_map<String, SchemaCache::SchemaInfo> result;
+    std::unordered_map<Key, SchemaCache::SchemaInfo, SchemaCache::KeyHash> result;
     for (const auto & [key, value] : data)
         result[key] = value.schema_info;
 
