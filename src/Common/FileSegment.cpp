@@ -88,6 +88,12 @@ FileSegment::State FileSegment::state() const
     return download_state;
 }
 
+bool FileSegment::isInternal()
+{
+    /// isInternal() == true means that current method is called by background download thread.
+    return !background_caller_id.empty();
+}
+
 void FileSegment::setDownloadState(State state)
 {
     chassert(!isInternal() || downloader_id.empty());
@@ -114,14 +120,11 @@ size_t FileSegment::getCurrentWriteOffset() const
 
 size_t FileSegment::getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const
 {
-    /// In case of synchronous cache writing getCurrentWriteOffset() == getFirstNonDownloadedOffset().
+    /// In case of synchronous-cache-writing getCurrentWriteOffset() == getFirstNonDownloadedOffset().
     /// In case of asynchronous cache writing it is not always true.
     if (background_download)
     {
-        /// As current write offset is the offset of first byte starting from which we have
-        /// no downloaded data and need to start a new download starting from this offset,
-        /// then in case of asynchronous cache writing we need to return future downloaded
-        /// size based on currently submitted download tasks.
+        /// Get offset as it would be if background download queue was finished.
         return range().left + background_download->getFutureDownloadedSize(segment_lock);
     }
 
@@ -167,11 +170,6 @@ void FileSegment::assertNotAlreadyDownloadedUnlocked(std::unique_lock<std::mutex
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
     }
-}
-
-bool FileSegment::isInternal()
-{
-    return !background_caller_id.empty();
 }
 
 String FileSegment::getCallerId()
@@ -237,6 +235,7 @@ void FileSegment::resetDownloader()
 void FileSegment::resetDownloaderUnlocked(std::unique_lock<std::mutex> & /* segment_lock */)
 {
     chassert(!isInternal());
+    LOG_TEST(log, "Resettings downloader from {}", downloader_id);
     downloader_id.clear();
 }
 

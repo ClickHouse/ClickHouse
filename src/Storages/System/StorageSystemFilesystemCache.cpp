@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/FileCache.h>
 #include <Common/FileSegment.h>
 #include <Common/FileCacheFactory.h>
@@ -26,8 +27,9 @@ NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
         {"references", std::make_shared<DataTypeUInt64>()},
         {"downloaded_size", std::make_shared<DataTypeUInt64>()},
         {"persistent", std::make_shared<DataTypeNumber<UInt8>>()},
-        {"background_download_in_progress_range", std::make_shared<DataTypeTuple>(
-            DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()})},
+        {"background_download_in_progress_range", std::make_shared<DataTypeTuple>(DataTypes{
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())})},
         {"background_download_wait_ranges", std::make_shared<DataTypeArray>(
                 std::make_shared<DataTypeTuple>(
                     DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()}))}
