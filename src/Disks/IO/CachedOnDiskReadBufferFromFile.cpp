@@ -295,7 +295,6 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                 }
 
                 download_state = file_segment->wait();
-
                 continue;
             }
             case FileSegment::State::DOWNLOADED:

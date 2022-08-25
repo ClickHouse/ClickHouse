@@ -223,8 +223,6 @@ public:
 
     size_t getRemainingSizeToDownload() const;
 
-    /// [[noreturn]] void throwIfDetached() const;
-
 private:
     size_t availableSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     String getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
