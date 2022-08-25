@@ -1232,6 +1232,27 @@ SerializedPlanParser::SerializedPlanParser(const ContextPtr & context_) : contex
 ContextMutablePtr SerializedPlanParser::global_context = nullptr;
 
 Context::ConfigurationPtr SerializedPlanParser::config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+
+void SerializedPlanParser::collectJoinKeys(const substrait::Expression& condition, std::vector<std::pair<int32_t, int32_t>>& join_keys, int32_t right_key_start)
+{
+    auto condition_name = getFunctionName(this->function_mapping.at(std::to_string(condition.scalar_function().function_reference())), condition.scalar_function());
+    if (condition_name == "and")
+    {
+        collectJoinKeys(condition.scalar_function().arguments(0).value(), join_keys, right_key_start);
+        collectJoinKeys(condition.scalar_function().arguments(1).value(), join_keys, right_key_start);
+    }
+    else if (condition_name == "equals")
+    {
+        const auto & function = condition.scalar_function();
+        auto left_key_idx = function.arguments(0).value().selection().direct_reference().struct_field().field();
+        auto right_key_idx = function.arguments(1).value().selection().direct_reference().struct_field().field() - right_key_start;
+        join_keys.emplace_back(std::pair(left_key_idx, right_key_idx));
+    }
+    else {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "doesn't support condition {}", condition_name);
+    }
+}
+
 DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::QueryPlanPtr left, DB::QueryPlanPtr right)
 {
     auto join_opt_info = parseJoinOptimizationInfo(join.advanced_extension().optimization().value());
@@ -1260,8 +1281,20 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
     {
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "unsupported join type {}.", magic_enum::enum_name(join.type()));
     }
-    table_join->addDisjunct();
 
+    if (join_opt_info.is_broadcast)
+    {
+        auto storage_join = BroadCastJoinBuilder::getJoin(join_opt_info.storage_join_key);
+        ActionsDAGPtr project = ActionsDAG::makeConvertingActions(right->getCurrentDataStream().header.getColumnsWithTypeAndName(), storage_join->getRightSampleBlock().getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Position);
+        if (project)
+        {
+            QueryPlanStepPtr project_step = std::make_unique<ExpressionStep>(right->getCurrentDataStream(), project);
+            project_step->setStepDescription("Rename Broadcast Table Name");
+            right->addStep(std::move(project_step));
+        }
+    }
+
+    table_join->addDisjunct();
     table_join->setColumnsFromJoinedTable(right->getCurrentDataStream().header.getNamesAndTypesList());
 
     NameSet left_columns_set;
@@ -1290,16 +1323,12 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
         right->addStep(std::move(project_step));
     }
     // support multiple join key
-    bool multiple_keys = join.expression().scalar_function().arguments(0).value().has_scalar_function();
-    auto join_key_num = multiple_keys ? join.expression().scalar_function().arguments_size() : 1;
-    for (int32_t i = 0; i < join_key_num; i++)
+    std::vector<std::pair<int32_t, int32_t>> join_keys;
+    collectJoinKeys(join.expression(), join_keys, left->getCurrentDataStream().header.columns());
+    for (auto key : join_keys)
     {
-        auto function = multiple_keys ? join.expression().scalar_function().arguments(i).value().scalar_function() : join.expression().scalar_function();
-        auto left_key_idx = function.arguments(0).value().selection().direct_reference().struct_field().field();
-        auto right_key_idx
-            = function.arguments(1).value().selection().direct_reference().struct_field().field() - left->getCurrentDataStream().header.columns();
-        ASTPtr left_key = std::make_shared<ASTIdentifier>(left->getCurrentDataStream().header.getByPosition(left_key_idx).name);
-        ASTPtr right_key = std::make_shared<ASTIdentifier>(right->getCurrentDataStream().header.getByPosition(right_key_idx).name);
+        ASTPtr left_key = std::make_shared<ASTIdentifier>(left->getCurrentDataStream().header.getByPosition(key.first).name);
+        ASTPtr right_key = std::make_shared<ASTIdentifier>(right->getCurrentDataStream().header.getByPosition(key.second).name);
         table_join->addOnKeys(left_key, right_key);
     }
 

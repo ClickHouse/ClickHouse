@@ -50,7 +50,7 @@ public:
     DB::Block getRightSampleBlock() const
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        DB::Block block = metadata_snapshot->getSampleBlock().sortColumns();
+        DB::Block block = metadata_snapshot->getSampleBlock();
         if (use_nulls && isLeftOrFull(kind))
         {
             for (auto & col : block)

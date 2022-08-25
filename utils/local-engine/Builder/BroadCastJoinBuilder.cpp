@@ -42,9 +42,9 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
         }
     }
 
+    std::lock_guard build_lock(*storage_join_lock.at(key));
     if (!storage_join_map.contains(key))
     {
-        std::lock_guard build_lock(*storage_join_lock.at(key));
         if (!storage_join_map.contains(key))
         {
             // limit memory usage
