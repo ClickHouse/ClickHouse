@@ -303,7 +303,6 @@ else
     rm -rf /var/lib/clickhouse/*
 
     # Make BC check more funny by forcing Ordinary engine for system database
-    # New version will try to convert it to Atomic on startup
     mkdir /var/lib/clickhouse/metadata
     echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
 
@@ -313,15 +312,12 @@ else
     # Start server from previous release
     configure
 
-    # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
-    rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+    # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
+    rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
 
     # Remove s3 related configs to avoid "there is no disk type `cache`"
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
-
-    # Disable aggressive cleanup of tmp dirs (it worked incorrectly before 22.8)
-    rm -f /etc/clickhouse-server/config.d/merge_tree_old_dirs_cleanup.xml ||:
 
     start
 
@@ -387,6 +383,7 @@ else
                -e "TABLE_IS_READ_ONLY" \
                -e "Code: 1000, e.code() = 111, Connection refused" \
                -e "UNFINISHED" \
+               -e "NETLINK_ERROR" \
                -e "Renaming unexpected part" \
                -e "PART_IS_TEMPORARILY_LOCKED" \
                -e "and a merge is impossible: we didn't find" \
