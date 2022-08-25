@@ -196,26 +196,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
-    {
-        auto & select_with_list_typed = select_with_list->as<ASTExpressionList &>();
-        for (auto & expression_part : select_with_list_typed.children)
-        {
-            auto expression_node = buildExpression(expression_part);
-            current_query_tree->getWith().getNodes().push_back(expression_node);
-        }
-    }
+        current_query_tree->getWithNode() = buildExpressionList(select_with_list);
 
     auto select_expression_list = select_query_typed.select();
     if (select_expression_list)
-    {
-        auto & select_expression_list_typed = select_expression_list->as<ASTExpressionList &>();
-
-        for (auto & expression_part : select_expression_list_typed.children)
-        {
-            auto expression_node = buildExpression(expression_part);
-            current_query_tree->getProjection().getNodes().push_back(expression_node);
-        }
-    }
+        current_query_tree->getProjectionNode() = buildExpressionList(select_expression_list);
 
     auto prewhere_expression = select_query_typed.prewhere();
     if (prewhere_expression)
@@ -224,6 +209,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     auto where_expression = select_query_typed.where();
     if (where_expression)
         current_query_tree->getWhere() = buildExpression(where_expression);
+
+    auto group_by_list = select_query_typed.groupBy();
+    if (group_by_list)
+        current_query_tree->getGroupByNode() = buildExpressionList(group_by_list);
 
     return current_query_tree;
 }

@@ -38,6 +38,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", function_name: " << function_name;
+    buffer << ", function_type: " << (function ? "ordinary_function" : "aggregate_function");
 
     if (result_type)
         buffer << ", result_type: " + result_type->getName();

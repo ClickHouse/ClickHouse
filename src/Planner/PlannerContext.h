@@ -209,9 +209,9 @@ public:
 
     void registerColumnNode(const IQueryTreeNode * column_node, const ColumnIdentifier & column_identifier);
 
-    const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const IQueryTreeNode * column_node);
+    const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const IQueryTreeNode * column_node) const;
 
-    const ColumnIdentifier * getColumnNodeIdentifierOrNull(const IQueryTreeNode * column_node);
+    const ColumnIdentifier * getColumnNodeIdentifierOrNull(const IQueryTreeNode * column_node) const;
 
 private:
     /// Query context
@@ -231,5 +231,7 @@ private:
 
     size_t column_identifier_counter = 0;
 };
+
+using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 }

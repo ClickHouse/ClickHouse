@@ -44,4 +44,19 @@ private:
     const PlannerContextPtr planner_context;
 };
 
+/** Calculate query tree expression node name action dag name and add them into node to name map.
+  * If node exists in map, name from map is used.
+  *
+  * For column node column node identifier from planner context is used.
+  */
+using QueryTreeNodeToName = std::unordered_map<const IQueryTreeNode *, String>;
+String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name);
+
+/** Calculate query tree expression node name action dag name.
+  *
+  * For column node column node identifier from planner context is used.
+  */
+String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context);
+
+
 }

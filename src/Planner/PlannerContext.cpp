@@ -15,36 +15,6 @@ PlannerContext::PlannerContext(ContextPtr query_context_, GlobalPlannerContextPt
     , global_planner_context(std::move(global_planner_context_))
 {}
 
-void PlannerContext::registerColumnNode(const IQueryTreeNode * column_node, const ColumnIdentifier & column_identifier)
-{
-    assert(column_node->getNodeType() == QueryTreeNodeType::COLUMN);
-    column_node_to_column_identifier.emplace(column_node, column_identifier);
-}
-
-const ColumnIdentifier & PlannerContext::getColumnNodeIdentifierOrThrow(const IQueryTreeNode * column_node)
-{
-    assert(column_node->getNodeType() == QueryTreeNodeType::COLUMN);
-
-    auto it = column_node_to_column_identifier.find(column_node);
-    if (it == column_node_to_column_identifier.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Column identifier is not initialized for column {}",
-            column_node->formatASTForErrorMessage());
-
-    return it->second;
-}
-
-const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const IQueryTreeNode * column_node)
-{
-    assert(column_node->getNodeType() == QueryTreeNodeType::COLUMN);
-
-    auto it = column_node_to_column_identifier.find(column_node);
-    if (it == column_node_to_column_identifier.end())
-        return nullptr;
-
-    return &it->second;
-}
-
 ColumnIdentifier PlannerContext::getColumnUniqueIdentifier(const IQueryTreeNode * column_source_node, std::string column_name)
 {
     auto column_unique_prefix = "__column_" + std::to_string(column_identifier_counter);
@@ -88,6 +58,36 @@ ColumnIdentifier PlannerContext::getColumnUniqueIdentifier(const IQueryTreeNode 
         column_unique_prefix += '_' + debug_identifier_suffix;
 
     return column_unique_prefix;
+}
+
+void PlannerContext::registerColumnNode(const IQueryTreeNode * column_node, const ColumnIdentifier & column_identifier)
+{
+    assert(column_node->getNodeType() == QueryTreeNodeType::COLUMN);
+    column_node_to_column_identifier.emplace(column_node, column_identifier);
+}
+
+const ColumnIdentifier & PlannerContext::getColumnNodeIdentifierOrThrow(const IQueryTreeNode * column_node) const
+{
+    assert(column_node->getNodeType() == QueryTreeNodeType::COLUMN);
+
+    auto it = column_node_to_column_identifier.find(column_node);
+    if (it == column_node_to_column_identifier.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Column identifier is not initialized for column {}",
+            column_node->formatASTForErrorMessage());
+
+    return it->second;
+}
+
+const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const IQueryTreeNode * column_node) const
+{
+    assert(column_node->getNodeType() == QueryTreeNodeType::COLUMN);
+
+    auto it = column_node_to_column_identifier.find(column_node);
+    if (it == column_node_to_column_identifier.end())
+        return nullptr;
+
+    return &it->second;
 }
 
 }

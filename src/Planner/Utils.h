@@ -8,6 +8,8 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <Planner/PlannerContext.h>
+
 namespace DB
 {
 

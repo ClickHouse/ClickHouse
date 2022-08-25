@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -62,6 +63,8 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int ILLEGAL_AGGREGATION;
+    extern const int NOT_AN_AGGREGATE;
 }
 
 /** ClickHouse query planner.
@@ -82,10 +85,155 @@ namespace ErrorCodes
   * TODO: Support read in order optimization
   * TODO: UNION storage limits
   * TODO: Interpreter resources
+  * TODO: Support max streams
+  * TODO: Support GROUPINS SETS, const aggregation keys, overflow row
+  * TODO: Simplify buildings SETS for IN function
   */
 
 namespace
 {
+
+class CollectAggregateFunctionNodesMatcher
+{
+public:
+    using Visitor = ConstInDepthQueryTreeVisitor<CollectAggregateFunctionNodesMatcher, true, false>;
+
+    struct Data
+    {
+        Data(String assert_no_aggregates_place_message_, const PlannerContext & planner_context_)
+            : assert_no_aggregates_place_message(std::move(assert_no_aggregates_place_message_))
+            , planner_context(planner_context_)
+        {}
+
+        explicit Data(const PlannerContext & planner_context_)
+            : planner_context(planner_context_)
+        {}
+
+        String assert_no_aggregates_place_message;
+        const PlannerContext & planner_context;
+        QueryTreeNodes aggregate_function_nodes;
+    };
+
+    static void visit(const QueryTreeNodePtr & node, Data & data)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        if (!function_node->isAggregateFunction())
+            return;
+
+        if (!data.assert_no_aggregates_place_message.empty())
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "Aggregate function {} is found {} in query",
+                function_node->getName(),
+                data.assert_no_aggregates_place_message);
+
+        data.aggregate_function_nodes.push_back(node);
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    {
+        return child_node->getNodeType() != QueryTreeNodeType::QUERY;
+    }
+};
+
+using CollectAggregateFunctionNodesVisitor = CollectAggregateFunctionNodesMatcher::Visitor;
+
+void assertNoAggregatesFunctions(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message, const PlannerContext & planner_context)
+{
+    CollectAggregateFunctionNodesVisitor::Data data(assert_no_aggregates_place_message, planner_context);
+    CollectAggregateFunctionNodesVisitor(data).visit(node);
+}
+
+AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodePtr & query_tree, const PlannerContext & planner_context)
+{
+    CollectAggregateFunctionNodesVisitor::Data data(planner_context);
+    CollectAggregateFunctionNodesVisitor(data).visit(query_tree);
+
+    QueryTreeNodeToName node_to_name;
+    NameSet unique_aggregate_action_node_names;
+    AggregateDescriptions aggregate_descriptions;
+
+    for (auto & aggregate_function_node : data.aggregate_function_nodes)
+    {
+        for (auto & aggregate_function_node_child : aggregate_function_node->getChildren())
+            assertNoAggregatesFunctions(aggregate_function_node_child, "inside another aggregate function", planner_context);
+
+        auto & aggregagte_function_node_typed = aggregate_function_node->as<FunctionNode &>();
+        String node_name = calculateActionsDAGNodeName(aggregate_function_node.get(), data.planner_context, node_to_name);
+        auto [_, inserted] = unique_aggregate_action_node_names.emplace(node_name);
+        if (!inserted)
+            continue;
+
+        AggregateDescription aggregate_description;
+        aggregate_description.function = aggregagte_function_node_typed.getAggregateFunction();
+
+        const auto & parameters_nodes = aggregagte_function_node_typed.getParameters().getNodes();
+        aggregate_description.parameters.reserve(parameters_nodes.size());
+
+        for (const auto & parameter_node : parameters_nodes)
+        {
+            const auto & constant_node = parameter_node->as<const ConstantNode &>();
+            aggregate_description.parameters.push_back(constant_node.getConstantValue());
+        }
+
+        const auto & arguments_nodes = aggregagte_function_node_typed.getArguments().getNodes();
+        aggregate_description.argument_names.reserve(arguments_nodes.size());
+
+        for (const auto & argument_node : arguments_nodes)
+        {
+            String argument_node_name = calculateActionsDAGNodeName(argument_node.get(), data.planner_context, node_to_name);
+            aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
+        }
+
+        aggregate_description.column_name = node_name;
+        aggregate_descriptions.push_back(std::move(aggregate_description));
+    }
+
+    return aggregate_descriptions;
+}
+
+class ValidateGroupByColumnsMatcher
+{
+public:
+    using Visitor = ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsMatcher, true, false>;
+
+    struct Data
+    {
+        Data(const NameSet & group_by_keys_column_names_, const PlannerContext & planner_context_)
+            : group_by_keys_column_names(group_by_keys_column_names_)
+            , planner_context(planner_context_)
+        {}
+
+        const NameSet & group_by_keys_column_names;
+        const PlannerContext & planner_context;
+    };
+
+    static void visit(const QueryTreeNodePtr & node, Data & data)
+    {
+        auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        String column_node_name = calculateActionsDAGNodeName(node.get(), data.planner_context);
+        if (!data.group_by_keys_column_names.contains(column_node_name))
+            throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                "Column {} is not under aggregate function and not in GROUP BY keys",
+                column_node->formatASTForErrorMessage());
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    {
+        auto * function_node = parent_node->as<FunctionNode>();
+        if (function_node && function_node->isAggregateFunction())
+            return false;
+
+        return child_node->getNodeType() != QueryTreeNodeType::QUERY;
+    }
+};
+
+using ValidateGroupByColumnsVisitor = typename ValidateGroupByColumnsMatcher::Visitor;
 
 class CollectTableExpressionIdentifiersVisitor
 {
@@ -871,6 +1019,46 @@ void Planner::buildQueryPlanIfNeeded()
         where_action_step_index = actions_chain.getLastStepIndex();
     }
 
+    if (query_node.hasWhere())
+        assertNoAggregatesFunctions(query_node.getWhere(), "in WHERE", *planner_context);
+    if (query_node.hasPrewhere())
+        assertNoAggregatesFunctions(query_node.getWhere(), "in PREWHERE", *planner_context);
+
+    AggregateDescriptions aggregates_descriptions = extractAggregateDescriptions(query_tree, *planner_context);
+    ColumnsWithTypeAndName aggregates_columns;
+    aggregates_columns.reserve(aggregates_descriptions.size());
+    for (auto & aggregate_description : aggregates_descriptions)
+        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getReturnType(), aggregate_description.column_name);
+
+    NameSet aggregate_keys_set;
+    Names aggregate_keys;
+    std::optional<size_t> aggregate_step_index;
+
+    if (query_node.hasGroupBy())
+    {
+        const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+        const auto & group_by_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+        /// Only aggregation keys, and aggregates are available for next steps after GROUP BY step
+        auto group_by_actions = convertExpressionNodeIntoDAG(query_node.getGroupByNode(), group_by_input, planner_context);
+
+        aggregate_keys.reserve(group_by_actions->getOutputs().size());
+        for (auto & output : group_by_actions->getOutputs())
+        {
+            aggregate_keys_set.insert(output->result_name);
+            aggregate_keys.push_back(output->result_name);
+        }
+
+        ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data(aggregate_keys_set, *planner_context);
+        ValidateGroupByColumnsVisitor validate_columns_visitor(validate_group_by_visitor_data);
+
+        validate_columns_visitor.visit(query_node.getProjectionNode());
+
+        auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
+        actions_chain.addStep(std::move(aggregate_step));
+        aggregate_step_index = actions_chain.getLastStepIndex();
+    }
+
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
     auto projection_actions = convertExpressionNodeIntoDAG(query_node.getProjectionNode(), projection_input, planner_context);
@@ -913,7 +1101,7 @@ void Planner::buildQueryPlanIfNeeded()
     actions_chain.finalize();
 
     // std::cout << "Chain dump after finalize" << std::endl;
-    // std::cout << planner_context.actions_chain.dump() << std::endl;
+    // std::cout << actions_chain.dump() << std::endl;
 
     if (where_action_step_index)
     {
@@ -925,6 +1113,93 @@ void Planner::buildQueryPlanIfNeeded()
             remove_filter);
         where_step->setStepDescription("WHERE");
         query_plan.addStep(std::move(where_step));
+    }
+
+    if (!aggregates_descriptions.empty() || query_node.hasGroupBy())
+    {
+        if (aggregate_step_index)
+        {
+            auto & aggregate_actions_chain_node = actions_chain.at(*aggregate_step_index);
+            auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(),
+                aggregate_actions_chain_node->getActions());
+            expression_before_aggregation->setStepDescription("Before GROUP BY");
+            query_plan.addStep(std::move(expression_before_aggregation));
+        }
+
+        const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+
+        bool overflow_row = false;
+        bool query_analyzer_const_aggregation_keys = false;
+
+        const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
+            select_query_info.query,
+            settings.collect_hash_table_stats_during_aggregation,
+            settings.max_entries_for_hash_table_stats,
+            settings.max_size_to_preallocate_for_aggregation);
+
+        Aggregator::Params aggregator_params = Aggregator::Params(
+            aggregate_keys,
+            aggregates_descriptions,
+            overflow_row,
+            settings.max_rows_to_group_by,
+            settings.group_by_overflow_mode,
+            settings.group_by_two_level_threshold,
+            settings.group_by_two_level_threshold_bytes,
+            settings.max_bytes_before_external_group_by,
+            settings.empty_result_for_aggregation_by_empty_set
+                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && aggregate_keys.empty()
+                    && query_analyzer_const_aggregation_keys),
+            planner_context->getQueryContext()->getTemporaryVolume(),
+            settings.max_threads,
+            settings.min_free_disk_space_for_temporary_data,
+            settings.compile_aggregate_expressions,
+            settings.min_count_to_compile_aggregate_expression,
+            /* only_merge */ false,
+            stats_collecting_params
+        );
+
+        GroupingSetsParamsList grouping_sets_params;
+        SortDescription group_by_sort_description;
+
+        auto merge_threads = settings.max_threads;
+        auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+            ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+            : static_cast<size_t>(settings.max_threads);
+
+        bool storage_has_evenly_distributed_read = false;
+        auto & table_expression_node_to_columns = planner_context->getTableExpressionNodeToColumns();
+        if (table_expression_node_to_columns.size() == 1)
+        {
+            auto it = table_expression_node_to_columns.begin();
+            const auto * table_expression_node = it->first;
+            if (const auto * table_node = table_expression_node->as<TableNode>())
+                storage_has_evenly_distributed_read = table_node->getStorage()->hasEvenlyDistributedRead();
+            else if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+                storage_has_evenly_distributed_read = table_function_node->getStorageOrThrow()->hasEvenlyDistributedRead();
+        }
+
+        const bool should_produce_results_in_order_of_bucket_number
+            = select_query_options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
+
+        bool aggregate_final = select_query_options.to_stage > QueryProcessingStage::WithMergeableState;
+
+        InputOrderInfoPtr input_order_info;
+
+        auto aggregating_step = std::make_unique<AggregatingStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(aggregator_params),
+            std::move(grouping_sets_params),
+            aggregate_final,
+            settings.max_block_size,
+            settings.aggregation_in_order_max_block_bytes,
+            merge_threads,
+            temporary_data_merge_threads,
+            storage_has_evenly_distributed_read,
+            settings.group_by_use_nulls,
+            std::move(input_order_info),
+            std::move(group_by_sort_description),
+            should_produce_results_in_order_of_bucket_number);
+        query_plan.addStep(std::move(aggregating_step));
     }
 
     // std::cout << "Query plan dump" << std::endl;
