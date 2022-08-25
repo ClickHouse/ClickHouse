@@ -12,6 +12,20 @@
 #include <tuple>
 #include <limits>
 
+#include <boost/multiprecision/cpp_bin_float.hpp>
+#include <boost/math/special_functions/fpclassify.hpp>
+
+// NOLINTBEGIN(*)
+
+/// Use same extended double for all platforms
+#if (LDBL_MANT_DIG == 64)
+#define CONSTEXPR_FROM_DOUBLE constexpr
+using FromDoubleIntermediateType = long double;
+#else
+/// `wide_integer_from_builtin` can't be constexpr with non-literal `cpp_bin_float_double_extended`
+#define CONSTEXPR_FROM_DOUBLE
+using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_extended;
+#endif
 
 namespace wide
 {
@@ -265,12 +279,23 @@ struct integer<Bits, Signed>::_impl
     constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept
     {
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
-
+        static_assert(std::is_same_v<T, double> || std::is_same_v<T, FromDoubleIntermediateType>);
         /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
-        if (!std::isfinite(t))
+        if constexpr (std::is_same_v<T, double>)
         {
-            self = 0;
-            return;
+            if (!std::isfinite(t))
+            {
+                self = 0;
+                return;
+            }
+        }
+        else
+        {
+            if (!boost::math::isfinite(t))
+            {
+                self = 0;
+                return;
+            }
         }
 
         const T alpha = t / static_cast<T>(max_int);
@@ -278,13 +303,13 @@ struct integer<Bits, Signed>::_impl
         if (alpha <= static_cast<T>(max_int))
             self = static_cast<uint64_t>(alpha);
         else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
-            set_multiplier<double>(self, alpha);
+            set_multiplier<double>(self, static_cast<double>(alpha));
 
         self *= max_int;
         self += static_cast<uint64_t>(t - floor(alpha) * static_cast<T>(max_int)); // += b_i
     }
 
-    constexpr static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
+    CONSTEXPR_FROM_DOUBLE static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
     {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
         constexpr int64_t min_int = std::numeric_limits<int64_t>::lowest();
@@ -294,24 +319,17 @@ struct integer<Bits, Signed>::_impl
         /// the result may not fit in 64 bits.
         /// The example of such a number is 9.22337e+18.
         /// As to_Integral does a static_cast to int64_t, it may result in UB.
-        /// The necessary check here is that long double has enough significant (mantissa) bits to store the
+        /// The necessary check here is that FromDoubleIntermediateType has enough significant (mantissa) bits to store the
         /// int64_t max value precisely.
 
-        // TODO Be compatible with Apple aarch64
-#if not (defined(__APPLE__) && defined(__aarch64__))
-        static_assert(LDBL_MANT_DIG >= 64,
-            "On your system long double has less than 64 precision bits, "
-            "which may result in UB when initializing double from int64_t");
-#endif
-
-        if (rhs > static_cast<long double>(min_int) && rhs < static_cast<long double>(max_int))
+        if (rhs > static_cast<FromDoubleIntermediateType>(min_int) && rhs < static_cast<FromDoubleIntermediateType>(max_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
         }
 
-        const long double rhs_long_double = (static_cast<long double>(rhs) < 0)
-            ? -static_cast<long double>(rhs)
+        const FromDoubleIntermediateType rhs_long_double = (static_cast<FromDoubleIntermediateType>(rhs) < 0)
+            ? -static_cast<FromDoubleIntermediateType>(rhs)
             : rhs;
 
         set_multiplier(self, rhs_long_double);
@@ -560,8 +578,8 @@ private:
         else if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
-            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0];
-            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0];
+            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
             res.items[0] = c;
@@ -825,8 +843,8 @@ public:
         {
             using CompilerUInt128 = unsigned __int128;
 
-            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0];
-            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0];
+            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
@@ -1188,7 +1206,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 
     UnsignedT res{};
     for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
-        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i);
+        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
 
     return res;
 }
@@ -1462,3 +1480,5 @@ struct hash<wide::integer<Bits, Signed>>
 };
 
 }
+
+// NOLINTEND(*)

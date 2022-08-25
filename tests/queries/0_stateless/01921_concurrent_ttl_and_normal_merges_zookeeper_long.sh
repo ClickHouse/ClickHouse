@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long, zookeeper, no-parallel
 
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -74,5 +76,4 @@ $CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where table 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ttl_table$i" &
 done
-
 wait

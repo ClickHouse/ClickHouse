@@ -3,10 +3,6 @@
         <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
     </settings>
 
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-
     <create_query>CREATE TABLE hits_100m_words (words Array(String), UserID UInt64) ENGINE Memory</create_query>
     <fill_query>INSERT INTO hits_100m_words SELECT splitByNonAlpha(SearchPhrase) AS words, UserID FROM hits_100m_single WHERE length(words) > 0</fill_query>
 

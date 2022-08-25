@@ -50,12 +50,6 @@ Action required for every item -- these are errors that must be fixed.
 
 A query is supposed to run longer than 0.1 second. If your query runs faster, increase the amount of processed data to bring the run time above this threshold. You can use a bigger table (e.g. `hits_100m` instead of `hits_10m`), increase a `LIMIT`, make a query single-threaded, and so on. Queries that are too fast suffer from poor stability and precision.
 
-Sometimes you want to test a query that is supposed to complete "instantaneously", i.e. in sublinear time. This might be `count(*)`, or parsing a complicated tuple. It might not be practical or even possible to increase the run time of such queries by adding more data. For such queries there is a specal comparison mode which runs them for a fixed amount of time, instead of a fixed number of iterations like we do normally. This mode is inferior to the normal mode, because the influence of noise and overhead is higher, which leads to less precise and stable results.
-
-If it is impossible to increase the run time of a query and it is supposed to complete "immediately", you have to explicitly mark this in the test. To do so, add a `short` attribute to the query tag in the test file: `<query short="1">...`. The value of the `short` attribute is evaluated as a python expression, and substitutions are performed, so you can write something like `<query short="{column1} = {column2}">select count(*) from table where {column1} > {column2}</query>`, to mark only a particular combination of variables as short.
-
-This table shows queries for which the `short` marking is not consistent with the actual query run time -- i.e., a query runs for a normal time but is marked as `short`, or it runs faster than normal but is not marked as `short`.
-
 #### Partial Queries
 Action required for the cells marked in red.
 

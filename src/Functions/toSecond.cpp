@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToSecondImpl>;
 
-void registerFunctionToSecond(FunctionFactory & factory)
+REGISTER_FUNCTION(ToSecond)
 {
     factory.registerFunction<FunctionToSecond>();
     /// MysQL compatibility alias.

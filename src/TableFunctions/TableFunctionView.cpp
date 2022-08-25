@@ -15,6 +15,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+
+const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
+{
+    return *create.select;
+}
+
 void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
@@ -42,7 +48,7 @@ StoragePtr TableFunctionView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns, "");
+    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
     res->startup();
     return res;
 }

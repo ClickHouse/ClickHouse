@@ -3,9 +3,10 @@
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <base/getFQDNOrHostName.h>
-#include "Common/ProfileEvents.h"
+#include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -13,7 +14,10 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
@@ -36,6 +40,8 @@ struct Settings;
 class ColumnsDescription;
 struct ProfileInfo;
 class TCPServer;
+class NativeWriter;
+class NativeReader;
 
 /// State of query processing.
 struct QueryState
@@ -96,6 +102,8 @@ struct QueryState
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
+    Stopwatch watch;
+    UInt64 prev_elapsed_ns = 0;
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
@@ -142,11 +150,14 @@ private:
     bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
+    String forwarded_for;
+
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
+    String quota_key;
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
@@ -158,9 +169,11 @@ private:
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
     Poco::Timespan sleep_in_receive_cancel;
+    Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
+    ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -176,7 +189,6 @@ private:
     bool is_interserver_mode = false;
     String salt;
     String cluster;
-    String cluster_secret;
 
     std::mutex task_callback_mutex;
     std::mutex fatal_error_mutex;
@@ -189,9 +201,7 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
-    using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, ProfileEvents::Counters::Snapshot>;
-
-    ThreadIdToCountersSnapshot last_sent_snapshots;
+    ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
@@ -200,8 +210,11 @@ private:
 
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
+    std::unique_ptr<Session> makeSession();
+
     bool receiveProxyHeader();
     void receiveHello();
+    void receiveAddendum();
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
@@ -244,6 +257,8 @@ private:
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
     void sendProfileEvents();
+    void sendSelectProfileEvents();
+    void sendInsertProfileEvents();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

@@ -5,7 +5,7 @@
 namespace DB
 {
 /* values(structure, values...) - creates a temporary storage filling columns with values
- * values is case-insensitive table function
+ * values is case-insensitive table function.
  */
 class TableFunctionValues : public ITableFunction
 {
@@ -20,7 +20,10 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    String structure;
+    static DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context);
+
+    ColumnsDescription structure;
+    bool has_structure_in_arguments;
 };
 
 

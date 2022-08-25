@@ -1,6 +1,7 @@
 #include <string_view>
 
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -9,6 +10,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -328,14 +330,20 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 
             ASTPtr elem;
             SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
-            if (allow_any_all_operators && ParserKeyword("ANY").ignore(pos, expected))
-                subquery_function_type = SubqueryFunctionType::ANY;
-            else if (allow_any_all_operators && ParserKeyword("ALL").ignore(pos, expected))
-                subquery_function_type = SubqueryFunctionType::ALL;
-            else if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
-                return false;
+
+            if (comparison_expression)
+            {
+                if (ParserKeyword("ANY").ignore(pos, expected))
+                    subquery_function_type = SubqueryFunctionType::ANY;
+                else if (ParserKeyword("ALL").ignore(pos, expected))
+                    subquery_function_type = SubqueryFunctionType::ALL;
+            }
 
             if (subquery_function_type != SubqueryFunctionType::NONE && !ParserSubquery().parse(pos, elem, expected))
+                subquery_function_type = SubqueryFunctionType::NONE;
+
+            if (subquery_function_type == SubqueryFunctionType::NONE
+                && !(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
@@ -346,7 +354,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             exp_list->children.push_back(node);
             exp_list->children.push_back(elem);
 
-            if (allow_any_all_operators && subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
+            if (comparison_expression && subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
                 return false;
 
             /** special exception for the access operator to the element of the array `x[y]`, which
@@ -597,6 +605,13 @@ bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected
 {
     if (ParserTableFunctionView().parse(pos, node, expected))
         return true;
+    ParserKeyword s_settings("SETTINGS");
+    if (s_settings.ignore(pos, expected))
+    {
+        ParserSetQuery parser_settings(true);
+        if (parser_settings.parse(pos, node, expected))
+            return true;
+    }
     return elem_parser.parse(pos, node, expected);
 }
 
@@ -689,7 +704,7 @@ bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr expr_ast;
-    if (!ParserExpressionElement().parse(pos, expr_ast, expected))
+    if (!elem_parser->parse(pos, expr_ast, expected))
         return false;
 
     ASTPtr type_ast;
@@ -711,7 +726,7 @@ bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserCastExpression>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserExpressionElement>()),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }
@@ -721,7 +736,7 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserArrayElementExpression>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserArrayElementExpression>()),
         std::make_unique<ParserUnsignedInteger>()
     }.parse(pos, node, expected);
 }
@@ -749,10 +764,65 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected 
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
 
-
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserOrderByElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
+bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto command_list = std::make_shared<ASTExpressionList>();
+    node = command_list;
+
+    ParserToken s_comma(TokenType::Comma);
+    ParserToken s_open(TokenType::OpeningRoundBracket);
+    ParserToken s_close(TokenType::ClosingRoundBracket);
+    ParserExpressionWithOptionalAlias p_expression(false);
+    ParserList p_command(std::make_unique<ParserExpressionWithOptionalAlias>(false),
+                          std::make_unique<ParserToken>(TokenType::Comma), true);
+
+    do
+    {
+        Pos begin = pos;
+        ASTPtr command;
+        if (!s_open.ignore(pos, expected))
+        {
+            pos = begin;
+            if (!p_expression.parse(pos, command, expected))
+            {
+                return false;
+            }
+            auto list = std::make_shared<ASTExpressionList>(',');
+            list->children.push_back(command);
+            command = std::move(list);
+        }
+        else
+        {
+            if (!p_command.parse(pos, command, expected))
+                return false;
+
+            if (!s_close.ignore(pos, expected))
+                break;
+        }
+
+        command_list->children.push_back(command);
+    }
+    while (s_comma.ignore(pos, expected));
+
+    return true;
+}
+
+bool ParserGroupingSetsExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserGroupingSetsExpressionListElements grouping_sets_elements;
+    return grouping_sets_elements.parse(pos, node, expected);
+
+}
+
+bool ParserInterpolateExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserInterpolateElement>(), std::make_unique<ParserToken>(TokenType::Comma), true)
         .parse(pos, node, expected);
 }
 

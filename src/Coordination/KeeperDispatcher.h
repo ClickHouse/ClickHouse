@@ -9,7 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
@@ -68,7 +68,6 @@ private:
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
-    mutable std::mutex keeper_stats_mutex;
     KeeperConnectionStats keeper_stats;
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
@@ -78,7 +77,6 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
-private:
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -111,10 +109,16 @@ public:
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
     void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
 
+    void startServer();
+
     bool checkInit() const
     {
         return server && server->checkInit();
     }
+
+    /// Is server accepting requests, i.e. connected to the cluster
+    /// and achieved quorum
+    bool isServerActive() const;
 
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
@@ -122,6 +126,8 @@ public:
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
+
+    void forceRecovery();
 
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
@@ -144,6 +150,11 @@ public:
         return server->isLeader();
     }
 
+    bool isFollower() const
+    {
+        return server->isFollower();
+    }
+
     bool hasLeader() const
     {
         return server->isLeaderAlive();
@@ -159,9 +170,8 @@ public:
     uint64_t getSnapDirSize() const;
 
     /// Request statistics such as qps, latency etc.
-    KeeperConnectionStats getKeeperConnectionStats() const
+    KeeperConnectionStats & getKeeperConnectionStats()
     {
-        std::lock_guard lock(keeper_stats_mutex);
         return keeper_stats;
     }
 
@@ -179,19 +189,16 @@ public:
 
     void incrementPacketsSent()
     {
-        std::lock_guard lock(keeper_stats_mutex);
         keeper_stats.incrementPacketsSent();
     }
 
     void incrementPacketsReceived()
     {
-        std::lock_guard lock(keeper_stats_mutex);
         keeper_stats.incrementPacketsReceived();
     }
 
     void resetConnectionStats()
     {
-        std::lock_guard lock(keeper_stats_mutex);
         keeper_stats.reset();
     }
 };

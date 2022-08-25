@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-parallel, no-fasttest
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-parallel, no-fasttest, no-cpu-aarch64
 
 SET allow_introspection_functions = 1;
 

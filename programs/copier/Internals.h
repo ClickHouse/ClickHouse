@@ -13,7 +13,7 @@
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <boost/algorithm/string.hpp>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -161,7 +161,7 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
         const ASTPtr & sharding_key_ast = nullptr);
 
-Block getBlockWithAllStreamData(QueryPipeline pipeline);
+Block getBlockWithAllStreamData(QueryPipelineBuilder builder);
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 

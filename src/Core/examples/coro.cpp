@@ -4,7 +4,7 @@
 #include <optional>
 
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
@@ -12,10 +12,15 @@
 #if defined(__clang__)
 #include <experimental/coroutine>
 
-namespace std
+namespace std // NOLINT(cert-dcl58-cpp)
 {
     using namespace experimental::coroutines_v1;
 }
+
+#if __has_warning("-Wdeprecated-experimental-coroutine")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-experimental-coroutine"
+#endif
 
 #else
 #include <coroutine>
@@ -84,7 +89,7 @@ struct Task
         std::cout << "    Task " << tag << std::endl;
     }
     Task(Task &) = delete;
-    Task(Task &&rhs) : my(rhs.my), tag(rhs.tag)
+    Task(Task &&rhs) noexcept : my(rhs.my), tag(rhs.tag)
     {
         rhs.my = {};
         std::cout << "    Task&& " << tag << std::endl;
@@ -92,14 +97,14 @@ struct Task
     static bool resumeImpl(Task *r)
     {
         if (r->value)
-        return false;
+            return false;
 
         auto & next = r->my.promise().next;
 
         if (next)
         {
             if (resumeImpl(next.promise().r))
-            return true;
+                return true;
             next = {};
         }
 
@@ -178,7 +183,7 @@ int main()
         auto t = foo("foo");
         std::cout << ".. started" << std::endl;
         while (t.resume())
-        std::cout << ".. yielded" << std::endl;
+            std::cout << ".. yielded" << std::endl;
         std::cout << ".. done: " << t.res() << std::endl;
     }
     catch (DB::Exception & e)

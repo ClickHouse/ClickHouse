@@ -8,12 +8,11 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(StorageRabbitMQ & storage, const StorageMetadataPtr & metadata_snapshot)
+static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
-    auto non_virtual_header = metadata_snapshot->getSampleBlockNonMaterialized();
-    auto virtual_header = metadata_snapshot->getSampleBlockForColumns(
-                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"},
-                storage.getVirtuals(), storage.getStorageID());
+    auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
+    auto virtual_header = storage_snapshot->getSampleBlockForColumns(
+                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"});
 
     return {non_virtual_header, virtual_header};
 }
@@ -29,15 +28,15 @@ static Block getSampleBlock(const Block & non_virtual_header, const Block & virt
 
 RabbitMQSource::RabbitMQSource(
     StorageRabbitMQ & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
     : RabbitMQSource(
         storage_,
-        metadata_snapshot_,
-        getHeaders(storage_, metadata_snapshot_),
+        storage_snapshot_,
+        getHeaders(storage_snapshot_),
         context_,
         columns,
         max_block_size_,
@@ -47,15 +46,15 @@ RabbitMQSource::RabbitMQSource(
 
 RabbitMQSource::RabbitMQSource(
     StorageRabbitMQ & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     std::pair<Block, Block> headers,
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
-    : SourceWithProgress(getSampleBlock(headers.first, headers.second))
+    : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
@@ -107,6 +106,19 @@ Chunk RabbitMQSource::generate()
     return chunk;
 }
 
+bool RabbitMQSource::checkTimeLimit() const
+{
+    if (max_execution_time != 0)
+    {
+        auto elapsed_ns = total_stopwatch.elapsed();
+
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            return false;
+    }
+
+    return true;
+}
+
 Chunk RabbitMQSource::generateImpl()
 {
     if (!buffer)
@@ -130,7 +142,7 @@ Chunk RabbitMQSource::generateImpl()
 
     while (true)
     {
-        if (buffer->eof())
+        if (buffer->queueEmpty())
             break;
 
         auto new_rows = executor.execute();

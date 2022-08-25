@@ -102,7 +102,7 @@ private:
             ALWAYS_TRUE,
         };
 
-        RPNElement(
+        RPNElement( /// NOLINT
                 Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<BloomFilter> && const_bloom_filter_ = nullptr)
                 : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
@@ -142,8 +142,9 @@ private:
     BloomFilterParameters params;
     TokenExtractorPtr token_extractor;
     RPN rpn;
+
     /// Sets from syntax analyzer.
-    PreparedSets prepared_sets;
+    PreparedSetsPtr prepared_sets;
 };
 
 class MergeTreeIndexFullText final : public IMergeTreeIndex

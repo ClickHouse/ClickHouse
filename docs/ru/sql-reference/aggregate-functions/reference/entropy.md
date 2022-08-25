@@ -1,5 +1,5 @@
 ---
-toc_priority: 302
+sidebar_position: 302
 ---
 
 # entropy {#entropy}

@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-replicated-database, no-parallel
+-- Tags: zookeeper, no-replicated-database, no-parallel, no-s3-storage
 
 drop table if exists x;
 

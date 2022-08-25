@@ -13,7 +13,7 @@ private:
     DataTypePtr dictionary_type;
 
 public:
-    DataTypeLowCardinality(DataTypePtr dictionary_type_);
+    explicit DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
     const DataTypePtr & getDictionaryType() const { return dictionary_type; }
 

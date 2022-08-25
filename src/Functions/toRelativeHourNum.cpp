@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeHourNumImpl>;
 
-void registerFunctionToRelativeHourNum(FunctionFactory & factory)
+REGISTER_FUNCTION(ToRelativeHourNum)
 {
     factory.registerFunction<FunctionToRelativeHourNum>();
 }

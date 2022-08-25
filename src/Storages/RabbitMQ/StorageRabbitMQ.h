@@ -3,7 +3,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
@@ -18,11 +17,16 @@
 namespace DB
 {
 
-class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
+class StorageRabbitMQ final: public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageRabbitMQ>;
-
 public:
+    StorageRabbitMQ(
+            const StorageID & table_id_,
+            ContextPtr context_,
+            const ColumnsDescription & columns_,
+            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
+            bool is_attach_);
+
     std::string getName() const override { return "RabbitMQ"; }
 
     bool noPushingToViews() const override { return true; }
@@ -38,9 +42,10 @@ public:
     void checkTableCanBeDropped() const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -70,14 +75,6 @@ public:
 
     void incrementReader();
     void decrementReader();
-
-protected:
-    StorageRabbitMQ(
-            const StorageID & table_id_,
-            ContextPtr context_,
-            const ColumnsDescription & columns_,
-            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach_);
 
 private:
     ContextMutablePtr rabbitmq_context;

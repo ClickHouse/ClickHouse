@@ -25,7 +25,7 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
 
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<SingleValueDataFixed<TYPE>>>(argument_type);
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<SingleValueDataFixed<TYPE>>>(argument_type); /// NOLINT
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
@@ -56,7 +56,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
 
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>>(res_type, val_type);
+        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>>(res_type, val_type); /// NOLINT
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
@@ -90,7 +90,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
     WhichDataType which(res_type);
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<TYPE>>(res_type, val_type);
+        return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<TYPE>>(res_type, val_type); /// NOLINT
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 

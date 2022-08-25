@@ -20,6 +20,7 @@ public:
     static constexpr auto name = "URLPathHierarchy";
     static String getName() { return name; }
 
+    static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
     static void checkArguments(const DataTypes & arguments)
@@ -103,7 +104,7 @@ public:
 struct NameURLPathHierarchy { static constexpr auto name = "URLPathHierarchy"; };
 using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
 
-void registerFunctionURLPathHierarchy(FunctionFactory & factory)
+REGISTER_FUNCTION(URLPathHierarchy)
 {
     factory.registerFunction<FunctionURLPathHierarchy>();
 }

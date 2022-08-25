@@ -1,31 +1,125 @@
-# 分布 {#distributed}
+---
+sidebar_position: 33
+sidebar_label: 分布式引擎
+---
+
+# 分布式引擎 {#distributed}
 
 **分布式引擎本身不存储数据**, 但可以在多个服务器上进行分布式查询。
 读是自动并行的。读取时，远程服务器表的索引（如果有的话）会被使用。
-分布式引擎参数：服务器配置文件中的集群名，远程数据库名，远程表名，数据分片键（可选）。
-示例：
 
-    Distributed(logs, default, hits[, sharding_key])
+## 创建数据表 {#distributed-creating-a-table}
 
-将会从位于«logs»集群中 default.hits 表所有服务器上读取数据。
-远程服务器不仅用于读取数据，还会对尽可能数据做部分处理。
-例如，对于使用 GROUP BY 的查询，数据首先在远程服务器聚合，之后返回聚合函数的中间状态给查询请求的服务器。再在请求的服务器上进一步汇总数据。
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])
+[SETTINGS name=value, ...]
+```
 
-数据库名参数除了用数据库名之外，也可用返回字符串的常量表达式。例如：currentDatabase()。
+## 已有数据表 {#distributed-from-a-table}
+当 `Distributed` 表指向当前服务器上的一个表时，你可以采用以下语句:
 
-logs – 服务器配置文件中的集群名称。
 
-集群示例配置如下：
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
+```
+
+**分布式引擎参数**
+
+-   `cluster` - 服务为配置中的集群名
+
+-   `database` - 远程数据库名
+
+-   `table` - 远程数据表名
+
+-   `sharding_key` - (可选) 分片key
+
+-   `policy_name` - (可选) 规则名，它会被用作存储临时文件以便异步发送数据
+
+**详见**
+
+ - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
+ - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) 查看示例
+ 
+ **分布式设置**
+
+- `fsync_after_insert` - 对异步插入到分布式的文件数据执行`fsync`。确保操作系统将所有插入的数据刷新到启动节点**磁盘上的一个文件**中。
+
+- `fsync_directories` - 对目录执行`fsync`。保证操作系统在分布式表上进行异步插入相关操作(插入后，发送数据到分片等)后刷新目录元数据.
+
+- `bytes_to_throw_insert` - 如果超过这个数量的压缩字节将等待异步INSERT，将抛出一个异常。0 - 不抛出。默认值0.
+
+- `bytes_to_delay_insert` - 如果超过这个数量的压缩字节将等待异步INSERT，查询将被延迟。0 - 不要延迟。默认值0.
+
+- `max_delay_to_insert` - 最大延迟多少秒插入数据到分布式表，如果有很多挂起字节异步发送。默认值60。
+
+- `monitor_batch_inserts` - 等同于 [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)
+
+- `monitor_split_batch_on_failure` - 等同于[distributed_directory_monitor_split_batch_on_failure](../../../operations/settings/settings.md#distributed_directory_monitor_split_batch_on_failure)
+
+- `monitor_sleep_time_ms` - 等同于 [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)
+
+- `monitor_max_sleep_time_ms` - 等同于 [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
+
+!!! note "备注"
+
+    **稳定性设置** (`fsync_...`):
+
+    - 只影响异步插入(例如:`insert_distributed_sync=false`), 当数据首先存储在启动节点磁盘上，然后再异步发送到shard。
+    — 可能会显著降低`insert`的性能
+    - 影响将存储在分布式表文件夹中的数据写入 **接受您插入的节点** 。如果你需要保证写入数据到底层的MergeTree表中，请参阅 `system.merge_tree_settings` 中的持久性设置(`...fsync...`)
+
+    **插入限制设置** (`..._insert`) 请见:
+
+    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
+    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) 设置
+    - `bytes_to_throw_insert` 在 `bytes_to_delay_insert` 之前处理，所以你不应该设置它的值小于 `bytes_to_delay_insert`
+**示例**
+
+``` sql
+CREATE TABLE hits_all AS hits
+ENGINE = Distributed(logs, default, hits[, sharding_key[, policy_name]])
+SETTINGS
+    fsync_after_insert=0,
+    fsync_directories=0;
+```
+
+数据将从`logs`集群中的所有服务器中，从位于集群中的每个服务器上的`default.hits`表读取。。
+数据不仅在远程服务器上读取，而且在远程服务器上进行部分处理(在可能的范围内)。
+例如，对于带有 `GROUP BY`的查询，数据将在远程服务器上聚合，聚合函数的中间状态将被发送到请求者服务器。然后将进一步聚合数据。
+
+您可以使用一个返回字符串的常量表达式来代替数据库名称。例如: `currentDatabase()`。
+
+## 集群 {#distributed-clusters}
+
+
+集群是通过[服务器配置文件](../../../operations/configuration-files.md)来配置的
 
 ``` xml
 <remote_servers>
     <logs>
+        <!-- 分布式查询的服务器间集群密码
+             默认值:无密码(将不执行身份验证)
+
+             如果设置了，那么分布式查询将在分片上验证，所以至少:
+             - 这样的集群应该存在于shard上
+             - 这样的集群应该有相同的密码。
+
+             而且(这是更重要的)，initial_user将作为查询的当前用户使用。
+        -->
+        <!-- <secret></secret> -->
         <shard>
-            <!-- Optional. Shard weight when writing data. Default: 1. -->
+            <!-- 可选的。写数据时分片权重。 默认: 1. -->
             <weight>1</weight>
-            <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+            <!-- 可选的。是否只将数据写入其中一个副本。默认值:false(将数据写入所有副本)。 -->
             <internal_replication>false</internal_replication>
             <replica>
+                <!-- 可选的。负载均衡副本的优先级，请参见（load_balancing 设置)。默认值:1(值越小优先级越高)。 -->
+                <priority>1</priority>
                 <host>example01-01-1</host>
                 <port>9000</port>
             </replica>
@@ -58,6 +152,7 @@ logs – 服务器配置文件中的集群名称。
 集群名称不能包含点号。
 
 每个服务器需要指定 `host`，`port`，和可选的 `user`，`password`，`secure`，`compression` 的参数：
+
 - `host` – 远程服务器地址。可以域名、IPv4或IPv6。如果指定域名，则服务在启动时发起一个 DNS 请求，并且请求结果会在服务器运行期间一直被记录。如果 DNS 请求失败，则服务不会启动。如果你修改了 DNS 记录，则需要重启服务。
 - `port` – 消息传递的 TCP 端口（「tcp_port」配置通常设为 9000）。不要跟 http_port 混淆。
 - `user` – 用于连接远程服务器的用户名。默认值：default。该用户必须有权限访问该远程服务器。访问权限配置在 users.xml 文件中。更多信息，请查看«访问权限»部分。
@@ -78,8 +173,9 @@ logs – 服务器配置文件中的集群名称。
 通过分布式引擎可以像使用本地服务器一样使用集群。但是，集群不是自动扩展的：你必须编写集群配置到服务器配置文件中（最好，给所有集群的服务器写上完整配置）。
 
 不支持用分布式表查询别的分布式表（除非该表只有一个分片）。或者说，要用分布表查查询«最终»的数据表。
-
 分布式引擎需要将集群信息写入配置文件。配置文件中的集群信息会即时更新，无需重启服务器。如果你每次是要向不确定的一组分片和副本发送查询，则不适合创建分布式表 - 而应该使用«远程»表函数。 请参阅«表函数»部分。
+
+## 写入数据
 
 向集群写数据的方法有两种：
 
@@ -109,12 +205,32 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 下面的情况，你需要关注分片方案：
 
 -   使用需要特定键连接数据（ IN 或 JOIN ）的查询。如果数据是用该键进行分片，则应使用本地 IN 或 JOIN 而不是 GLOBAL IN 或 GLOBAL JOIN，这样效率更高。
--   使用大量服务器（上百或更多），但有大量小查询（个别客户的查询 - 网站，广告商或合作伙伴）。为了使小查询不影响整个集群，让单个客户的数据处于单个分片上是有意义的。或者，正如我们在 Yandex.Metrica 中所做的那样，你可以配置两级分片：将整个集群划分为«层»，一个层可以包含多个分片。单个客户的数据位于单个层上，根据需要将分片添加到层中，层中的数据随机分布。然后给每层创建分布式表，再创建一个全局的分布式表用于全局的查询。
+-   使用大量服务器（上百或更多），但有大量小查询（个别客户的查询 - 网站，广告商或合作伙伴）。为了使小查询不影响整个集群，让单个客户的数据处于单个分片上是有意义的。或者 你可以配置两级分片：将整个集群划分为«层»，一个层可以包含多个分片。单个客户的数据位于单个层上，根据需要将分片添加到层中，层中的数据随机分布。然后给每层创建分布式表，再创建一个全局的分布式表用于全局的查询。
 
-数据是异步写入的。对于分布式表的 INSERT，数据块只写本地文件系统。之后会尽快地在后台发送到远程服务器。你可以通过查看表目录中的文件列表（等待发送的数据）来检查数据是否成功发送：/var/lib/clickhouse/data/database/table/ 。
+数据是异步写入的。对于分布式表的 INSERT，数据块只写本地文件系统。之后会尽快地在后台发送到远程服务器。发送数据的周期性是由[distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)和[distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)设置。分布式引擎会分别发送每个插入数据的文件，但是你可以使用[distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)设置启用批量发送文件。该设置通过更好地利用本地服务器和网络资源来提高集群性能。你应该检查表目录`/var/lib/clickhouse/data/database/table/`中的文件列表(等待发送的数据)来检查数据是否发送成功。执行后台任务的线程数可以通过[background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)设置。
 
 如果在 INSERT 到分布式表时服务器节点丢失或重启（如，设备故障），则插入的数据可能会丢失。如果在表目录中检测到损坏的数据分片，则会将其转移到«broken»子目录，并不再使用。
 
-启用 max_parallel_replicas 选项后，会在分表的所有副本上并行查询处理。更多信息，请参阅«设置，max_parallel_replicas»部分。
+
+## 读取数据 {#distributed-reading-data}
+ 
+当查询一个`Distributed`表时，`SELECT`查询被发送到所有的分片，不管数据是如何分布在分片上的(它们可以完全随机分布)。当您添加一个新分片时，您不必将旧数据传输到它。相反，您可以使用更重的权重向其写入新数据——数据的分布会稍微不均匀，但查询将正确有效地工作。
+
+当启用`max_parallel_replicas`选项时，查询处理将在单个分片中的所有副本之间并行化。更多信息，请参见[max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas)。
+
+要了解更多关于分布式`in`和`global in`查询是如何处理的，请参考[这里](../../../sql-reference/operators/in.md#select-distributed-subqueries)文档。
+
+## 虚拟列 {#virtual-columns}
+
+-   `_shard_num` — 表`system.clusters` 中的  `shard_num` 值 . 数据类型: [UInt32](../../../sql-reference/data-types/int-uint.md).
+
+!!! note "备注"
+    因为 [remote](../../../sql-reference/table-functions/remote.md) 和 [cluster](../../../sql-reference/table-functions/cluster.md) 表方法内部创建了分布式表， `_shard_num` 对他们都有效.
+
+**详见**
+-   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns) 描述
+-   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) 设置
+-   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) 和 [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) 方法
+
 
 [原始文章](https://clickhouse.com/docs/en/operations/table_engines/distributed/) <!--hide-->

@@ -3,13 +3,9 @@
 #if USE_YAML_CPP
 #include "YAMLParser.h"
 
-#include <string>
-#include <cstring>
 #include <vector>
 
 #include <Poco/DOM/Document.h>
-#include <Poco/DOM/DOMParser.h>
-#include <Poco/DOM/DOMWriter.h>
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/AutoPtr.h>
@@ -18,8 +14,6 @@
 #include <Common/Exception.h>
 
 #include <yaml-cpp/yaml.h>
-
-#include <base/logger_useful.h>
 
 using namespace Poco::XML;
 
@@ -74,30 +68,35 @@ void processNode(const YAML::Node & node, Poco::XML::Element & parent_xml_elemen
         case YAML::NodeType::Sequence:
         {
             for (const auto & child_node : node)
-                if (parent_xml_element.hasChildNodes())
+                /// For sequences it depends how we want to process them.
+                /// Sequences of key-value pairs such as:
+                /// seq:
+                ///     - k1: val1
+                ///     - k2: val2
+                /// into xml like this:
+                /// <seq>
+                ///     <k1>val1</k1>
+                ///     <k2>val2</k2>
+                /// </seq>
+                ///
+                /// But, if the sequence is just a list, the root-node needs to be repeated, such as:
+                /// seq:
+                ///     - val1
+                ///     - val2
+                /// into xml like this:
+                /// <seq>val1</seq>
+                /// <seq>val2</seq>
+                ///
+                /// Therefore check what type the child is, for further processing.
+                /// Mixing types (values list or map) will lead to strange results but should not happen.
+                if (parent_xml_element.hasChildNodes() && !child_node.IsMap())
                 {
-                    /// We want to process sequences like that:
-                    /// seq:
-                    ///     - val1
-                    ///     - k2: val2
-                    ///     - val3
-                    ///     - k4: val4
-                    ///     - val5
-                    /// into xml like this:
-                    /// <seq>val1</seq>
-                    /// <seq>
-                    ///     <k2>val2</k2>
-                    /// </seq>
-                    /// <seq>val3</seq>
-                    /// <seq>
-                    ///     <k4>val4</k4>
-                    /// </seq>
-                    /// <seq>val5</seq>
-                    /// So, we create a new parent node with same tag for each child node
+                    /// Create a new parent node with same tag for each child node
                     processNode(child_node, *createCloneNode(parent_xml_element));
                 }
                 else
                 {
+                    /// Map, so don't recreate the parent node but add directly
                     processNode(child_node, parent_xml_element);
                 }
             break;

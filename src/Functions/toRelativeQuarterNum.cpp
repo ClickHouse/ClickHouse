@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToRelativeQuarterNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeQuarterNumImpl>;
 
-void registerFunctionToRelativeQuarterNum(FunctionFactory & factory)
+REGISTER_FUNCTION(ToRelativeQuarterNum)
 {
     factory.registerFunction<FunctionToRelativeQuarterNum>();
 }

@@ -90,24 +90,56 @@ struct DataTypeDecimalTrait
   * Sign of `fractional` is expected to be positive, otherwise result is undefined.
   * If `scale` is to big (scale > max_precision<DecimalType::NativeType>), result is undefined.
   */
-template <typename DecimalType>
-inline DecimalType decimalFromComponentsWithMultiplier(
-        const typename DecimalType::NativeType & whole,
-        const typename DecimalType::NativeType & fractional,
-        typename DecimalType::NativeType scale_multiplier)
+
+template <typename DecimalType, bool throw_on_error>
+inline bool decimalFromComponentsWithMultiplierImpl(
+    const typename DecimalType::NativeType & whole,
+    const typename DecimalType::NativeType & fractional,
+    typename DecimalType::NativeType scale_multiplier,
+    DecimalType & result)
 {
     using T = typename DecimalType::NativeType;
     const auto fractional_sign = whole < 0 ? -1 : 1;
 
     T whole_scaled = 0;
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    {
+        if constexpr (throw_on_error)
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return false;
+    }
 
     T value;
     if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    {
+        if constexpr (throw_on_error)
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return false;
+    }
 
-    return DecimalType(value);
+    result = DecimalType(value);
+    return true;
+}
+
+template <typename DecimalType>
+inline DecimalType decimalFromComponentsWithMultiplier(
+        const typename DecimalType::NativeType & whole,
+        const typename DecimalType::NativeType & fractional,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    DecimalType result;
+    decimalFromComponentsWithMultiplierImpl<DecimalType, true>(whole, fractional, scale_multiplier, result);
+    return result;
+}
+
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponentsWithMultiplier(
+    const typename DecimalType::NativeType & whole,
+    const typename DecimalType::NativeType & fractional,
+    typename DecimalType::NativeType scale_multiplier,
+    DecimalType & result)
+{
+    return decimalFromComponentsWithMultiplierImpl<DecimalType, false>(whole, fractional, scale_multiplier, result);
 }
 
 template <typename DecimalType>
@@ -116,6 +148,15 @@ inline DecimalType decimalFromComponentsWithMultiplier(
         typename DecimalType::NativeType scale_multiplier)
 {
     return decimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier);
+}
+
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponentsWithMultiplier(
+    const DecimalComponents<DecimalType> & components,
+    typename DecimalType::NativeType scale_multiplier,
+    DecimalType & result)
+{
+    return tryGetDecimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier, result);
 }
 
 
@@ -134,6 +175,18 @@ inline DecimalType decimalFromComponents(
     return decimalFromComponentsWithMultiplier<DecimalType>(whole, fractional, scaleMultiplier<T>(scale));
 }
 
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponents(
+    const typename DecimalType::NativeType & whole,
+    const typename DecimalType::NativeType & fractional,
+    UInt32 scale,
+    DecimalType & result)
+{
+    using T = typename DecimalType::NativeType;
+
+    return tryGetDecimalFromComponentsWithMultiplier<DecimalType>(whole, fractional, scaleMultiplier<T>(scale), result);
+}
+
 /** Make a decimal value from whole and fractional components with given scale.
  * @see `decimalFromComponentsWithMultiplier` for details.
  */
@@ -143,6 +196,15 @@ inline DecimalType decimalFromComponents(
         UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
+}
+
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponents(
+    const DecimalComponents<DecimalType> & components,
+    UInt32 scale,
+    DecimalType & result)
+{
+    return tryGetDecimalFromComponents<DecimalType>(components.whole, components.fractional, scale, result);
 }
 
 /** Split decimal into whole and fractional parts with given scale_multiplier.
@@ -156,7 +218,7 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
     using T = typename DecimalType::NativeType;
     const auto whole = decimal.value / scale_multiplier;
     auto fractional = decimal.value % scale_multiplier;
-    if (fractional < T(0))
+    if (whole && fractional < T(0))
         fractional *= T(-1);
 
     return {whole, fractional};
@@ -199,7 +261,7 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
     /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
     T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
-        if (result < T(0))
+        if (decimal.value / scale_multiplier && result < T(0))
             result = -result;
 
     return result;
@@ -303,13 +365,13 @@ inline auto binaryOpResult(const DecimalType<T> & tx, const DecimalType<U> & ty)
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
+inline DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
 {
     return DataTypeDecimalTrait<T>(DecimalUtils::max_precision<T>, tx.getScale());
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
+inline DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
 {
     return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
 }

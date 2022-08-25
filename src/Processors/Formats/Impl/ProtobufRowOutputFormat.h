@@ -3,17 +3,15 @@
 #include "config_formats.h"
 
 #if USE_PROTOBUF
-#    include <Core/Block.h>
-#    include <Formats/FormatSchemaInfo.h>
-#    include <Formats/FormatSettings.h>
 #    include <Processors/Formats/IRowOutputFormat.h>
-
 
 namespace DB
 {
-class ProtobufWriter;
-class ProtobufSerializer;
+class DB;
 class FormatSchemaInfo;
+class ProtobufSerializer;
+class ProtobufWriter;
+class WriteBuffer;
 struct FormatSettings;
 
 /** Stream designed to serialize data in the google protobuf format.
@@ -26,7 +24,7 @@ struct FormatSettings;
   * SELECT * from table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
   * where schema is the name of "schema.proto" file specifying protobuf schema.
   */
-class ProtobufRowOutputFormat : public IRowOutputFormat
+class ProtobufRowOutputFormat final : public IRowOutputFormat
 {
 public:
     ProtobufRowOutputFormat(

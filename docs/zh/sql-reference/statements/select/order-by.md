@@ -1,5 +1,5 @@
 ---
-toc_title: ORDER BY
+sidebar_label: ORDER BY
 ---
 
 # ORDER BY {#select-order-by}

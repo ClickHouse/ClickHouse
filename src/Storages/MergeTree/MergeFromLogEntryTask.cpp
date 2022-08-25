@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -19,8 +19,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+MergeFromLogEntryTask::MergeFromLogEntryTask(
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
+    StorageReplicatedMergeTree & storage_,
+    IExecutableTask::TaskResultCallback & task_result_callback_)
+    : ReplicatedMergeMutateTaskBase(
+        &Poco::Logger::get(
+            storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
+        storage_,
+        selected_entry_,
+        task_result_callback_)
+{
+}
 
-std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryTask::prepare()
+
+ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
@@ -30,37 +43,46 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     if (storage_settings_ptr->always_fetch_merged_part)
     {
         LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_merged_part' is true", entry.new_part_name);
-        return {false, {}};
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = true,
+            .part_log_writer = {}
+        };
     }
 
-    if (entry.merge_type == MergeType::TTL_RECOMPRESS &&
+    if (entry.merge_type == MergeType::TTLRecompress &&
         (time(nullptr) - entry.create_time) <= storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds() &&
         entry.source_replica != storage.replica_name)
     {
         LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
             "Source replica {} will try to merge this part first", entry.new_part_name,
             DateLUT::instance().timeToString(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
-        return {false, {}};
+            /// Waiting other replica to recompress part. No need to check it.
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = false,
+                .part_log_writer = {}
+            };
     }
 
     /// In some use cases merging can be more expensive than fetching
     /// and it may be better to spread merges tasks across the replicas
     /// instead of doing exactly the same merge cluster-wise
-    std::optional<String> replica_to_execute_merge;
-    bool replica_to_execute_merge_picked = false;
 
     if (storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
-        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
-        replica_to_execute_merge_picked = true;
-
+        std::optional<String> replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
         if (replica_to_execute_merge)
         {
             LOG_DEBUG(log,
                 "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
                 entry.new_part_name, replica_to_execute_merge.value());
 
-            return {false, {}};
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = {}
+            };
         }
     }
 
@@ -72,8 +94,12 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
         if (!source_part_or_covering)
         {
             /// We do not have one of source parts locally, try to take some already merged part from someone.
-            LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
-            return {false, {}};
+            LOG_DEBUG(log, "Don't have all parts (at least part {} is missing) for merge {}; will try to fetch it instead", source_part_name, entry.new_part_name);
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = {}
+            };
         }
 
         if (source_part_or_covering->name != source_part_name)
@@ -84,10 +110,15 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
             constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            return {false, {}};
+
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = {}
+            };
         }
 
         parts.push_back(source_part_or_covering);
@@ -110,7 +141,12 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             if (!replica.empty())
             {
                 LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
-                return {false, {}};
+                /// We found covering part, no checks for missing part.
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = false,
+                    .part_log_writer = {}
+                };
             }
         }
     }
@@ -124,7 +160,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
-        max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
+        max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
     }
 
     /// It will live until the whole task is being destroyed
@@ -160,20 +196,32 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
-        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
+        if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
-            if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaShared(entry))
+            String dummy;
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
-                if (!replica_to_execute_merge_picked)
-                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+                LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part", entry.new_part_name);
+                /// We found covering part, no checks for missing part.
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = false,
+                    .part_log_writer = {}
+                };
+            }
 
-                if (replica_to_execute_merge)
-                {
-                    LOG_DEBUG(log,
-                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
-                        entry.new_part_name, replica_to_execute_merge.value());
-                    return {false, {}};
-                }
+            zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
+
+            if (!zero_copy_lock)
+            {
+                LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
+                /// Don't check for missing part -- it's missing because other replica still not
+                /// finished merge.
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = false,
+                    .part_log_writer = {}
+                };
             }
         }
     }
@@ -189,11 +237,9 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        settings.memory_profiler_step,
-        settings.memory_profiler_sample_probability,
-        settings.max_untracked_memory);
+        settings);
 
-    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
+    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -207,14 +253,15 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
-            storage.merging_params);
+            storage.merging_params,
+            NO_TRANSACTION_PTR);
 
 
     /// Adjust priority
     for (auto & item : future_merged_part->parts)
         priority += item->getBytesOnDisk();
 
-    return {true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
+    return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
@@ -226,11 +273,12 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     part = merge_task->getFuture().get();
+    auto builder = merge_task->getBuilder();
 
     /// Task is not needed
     merge_task.reset();
 
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, transaction_ptr.get());
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr, builder);
 
     try
     {
@@ -245,14 +293,17 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
             LOG_ERROR(log,
-                "{}. Data after merge is not byte-identical to data on another replicas. There could be several"
-                " reasons: 1. Using newer version of compression library after server update. 2. Using another"
-                " compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4."
-                " Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due"
-                " to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of"
-                " source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9."
-                " Part format related settings like 'enable_mixed_granularity_parts' are different on different"
-                " replicas. We will download merged part from replica to force byte-identical result.",
+                "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons:"
+                " 1. Using newer version of compression library after server update."
+                " 2. Using another compression method."
+                " 3. Non-deterministic compression algorithm (highly unlikely)."
+                " 4. Non-deterministic merge algorithm due to logical error in code."
+                " 5. Data corruption in memory due to bug in code."
+                " 6. Data corruption in memory due to hardware issue."
+                " 7. Manual modification of source data after server startup."
+                " 8. Manual modification of checksums stored in ZooKeeper."
+                " 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas."
+                " We will download merged part from replica to force byte-identical result.",
                 getCurrentExceptionMessage(false));
 
             write_part_log(ExecutionStatus::fromCurrentException());
@@ -271,6 +322,9 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         throw;
     }
 
+    if (zero_copy_lock)
+        zero_copy_lock->lock->unlock();
+
     /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
      */
 
@@ -281,6 +335,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
     write_part_log({});
+    storage.incrementMergedPartsProfileEvent(part->getType());
 
     return true;
 }

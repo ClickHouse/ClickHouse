@@ -1,6 +1,6 @@
 ---
-toc_priority: 42
-toc_title: mysql
+sidebar_position: 42
+sidebar_label: mysql
 ---
 
 # mysql {#mysql}
@@ -54,9 +54,9 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 
 Объект таблицы с теми же столбцами, что и в исходной таблице MySQL.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Чтобы отличить табличную функцию `mysql (...)` в запросе `INSERT` от имени таблицы со списком столбцов, используйте ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
-
+    :::
 **Примеры**
 
 Таблица в MySQL:

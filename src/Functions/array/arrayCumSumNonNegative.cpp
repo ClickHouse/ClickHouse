@@ -1,10 +1,10 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include "FunctionArrayMapped.h"
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
+#include "FunctionArrayMapped.h"
 
 namespace DB
 {
@@ -19,6 +19,9 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -123,7 +126,7 @@ struct ArrayCumSumNonNegativeImpl
 struct NameArrayCumSumNonNegative { static constexpr auto name = "arrayCumSumNonNegative"; };
 using FunctionArrayCumSumNonNegative = FunctionArrayMapped<ArrayCumSumNonNegativeImpl, NameArrayCumSumNonNegative>;
 
-void registerFunctionArrayCumSumNonNegative(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayCumSumNonNegative)
 {
     factory.registerFunction<FunctionArrayCumSumNonNegative>();
 }

@@ -1,12 +1,13 @@
 if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
-    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
+   set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
-    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
+   set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
 endif()
+
 option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
 if (NOT ENABLE_EMBEDDED_COMPILER)
-    set (USE_EMBEDDED_COMPILER 0)
+    message(STATUS "Not using LLVM")
     return()
 endif()
 
@@ -22,9 +23,6 @@ set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm/llvm")
 set (REQUIRED_LLVM_LIBRARIES
     LLVMExecutionEngine
     LLVMRuntimeDyld
-    LLVMX86CodeGen
-    LLVMX86Desc
-    LLVMX86Info
     LLVMAsmPrinter
     LLVMDebugInfoDWARF
     LLVMGlobalISel
@@ -56,6 +54,12 @@ set (REQUIRED_LLVM_LIBRARIES
     LLVMDemangle
 )
 
+if (ARCH_AMD64)
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
+elseif (ARCH_AARCH64)
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
+endif ()
+
 #function(llvm_libs_all REQUIRED_LLVM_LIBRARIES)
 #    llvm_map_components_to_libnames (result all)
 #    if (USE_STATIC_LIBRARIES OR NOT "LLVM" IN_LIST result)
@@ -72,9 +76,7 @@ message (STATUS "LLVM library Directory: ${LLVM_LIBRARY_DIRS}")
 message (STATUS "LLVM C++ compiler flags: ${LLVM_CXXFLAGS}")
 
 # ld: unknown option: --color-diagnostics
-if (APPLE)
-    set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
-endif ()
+set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
 
 # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (CMAKE_INSTALL_RPATH "ON")
@@ -91,6 +93,18 @@ set (CMAKE_CXX_STANDARD 17)
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm/llvm")
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
+set_directory_properties (PROPERTIES
+   # due to llvm crosscompile cmake does not know how to clean it, and on clean
+   # will lead to the following error:
+   #
+   #   ninja: error: remove(contrib/llvm/llvm/NATIVE): Directory not empty
+   #
+   ADDITIONAL_CLEAN_FILES "${LLVM_BINARY_DIR}"
+   # llvm's cmake configuring this file only when cmake runs,
+   # and after clean cmake will not know that it should re-run,
+   # add explicitly depends from llvm-config.h
+   CMAKE_CONFIGURE_DEPENDS "${LLVM_BINARY_DIR}/include/llvm/Config/llvm-config.h"
+)
 
 add_library (_llvm INTERFACE)
 target_link_libraries (_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})

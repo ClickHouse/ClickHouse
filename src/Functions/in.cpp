@@ -121,7 +121,8 @@ public:
 
         auto set = column_set->getData();
         auto set_types = set->getDataTypes();
-        if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
+
+        if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
         {
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
@@ -173,7 +174,7 @@ void registerFunctionsInImpl(FunctionFactory & factory)
 
 }
 
-void registerFunctionsIn(FunctionFactory & factory)
+REGISTER_FUNCTION(In)
 {
     registerFunctionsInImpl<false>(factory);
     registerFunctionsInImpl<true>(factory);

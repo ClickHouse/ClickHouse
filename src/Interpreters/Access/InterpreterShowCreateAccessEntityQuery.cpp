@@ -27,7 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <base/range.h>
-#include <boost/range/algorithm/sort.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -296,8 +296,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_user)
     {
-        if (auto user = getContext()->getUser())
-            entities.push_back(user);
+        entities.push_back(getContext()->getUser());
     }
     else if (show_query.current_quota)
     {
@@ -341,7 +340,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
             entities.push_back(access_control.read(access_control.getID(show_query.type, name)));
     }
 
-    boost::range::sort(entities, IAccessEntity::LessByName{});
+    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByName{});
     return entities;
 }
 
@@ -377,12 +376,48 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
     AccessRightsElements res;
     switch (show_query.type)
     {
-        case AccessEntityType::USER: res.emplace_back(AccessType::SHOW_USERS); return res;
-        case AccessEntityType::ROLE: res.emplace_back(AccessType::SHOW_ROLES); return res;
-        case AccessEntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES); return res;
-        case AccessEntityType::ROW_POLICY: res.emplace_back(AccessType::SHOW_ROW_POLICIES); return res;
-        case AccessEntityType::QUOTA: res.emplace_back(AccessType::SHOW_QUOTAS); return res;
-        case AccessEntityType::MAX: break;
+        case AccessEntityType::USER:
+        {
+            res.emplace_back(AccessType::SHOW_USERS);
+            return res;
+        }
+        case AccessEntityType::ROLE:
+        {
+            res.emplace_back(AccessType::SHOW_ROLES);
+            return res;
+        }
+        case AccessEntityType::SETTINGS_PROFILE:
+        {
+            res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES);
+            return res;
+        }
+        case AccessEntityType::ROW_POLICY:
+        {
+            if (show_query.row_policy_names)
+            {
+                for (const auto & row_policy_name : show_query.row_policy_names->full_names)
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
+            }
+            else if (show_query.database_and_table_name)
+            {
+                if (show_query.database_and_table_name->second.empty())
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
+                else
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
+            }
+            else
+            {
+                res.emplace_back(AccessType::SHOW_ROW_POLICIES);
+            }
+            return res;
+        }
+        case AccessEntityType::QUOTA:
+        {
+            res.emplace_back(AccessType::SHOW_QUOTAS);
+            return res;
+        }
+        case AccessEntityType::MAX:
+            break;
     }
     throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
 }

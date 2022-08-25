@@ -24,6 +24,7 @@ protected:
 
     const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
+    size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
     int fd;
 
     bool nextImpl() override;
@@ -41,15 +42,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt)
-        : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
-        , reader(std::move(reader_))
-        , priority(priority_)
-        , required_alignment(alignment)
-        , fd(fd_)
-    {
-        prefetch_buffer.alignment = alignment;
-    }
+        std::optional<size_t> file_size_ = std::nullopt);
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
@@ -71,9 +64,10 @@ public:
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
+    size_t getFileSize() override;
+
 private:
-    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 };
 
 }
-

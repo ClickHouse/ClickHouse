@@ -89,7 +89,7 @@ public:
     inline void returnObject(T && object_to_return)
     {
         {
-            std::lock_guard<std::mutex> lock(objects_mutex);
+            std::lock_guard lock(objects_mutex);
 
             objects.emplace_back(std::move(object_to_return));
             --borrowed_objects_size;
@@ -107,14 +107,14 @@ public:
     /// Allocated objects size by the pool. If allocatedObjectsSize == maxSize then pool is full.
     inline size_t allocatedObjectsSize() const
     {
-        std::unique_lock<std::mutex> lock(objects_mutex);
+        std::lock_guard lock(objects_mutex);
         return allocated_objects_size;
     }
 
     /// Returns allocatedObjectsSize == maxSize
     inline bool isFull() const
     {
-        std::unique_lock<std::mutex> lock(objects_mutex);
+        std::lock_guard lock(objects_mutex);
         return allocated_objects_size == max_size;
     }
 
@@ -122,7 +122,7 @@ public:
     /// Then client will wait during borrowObject function call.
     inline size_t borrowedObjectsSize() const
     {
-        std::unique_lock<std::mutex> lock(objects_mutex);
+        std::lock_guard lock(objects_mutex);
         return borrowed_objects_size;
     }
 

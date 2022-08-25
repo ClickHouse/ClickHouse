@@ -13,7 +13,7 @@ namespace DB
  * * DateTime64 value and scale factor (2)
  * * DateTime64 broken down to components, result of execute is then re-assembled back into DateTime64 value (3)
  *
- * Suitable Transfotm-types are commonly used in Date/DateTime manipulation functions,
+ * Suitable Transform-types are commonly used in Date/DateTime manipulation functions,
  * and should implement static (or const) function with following signatures:
  * 1:
  *     R execute(Int64 whole_value, ... )
@@ -44,7 +44,7 @@ public:
     static constexpr auto name = Transform::name;
 
     // non-explicit constructor to allow creating from scale value (or with no scale at all), indispensable in some contexts.
-    TransformDateTime64(UInt32 scale_ = 0)
+    TransformDateTime64(UInt32 scale_ = 0) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 

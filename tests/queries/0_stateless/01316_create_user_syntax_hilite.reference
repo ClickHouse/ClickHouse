@@ -1,1 +1,1 @@
-[1mCREATE USER[0m user[1m IDENTIFIED WITH plaintext_password[0m[1m BY [0m'hello'
+[1mCREATE USER[0m user[1m IDENTIFIED WITH plaintext_password[0m[1m BY[0m 'hello'

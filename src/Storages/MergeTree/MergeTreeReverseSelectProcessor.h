@@ -16,7 +16,7 @@ public:
     explicit MergeTreeReverseSelectProcessor(Args &&... args)
         : MergeTreeSelectProcessor{std::forward<Args>(args)...}
     {
-        LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
+        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
     }
@@ -27,9 +27,9 @@ private:
     bool getNewTaskImpl() override;
     void finalizeNewTask() override {}
 
-    Chunk readFromPart() override;
+    BlockAndRowCount readFromPart() override;
 
-    Chunks chunks;
+    std::vector<BlockAndRowCount> chunks;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
 };
 

@@ -126,5 +126,24 @@ String FieldVisitorToString::operator() (const Map & x) const
     return wb.str();
 }
 
+String FieldVisitorToString::operator() (const Object & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << '{';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+
+        writeDoubleQuoted(it->first, wb);
+        wb << ": " << applyVisitor(*this, it->second);
+    }
+    wb << '}';
+
+    return wb.str();
+
+}
+
 }
 

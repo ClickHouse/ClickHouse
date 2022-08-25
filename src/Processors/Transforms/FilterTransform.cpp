@@ -29,11 +29,12 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
 
 Block FilterTransform::transformHeader(
     Block header,
-    const ActionsDAG & expression,
+    const ActionsDAG * expression,
     const String & filter_column_name,
     bool remove_filter_column)
 {
-    header = expression.updateHeader(std::move(header));
+    if (expression)
+        header = expression->updateHeader(std::move(header));
 
     if (remove_filter_column)
         header.erase(filter_column_name);
@@ -51,7 +52,7 @@ FilterTransform::FilterTransform(
     bool on_totals_)
     : ISimpleTransform(
             header_,
-            transformHeader(header_, expression_->getActionsDAG(), filter_column_name_, remove_filter_column_),
+            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
@@ -59,7 +60,8 @@ FilterTransform::FilterTransform(
     , on_totals(on_totals_)
 {
     transformed_header = getInputPort().getHeader();
-    expression->execute(transformed_header);
+    if (expression)
+        expression->execute(transformed_header);
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
@@ -74,7 +76,7 @@ IProcessor::Status FilterTransform::prepare()
             /// Optimization for `WHERE column in (empty set)`.
             /// The result will not change after set was created, so we can skip this check.
             /// It is implemented in prepare() stop pipeline before reading from input port.
-            || (!are_prepared_sets_initialized && expression->checkColumnIsAlwaysFalse(filter_column_name))))
+            || (!are_prepared_sets_initialized && expression && expression->checkColumnIsAlwaysFalse(filter_column_name))))
     {
         input.close();
         output.finish();
@@ -106,7 +108,8 @@ void FilterTransform::transform(Chunk & chunk)
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
-        expression->execute(block, num_rows_before_filtration);
+        if (expression)
+            expression->execute(block, num_rows_before_filtration);
 
         columns = block.getColumns();
     }
@@ -138,8 +141,6 @@ void FilterTransform::transform(Chunk & chunk)
         return;
     }
 
-    FilterDescription filter_and_holder(*filter_column);
-
     /** Let's find out how many rows will be in result.
       * To do this, we filter out the first non-constant column
       *  or calculate number of set bytes in the filter.
@@ -154,14 +155,20 @@ void FilterTransform::transform(Chunk & chunk)
         }
     }
 
+    std::unique_ptr<IFilterDescription> filter_description;
+    if (filter_column->isSparse())
+        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+    else
+        filter_description = std::make_unique<FilterDescription>(*filter_column);
+
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
     {
-        columns[first_non_constant_column] = columns[first_non_constant_column]->filter(*filter_and_holder.data, -1);
+        columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column], -1);
         num_filtered_rows = columns[first_non_constant_column]->size();
     }
     else
-        num_filtered_rows = countBytesInFilter(*filter_and_holder.data);
+        num_filtered_rows = filter_description->countBytesInFilter();
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
@@ -207,7 +214,7 @@ void FilterTransform::transform(Chunk & chunk)
         if (isColumnConst(*current_column))
             current_column = current_column->cut(0, num_filtered_rows);
         else
-            current_column = current_column->filter(*filter_and_holder.data, num_filtered_rows);
+            current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
     chunk.setColumns(std::move(columns), num_filtered_rows);

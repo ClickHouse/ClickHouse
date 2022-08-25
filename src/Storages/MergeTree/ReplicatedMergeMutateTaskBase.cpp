@@ -31,6 +31,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 {
     std::exception_ptr saved_exception;
 
+    bool retryable_error = false;
     try
     {
         /// We don't have any backoff for failed entries
@@ -45,17 +46,20 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, fmt::runtime(e.displayText()));
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, e.message());
+                LOG_INFO(log, fmt::runtime(e.message()));
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, fmt::runtime(e.displayText()));
+                retryable_error = true;
                 storage.cleanup_thread.wakeup();
             }
             else
@@ -80,7 +84,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
     }
 
 
-    if (saved_exception)
+    if (!retryable_error && saved_exception)
     {
         std::lock_guard lock(storage.queue.state_mutex);
 
@@ -140,9 +144,9 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
     };
 
 
-    auto execute_fetch = [&] () -> bool
+    auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool
     {
-        if (storage.executeFetch(entry))
+        if (storage.executeFetch(entry, need_to_check_missing_part))
             return remove_processed_entry();
 
         return false;
@@ -160,12 +164,13 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
                     return remove_processed_entry();
             }
 
-            bool res = false;
-            std::tie(res, part_log_writer) = prepare();
+            auto prepare_result = prepare();
+
+            part_log_writer = prepare_result.part_log_writer;
 
             /// Avoid resheduling, execute fetch here, in the same thread.
-            if (!res)
-                return execute_fetch();
+            if (!prepare_result.prepared_successfully)
+                return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch);
 
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
@@ -194,7 +199,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             try
             {
                 if (!finalize(part_log_writer))
-                    return execute_fetch();
+                    return execute_fetch(/* need_to_check_missing = */true);
             }
             catch (...)
             {

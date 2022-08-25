@@ -10,13 +10,13 @@
 #include "registerTableFunctions.h"
 
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
+
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -35,7 +35,7 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context);
 
-    auto storage = StorageSQLite::create(StorageID(getDatabaseName(), table_name),
+    auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
                                          sqlite_db,
                                          database_path,
                                          remote_table_name,
@@ -73,8 +73,8 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    database_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    database_path = checkAndGetLiteralArgument<String>(args[0], "database_path");
+    remote_table_name = checkAndGetLiteralArgument<String>(args[1], "table_name");
 
     sqlite_db = openSQLiteDB(database_path, context);
 }

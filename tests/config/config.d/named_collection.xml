@@ -14,5 +14,19 @@
             <user>default</user>
             <table>s</table>
         </clickhouse_dictionary>
+        <url_with_headers>
+            <headers>
+                <header>
+                    <name>X-ClickHouse-Format</name>
+                    <value>JSONEachRow</value>
+                </header>
+            </headers>
+        </url_with_headers>
+        <s3_conn>
+            <url>http://localhost:11111/test/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>testtest</secret_access_key>
+            <structure>auto</structure>
+        </s3_conn>
     </named_collections>
 </clickhouse>

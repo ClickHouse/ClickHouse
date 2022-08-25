@@ -26,40 +26,50 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
+        data_part_,
+        columns_,
         metadata_snapshot_,
         uncompressed_cache_,
         mark_cache_,
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+        mark_ranges_,
+        settings_,
+        avg_value_size_hints_)
     , marks_loader(
-          data_part->volume->getDisk(),
+          data_part->data_part_storage,
           mark_cache,
-          data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
+          data_part->index_granularity_info.getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
           data_part->getMarksCount(),
           data_part->index_granularity_info,
           settings.save_marks_in_cache,
+          settings.read_settings,
           data_part->getColumns().size())
 {
     try
     {
-        size_t columns_num = columns.size();
+        size_t columns_num = columns_to_read.size();
 
         column_positions.resize(columns_num);
         read_only_offsets.resize(columns_num);
-        auto name_and_type = columns.begin();
-        for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
-        {
-            auto column_from_part = getColumnFromPart(*name_and_type);
 
-            auto position = data_part->getColumnPosition(column_from_part.getNameInStorage());
-            if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
+        for (size_t i = 0; i < columns_num; ++i)
+        {
+            const auto & column_to_read = columns_to_read[i];
+
+            if (column_to_read.isSubcolumn())
+            {
+                auto storage_column_from_part = getColumnInPart(
+                    {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
+
+                if (!storage_column_from_part.type->tryGetSubcolumnType(column_to_read.getSubcolumnName()))
+                    continue;
+            }
+
+            auto position = data_part->getColumnPosition(column_to_read.getNameInStorage());
+            if (!position && typeid_cast<const DataTypeArray *>(column_to_read.type.get()))
             {
                 /// If array of Nested column is missing in part,
                 /// we have to read its offsets if they exist.
-                position = findColumnForOffsets(column_from_part.name);
+                position = findColumnForOffsets(column_to_read.name);
                 read_only_offsets[i] = (position != std::nullopt);
             }
 
@@ -74,16 +84,17 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         if (!settings.read_settings.local_fs_buffer_size || !settings.read_settings.remote_fs_buffer_size)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
-        const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+        const String path = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-                fullPath(data_part->volume->getDisk(), full_data_path),
-                [this, full_data_path]()
+                std::string(fs::path(data_part->data_part_storage->getFullPath()) / path),
+                [this, path]()
                 {
-                    return data_part->volume->getDisk()->readFile(
-                        full_data_path,
-                        settings.read_settings);
+                    return data_part->data_part_storage->readFile(
+                        path,
+                        settings.read_settings,
+                        std::nullopt, std::nullopt);
                 },
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
@@ -96,14 +107,16 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
             cached_buffer = std::move(buffer);
             data_buffer = cached_buffer.get();
+            compressed_data_buffer = cached_buffer.get();
         }
         else
         {
             auto buffer =
                 std::make_unique<CompressedReadBufferFromFile>(
-                    data_part->volume->getDisk()->readFile(
-                        full_data_path,
-                        settings.read_settings),
+                    data_part->data_part_storage->readFile(
+                        path,
+                        settings.read_settings,
+                        std::nullopt, std::nullopt),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)
@@ -114,6 +127,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
             non_cached_buffer = std::move(buffer);
             data_buffer = non_cached_buffer.get();
+            compressed_data_buffer = non_cached_buffer.get();
         }
     }
     catch (...)
@@ -130,32 +144,22 @@ size_t MergeTreeReaderCompact::readRows(
         from_mark = next_mark;
 
     size_t read_rows = 0;
-    size_t num_columns = columns.size();
+    size_t num_columns = columns_to_read.size();
     checkNumberOfColumns(num_columns);
 
     MutableColumns mutable_columns(num_columns);
-    auto column_it = columns.begin();
-    for (size_t i = 0; i < num_columns; ++i, ++column_it)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        if (!column_positions[i])
-            continue;
-
-        auto column_from_part = getColumnFromPart(*column_it);
-        if (res_columns[i] == nullptr)
-        {
-            auto serialization = data_part->getSerialization(column_from_part);
-            res_columns[i] = column_from_part.type->createColumn(*serialization);
-        }
+        if (column_positions[i] && res_columns[i] == nullptr)
+            res_columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
     }
 
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
 
-        auto name_and_type = columns.begin();
-        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            auto column_from_part = getColumnFromPart(*name_and_type);
             if (!res_columns[pos])
                 continue;
 
@@ -164,7 +168,7 @@ size_t MergeTreeReaderCompact::readRows(
                 auto & column = res_columns[pos];
                 size_t column_size_before_reading = column->size();
 
-                readData(column_from_part, column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(columns_to_read[pos], column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column != rows_to_read)
@@ -178,7 +182,7 @@ size_t MergeTreeReaderCompact::readRows(
                     storage.reportBrokenPart(data_part);
 
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + column_from_part.name + ")");
+                e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
                 throw;
             }
             catch (...)
@@ -226,7 +230,7 @@ void MergeTreeReaderCompact::readData(
         const auto & type_in_storage = name_and_type.getTypeInStorage();
         const auto & name_in_storage = name_and_type.getNameInStorage();
 
-        auto serialization = data_part->getSerialization(NameAndTypePair{name_in_storage, type_in_storage});
+        auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
         ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
 
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
@@ -242,7 +246,7 @@ void MergeTreeReaderCompact::readData(
     }
     else
     {
-        auto serialization = data_part->getSerialization(name_and_type);
+        auto serialization = getSerializationInPart(name_and_type);
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
@@ -260,10 +264,7 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
     MarkInCompressedFile mark = marks_loader.getMark(row_index, column_index);
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
     }
     catch (Exception & e)
     {
@@ -288,10 +289,7 @@ void MergeTreeReaderCompact::adjustUpperBound(size_t last_mark)
             return;
 
         last_right_offset = 0; // Zero value means the end of file.
-        if (cached_buffer)
-            cached_buffer->setReadUntilEnd();
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilEnd();
+        data_buffer->setReadUntilEnd();
     }
     else
     {
@@ -299,10 +297,7 @@ void MergeTreeReaderCompact::adjustUpperBound(size_t last_mark)
             return;
 
         last_right_offset = right_offset;
-        if (cached_buffer)
-            cached_buffer->setReadUntilPosition(right_offset);
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilPosition(right_offset);
+        data_buffer->setReadUntilPosition(right_offset);
     }
 }
 

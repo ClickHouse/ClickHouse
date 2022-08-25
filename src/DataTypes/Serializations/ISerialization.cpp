@@ -167,8 +167,10 @@ String getNameForSubstreamPath(
             /// Because nested data may be represented not by Array of Tuple,
             ///  but by separate Array columns with names in a form of a.b,
             ///  and name is encoded as a whole.
-            stream_name += (escape_tuple_delimiter && it->escape_tuple_delimiter ?
-                escapeForFileName(".") : ".") + escapeForFileName(it->tuple_element_name);
+            if (escape_tuple_delimiter && it->escape_tuple_delimiter)
+                stream_name += escapeForFileName("." + it->tuple_element_name);
+            else
+                stream_name += "." + it->tuple_element_name;
         }
     }
 
@@ -222,8 +224,10 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 
 void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
-    if (cache && !path.empty())
-        cache->emplace(getSubcolumnNameForStream(path), column);
+    if (!cache || path.empty())
+        return;
+
+    cache->emplace(getSubcolumnNameForStream(path), column);
 }
 
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
@@ -232,10 +236,7 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path));
-    if (it == cache->end())
-        return nullptr;
-
-    return it->second;
+    return it == cache->end() ? nullptr : it->second;
 }
 
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)

@@ -1,15 +1,14 @@
 ---
-toc_priority: 19
-toc_title: HTTP Interface
+sidebar_position: 19
+sidebar_label: HTTP Interface
 ---
 
-# HTTP Interface {#http-interface}
+# HTTP Interface
 
-The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
+The HTTP interface lets you use ClickHouse on any platform from any programming language in a form of REST API. The HTTP interface is more limited than the native interface, but it has better language support.
 
 By default, `clickhouse-server` listens for HTTP on port 8123 (this can be changed in the config).
-
-Sometimes, `curl` command is not available on user operating systems. On Ubuntu or Debian, run `sudo apt install curl`. Please refer this [documentation](https://curl.se/download.html) to install it before running the examples.
+HTTPS can be enabled as well with port 8443 by default.
 
 If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
 
@@ -18,10 +17,11 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
+Sometimes, `curl` command is not available on user operating systems. On Ubuntu or Debian, run `sudo apt install curl`. Please refer this [documentation](https://curl.se/download.html) to install it before running the examples.
+
 Web UI can be accessed here: `http://localhost:8123/play`.
 
 ![Web UI](../images/play.png)
-
 
 In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
@@ -32,7 +32,7 @@ $ curl 'http://localhost:8123/replicas_status'
 Ok.
 ```
 
-Send the request as a URL ‘query’ parameter, or as a POST. Or send the beginning of the query in the ‘query’ parameter, and the rest in the POST (we’ll explain later why this is necessary). The size of the URL is limited to 16 KB, so keep this in mind when sending large queries.
+Send the request as a URL ‘query’ parameter, or as a POST. Or send the beginning of the query in the ‘query’ parameter, and the rest in the POST (we’ll explain later why this is necessary). The size of the URL is limited to 1 MiB by default, this can be changed with the `http_max_uri_size` setting.
 
 If successful, you receive the 200 response code and the result in the response body.
 If an error occurs, you receive the 500 response code and an error description text in the response body.
@@ -178,8 +178,9 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
 
-!!! note "Note"
-    Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
+:::info
+Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
+:::
 
 **Examples**
 
@@ -421,11 +422,11 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     -   `query` — use with `predefined_query_handler` type, executes query when the handler is called.
 
-    -   `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request params.
+    -   `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request parameters.
 
     -   `status` — use with `static` type, response status code.
 
-    -   `content_type` — use with `static` type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+    -   `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
     -   `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
 
@@ -439,8 +440,9 @@ Next are the configuration methods for different `type`.
 
 The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
-!!! note "Warning"
-    To keep the default `handlers` such as` query`, `play`,` ping`, use the `<defaults/>` rule.
+:::warning
+To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
+:::
 
 Example:
 
@@ -469,14 +471,15 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-!!! note "caution"
-    In one `predefined_query_handler` only supports one `query` of an insert type.
+:::warning
+In one `predefined_query_handler` only supports one `query` of an insert type.
+:::
 
 ### dynamic_query_handler {#dynamic_query_handler}
 
-In `dynamic_query_handler`, the query is written in the form of param of the HTTP request. The difference is that in `predefined_query_handler`, the query is written in the configuration file. You can configure `query_param_name` in `dynamic_query_handler`.
+In `dynamic_query_handler`, the query is written in the form of parameter of the HTTP request. The difference is that in `predefined_query_handler`, the query is written in the configuration file. You can configure `query_param_name` in `dynamic_query_handler`.
 
-ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the param is not passed in.
+ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the parameter is not passed in.
 
 To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` and `queries` whether the settings were set successfully.
 

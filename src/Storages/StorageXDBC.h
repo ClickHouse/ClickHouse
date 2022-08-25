@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <BridgeHelper/XDBCBridgeHelper.h>
 
 namespace Poco
 {
@@ -21,7 +21,7 @@ class StorageXDBC : public IStorageURLBase
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -32,7 +32,8 @@ public:
         const StorageID & table_id_,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const ColumnsDescription & columns_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
         const String & comment,
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
@@ -51,7 +52,7 @@ private:
 
     std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -59,13 +60,15 @@ private:
 
     std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
-    Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const override;
+    Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
+
+    bool supportsSubsetOfColumns() const override;
 };
 
 }

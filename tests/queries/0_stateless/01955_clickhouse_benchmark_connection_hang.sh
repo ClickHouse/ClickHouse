@@ -66,8 +66,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #      frame #11: 0x000000000fffdfc4 clickhouse`main(argc_=<unavailable>, argv_=<unavailable>) + 356 at main.cpp:366
 #      frame #12: 0x00007ffff7de6d0a libc.so.6`__libc_start_main(main=(clickhouse`main at main.cpp:339), argc=7, argv=0x00007fffffffe1e8, init=<unavailable>, fini=<unavailable>, rtld_fini=<unavailable>, stack_end=0x00007fffffffe1d8) + 234 at libc-start.c:308
 #      frame #13: 0x000000000ffdc0aa clickhouse`_start + 42
-#
-#   [1]: https://clickhouse-test-reports.s3.yandex.net/26656/f17ca450ac991603e6400c7caef49c493ac69739/functional_stateless_tests_(ubsan).html#fail1
 
 # Limit number of files to 50, and we will get EMFILE for some of socket()
 prlimit --nofile=50 $CLICKHOUSE_BENCHMARK --iterations 1 --concurrency 50 --query 'select 1' 2>&1

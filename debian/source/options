@@ -1,9 +1,0 @@
-tar-ignore
-tar-ignore="build_*/*"
-tar-ignore="workspace/*"
-tar-ignore="contrib/poco/openssl/*"
-tar-ignore="contrib/poco/gradle/*"
-tar-ignore="contrib/poco/Data/SQLite/*"
-tar-ignore="contrib/poco/PDF/*"
-compression-level=3
-compression=gzip

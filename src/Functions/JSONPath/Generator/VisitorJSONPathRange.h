@@ -10,7 +10,7 @@ template <typename JSONParser>
 class VisitorJSONPathRange : public IVisitor<JSONParser>
 {
 public:
-    VisitorJSONPathRange(ASTPtr range_ptr_) : range_ptr(range_ptr_->as<ASTJSONPathRange>())
+    explicit VisitorJSONPathRange(ASTPtr range_ptr_) : range_ptr(range_ptr_->as<ASTJSONPathRange>())
     {
         current_range = 0;
         current_index = range_ptr->ranges[current_range].first;
@@ -20,7 +20,6 @@ public:
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {
-        typename JSONParser::Element result;
         typename JSONParser::Array array = element.getArray();
         element = array[current_index];
         return VisitorStatus::Ok;

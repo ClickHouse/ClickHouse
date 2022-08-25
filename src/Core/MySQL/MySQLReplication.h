@@ -409,6 +409,20 @@ namespace MySQLReplication
         void parseImpl(ReadBuffer & payload) override;
     };
 
+    class TableMapEventHeader
+    {
+        public:
+            UInt64 table_id;
+            UInt16 flags;
+            UInt8 schema_len;
+            String schema;
+            UInt8 table_len;
+            String table;
+
+        TableMapEventHeader(): table_id(0), flags(0), schema_len(0), table_len(0) {}
+        void parse(ReadBuffer & payload);
+    };
+
     class TableMapEvent : public EventBase
     {
     public:
@@ -423,7 +437,15 @@ namespace MySQLReplication
         std::vector<UInt16> column_meta;
         Bitmap null_bitmap;
 
-        TableMapEvent(EventHeader && header_) : EventBase(std::move(header_)), table_id(0), flags(0), schema_len(0), table_len(0), column_count(0) {}
+        TableMapEvent(EventHeader && header_, const TableMapEventHeader & map_event_header) : EventBase(std::move(header_)), column_count(0)
+        {
+            table_id = map_event_header.table_id;
+            flags = map_event_header.flags;
+            schema_len = map_event_header.schema_len;
+            schema = map_event_header.schema;
+            table_len = map_event_header.table_len;
+            table = map_event_header.table;
+        }
         void dump(WriteBuffer & out) const override;
 
     protected:
@@ -563,6 +585,7 @@ namespace MySQLReplication
         Position getPosition() const override { return position; }
         BinlogEventPtr readOneEvent() override { return event; }
         void setReplicateDatabase(String db) override { replicate_do_db = std::move(db); }
+        void setReplicateTables(std::unordered_set<String> tables) { replicate_tables = std::move(tables); }
         void setGTIDSets(GTIDSets sets) override { position.gtid_sets = std::move(sets); }
         void setChecksumSignatureLength(size_t checksum_signature_length_) override { checksum_signature_length = checksum_signature_length_; }
 
@@ -570,10 +593,13 @@ namespace MySQLReplication
         Position position;
         BinlogEventPtr event;
         String replicate_do_db;
+        // only for filter data(Row Event), not include DDL Event
+        std::unordered_set<String> replicate_tables;
         std::map<UInt64, std::shared_ptr<TableMapEvent> > table_maps;
         size_t checksum_signature_length = 4;
 
         bool doReplicate(UInt64 table_id);
+        bool doReplicate(const String & db, const String & table_name);
     };
 }
 

@@ -1,4 +1,5 @@
 #include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
@@ -54,6 +55,9 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     max_threads = value;
+    /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
+    queue_size = std::max(queue_size, max_threads);
+    jobs.reserve(queue_size);
 }
 
 template <typename Thread>
@@ -150,7 +154,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         new_job_or_shutdown.notify_one();
     }
 
-    return ReturnType(true);
+    return static_cast<ReturnType>(true);
 }
 
 template <typename Thread>
@@ -205,7 +209,7 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::finalize()
 {
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         shutdown = true;
     }
 
@@ -220,14 +224,14 @@ void ThreadPoolImpl<Thread>::finalize()
 template <typename Thread>
 size_t ThreadPoolImpl<Thread>::active() const
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     return scheduled_jobs;
 }
 
 template <typename Thread>
 bool ThreadPoolImpl<Thread>::finished() const
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     return shutdown;
 }
 
@@ -240,6 +244,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
     while (true)
     {
+        /// This is inside the loop to also reset previous thread names set inside the jobs.
+        setThreadName("ThreadPool");
+
         Job job;
         bool need_shutdown = false;
 
@@ -283,7 +290,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 job = {};
 
                 {
-                    std::unique_lock lock(mutex);
+                    std::lock_guard lock(mutex);
                     if (!first_exception)
                         first_exception = std::current_exception(); // NOLINT
                     if (shutdown_on_exception)
@@ -298,7 +305,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         }
 
         {
-            std::unique_lock lock(mutex);
+            std::lock_guard lock(mutex);
             --scheduled_jobs;
 
             if (threads.size() > scheduled_jobs + max_free_threads)

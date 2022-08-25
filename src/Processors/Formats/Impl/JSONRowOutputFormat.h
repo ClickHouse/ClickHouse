@@ -63,12 +63,7 @@ protected:
 
     void finalizeImpl() override;
 
-    virtual void writeTotalsField(const IColumn & column, const ISerialization & serialization, size_t row_num);
     virtual void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
-    virtual void writeTotalsFieldDelimiter() { writeFieldDelimiter(); }
-
-    void writeRowsBeforeLimitAtLeast();
-    void writeStatistics();
 
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
@@ -77,7 +72,7 @@ protected:
 
     size_t field_number = 0;
     size_t row_count = 0;
-    NamesAndTypes fields;
+    NamesAndTypes fields;   /// The field names are pre-escaped to be put into JSON string literal.
 
     Statistics statistics;
     FormatSettings settings;

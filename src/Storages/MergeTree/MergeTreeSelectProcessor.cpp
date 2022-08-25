@@ -9,7 +9,7 @@ namespace DB
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
     UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
@@ -25,13 +25,13 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool has_limit_below_one_block_,
     std::optional<ParallelReadingExtension> extension_)
     : MergeTreeBaseSelectProcessor{
-        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
-        storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        storage_snapshot_->getSampleBlockForColumns(required_columns_),
+        storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
-    sample_block(metadata_snapshot_->getSampleBlock()),
+    sample_block(storage_snapshot_->metadata->getSampleBlock()),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     has_limit_below_one_block(has_limit_below_one_block_),
@@ -39,17 +39,20 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 {
     /// Actually it means that parallel reading from replicas enabled
     /// and we have to collaborate with initiator.
-    /// In this case we won't set approximate rows, because it will be accounted multiple times
-    if (!extension_.has_value())
+    /// In this case we won't set approximate rows, because it will be accounted multiple times.
+    /// Also do not count amount of read rows if we read in order of sorting key,
+    /// because we don't know actual amount of read rows in case when limit is set.
+    if (!extension_.has_value() && !reader_settings.read_in_order)
         addTotalRowsApprox(total_rows);
+
     ordered_names = header_without_virtual_columns.getNames();
 }
 
 void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
-        storage, metadata_snapshot, data_part,
-        required_columns, prewhere_info);
+        storage, storage_snapshot, data_part,
+        required_columns, virt_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -60,13 +63,8 @@ void MergeTreeSelectProcessor::initializeReaders()
 
     owned_mark_cache = storage.getContext()->getMarkCache();
 
-    reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
-        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
-
-    if (prewhere_info)
-        pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
-            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
-
+    initializeMergeTreeReadersForPart(data_part, task_columns, storage_snapshot->getMetadataForQuery(),
+        all_mark_ranges, {}, {});
 }
 
 
@@ -77,7 +75,7 @@ void MergeTreeSelectProcessor::finish()
     * buffers don't waste memory.
     */
     reader.reset();
-    pre_reader.reset();
+    pre_reader_for_step.clear();
     data_part.reset();
 }
 

@@ -31,7 +31,7 @@ select count() from test_tuple where toDate(p) > '2020-09-01';
 -- optimized
 select count() from test_tuple where toDate(p) > '2020-09-01' and i = 1;
 -- optimized
-select count() from test_tuple where i > 1;
+select count() from test_tuple where i > 2;
 -- optimized
 select count() from test_tuple where i < 1;
 -- non-optimized

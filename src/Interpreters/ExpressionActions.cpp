@@ -47,8 +47,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ExpressionActions::~ExpressionActions() = default;
-
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
@@ -159,9 +157,12 @@ static void setLazyExecutionInfo(
 
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
-    /// If node is used in result, we can't enable lazy execution.
-    if (node_info.used_in_result)
+    /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
+    if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
+    {
         lazy_execution_info.can_be_lazy_executed = false;
+        return;
+    }
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
     for (const auto & parent : node_info.parents)
@@ -172,7 +173,7 @@ static void setLazyExecutionInfo(
         {
             /// Use set, because one node can be more than one argument.
             /// Example: expr1 AND expr2 AND expr1.
-            std::set<size_t> indexes;
+            std::unordered_set<size_t> indexes;
             for (size_t i = 0; i != parent->children.size(); ++i)
             {
                 if (node == parent->children[i])
@@ -294,7 +295,11 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             short_circuit_nodes[&node] = short_circuit_settings;
     }
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
+    /// If there are no short-circuit functions, no need to do anything.
+    if (short_circuit_nodes.empty())
+        return {};
+
+    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getOutputs());
 
     /// For each node we fill LazyExecutionInfo.
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
@@ -328,10 +333,10 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & index = actions_dag->getIndex();
+    const auto & outputs = actions_dag->getOutputs();
     const auto & inputs = actions_dag->getInputs();
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, index);
+    auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
     for (const auto & node : nodes)
         data.push_back({.node = &node});
@@ -421,9 +426,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         }
     }
 
-    result_positions.reserve(index.size());
+    result_positions.reserve(outputs.size());
 
-    for (const auto & node : index)
+    for (const auto & node : outputs)
     {
         auto pos = data[reverse_info.reverse_index[node]].position;
 
@@ -748,7 +753,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (const auto & item : block)
+    for (auto && item : block)
         res.insert(std::move(item));
 
     block.swap(res);
@@ -929,7 +934,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     for (auto & column : columns)
-        if (column.column && isColumnConst(*column.column) && non_constant_inputs.count(column.name))
+        if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
@@ -950,7 +955,7 @@ void ExpressionActionsChain::finalize()
             const NameSet & additional_input = steps[i + 1]->additional_input;
             for (const auto & it : steps[i + 1]->getRequiredColumns())
             {
-                if (additional_input.count(it.name) == 0)
+                if (!additional_input.contains(it.name))
                 {
                     auto iter = required_output.find(it.name);
                     if (iter == required_output.end())
@@ -1001,7 +1006,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.count(column.name) > 0)
+        if (array_join->columns.contains(column.name))
         {
             const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
             column.type = array->getNestedType();
@@ -1018,12 +1023,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
@@ -1034,7 +1039,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 ExpressionActionsChain::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
-    ColumnsWithTypeAndName required_columns_)
+    const ColumnsWithTypeAndName & required_columns_)
     : Step({})
     , analyzed_join(std::move(analyzed_join_))
     , join(std::move(join_))
@@ -1042,11 +1047,8 @@ ExpressionActionsChain::JoinStep::JoinStep(
     for (const auto & column : required_columns_)
         required_columns.emplace_back(column.name, column.type);
 
-    NamesAndTypesList result_names_and_types = required_columns;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types, true);
-    for (const auto & [name, type] : result_names_and_types)
-        /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
-        result_columns.emplace_back(nullptr, type, name);
+    result_columns = required_columns_;
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
 void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
@@ -1066,7 +1068,7 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : required_columns)
     {
-        if (required_names.count(column.name) != 0)
+        if (required_names.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
@@ -1076,7 +1078,7 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : result_columns)
     {
-        if (required_names.count(column.name) != 0)
+        if (required_names.contains(column.name))
             new_result_columns.emplace_back(column);
     }
 

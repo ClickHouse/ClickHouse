@@ -10,6 +10,11 @@
 #include <Columns/ColumnCompressed.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
+#if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+#include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
@@ -241,6 +246,56 @@ ColumnPtr ColumnNullable::index(const IColumn & indexes, size_t limit) const
     return ColumnNullable::create(indexed_data, indexed_null_map);
 }
 
+#if USE_EMBEDDED_COMPILER
+
+bool ColumnNullable::isComparatorCompilable() const
+{
+    return nested_column->isComparatorCompilable();
+}
+
+llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs,
+                                            llvm::Value * nan_direction_hint) const
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+    auto * head = b.GetInsertBlock();
+
+    llvm::Value * lhs_unwrapped_value = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_is_null_value = b.CreateExtractValue(lhs, {1});
+
+    llvm::Value * rhs_unwrapped_value = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_is_null_value = b.CreateExtractValue(rhs, {1});
+
+    llvm::Value * lhs_or_rhs_are_null = b.CreateOr(lhs_is_null_value, rhs_is_null_value);
+
+    auto * lhs_or_rhs_are_null_block = llvm::BasicBlock::Create(head->getContext(), "lhs_or_rhs_are_null_block", head->getParent());
+    auto * lhs_rhs_are_not_null_block = llvm::BasicBlock::Create(head->getContext(), "lhs_and_rhs_are_not_null_block", head->getParent());
+    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+
+    b.CreateCondBr(lhs_or_rhs_are_null, lhs_or_rhs_are_null_block, lhs_rhs_are_not_null_block);
+
+    b.SetInsertPoint(lhs_or_rhs_are_null_block);
+    auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
+    llvm::Value * lhs_and_rhs_are_null = b.CreateAnd(lhs_is_null_value, rhs_is_null_value);
+    llvm::Value * lhs_is_null_result = b.CreateSelect(lhs_is_null_value, nan_direction_hint, b.CreateNeg(nan_direction_hint));
+    llvm::Value * lhs_or_rhs_are_null_block_result = b.CreateSelect(lhs_and_rhs_are_null, lhs_equals_rhs_result, lhs_is_null_result);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(lhs_rhs_are_not_null_block);
+    llvm::Value * lhs_rhs_are_not_null_block_result
+        = nested_column->compileComparator(builder, lhs_unwrapped_value, rhs_unwrapped_value, nan_direction_hint);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(join_block);
+
+    auto * result = b.CreatePHI(b.getInt8Ty(), 2);
+    result->addIncoming(lhs_or_rhs_are_null_block_result, lhs_or_rhs_are_null_block);
+    result->addIncoming(lhs_rhs_are_not_null_block_result, lhs_rhs_are_not_null_block);
+
+    return result;
+}
+
+#endif
+
 int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator) const
 {
     /// NULL values share the properties of NaN values.
@@ -292,27 +347,37 @@ bool ColumnNullable::hasEqualValues() const
     return hasEqualValuesImpl<ColumnNullable>();
 }
 
-void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
+void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
 {
     /// Cannot pass limit because of unknown amount of NULLs.
 
     if (collator)
-        getNestedColumn().getPermutationWithCollation(*collator, reverse, 0, null_direction_hint, res);
+        getNestedColumn().getPermutationWithCollation(*collator, direction, stability, 0, null_direction_hint, res);
     else
-        getNestedColumn().getPermutation(reverse, 0, null_direction_hint, res);
+        getNestedColumn().getPermutation(direction, stability, 0, null_direction_hint, res);
 
-    if ((null_direction_hint > 0) != reverse)
+    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+    const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
+
+    size_t res_size = res.size();
+
+    if (!limit)
+        limit = res_size;
+    else
+        limit = std::min(res_size, limit);
+
+    /// For stable sort we must process all NULL values
+    if (unlikely(stability == IColumn::PermutationSortStability::Stable))
+        limit = res_size;
+
+    if (is_nulls_last)
     {
         /// Shift all NULL values to the end.
 
         size_t read_idx = 0;
         size_t write_idx = 0;
-        size_t end_idx = res.size();
-
-        if (!limit)
-            limit = end_idx;
-        else
-            limit = std::min(end_idx, limit);
+        size_t end_idx = res_size;
 
         while (read_idx < limit && !isNullAt(res[read_idx]))
         {
@@ -341,6 +406,11 @@ void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_dir
             }
             ++read_idx;
         }
+
+        if (unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != res_size)
+        {
+            ::sort(res.begin() + write_idx, res.begin() + res_size);
+        }
     }
     else
     {
@@ -366,10 +436,16 @@ void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_dir
             }
             --read_idx;
         }
+
+        if (unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != 0)
+        {
+            ::sort(res.begin(), res.begin() + write_idx + 1);
+        }
     }
 }
 
-void ColumnNullable::updatePermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
+void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                        size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
 {
     if (equal_ranges.empty())
         return;
@@ -377,6 +453,7 @@ void ColumnNullable::updatePermutationImpl(bool reverse, size_t limit, int null_
     /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
     EqualRanges new_ranges, null_ranges;
 
+    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
     const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
 
     if (is_nulls_last)
@@ -426,7 +503,7 @@ void ColumnNullable::updatePermutationImpl(bool reverse, size_t limit, int null_
             if (first != write_idx)
                 new_ranges.emplace_back(first, write_idx);
 
-            /// We have a range [write_idx, list) of NULL values
+            /// We have a range [write_idx, last) of NULL values
             if (write_idx != last)
                 null_ranges.emplace_back(write_idx, last);
         }
@@ -473,32 +550,43 @@ void ColumnNullable::updatePermutationImpl(bool reverse, size_t limit, int null_
     }
 
     if (collator)
-        getNestedColumn().updatePermutationWithCollation(*collator, reverse, limit, null_direction_hint, res, new_ranges);
+        getNestedColumn().updatePermutationWithCollation(*collator, direction, stability, limit, null_direction_hint, res, new_ranges);
     else
-        getNestedColumn().updatePermutation(reverse, limit, null_direction_hint, res, new_ranges);
+        getNestedColumn().updatePermutation(direction, stability, limit, null_direction_hint, res, new_ranges);
 
     equal_ranges = std::move(new_ranges);
+
+    if (unlikely(stability == PermutationSortStability::Stable))
+    {
+        for (auto & null_range : null_ranges)
+            ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
+    }
+
     std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
 }
 
-void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
+void ColumnNullable::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int null_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(reverse, limit, null_direction_hint, res);
+    getPermutationImpl(direction, stability, limit, null_direction_hint, res);
 }
 
-void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnNullable::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(reverse, limit, null_direction_hint, res, equal_ranges);
+    updatePermutationImpl(direction, stability, limit, null_direction_hint, res, equal_ranges);
 }
 
-void ColumnNullable::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
+void ColumnNullable::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                            size_t limit, int null_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(reverse, limit, null_direction_hint, res, &collator);
+    getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
-void ColumnNullable::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const
+void ColumnNullable::updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                            size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(reverse, limit, null_direction_hint, res, equal_range, &collator);
+    updatePermutationImpl(direction, stability, limit, null_direction_hint, res, equal_ranges, &collator);
 }
 
 void ColumnNullable::gather(ColumnGathererStream & gatherer)
@@ -510,6 +598,11 @@ void ColumnNullable::reserve(size_t n)
 {
     getNestedColumn().reserve(n);
     getNullMapData().reserve(n);
+}
+
+void ColumnNullable::ensureOwnership()
+{
+    getNestedColumn().ensureOwnership();
 }
 
 size_t ColumnNullable::byteSize() const
@@ -541,7 +634,7 @@ ColumnPtr ColumnNullable::compress() const
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [nested_column = std::move(nested_column), null_map = std::move(null_map)]
+        [nested_column = std::move(nested_compressed), null_map = std::move(null_map_compressed)]
         {
             return ColumnNullable::create(nested_column->decompress(), null_map->decompress());
         });
@@ -612,27 +705,35 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullMapImpl(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMapImpl(const NullMap & map)
 {
-    NullMap & arr1 = getNullMapData();
-    const NullMap & arr2 = map.getData();
+    NullMap & arr = getNullMapData();
 
-    if (arr1.size() != arr2.size())
+    if (arr.size() != map.size())
         throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
-    for (size_t i = 0, size = arr1.size(); i < size; ++i)
-        arr1[i] |= negative ^ arr2[i];
+    for (size_t i = 0, size = arr.size(); i < size; ++i)
+        arr[i] |= negative ^ map[i];
 }
 
-
-void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMap(const NullMap & map)
 {
     applyNullMapImpl<false>(map);
 }
 
-void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<false>(map.getData());
+}
+
+void ColumnNullable::applyNegatedNullMap(const NullMap & map)
 {
     applyNullMapImpl<true>(map);
+}
+
+void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<true>(map.getData());
 }
 
 
@@ -680,6 +781,20 @@ ColumnPtr makeNullable(const ColumnPtr & column)
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+}
+
+ColumnPtr makeNullableSafe(const ColumnPtr & column)
+{
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->canBeInsideNullable())
+        return makeNullable(column);
+
+    return column;
 }
 
 }

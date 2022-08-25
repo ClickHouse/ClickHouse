@@ -56,7 +56,7 @@ public:
 
     /// Adds a specified offset to the counter.
     InitVector & operator++() { ++counter; return *this; }
-    InitVector operator++(int) { InitVector res = *this; ++counter; return res; }
+    InitVector operator++(int) { InitVector res = *this; ++counter; return res; } /// NOLINT
     InitVector & operator+=(size_t offset) { counter += offset; return *this; }
     InitVector operator+(size_t offset) const { InitVector res = *this; return res += offset; }
 
@@ -80,6 +80,7 @@ public:
     /// the initialization vector is increased by an index of the current block
     /// and the index of the current block is calculated from this offset.
     void setOffset(size_t offset_) { offset = offset_; }
+    size_t getOffset() const { return offset; }
 
     /// Encrypts some data.
     /// Also the function moves `offset` by `size` (for successive encryptions).

@@ -19,7 +19,7 @@ LimitTransform::LimitTransform(
     , with_ties(with_ties_), description(std::move(description_))
 {
     if (num_streams != 1 && with_ties)
-        throw Exception("Cannot use LimitTransform with multiple ports and ties.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot use LimitTransform with multiple ports and ties", ErrorCodes::LOGICAL_ERROR);
 
     ports_data.resize(num_streams);
 
@@ -38,12 +38,7 @@ LimitTransform::LimitTransform(
     }
 
     for (const auto & desc : description)
-    {
-        if (!desc.column_name.empty())
-            sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
-        else
-            sort_column_positions.push_back(desc.column_number);
-    }
+        sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
 }
 
 Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
@@ -91,8 +86,7 @@ IProcessor::Status LimitTransform::prepare(
                 return;
             default:
                 throw Exception(
-                        "Unexpected status for LimitTransform::preparePair : " + IProcessor::statusToName(status),
-                        ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::LOGICAL_ERROR, "Unexpected status for LimitTransform::preparePair : {}", IProcessor::statusToName(status));
         }
     };
 
@@ -131,7 +125,7 @@ IProcessor::Status LimitTransform::prepare(
 LimitTransform::Status LimitTransform::prepare()
 {
     if (ports_data.size() != 1)
-        throw Exception("prepare without arguments is not supported for multi-port LimitTransform.",
+        throw Exception("prepare without arguments is not supported for multi-port LimitTransform",
                         ErrorCodes::LOGICAL_ERROR);
 
     return prepare({0}, {0});

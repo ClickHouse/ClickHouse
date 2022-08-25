@@ -3,6 +3,7 @@
 #include <memory>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <unordered_map>
 
 
 namespace DB
@@ -45,11 +46,11 @@ public:
 
     struct Config
     {
-        Config(const std::string & command_)
+        Config(const std::string & command_) /// NOLINT
             : command(command_)
         {}
 
-        Config(const char * command_)
+        Config(const char * command_) /// NOLINT
             : command(command_)
         {}
 

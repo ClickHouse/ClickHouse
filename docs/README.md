@@ -38,9 +38,9 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
 
-At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, Chinese, Japanese, and Farsi. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
+At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [Clickhouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
 
-Each language lays in the corresponding folder. Files that are not translated from English are the symbolic links to the English ones.
+Each language lies in the corresponding folder. Files that are not translated from English are symbolic links to the English ones.
 
 <a name="how-to-contribute"/>
 
@@ -48,9 +48,9 @@ Each language lays in the corresponding folder. Files that are not translated fr
 
 You can contribute to the documentation in many ways, for example:
 
-- Fork the ClickHouse repository, edit, commit, push, and open a pull request.
+- Fork the ClickHouse and ClickHouse-docs repositories, edit, commit, push, and open a pull request.
 
-    Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
+    Add the `pr-documentation` label to this pull request for proper automatic checks applying. If you do not have permission to add labels, then the reviewer of your PR will add it.
 
 - Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
 
@@ -158,15 +158,15 @@ When everything is ready, we will add the new language to the website.
 
 <a name="target-audience"/>
 
-### Documentation for Different Audience
+### Documentation for Different Audiences
 
-When writing documentation, think about people who read it. Each audience has specific requirements for terms they use in communications.
+When writing documentation, think about the people who read it. Each audience has specific requirements for terms they use in communications.
 
-ClickHouse documentation can be divided by the audience for the following parts:
+ClickHouse documentation can be divided up by the audience for the following parts:
 
-- Conceptual topics in [Introduction](https://clickhouse.com/docs/en/), tutorials and overviews, changelog.
+- Conceptual topics like tutorials and overviews.
 
-    These topics are for the most common auditory. When editing text in them, use the most common terms that are comfortable for the audience with basic technical skills.
+    These topics are for the most common audience. When editing text in them, use the most common terms that are comfortable for the audience with basic technical skills.
 
 - Query language reference and related topics.
 

@@ -18,7 +18,7 @@ namespace DB
 
 struct ViewRuntimeData
 {
-    /// A query we should run over inserted block befire pushing into inner storage.
+    /// A query we should run over inserted block before pushing into inner storage.
     const ASTPtr query;
     /// This structure is expected by inner storage. Will convert query result to it.
     Block sample_block;

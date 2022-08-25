@@ -5,7 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
@@ -179,7 +179,7 @@ bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
 
         num_added_names_last_time = new_full_names.size();
-        boost::range::push_back(full_names, std::move(new_full_names));
+        insertAtEnd(full_names, std::move(new_full_names));
         return true;
     };
 

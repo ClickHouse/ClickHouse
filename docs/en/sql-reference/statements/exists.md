@@ -1,9 +1,9 @@
 ---
-toc_priority: 45
-toc_title: EXISTS
+sidebar_position: 45
+sidebar_label: EXISTS
 ---
 
-# EXISTS Statement {#exists-statement}
+# EXISTS Statement
 
 ``` sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]

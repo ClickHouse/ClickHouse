@@ -4,10 +4,11 @@
 #include <base/types.h>
 
 class StackTrace;
-class TraceCollector;
 
 namespace DB
 {
+
+class TraceCollector;
 
 enum class TraceType : uint8_t
 {

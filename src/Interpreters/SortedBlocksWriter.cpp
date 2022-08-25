@@ -136,7 +136,8 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             pipeline.getHeader(),
             pipeline.getNumStreams(),
             sort_description,
-            rows_in_block);
+            rows_in_block,
+            SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -190,7 +191,8 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                             pipeline.getHeader(),
                             pipeline.getNumStreams(),
                             sort_description,
-                            rows_in_block);
+                            rows_in_block,
+                            SortingQueueStrategy::Default);
 
                         pipeline.addTransform(std::move(transform));
                     }
@@ -222,7 +224,8 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
             pipeline.getHeader(),
             pipeline.getNumStreams(),
             sort_description,
-            rows_in_block);
+            rows_in_block,
+            SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -303,7 +306,8 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
                 builder.getHeader(),
                 builder.getNumStreams(),
                 sort_description,
-                num_rows);
+                num_rows,
+                SortingQueueStrategy::Default);
 
             builder.addTransform(std::move(transform));
         }
@@ -320,25 +324,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
     if (blocks.size() == 1)
         return blocks[0];
 
-    Block out = blocks[0].cloneEmpty();
-
-    { /// Concatenate blocks
-        MutableColumns columns = out.mutateColumns();
-
-        for (size_t i = 0; i < columns.size(); ++i)
-        {
-            columns[i]->reserve(num_rows);
-            for (const auto & block : blocks)
-            {
-                const auto & tmp_column = *block.getByPosition(i).column;
-                columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
-            }
-        }
-
-        out.setColumns(std::move(columns));
-    }
-
-    return out;
+    return concatenateBlocks(blocks);
 }
 
 }

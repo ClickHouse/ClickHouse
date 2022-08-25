@@ -1,19 +1,21 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
-#include <Common/typeid_cast.h>
-#include <Columns/ColumnArray.h>
+
 
 /// Available events. Add something here as you wish.
 #define APPLY_FOR_EVENTS(M) \
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
+    M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.") \
+    M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.") \
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
     M(QueryTimeMicroseconds, "Total time of all queries.") \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.") \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.") \
+    M(OtherQueryTimeMicroseconds, "Total time of queries that are not SELECT or INSERT.") \
     M(FileOpen, "Number of files opened.") \
     M(Seek, "Number of times the 'lseek' function was called.") \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.") \
@@ -22,6 +24,10 @@
     M(WriteBufferFromFileDescriptorWrite, "Number of writes (write/pwrite) to a file descriptor. Does not include sockets.") \
     M(WriteBufferFromFileDescriptorWriteFailed, "Number of times the write (write/pwrite) to a file descriptor have failed.") \
     M(WriteBufferFromFileDescriptorWriteBytes, "Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.") \
+    M(FileSync, "Number of times the F_FULLFSYNC/fsync/fdatasync function was called for files.") \
+    M(DirectorySync, "Number of times the F_FULLFSYNC/fsync/fdatasync function was called for directories.") \
+    M(FileSyncElapsedMicroseconds, "Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for files.") \
+    M(DirectorySyncElapsedMicroseconds, "Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for directories.") \
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).") \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).") \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).") \
@@ -89,6 +95,7 @@
     M(ZooKeeperSet, "") \
     M(ZooKeeperMulti, "") \
     M(ZooKeeperCheck, "") \
+    M(ZooKeeperSync, "") \
     M(ZooKeeperClose, "") \
     M(ZooKeeperWatchResponse, "") \
     M(ZooKeeperUserExceptions, "") \
@@ -109,6 +116,8 @@
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.") \
+    \
+    M(ExecuteShellCommand, "Number of shell command executions.") \
     \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
@@ -138,6 +147,13 @@
     M(MergeTreeDataWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables.") \
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.") \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.") \
+    \
+    M(InsertedWideParts, "Number of parts inserted in Wide format.") \
+    M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
+    M(InsertedInMemoryParts, "Number of parts inserted in InMemory format.") \
+    M(MergedIntoWideParts, "Number of parts merged into Wide format.") \
+    M(MergedIntoCompactParts, "Number of parts merged into Compact format.") \
+    M(MergedIntoInMemoryParts, "Number of parts in merged into InMemory format.") \
     \
     M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.") \
     M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.") \
@@ -187,6 +203,7 @@
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
+    M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.") \
     M(SoftPageFaults, "") \
     M(HardPageFaults, "") \
     \
@@ -236,22 +253,33 @@
     M(NotCreatedLogEntryForMutation, "Log entry to mutate parts in ReplicatedMergeTree is not created due to concurrent log update by another replica.") \
     \
     M(S3ReadMicroseconds, "Time of GET and HEAD requests to S3 storage.") \
-    M(S3ReadBytes, "Read bytes (incoming) in GET and HEAD requests to S3 storage.") \
     M(S3ReadRequestsCount, "Number of GET and HEAD requests to S3 storage.") \
     M(S3ReadRequestsErrors, "Number of non-throttling errors in GET and HEAD requests to S3 storage.") \
     M(S3ReadRequestsThrottling, "Number of 429 and 503 errors in GET and HEAD requests to S3 storage.") \
     M(S3ReadRequestsRedirects, "Number of redirects in GET and HEAD requests to S3 storage.") \
     \
     M(S3WriteMicroseconds, "Time of POST, DELETE, PUT and PATCH requests to S3 storage.") \
-    M(S3WriteBytes, "Write bytes (outgoing) in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsCount, "Number of POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsErrors, "Number of non-throttling errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
+    \
+    M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
+    M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
+    M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
+    \
+    M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
+    \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
-    M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
-    M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
+    M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
+    M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
+    M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
+    M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
+    M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
+    M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
+    M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
+    M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -262,6 +290,15 @@
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    \
+    M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
+    M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
+    \
+    M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
+    M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
+    M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
+    M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
+    M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \
@@ -280,6 +317,61 @@
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
+    \
+    M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
+    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
+    \
+    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCachePut, "Number of rocksdb puts(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
+    M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
+    \
+    M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)") \
+    M(KafkaRebalanceAssignments, "Number of partition assignments (the final stage of consumer group rebalance)") \
+    M(KafkaRebalanceErrors, "Number of failed consumer group rebalances") \
+    M(KafkaMessagesPolled, "Number of Kafka messages polled from librdkafka to ClickHouse") \
+    M(KafkaMessagesRead, "Number of Kafka messages already processed by ClickHouse") \
+    M(KafkaMessagesFailed, "Number of Kafka messages ClickHouse failed to parse") \
+    M(KafkaRowsRead, "Number of rows parsed from Kafka messages") \
+    M(KafkaRowsRejected, "Number of parsed rows which were later rejected (due to rebalances / errors or similar reasons). Those rows will be consumed again after the rebalance.") \
+    M(KafkaDirectReads, "Number of direct selects from Kafka tables since server start") \
+    M(KafkaBackgroundReads, "Number of background reads populating materialized views from Kafka since server start") \
+    M(KafkaCommits, "Number of successful commits of consumed offsets to Kafka (normally should be the same as KafkaBackgroundReads)") \
+    M(KafkaCommitFailures, "Number of failed commits of consumed offsets to Kafka (usually is a sign of some data duplication)") \
+    M(KafkaConsumerErrors, "Number of errors reported by librdkafka during polls") \
+    M(KafkaWrites, "Number of writes (inserts) to Kafka tables ") \
+    M(KafkaRowsWritten, "Number of rows inserted into Kafka tables") \
+    M(KafkaProducerFlushes, "Number of explicit flushes to Kafka producer") \
+    M(KafkaMessagesProduced, "Number of messages produced to Kafka") \
+    M(KafkaProducerErrors, "Number of errors during producing the messages to Kafka") \
+    \
+    M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
+    M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")                                                                                                                                                                                                 \
+    \
+    M(SchemaInferenceCacheHits, "Number of times a schema from cache was used for schema inference") \
+    M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheEvictions, "Number of times a schema from cache was evicted due to overflow") \
+    M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data") \
+    \
+    M(KeeperPacketsSent, "Packets sent by keeper server") \
+    M(KeeperPacketsReceived, "Packets received by keeper server") \
+    M(KeeperRequestTotal, "Total requests number on keeper server") \
+    M(KeeperLatency, "Keeper latency") \
+    M(KeeperCommits, "Number of successful commits") \
+    M(KeeperCommitsFailed, "Number of failed commits") \
+    M(KeeperSnapshotCreations, "Number of snapshots creations")\
+    M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations")\
+    M(KeeperSnapshotApplys, "Number of snapshot applying")\
+    M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
+    M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
+    M(KeeperSaveSnapshot, "Number of snapshot save")\
+    \
+    M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
+    M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
+    M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
 
 namespace ProfileEvents
 {
@@ -368,7 +460,7 @@ void increment(Event event, Count amount)
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 {
     init();
-    std::memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
+    memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)

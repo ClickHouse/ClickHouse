@@ -1,7 +1,7 @@
 #include "FunctionArrayMapped.h"
+
 #include <base/sort.h>
 #include <Functions/FunctionFactory.h>
-
 
 namespace DB
 {
@@ -11,6 +11,9 @@ namespace DB
 template <bool positive>
 struct ArraySortImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -64,7 +67,7 @@ struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; }
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false>, NameArrayReverseSort>;
 
-void registerFunctionsArraySort(FunctionFactory & factory)
+REGISTER_FUNCTION(ArraySort)
 {
     factory.registerFunction<FunctionArraySort>();
     factory.registerFunction<FunctionArrayReverseSort>();

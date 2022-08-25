@@ -22,18 +22,17 @@ class StorageMergeTree;
 class MutatePlainMergeTreeTask : public IExecutableTask
 {
 public:
-    template <class Callback>
     MutatePlainMergeTreeTask(
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
-        Callback && task_result_callback_)
+        IExecutableTask::TaskResultCallback & task_result_callback_)
         : storage(storage_)
         , metadata_snapshot(std::move(metadata_snapshot_))
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
-        , task_result_callback(std::forward<Callback>(task_result_callback_))
+        , task_result_callback(task_result_callback_)
     {
         for (auto & part : merge_mutate_entry->future_part->parts)
             priority += part->getBytesOnDisk();

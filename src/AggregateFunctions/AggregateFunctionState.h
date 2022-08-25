@@ -37,6 +37,11 @@ public:
         return getStateType();
     }
 
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
     DataTypePtr getStateType() const override
     {
         return nested_func->getStateType();
@@ -51,6 +56,8 @@ public:
     {
         return nested_func->getDefaultVersion();
     }
+
+    size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
 
     void create(AggregateDataPtr __restrict place) const override
     {

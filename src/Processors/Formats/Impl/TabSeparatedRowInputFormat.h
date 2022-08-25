@@ -11,7 +11,7 @@ namespace DB
 
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat : public RowInputFormatWithNamesAndTypes
+class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
     /** with_names - the first line is the header with the names of the columns
@@ -28,7 +28,7 @@ private:
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 };
 
-class TabSeparatedFormatReader : public FormatWithNamesAndTypesReader
+class TabSeparatedFormatReader final : public FormatWithNamesAndTypesReader
 {
 public:
     TabSeparatedFormatReader(ReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);
@@ -43,6 +43,7 @@ public:
     void skipTypes() override { skipHeaderRow(); }
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
+    void skipPrefixBeforeHeader() override;
 
     std::vector<String> readRow();
     std::vector<String> readNames() override { return readRow(); }
@@ -53,7 +54,7 @@ public:
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
-    FormatSettings::EscapingRule getEscapingRule()
+    FormatSettings::EscapingRule getEscapingRule() const
     {
         return is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped;
     }

@@ -151,9 +151,9 @@ bool notEqualsOp(A a, B b)
     return !equalsOp(a, b);
 }
 
-
 /// Converts numeric to an equal numeric of other type.
-template <typename From, typename To>
+/// When `strict` is `true` check that result exactly same as input, otherwise just check overflow
+template <typename From, typename To, bool strict = true>
 inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
 {
     /// If the type is actually the same it's not necessary to do any checks.
@@ -192,7 +192,9 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
     }
 
     result = static_cast<To>(value);
-    return equalsOp(value, result);
+    if constexpr (strict)
+        return equalsOp(value, result);
+    return true;
 }
 
 }

@@ -19,6 +19,7 @@ class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 public:
     MergeTreeDataPartWriterWide(
         const MergeTreeData::DataPartPtr & data_part,
+        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -29,12 +30,15 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) final;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;
+
+    void finish(bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
+    void finishDataSerialization(bool sync);
 
     /// Write data of one column.
     /// Return how many marks were written and

@@ -23,7 +23,7 @@ NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
     NamesAndTypesList names_and_types{
         {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"access_type", std::make_shared<DataTypeEnum8>(StorageSystemPrivileges::getAccessTypeEnumValues())},
+        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues())},
         {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
@@ -36,8 +36,11 @@ NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 
 void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
 
@@ -46,7 +49,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_user_name_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_role_name = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
     auto & column_role_name_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
-    auto & column_access_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_access_type = assert_cast<ColumnInt16 &>(*res_columns[column_index++]).getData();
     auto & column_database = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
     auto & column_database_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_table = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
@@ -82,7 +85,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
         else
             assert(false);
 
-        column_access_type.push_back(static_cast<Int8>(access_type));
+        column_access_type.push_back(static_cast<Int16>(access_type));
 
         if (database)
         {

@@ -47,6 +47,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         header_,
         *buf_,
         params_,
+        false,
         with_names_,
         with_types_,
         format_settings_,
@@ -289,17 +290,16 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
-    ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_, ContextPtr context_)
+    ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_)
     : FormatWithNamesAndTypesSchemaReader(
         buf,
-        format_setting_.max_rows_to_read_for_schema_inference,
+        format_setting_,
         with_names_,
         with_types_,
         &reader,
         getDefaultDataTypeForEscapingRule(format_setting_.custom.escaping_rule))
     , buf(in_)
     , reader(buf, ignore_spaces_, updateFormatSettings(format_setting_))
-    , context(context_)
 {
 }
 
@@ -315,7 +315,12 @@ DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
         first_row = false;
 
     auto fields = reader.readRow();
-    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), context);
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+}
+
+void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings, reader.getEscapingRule());
 }
 
 void registerInputFormatCustomSeparated(FormatFactory & factory)
@@ -334,6 +339,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
             });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);
     }
 }
 
@@ -343,9 +349,22 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            factory.registerSchemaReader(format_name, [with_names, with_types, ignore_spaces](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
+            factory.registerSchemaReader(format_name, [with_names, with_types, ignore_spaces](ReadBuffer & buf, const FormatSettings & settings)
             {
-                return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings, context);
+                return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings);
+            });
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+            {
+                String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
+                return result + fmt::format(
+                        ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                        " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                        settings.custom.result_before_delimiter,
+                        settings.custom.row_before_delimiter,
+                        settings.custom.field_delimiter,
+                        settings.custom.row_after_delimiter,
+                        settings.custom.row_between_delimiter,
+                        settings.custom.result_after_delimiter);
             });
         };
 

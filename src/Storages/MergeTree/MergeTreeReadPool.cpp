@@ -18,22 +18,24 @@ namespace ErrorCodes
 namespace DB
 {
 MergeTreeReadPool::MergeTreeReadPool(
-    const size_t threads_,
-    const size_t sum_marks_,
-    const size_t min_marks_for_concurrent_read_,
+    size_t threads_,
+    size_t sum_marks_,
+    size_t min_marks_for_concurrent_read_,
     RangesInDataParts && parts_,
     const MergeTreeData & data_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const Names & column_names_,
+    const Names & virtual_column_names_,
     const BackoffSettings & backoff_settings_,
     size_t preferred_block_size_bytes_,
-    const bool do_not_steal_tasks_)
+    bool do_not_steal_tasks_)
     : backoff_settings{backoff_settings_}
     , backoff_state{threads_}
     , data{data_}
-    , metadata_snapshot{metadata_snapshot_}
+    , storage_snapshot{storage_snapshot_}
     , column_names{column_names_}
+    , virtual_column_names{virtual_column_names_}
     , do_not_steal_tasks{do_not_steal_tasks_}
     , predict_block_size_bytes{preferred_block_size_bytes_ > 0}
     , prewhere_info{prewhere_info_}
@@ -45,7 +47,7 @@ MergeTreeReadPool::MergeTreeReadPool(
 }
 
 
-MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
+MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names)
 {
     const std::lock_guard lock{mutex};
 
@@ -135,21 +137,23 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         }
     }
 
-    auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
+    const auto & per_part = per_part_params[part_idx];
+
+    auto curr_task_size_predictor = !per_part.size_predictor ? nullptr
+        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part.size_predictor); /// make a copy
 
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
-        per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-        prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
+        per_part.column_name_set, per_part.task_columns,
+        prewhere_info && prewhere_info->remove_prewhere_column, std::move(curr_task_size_predictor));
 }
 
 Block MergeTreeReadPool::getHeader() const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, data.getVirtuals(), data.getStorageID());
+    return storage_snapshot->getSampleBlockForColumns(column_names);
 }
 
-void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
+void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)
 {
     if (backoff_settings.min_read_latency_ms == 0 || do_not_steal_tasks)
         return;
@@ -192,7 +196,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
 std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts & parts)
 {
     std::vector<size_t> per_part_sum_marks;
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     is_part_on_remote_disk.resize(parts.size());
 
     for (const auto i : collections::range(0, parts.size()))
@@ -209,20 +213,21 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
 
         per_part_sum_marks.push_back(sum_marks);
 
-        auto task_columns = getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info);
+        auto task_columns = getReadTaskColumns(
+            data, storage_snapshot, part.data_part,
+            column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);
 
-        per_part_size_predictor.emplace_back(std::move(size_predictor));
+        auto & per_part = per_part_params.emplace_back();
+
+        per_part.size_predictor = std::move(size_predictor);
 
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
         const auto & required_column_names = task_columns.columns.getNames();
-        per_part_column_name_set.emplace_back(required_column_names.begin(), required_column_names.end());
-
-        per_part_pre_columns.push_back(std::move(task_columns.pre_columns));
-        per_part_columns.push_back(std::move(task_columns.columns));
-        per_part_should_reorder.push_back(task_columns.should_reorder);
+        per_part.column_name_set = {required_column_names.begin(), required_column_names.end()};
+        per_part.task_columns = std::move(task_columns);
 
         parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
     }
@@ -232,8 +237,8 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
 
 
 void MergeTreeReadPool::fillPerThreadInfo(
-    const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-    const RangesInDataParts & parts, const size_t min_marks_for_concurrent_read)
+    size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+    const RangesInDataParts & parts, size_t min_marks_for_concurrent_read)
 {
     threads_tasks.resize(threads);
     if (parts.empty())
@@ -259,7 +264,7 @@ void MergeTreeReadPool::fillPerThreadInfo(
         {
             PartInfo part_info{parts[i], per_part_sum_marks[i], i};
             if (parts[i].data_part->isStoredOnDisk())
-                parts_per_disk[parts[i].data_part->volume->getDisk()->getName()].push_back(std::move(part_info));
+                parts_per_disk[parts[i].data_part->data_part_storage->getDiskName()].push_back(std::move(part_info));
             else
                 parts_per_disk[""].push_back(std::move(part_info));
         }

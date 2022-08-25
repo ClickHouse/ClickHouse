@@ -2,9 +2,12 @@
 
 #include <cmath>
 #include <cstring>
+#include <string>
+#include <string_view>
 #include <limits>
 #include <algorithm>
 #include <iterator>
+#include <bit>
 
 #include <type_traits>
 
@@ -106,7 +109,7 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
+    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
 template <typename T>
@@ -163,6 +166,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
+void assertNotEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
@@ -601,14 +605,25 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
+/// Reads chunk of data between {} in that way,
+/// that it has balanced parentheses sequence of {}.
+/// So, it may form a JSON object, but it can be incorrenct.
+template <typename Vector, typename ReturnType = void>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
+
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullOutput
 {
     void append(const char *, size_t) {}
-    void push_back(char) {}
+    void append(const char *) {}
+    void append(const char *, const char *) {}
+    void push_back(char) {} /// NOLINT
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
@@ -683,6 +698,16 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
         return readDateTextFallback<ReturnType>(date, buf);
 }
 
+inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
+{
+    if (unlikely(from < 0))
+        date = 0;
+    else if (unlikely(from > 0xFFFF))
+        date = 0xFFFF;
+    else
+        date = from;
+}
+
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
 {
@@ -695,7 +720,8 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
-    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    ExtendedDayNum ret = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    convertToDayNum(date,ret);
     return ReturnType(true);
 }
 
@@ -710,6 +736,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf)
         readDateTextImpl<ReturnType>(local_date, buf);
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
+
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
     date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
     return ReturnType(true);
@@ -811,7 +838,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(const std::string_view & str)
+inline T parseFromString(std::string_view str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -830,8 +857,10 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     const char * s = buf.position();
 
     /// YYYY-MM-DD hh:mm:ss
-    static constexpr auto DateTimeStringInputSize = 19;
-    bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
+    static constexpr auto date_time_broken_down_length = 19;
+    /// YYYY-MM-DD
+    static constexpr auto date_broken_down_length = 10;
+    bool optimistic_path_for_date_time_input = s + date_time_broken_down_length <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
     {
@@ -841,16 +870,29 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
             UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-            UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-            UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-            UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+
+            /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
+            bool dt_long = (s[10] == ' ' || s[10] == 'T');
+            if (dt_long)
+            {
+                hour = (s[11] - '0') * 10 + (s[12] - '0');
+                minute = (s[14] - '0') * 10 + (s[15] - '0');
+                second = (s[17] - '0') * 10 + (s[18] - '0');
+            }
 
             if (unlikely(year == 0))
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            buf.position() += DateTimeStringInputSize;
+            if (dt_long)
+                buf.position() += date_time_broken_down_length;
+            else
+                buf.position() += date_broken_down_length;
+
             return ReturnType(true);
         }
         else
@@ -869,6 +911,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     {
         return ReturnType(false);
     }
+
+    int negative_multiplier = 1;
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
@@ -895,6 +939,21 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         /// Ignore digits that are out of precision.
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
+
+        /// Fractional part (subseconds) is treated as positive by users
+        /// (as DateTime64 itself is a positive, although underlying decimal is negative)
+        /// setting fractional part to be negative when whole is 0 results in wrong value,
+        /// so we multiply result by -1.
+        if (components.whole < 0 && components.fractional != 0)
+        {
+            const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+            ++components.whole;
+            components.fractional = scale_multiplier - components.fractional;
+            if (!components.whole)
+            {
+                negative_multiplier = -1;
+            }
+        }
     }
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 9908870400LL)
@@ -905,7 +964,13 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    if constexpr (std::is_same_v<ReturnType, void>)
+        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    else
+        DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+
+    datetime64 *= negative_multiplier;
+
 
     return ReturnType(true);
 }
@@ -932,28 +997,40 @@ inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuf
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {
-    char s[19];
-    size_t size = buf.read(s, 19);
-    if (19 != size)
+    char s[10];
+    size_t size = buf.read(s, 10);
+    if (10 != size)
     {
         s[size] = 0;
-        throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
     }
 
     datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
     datetime.month((s[5] - '0') * 10 + (s[6] - '0'));
     datetime.day((s[8] - '0') * 10 + (s[9] - '0'));
 
-    datetime.hour((s[11] - '0') * 10 + (s[12] - '0'));
-    datetime.minute((s[14] - '0') * 10 + (s[15] - '0'));
-    datetime.second((s[17] - '0') * 10 + (s[18] - '0'));
+    /// Allow to read Date as DateTime
+    if (buf.eof() || !(*buf.position() == ' ' || *buf.position() == 'T'))
+        return;
+
+    ++buf.position();
+    size = buf.read(s, 8);
+    if (8 != size)
+    {
+        s[size] = 0;
+        throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+    }
+
+    datetime.hour((s[0] - '0') * 10 + (s[1] - '0'));
+    datetime.minute((s[3] - '0') * 10 + (s[4] - '0'));
+    datetime.second((s[6] - '0') * 10 + (s[7] - '0'));
 }
 
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+requires is_arithmetic_v<T>
+inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -968,24 +1045,26 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+requires is_arithmetic_v<T> && (sizeof(T) <= 8)
+inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     readPODBinary(x, buf);
-
-    if constexpr (sizeof(x) == 1)
-        return;
-    else if constexpr (sizeof(x) == 2)
-        x = __builtin_bswap16(x);
-    else if constexpr (sizeof(x) == 4)
-        x = __builtin_bswap32(x);
-    else if constexpr (sizeof(x) == 8)
-        x = __builtin_bswap64(x);
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        if constexpr (sizeof(x) == 1)
+            return;
+        else if constexpr (sizeof(x) == 2)
+            x = __builtin_bswap16(x);
+        else if constexpr (sizeof(x) == 4)
+            x = __builtin_bswap32(x);
+        else if constexpr (sizeof(x) == 8)
+            x = __builtin_bswap64(x);
+    }
 }
 
 template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+requires is_big_int_v<T>
+inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
@@ -1010,6 +1089,8 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
     return tryReadIntText(x, buf);
 }
 
+inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
+
 inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
@@ -1020,8 +1101,8 @@ inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
+requires is_arithmetic_v<T>
+inline void readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
 
@@ -1049,8 +1130,8 @@ inline void readQuoted(UUID & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
+requires is_arithmetic_v<T>
+inline void readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
@@ -1087,7 +1168,8 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void> readCSV(T & x, ReadBuffer & buf)
+requires is_arithmetic_v<T>
+inline void readCSV(T & x, ReadBuffer & buf)
 {
     readCSVSimple(x, buf);
 }
@@ -1180,7 +1262,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
 
 
 /** Read serialized exception.
@@ -1264,7 +1346,6 @@ inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
         default:
             return;
     }
-    return;
 }
 
 /// Read something from text format and trying to parse the suffix.
@@ -1281,7 +1362,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(const std::string_view & s)
+inline T parseWithSizeSuffix(std::string_view s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }
@@ -1305,6 +1386,12 @@ inline T parse(const String & s)
 }
 
 template <typename T>
+inline T parse(std::string_view s)
+{
+    return parse<T>(s.data(), s.size());
+}
+
+template <typename T>
 inline bool tryParse(T & res, const char * data)
 {
     return tryParse(res, data, strlen(data));
@@ -1312,6 +1399,12 @@ inline bool tryParse(T & res, const char * data)
 
 template <typename T>
 inline bool tryParse(T & res, const String & s)
+{
+    return tryParse(res, s.data(), s.size());
+}
+
+template <typename T>
+inline bool tryParse(T & res, std::string_view s)
 {
     return tryParse(res, s.data(), s.size());
 }
@@ -1382,9 +1475,11 @@ struct PcgDeserializer
     }
 };
 
-void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
+template <typename Vector>
+void readQuotedFieldInto(Vector & s, ReadBuffer & buf);
 
-void readJSONFieldIntoString(String & s, ReadBuffer & buf);
+void readQuotedField(String & s, ReadBuffer & buf);
+
+void readJSONField(String & s, ReadBuffer & buf);
 
 }
-

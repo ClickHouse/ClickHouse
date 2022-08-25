@@ -55,7 +55,7 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & hea
         data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
-ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const std::string & column_name)
+ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type)
 {
     switch (type->getTypeId())
     {
@@ -100,16 +100,18 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::String:
         {
+            if (format_settings.orc.output_string_as_string)
+                return orc::createPrimitiveType(orc::TypeKind::STRING);
             return orc::createPrimitiveType(orc::TypeKind::BINARY);
         }
         case TypeIndex::Nullable:
         {
-            return getORCType(removeNullable(type), column_name);
+            return getORCType(removeNullable(type));
         }
         case TypeIndex::Array:
         {
             const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-            return orc::createListType(getORCType(array_type->getNestedType(), column_name));
+            return orc::createListType(getORCType(array_type->getNestedType()));
         }
         case TypeIndex::Decimal32:
         {
@@ -129,21 +131,19 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         case TypeIndex::Tuple:
         {
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
+            const auto & nested_names = tuple_type->getElementNames();
             const auto & nested_types = tuple_type->getElements();
             auto struct_type = orc::createStructType();
             for (size_t i = 0; i < nested_types.size(); ++i)
-            {
-                String name = column_name + "." + std::to_string(i);
-                struct_type->addStructField(name, getORCType(nested_types[i], name));
-            }
+                struct_type->addStructField(nested_names[i], getORCType(nested_types[i]));
             return struct_type;
         }
         case TypeIndex::Map:
         {
             const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
             return orc::createMapType(
-                getORCType(map_type->getKeyType(), column_name),
-                getORCType(map_type->getValueType(), column_name)
+                getORCType(map_type->getKeyType()),
+                getORCType(map_type->getValueType())
                 );
         }
         default:
@@ -225,9 +225,9 @@ void ORCBlockOutputFormat::writeStrings(
         }
 
         string_orc_column.notNull[i] = 1;
-        const StringRef & string = string_column.getDataAt(i);
-        string_orc_column.data[i] = const_cast<char *>(string.data);
-        string_orc_column.length[i] = string.size;
+        const std::string_view & string = string_column.getDataAt(i).toView();
+        string_orc_column.data[i] = const_cast<char *>(string.data());
+        string_orc_column.length[i] = string.size();
     }
     string_orc_column.numElements = string_column.size();
 }
@@ -512,7 +512,7 @@ void ORCBlockOutputFormat::prepareWriter()
     options.setCompression(orc::CompressionKind::CompressionKind_NONE);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
-        schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i]), header.safeGetByPosition(i).name));
+        schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 

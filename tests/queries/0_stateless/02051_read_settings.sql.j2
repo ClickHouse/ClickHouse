@@ -1,4 +1,7 @@
--- Tags: long
+-- Tags: long, no-tsan, no-parallel, no-random-settings
+-- Tag: no-tsan -- too slow under TSan (~5-6min)
+-- Tag: no-random-settings -- to avoid settings overlaps
+-- Tag: no-parallel -- to reduce test time
 --
 -- Test for testing various read settings.
 

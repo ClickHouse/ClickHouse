@@ -30,6 +30,7 @@ void CachedCompressedReadBuffer::initInput()
 
 void CachedCompressedReadBuffer::prefetch()
 {
+    initInput();
     file_in->prefetch();
 }
 
@@ -88,7 +89,7 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 {
     /// Nothing to do if we already at required position
     if (!owned_cell && file_pos == offset_in_compressed_file
-        && (offset() == offset_in_decompressed_block ||
+        && ((!buffer().empty() && offset() == offset_in_decompressed_block) ||
             nextimpl_working_buffer_offset == offset_in_decompressed_block))
         return;
 
@@ -105,7 +106,7 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
         /// We will discard our working_buffer, but have to account rest bytes
         bytes += offset();
         /// No data, everything discarded
-        pos = working_buffer.end();
+        resetWorkingBuffer();
         owned_cell.reset();
 
         /// Remember required offset in decompressed block which will be set in

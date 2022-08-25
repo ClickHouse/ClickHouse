@@ -17,6 +17,9 @@ void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+void registerTableFunctionMongoDB(TableFunctionFactory & factory);
+
+void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
@@ -29,10 +32,15 @@ void registerTableFunctionHDFS(TableFunctionFactory & factory);
 void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
 #endif
 
+#if USE_HIVE
+void registerTableFunctionHive(TableFunctionFactory & factory);
+#endif
+
 void registerTableFunctionODBC(TableFunctionFactory & factory);
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 void registerTableFunctionView(TableFunctionFactory & factory);
+void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
@@ -47,6 +55,8 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
+
+void registerTableFunctionFormat(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

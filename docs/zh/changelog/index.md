@@ -1,7 +1,7 @@
 ---
 machine_translated: true
 machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
-toc_title: "\u53D8\u66F4\u65E5\u5FD7"
+sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 ---
 
 ## 碌莽禄release拢.0755-88888888 {#clickhouse-release-v20-3}
@@ -247,7 +247,7 @@ toc_title: "\u53D8\u66F4\u65E5\u5FD7"
 -   更新了clickhouse-test脚本中挂起查询的检查 [#8858](https://github.com/ClickHouse/ClickHouse/pull/8858) ([亚历山大\*卡扎科夫](https://github.com/Akazz))
 -   从存储库中删除了一些无用的文件。 [#8843](https://github.com/ClickHouse/ClickHouse/pull/8843) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   更改类型的数学perftests从 `once` 到 `loop`. [#8783](https://github.com/ClickHouse/ClickHouse/pull/8783) ([尼古拉\*科切托夫](https://github.com/KochetovNicolai))
--   添加码头镜像，它允许为我们的代码库构建交互式代码浏览器HTML报告。 [#8781](https://github.com/ClickHouse/ClickHouse/pull/8781) ([阿利沙平](https://github.com/alesapin)）见 [Woboq代码浏览器](https://clickhouse.com/codebrowser/html_report///ClickHouse/dbms/index.html)
+-   添加码头镜像，它允许为我们的代码库构建交互式代码浏览器HTML报告。 [#8781](https://github.com/ClickHouse/ClickHouse/pull/8781) ([阿利沙平](https://github.com/alesapin)）见 [Woboq代码浏览器](https://clickhouse.com/codebrowser/ClickHouse/dbms/index.html)
 -   抑制MSan下的一些测试失败。 [#8780](https://github.com/ClickHouse/ClickHouse/pull/8780) ([Alexander Kuzmenkov](https://github.com/akuzm))
 -   加速 “exception while insert” 测试 此测试通常在具有复盖率的调试版本中超时。 [#8711](https://github.com/ClickHouse/ClickHouse/pull/8711) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   更新 `libcxx` 和 `libcxxabi` 为了主人 在准备 [#9304](https://github.com/ClickHouse/ClickHouse/issues/9304) [#9308](https://github.com/ClickHouse/ClickHouse/pull/9308) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))

@@ -22,8 +22,12 @@ struct ZooKeeperLogElement
 
     Type type = UNKNOWN;
     Decimal64 event_time = 0;
+    UInt64 thread_id = 0;
+    String query_id;
     Poco::Net::SocketAddress address;
     Int64 session_id = 0;
+
+    UInt64 duration_ms = 0;
 
     /// Common request info
     Int32 xid = 0;
@@ -67,6 +71,7 @@ struct ZooKeeperLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>

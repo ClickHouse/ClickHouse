@@ -7,6 +7,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
 {
@@ -120,6 +121,8 @@ public:
     /// Fsync latest log to disk and flush buffer
     void flush();
 
+    void shutdown();
+
     uint64_t size() const
     {
         return logs.size();
@@ -135,6 +138,13 @@ private:
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(uint64_t new_start_log_index);
 
+    /// Currently existing changelogs
+    std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
+
+    using ChangelogIter = decltype(existing_changelogs)::iterator;
+    void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
+
+    static void removeLog(const std::filesystem::path & path, const std::filesystem::path & detached_folder);
     /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
     /// Remove all logs from disk
@@ -142,15 +152,16 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(const ChangelogFileDescription & description);
 
-private:
-    const std::string changelogs_dir;
+    /// Clean useless log files in a background thread
+    void cleanLogThread();
+
+    const std::filesystem::path changelogs_dir;
+    const std::filesystem::path changelogs_detached_dir;
     const uint64_t rotate_interval;
     const bool force_sync;
     Poco::Logger * log;
     bool compress_logs;
 
-    /// Currently existing changelogs
-    std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
 
     /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
@@ -160,6 +171,10 @@ private:
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
     uint64_t max_log_id = 0;
+    /// For compaction, queue of delete not used logs
+    /// 128 is enough, even if log is not removed, it's not a problem
+    ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
+    ThreadFromGlobalPool clean_log_thread;
 };
 
 }

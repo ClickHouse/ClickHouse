@@ -7,8 +7,8 @@
 #include <Core/Defines.h>
 #include <base/range.h>
 #include <Poco/Unicode.h>
-#include <stdint.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -82,7 +82,8 @@ private:
 #endif
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringSearcher(const CharT * needle_, const size_t needle_size_)
         : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_size{needle_size_}
     {
@@ -137,7 +138,7 @@ public:
         patu = _mm_set1_epi8(u);
         /// lower and uppercase vectors of first 16 octets of `needle`
 
-        auto needle_pos = needle;
+        const auto * needle_pos = needle;
 
         for (size_t i = 0; i < n;)
         {
@@ -158,8 +159,8 @@ public:
                 int c_l_u32 = Poco::Unicode::toLower(*c_u32);
                 int c_u_u32 = Poco::Unicode::toUpper(*c_u32);
 
-                uint8_t dst_l_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq)));
-                uint8_t dst_u_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq)));
+                size_t dst_l_len = UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq));
+                size_t dst_u_len = UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq));
 
                 /// @note Unicode standard states it is a rare but possible occasion
                 if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
@@ -191,7 +192,8 @@ public:
 #endif
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compareTrivial(const CharT * haystack_pos, const CharT * const haystack_end, const uint8_t * needle_pos) const
     {
         while (haystack_pos < haystack_end && needle_pos < needle_end)
@@ -217,7 +219,8 @@ public:
         return needle_pos == needle_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * haystack_end, const CharT * pos) const
     {
 
@@ -251,7 +254,7 @@ public:
         if (*pos == l || *pos == u)
         {
             pos += first_needle_symbol_is_ascii;
-            auto needle_pos = needle + first_needle_symbol_is_ascii;
+            const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
             if (compareTrivial(pos, haystack_end, needle_pos))
                 return true;
@@ -262,7 +265,8 @@ public:
 
     /** Returns haystack_end if not found.
       */
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (0 == needle_size)
@@ -325,7 +329,7 @@ public:
             if (*haystack == l || *haystack == u)
             {
                 auto haystack_pos = haystack + first_needle_symbol_is_ascii;
-                auto needle_pos = needle + first_needle_symbol_is_ascii;
+                const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
                 if (compareTrivial(haystack_pos, haystack_end, needle_pos))
                     return haystack;
@@ -338,7 +342,8 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
@@ -367,7 +372,8 @@ private:
 #endif
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringSearcher(const CharT * needle_, const size_t needle_size)
         : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_end{needle + needle_size}
     {
@@ -381,7 +387,7 @@ public:
         patl = _mm_set1_epi8(l);
         patu = _mm_set1_epi8(u);
 
-        auto needle_pos = needle;
+        const auto * needle_pos = needle;
 
         for (const auto i : collections::range(0, n))
         {
@@ -399,7 +405,8 @@ public:
 #endif
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
     {
 #ifdef __SSE4_1__
@@ -416,7 +423,7 @@ public:
                 if (mask == cachemask)
                 {
                     pos += n;
-                    auto needle_pos = needle + n;
+                    const auto * needle_pos = needle + n;
 
                     while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
                     {
@@ -438,7 +445,7 @@ public:
         if (*pos == l || *pos == u)
         {
             ++pos;
-            auto needle_pos = needle + 1;
+            const auto * needle_pos = needle + 1;
 
             while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
             {
@@ -453,7 +460,8 @@ public:
         return false;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (needle == needle_end)
@@ -492,8 +500,8 @@ public:
                     {
                         if (mask_offset == cachemask)
                         {
-                            auto haystack_pos = haystack + n;
-                            auto needle_pos = needle + n;
+                            const auto * haystack_pos = haystack + n;
+                            const auto * needle_pos = needle + n;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -520,8 +528,8 @@ public:
 
             if (*haystack == l || *haystack == u)
             {
-                auto haystack_pos = haystack + 1;
-                auto needle_pos = needle + 1;
+                const auto * haystack_pos = haystack + 1;
+                const auto * needle_pos = needle + 1;
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -540,7 +548,8 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
@@ -568,7 +577,8 @@ private:
 #endif
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringSearcher(const CharT * needle_, const size_t needle_size)
         : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_end{needle + needle_size}
     {
@@ -580,7 +590,7 @@ public:
 #ifdef __SSE4_1__
         pattern = _mm_set1_epi8(first);
 
-        auto needle_pos = needle;
+        const auto * needle_pos = needle;
 
         for (const auto i : collections::range(0, n))
         {
@@ -596,7 +606,8 @@ public:
 #endif
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
     {
 #ifdef __SSE4_1__
@@ -611,7 +622,7 @@ public:
                 if (mask == cachemask)
                 {
                     pos += n;
-                    auto needle_pos = needle + n;
+                    const auto * needle_pos = needle + n;
 
                     while (needle_pos < needle_end && *pos == *needle_pos)
                         ++pos, ++needle_pos;
@@ -630,7 +641,7 @@ public:
         if (*pos == first)
         {
             ++pos;
-            auto needle_pos = needle + 1;
+            const auto * needle_pos = needle + 1;
 
             while (needle_pos < needle_end && *pos == *needle_pos)
                 ++pos, ++needle_pos;
@@ -642,7 +653,8 @@ public:
         return false;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (needle == needle_end)
@@ -680,8 +692,8 @@ public:
                     {
                         if (mask_offset == cachemask)
                         {
-                            auto haystack_pos = haystack + n;
-                            auto needle_pos = needle + n;
+                            const auto * haystack_pos = haystack + n;
+                            const auto * needle_pos = needle + n;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    *haystack_pos == *needle_pos)
@@ -705,8 +717,8 @@ public:
 
             if (*haystack == first)
             {
-                auto haystack_pos = haystack + 1;
-                auto needle_pos = needle + 1;
+                const auto * haystack_pos = haystack + 1;
+                const auto * needle_pos = needle + 1;
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        *haystack_pos == *needle_pos)
@@ -722,7 +734,8 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
@@ -740,7 +753,8 @@ class TokenSearcher : public StringSearcherBase
     size_t needle_size;
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     TokenSearcher(const CharT * needle_, const size_t needle_size_)
         : searcher{needle_, needle_size_},
           needle_size(needle_size_)
@@ -752,7 +766,8 @@ public:
 
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * haystack, const CharT * haystack_end, const CharT * pos) const
     {
         // use searcher only if pos is in the beginning of token and pos + searcher.needle_size is end of token.
@@ -762,7 +777,8 @@ public:
         return false;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         // use searcher.search(), then verify that returned value is a token
@@ -781,13 +797,15 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool isToken(const CharT * haystack, const CharT * const haystack_end, const CharT* p) const
     {
         return (p == haystack || isTokenSeparator(*(p - 1)))
@@ -796,10 +814,7 @@ public:
 
     ALWAYS_INLINE static bool isTokenSeparator(const uint8_t c)
     {
-        if (isAlphaNumericASCII(c) || !isASCII(c))
-            return false;
-
-        return true;
+        return !(isAlphaNumericASCII(c) || !isASCII(c));
     }
 };
 
@@ -811,60 +826,44 @@ using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
 using ASCIICaseSensitiveTokenSearcher = TokenSearcher<ASCIICaseSensitiveStringSearcher>;
 using ASCIICaseInsensitiveTokenSearcher = TokenSearcher<ASCIICaseInsensitiveStringSearcher>;
 
-
-/** Uses functions from libc.
-  * It makes sense to use only with short haystacks when cheap initialization is required.
-  * There is no option for case-insensitive search for UTF-8 strings.
-  * It is required that strings are zero-terminated.
-  */
-
-struct LibCASCIICaseSensitiveStringSearcher : public StringSearcherBase
+/// Use only with short haystacks where cheap initialization is required.
+template <bool CaseInsensitive>
+struct StdLibASCIIStringSearcher : public StringSearcherBase
 {
-    const char * const needle;
+    const char * const needle_start;
+    const char * const needle_end;
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    LibCASCIICaseSensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
-        : needle(reinterpret_cast<const char *>(needle_)) {}
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    StdLibASCIIStringSearcher(const CharT * const needle_start_, const size_t needle_size_)
+        : needle_start{reinterpret_cast<const char *>(needle_start_)}
+        , needle_end{reinterpret_cast<const char *>(needle_start) + needle_size_}
+    {}
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    const CharT * search(const CharT * haystack_start, const CharT * const haystack_end) const
     {
-        auto res = strstr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const CharT *>(res);
+        if constexpr (CaseInsensitive)
+        {
+            return std::search(
+                haystack_start, haystack_end, needle_start, needle_end,
+                [](char c1, char c2) {return std::toupper(c1) == std::toupper(c2);});
+        }
+        else
+        {
+            return std::search(
+                haystack_start, haystack_end, needle_start, needle_end,
+                [](char c1, char c2) {return c1 == c2;});
+        }
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const size_t haystack_size) const
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    const CharT * search(const CharT * haystack_start, const size_t haystack_length) const
     {
-        return search(haystack, haystack + haystack_size);
+        return search(haystack_start, haystack_start + haystack_length);
     }
 };
-
-struct LibCASCIICaseInsensitiveStringSearcher : public StringSearcherBase
-{
-    const char * const needle;
-
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    LibCASCIICaseInsensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
-        : needle(reinterpret_cast<const char *>(needle_)) {}
-
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
-    {
-        auto res = strcasestr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const CharT *>(res);
-    }
-
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const size_t haystack_size) const
-    {
-        return search(haystack, haystack + haystack_size);
-    }
-};
-
 
 }

@@ -37,10 +37,11 @@ public:
         return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
     }
 
-    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
+    template <typename TColumnPtr>
+    requires IsMutableColumns<TColumnPtr>::value
     static MutablePtr create(TColumnPtr && values_, TColumnPtr && offsets_, size_t size_)
     {
-        return Base::create(std::move(values_), std::move(offsets_), size_);
+        return Base::create(std::forward<TColumnPtr>(values_), std::forward<TColumnPtr>(offsets_), size_);
     }
 
     static Ptr create(const ColumnPtr & values_)
@@ -48,7 +49,8 @@ public:
         return Base::create(values_->assumeMutable());
     }
 
-    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
+    template <typename TColumnPtr>
+    requires IsMutableColumns<TColumnPtr>::value
     static MutablePtr create(TColumnPtr && values_)
     {
         return Base::create(std::forward<TColumnPtr>(values_));
@@ -103,13 +105,20 @@ public:
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const override;
     bool hasEqualValues() const override;
 
-    void getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const;
+    void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const;
 
-    void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
-    void updatePermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
-    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
-    void updatePermutationWithCollation(
-        const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res) const override;
+
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+
+    void getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res) const override;
+
+    void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -206,6 +215,7 @@ public:
 
     Iterator begin() const { return Iterator(getOffsetsData(), _size, 0, 0); }
     Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
+    Iterator getIterator(size_t n) const;
 
 private:
     using Inserter = std::function<void(IColumn &)>;
@@ -223,7 +233,7 @@ private:
     /// Sorted offsets of non-default values in the full column.
     /// 'offsets[i]' corresponds to 'values[i + 1]'.
     WrappedPtr offsets;
-    size_t _size;
+    size_t _size; /// NOLINT
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);

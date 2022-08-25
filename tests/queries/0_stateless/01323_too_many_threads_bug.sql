@@ -1,5 +1,8 @@
 drop table if exists table_01323_many_parts;
 
+set remote_filesystem_read_method = 'read';
+set local_filesystem_read_method = 'pread';
+
 create table table_01323_many_parts (x UInt64) engine = MergeTree order by x partition by x % 100;
 set max_partitions_per_insert_block = 100;
 insert into table_01323_many_parts select number from numbers(100000);

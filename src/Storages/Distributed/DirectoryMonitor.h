@@ -52,7 +52,7 @@ public:
 
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
-    /// For scheduling via DistributedBlockOutputStream
+    /// For scheduling via DistributedSink.
     bool addAndSchedule(size_t file_size, size_t ms);
 
     struct InternalStatus
@@ -125,8 +125,6 @@ private:
 
     CurrentMetrics::Increment metric_pending_files;
     CurrentMetrics::Increment metric_broken_files;
-
-    friend class DirectoryMonitorBlockInputStream;
 };
 
 }

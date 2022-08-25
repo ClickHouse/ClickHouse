@@ -1,6 +1,6 @@
 ---
-toc_priority: 30
-toc_title: MySQL
+sidebar_position: 30
+sidebar_label: MySQL
 ---
 
 # MySQL {#mysql}
@@ -59,7 +59,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `version`
 - `max_allowed_packet`
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     В настоящее время эти переменные реализованы только как "заглушки" и не содержат актуальных данных.
 
 Пример:

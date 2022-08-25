@@ -61,13 +61,13 @@ public:
         auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
         auto if_res = func_if->execute(if_columns, result_type, input_rows_count);
 
-        return makeNullable(std::move(if_res));
+        return makeNullable(if_res);
     }
 };
 
 }
 
-void registerFunctionNullIf(FunctionFactory & factory)
+REGISTER_FUNCTION(NullIf)
 {
     factory.registerFunction<FunctionNullIf>(FunctionFactory::CaseInsensitive);
 }

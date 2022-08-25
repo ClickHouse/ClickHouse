@@ -1,11 +1,11 @@
 ---
-toc_priority: 63
-toc_title: Nullable
+sidebar_position: 63
+sidebar_label: Nullable
 ---
 
-# Functions for Working with Nullable Values {#functions-for-working-with-nullable-aggregates}
+# Functions for Working with Nullable Values
 
-## isNull {#isnull}
+## isNull
 
 Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -47,7 +47,7 @@ SELECT x FROM t_null WHERE isNull(y);
 └───┘
 ```
 
-## isNotNull {#isnotnull}
+## isNotNull
 
 Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -87,7 +87,7 @@ SELECT x FROM t_null WHERE isNotNull(y);
 └───┘
 ```
 
-## coalesce {#coalesce}
+## coalesce
 
 Checks from left to right whether `NULL` arguments were passed and returns the first non-`NULL` argument.
 
@@ -120,7 +120,7 @@ The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32
 Get the first available contact method for the customer from the contact list:
 
 ``` sql
-SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
+SELECT name, coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
 ```
 
 ``` text
@@ -130,7 +130,7 @@ SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
 └──────────┴──────────────────────────────────────────────────────┘
 ```
 
-## ifNull {#ifnull}
+## ifNull
 
 Returns an alternative value if the main argument is `NULL`.
 
@@ -170,7 +170,7 @@ SELECT ifNull(NULL, 'b');
 └───────────────────┘
 ```
 
-## nullIf {#nullif}
+## nullIf
 
 Returns `NULL` if the arguments are equal.
 
@@ -209,7 +209,7 @@ SELECT nullIf(1, 2);
 └──────────────┘
 ```
 
-## assumeNotNull {#assumenotnull}
+## assumeNotNull
 
 Results in an equivalent non-`Nullable` value for a [Nullable](../../sql-reference/data-types/nullable.md) type. In case the original value is `NULL` the result is undetermined. See also `ifNull` and `coalesce` functions.
 
@@ -271,7 +271,7 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null;
 └──────────────────────────────┘
 ```
 
-## toNullable {#tonullable}
+## toNullable
 
 Converts the argument type to `Nullable`.
 

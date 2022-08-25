@@ -40,7 +40,10 @@ enum class ExecuteTTLType
 class MergeTreeDataMergerMutator
 {
 public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeTransaction *,
+                                                        String *)>;
 
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
 
@@ -72,6 +75,7 @@ public:
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
@@ -81,11 +85,11 @@ public:
       */
     SelectPartsDecision selectAllPartsToMergeWithinPartition(
         FutureMergedMutatedPartPtr future_part,
-        UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr,
         bool optimize_skip_merged_partitions = false);
 
@@ -108,7 +112,9 @@ public:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
+        const MergeTreeTransactionPtr & txn,
         const IMergeTreeDataPart * parent_part = nullptr,
+        const IDataPartStorageBuilder * parent_path_storage_builder = nullptr,
         const String & suffix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
@@ -119,13 +125,16 @@ public:
         MergeListEntry * merge_entry,
         time_t time_of_mutation,
         ContextPtr context,
+        const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
         TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
-        MergeTreeData::Transaction * out_transaction = nullptr);
+        const MergeTreeTransactionPtr & txn,
+        MergeTreeData::Transaction & out_transaction,
+        DataPartStorageBuilderPtr builder);
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
@@ -139,43 +148,12 @@ private:
     friend class MutateTask;
     friend class MergeTask;
 
-    /** Split mutation commands into two parts:
-      * First part should be executed by mutations interpreter.
-      * Other is just simple drop/renames, so they can be executed without interpreter.
-      */
-    static void splitMutationCommands(
-        MergeTreeData::DataPartPtr part,
-        const MutationCommands & commands,
-        MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames);
-
-    /// Get the columns list of the resulting part in the same order as storage_columns.
-    static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(
-        MergeTreeData::DataPartPtr source_part,
-        const Block & updated_header,
-        NamesAndTypesList storage_columns,
-        const SerializationInfoByName & serialization_infos,
-        const MutationCommands & commands_for_removes);
-
-    static ExecuteTTLType shouldExecuteTTL(
-        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
-
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
     ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
-
-private:
-
-    MergeAlgorithm chooseMergeAlgorithm(
-        const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound,
-        const NamesAndTypesList & gathering_columns,
-        bool deduplicate,
-        bool need_remove_expired_values,
-        const MergeTreeData::MergingParams & merging_params) const;
 
 private:
     MergeTreeData & data;
@@ -193,26 +171,6 @@ private:
     ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
-
-public:
-    /// Returns true if passed part name is active.
-    /// (is the destination for one of active mutation/merge).
-    ///
-    /// NOTE: that it accept basename (i.e. dirname), not the path,
-    /// since later requires canonical form.
-    bool hasTemporaryPart(const std::string & basename) const;
-
-private:
-    /// Set of active temporary paths that is used as the destination.
-    /// List of such paths is required to avoid trying to remove them during cleanup.
-    ///
-    /// NOTE: It is pretty short, so use STL is fine.
-    std::unordered_set<std::string> tmp_parts;
-    /// Lock for "tmp_parts".
-    ///
-    /// NOTE: mutable is required to mark hasTemporaryPath() const
-    mutable std::mutex tmp_parts_lock;
-
 };
 
 

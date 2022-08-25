@@ -2,7 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', stay_alive=True)
+instance = cluster.add_instance("instance", stay_alive=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -21,7 +21,7 @@ def test_persistence():
 
     instance.query(create_function_query1)
     instance.query(create_function_query2)
-    
+
     assert instance.query("SELECT MySum1(1,2)") == "3\n"
     assert instance.query("SELECT MySum2(1,2)") == "5\n"
 
@@ -35,5 +35,9 @@ def test_persistence():
 
     instance.restart_clickhouse()
 
-    assert "Unknown function MySum1" in instance.query_and_get_error("SELECT MySum1(1, 2)")
-    assert "Unknown function MySum2" in instance.query_and_get_error("SELECT MySum2(1, 2)")
+    assert "Unknown function MySum1" in instance.query_and_get_error(
+        "SELECT MySum1(1, 2)"
+    )
+    assert "Unknown function MySum2" in instance.query_and_get_error(
+        "SELECT MySum2(1, 2)"
+    )

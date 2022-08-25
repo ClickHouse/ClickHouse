@@ -1,17 +1,16 @@
 #include "HashedDictionary.h"
 
+#include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
-
 #include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace
 {
@@ -53,6 +52,7 @@ HashedDictionary<dictionary_key_type, sparse>::HashedDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -117,7 +117,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     extractor,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -127,7 +127,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     extractor,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else
@@ -158,7 +158,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -233,10 +233,20 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
-        const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        std::optional<UInt64> null_value;
 
-        auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+
+        auto is_key_valid_func = [&](auto & hierarchy_key)
+        {
+            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+                return true;
+
+            return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
+        };
 
         size_t keys_found = 0;
 
@@ -244,17 +254,22 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         {
             std::optional<UInt64> result;
 
-            auto it = parent_keys_map.find(hierarchy_key);
+            auto it = child_key_to_parent_key_map.find(hierarchy_key);
 
-            if (it != parent_keys_map.end())
-                result = getValueFromCell(it);
+            if (it == child_key_to_parent_key_map.end())
+                return result;
 
-            keys_found += result.has_value();
+            UInt64 parent_key = getValueFromCell(it);
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_func);
+        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -262,7 +277,9 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         return dictionary_hierarchy_array;
     }
     else
+    {
         return nullptr;
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -273,6 +290,9 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
+        if (key_column->isNullable())
+            key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
+
         PaddedPODArray<UInt64> keys_backup_storage;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
 
@@ -284,28 +304,43 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
-        const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        std::optional<UInt64> null_value;
 
-        auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+
+        auto is_key_valid_func = [&](auto & hierarchy_key)
+        {
+            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+                return true;
+
+            return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
+        };
 
         size_t keys_found = 0;
 
-        auto get_parent_func = [&](auto & hierarchy_key)
+        auto get_parent_key_func = [&](auto & hierarchy_key)
         {
             std::optional<UInt64> result;
 
-            auto it = parent_keys_map.find(hierarchy_key);
+            auto it = child_key_to_parent_key_map.find(hierarchy_key);
 
-            if (it != parent_keys_map.end())
-                result = getValueFromCell(it);
+            if (it == child_key_to_parent_key_map.end())
+                return result;
 
-            keys_found += result.has_value();
+            UInt64 parent_key = getValueFromCell(it);
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
+        auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -317,28 +352,45 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
+DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchicalIndex() const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        if (hierarchical_index)
+            return hierarchical_index;
+
+        size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+        const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+
+        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        parent_to_child.reserve(child_key_to_parent_key_map.size());
+
+        for (const auto & [child_key, parent_key] : child_key_to_parent_key_map)
+            parent_to_child[parent_key].emplace_back(child_key);
+
+        return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
 ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
     ColumnPtr key_column [[maybe_unused]],
     const DataTypePtr &,
-    size_t level [[maybe_unused]]) const
+    size_t level [[maybe_unused]],
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         PaddedPODArray<UInt64> keys_backup;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup);
 
-        size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
-
-        const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
-        const CollectionType<UInt64> & parent_keys = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
-
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
-
-        for (const auto & [key, value] : parent_keys)
-            parent_to_child[value].emplace_back(key);
-
         size_t keys_found;
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+        auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -346,7 +398,9 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
         return result;
     }
     else
+    {
         return nullptr;
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -631,6 +685,16 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarchical_index = getHierarchicalIndex();
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 {
     size_t attributes_size = attributes.size();
@@ -648,7 +712,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
             if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
             {
                 /// bucket_count() - Returns table size, that includes empty and deleted
-                /// size()         - Returns table size, w/o empty and deleted
+                /// size()         - Returns table size, without empty and deleted
                 /// and since this is sparsehash, empty cells should not be significant,
                 /// and since items cannot be removed from the dictionary, deleted is also not important.
                 bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
@@ -683,10 +747,16 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
         }
     }
 
-    bytes_allocated += string_arena.size();
-
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarchical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarchical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
+
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -744,7 +814,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;

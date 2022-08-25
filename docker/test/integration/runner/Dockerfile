@@ -3,6 +3,7 @@ FROM ubuntu:20.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
+
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
@@ -40,7 +41,7 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-ENV TZ=Europe/Moscow
+ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable
@@ -58,24 +59,24 @@ RUN apt-get update \
 
 RUN dockerd --version; docker --version
 
-ARG TARGETARCH
-# FIXME: psycopg2-binary is not available for aarch64, we skip it for now
-RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
+RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
     avro==1.10.2 \
+    asyncio \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \
     dicttoxml \
     docker \
-    docker-compose==1.28.2 \
+    docker-compose==1.29.2 \
     grpcio \
     grpcio-tools \
     kafka-python \
     kazoo \
     lz4 \
     minio \
+    nats-py \
     protobuf \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
@@ -90,7 +91,8 @@ RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
     urllib3 \
     requests-kerberos \
     pyhdfs \
-    azure-storage-blob )
+    azure-storage-blob \
+    meilisearch==0.18.3 
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

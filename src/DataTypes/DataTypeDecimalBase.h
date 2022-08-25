@@ -172,14 +172,14 @@ inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & 
 }
 
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
 {
     const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
     return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
 }
 
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
 {
     const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
     return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
