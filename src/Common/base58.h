@@ -11,7 +11,7 @@ inline size_t encodeBase58(const char8_t * src, size_t srclen, char8_t * dst)
 
     size_t processed = 0;
     size_t zeros = 0;
-    for ( ;*src == '\0' && processed < srclen-1; ++src)
+    for (;*src == '\0' && processed < srclen-1; ++src)
     {
         ++processed;
         ++zeros;
@@ -71,7 +71,7 @@ inline size_t decodeBase58(const char8_t * src, size_t srclen, char8_t * dst)
 
     size_t processed = 0;
     size_t zeros = 0;
-    for ( ;*src == '1' && processed < srclen-1; ++src)
+    for (;*src == '1' && processed < srclen-1; ++src)
     {
         ++processed;
         ++zeros;
