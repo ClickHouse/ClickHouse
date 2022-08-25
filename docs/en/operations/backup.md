@@ -24,21 +24,32 @@ Often data that is ingested into ClickHouse is delivered through some sort of pe
 In the examples below you will see the backup destination specified like `Disk('backups', '1.zip')`.  To prepare the destination add a file to `/etc/clickhouse-server/config.d/backup_disk.xml`.  For example:
 
 ```xml
-<clickhouse>                                                                                    
-    <storage_configuration>                                                                     
-        <disks>                                                                                 
-            <backups>                                                                           
-                <type>local</type>                                                              
-                <path>/backups/</path>                                                          
-            </backups>                                                                          
-        </disks>                                                                                
-    </storage_configuration>                                                                    
-    <backups>                                                                                   
-        <allowed_disk>backups</allowed_disk>                                                    
-        <allowed_path>/backups/</allowed_path>                                                  
-    </backups>                                                                                  
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
 </clickhouse>
 ```
+
+## Use
+
+Backups can be either full or incremental, and can include tables and databases.  Bakups can be synchronous (default) or asynchronous.  They can be compressed.  Bakups can be password protected.
+
+The BACKUP statement takes a list of DATABASE and TABLE names, a destination, and options.  Options are:
+- ASYNC
+- user
+- SETTINGS compression_method='lzma', compression_level=3, password='qwerty' id='first'
+- BACKUP TABLE test.table2 TO {incremental_backup_name} \                          
+  SETTINGS base_backup = Disk('backups', '1.zip') 
 
 ## BACKUP DATABASE
 
@@ -103,13 +114,20 @@ BACKUP TABLE test.table TO Disk('backups', '1.zip') \
   SETTINGS id='first' ASYNC
 ```
 
-### Incremental table backup
+### Incremental table backup and restore
 
 Incrementally backup a table:
+DAN: Where was the initial backup done?  Add that here.
+
 ```sql
-BACKUP TABLE test.table2 TO {incremental_backup_name} \
+BACKUP TABLE test.table2 TO Disk('backups', 'TestIncrement-1.zip') \
   SETTINGS base_backup = Disk('backups', '1.zip')
 ```
+And restore:
+```sql
+RESTORE TABLE test.table2 FROM Disk('backups', 'TestIncrement-1.zip')
+```
+
 
 ## Restore
 
@@ -140,10 +158,6 @@ RESTORE DATABASE test2 AS test3 FROM Disk('backups', '1.zip')
 Restore specific tables:
 ```sql
 RESTORE TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM Disk('backups', '1.zip')
-```
-
-```sql
-RESTORE TABLE test.table2 FROM {incremental_backup_name}
 ```
 
 Restore and rename while specifying a username:
