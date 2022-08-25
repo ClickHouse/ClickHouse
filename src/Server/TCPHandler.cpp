@@ -428,8 +428,6 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
 
-            LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
-
             /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
             /// to break the loop, but do not throw to send the exception to
             /// the client.
@@ -439,6 +437,9 @@ void TCPHandler::runImpl()
             /// If a timeout occurred, try to inform client about it and close the session
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
+
+            if (network_error)
+                LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
         {
