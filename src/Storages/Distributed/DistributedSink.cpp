@@ -737,11 +737,11 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
 
-            if (OpenTelemetry::TracingContextOnThread::current().isTraceEnabled())
+            if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
-                client_info.client_trace_context = OpenTelemetry::TracingContextOnThread::current();
+                client_info.client_trace_context = OpenTelemetry::CurrentContext();
                 client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             }
             else

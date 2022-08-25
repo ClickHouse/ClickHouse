@@ -76,12 +76,13 @@ struct TracingContextOnThread : TracingContext
 
     void reset();
 
-    static const TracingContextOnThread& current();
-
     /// Use weak_ptr instead of shared_ptr to hold a reference to the underlying system.opentelemetry_span_log table
     /// Since this object is kept on threads and passed across threads, a weak_ptr is more safe to prevent potential leak
     std::weak_ptr<OpenTelemetrySpanLog> span_log;
 };
+
+/// Get tracing context on current thread
+const TracingContextOnThread& CurrentContext();
 
 /// Holder of tracing context.
 /// It should be initialized at the beginning of each thread execution.

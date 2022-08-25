@@ -211,7 +211,7 @@ String TracingContext::composeTraceparentHeader() const
         static_cast<uint8_t>(trace_flags));
 }
 
-const TracingContextOnThread & TracingContextOnThread::current()
+const TracingContextOnThread & CurrentContext()
 {
     return current_thread_trace_context;
 }
