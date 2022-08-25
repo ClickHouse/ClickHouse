@@ -1167,7 +1167,7 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
-    /// mark file as broken if necessary
+    /// mark file as broken if necessary.
     LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
     if (isFileBrokenErrorCode(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
     {
