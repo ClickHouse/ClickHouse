@@ -1493,16 +1493,12 @@ def test_wrong_format_usage(started_cluster):
 def check_profile_event_for_query(instance, query, profile_event, amount):
     instance.query("system flush logs")
     query = query.replace("'", "\\'")
-    attempt = 0
-    res = 0
-    while attempt < 10:
-        res = int(
-            instance.query(
-                f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by event_time desc limit 1"
-            )
+    res = int(
+        instance.query(
+            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
         )
-        if res == amount:
-            break
+    )
+
     assert res == amount
 
 
