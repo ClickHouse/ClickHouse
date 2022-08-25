@@ -151,21 +151,21 @@ TEST(TestBatchParquetFileSource, local_file)
 
     const auto * type_string = "columns format version: 1\n"
                                "2 columns:\n"
-//                               "`l_partkey` Int64\n"
-//                               "`l_suppkey` Int64\n"
-//                               "`l_linenumber` Int32\n"
-//                               "`l_quantity` Float64\n"
-//                               "`l_extendedprice` Float64\n"
+                               //                               "`l_partkey` Int64\n"
+                               //                               "`l_suppkey` Int64\n"
+                               //                               "`l_linenumber` Int32\n"
+                               //                               "`l_quantity` Float64\n"
+                               //                               "`l_extendedprice` Float64\n"
                                "`l_discount` Float64\n"
                                "`l_tax` Float64\n";
-//                               "`l_returnflag` String\n"
-//                               "`l_linestatus` String\n"
-//                               "`l_shipdate` Date\n"
-//                               "`l_commitdate` Date\n"
-//                               "`l_receiptdate` Date\n"
-//                               "`l_shipinstruct` String\n"
-//                               "`l_shipmode` String\n"
-//                               "`l_comment` String\n";
+    //                               "`l_returnflag` String\n"
+    //                               "`l_linestatus` String\n"
+    //                               "`l_shipdate` Date\n"
+    //                               "`l_commitdate` Date\n"
+    //                               "`l_receiptdate` Date\n"
+    //                               "`l_shipinstruct` String\n"
+    //                               "`l_shipmode` String\n"
+    //                               "`l_comment` String\n";
     auto names_and_types_list = NamesAndTypesList::parse(type_string);
     ColumnsWithTypeAndName columns;
     for (const auto & item : names_and_types_list)
@@ -247,12 +247,12 @@ TEST(TestWrite, MergeTreeWriteTest)
     QueryPipelineBuilder query_pipeline_builder;
     query_pipeline_builder.init(Pipe(source));
     query_pipeline_builder.setSinks([&](const Block &, Pipe::StreamType type) -> ProcessorPtr
-                            {
-                                if (type != Pipe::StreamType::Main)
-                                    return nullptr;
+                                    {
+                                        if (type != Pipe::StreamType::Main)
+                                            return nullptr;
 
-                                return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
-                            });
+                                        return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
+                                    });
     auto executor = query_pipeline_builder.execute();
     executor->execute(1);
 }

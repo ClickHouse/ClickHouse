@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/BatchParquetFileSource.h>
+#include <Common/DebugUtils.h>
 
 
 
@@ -89,21 +90,33 @@ static void BM_MergeTreeRead(benchmark::State& state) {
     auto int64_type = std::make_shared<DB::DataTypeInt64>();
     auto int32_type = std::make_shared<DB::DataTypeInt32>();
     auto double_type = std::make_shared<DB::DataTypeFloat64>();
+
+
+//    const auto * type_string = "columns format version: 1\n"
+//                               "2 columns:\n"
+////                               "`c_custkey` Int64\n"
+////                               "`c_name` String\n"
+////                               "`c_address` String\n"
+////                               "`c_nationkey` Int64\n"
+//                               "`c_phone` String\n"
+////                               "`c_acctbal` Float64\n"
+//                               //"`c_mktsegment` String\n"
+//                               "`c_comment` String\n";
     const auto * type_string = "columns format version: 1\n"
-                               "16 columns:\n"
+                               "3 columns:\n"
                                "`l_orderkey` Int64\n"
-                               "`l_partkey` Int64\n"
-                               "`l_suppkey` Int64\n"
-                               "`l_linenumber` Int32\n"
-                               "`l_quantity` Float64\n"
-                               "`l_extendedprice` Float64\n"
-                               "`l_discount` Float64\n"
-                               "`l_tax` Float64\n"
-                                                              "`l_returnflag` String\n"
-                                                              "`l_linestatus` String\n"
-                               "`l_shipdate` Date\n"
+//                               "`l_partkey` Int64\n"
+//                               "`l_suppkey` Int64\n"
+//                               "`l_linenumber` Int32\n"
+//                               "`l_quantity` Float64\n"
+//                               "`l_extendedprice` Float64\n"
+//                               "`l_discount` Float64\n"
+//                               "`l_tax` Float64\n"
+//                                                              "`l_returnflag` String\n"
+//                                                              "`l_linestatus` String\n"
+//                               "`l_shipdate` Date\n"
                                "`l_commitdate` Date\n"
-                               "`l_receiptdate` Date\n"
+                               "`l_receiptdate` Date\n";
                                    "`l_shipinstruct` String\n"
                                    "`l_shipmode` String\n"
                                    "`l_comment` String\n";
@@ -113,7 +126,9 @@ static void BM_MergeTreeRead(benchmark::State& state) {
     auto settings = local_engine::buildMergeTreeSettings();
 
     local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
-                                                           "home/admin1/Documents/data/tpch/mergetree/lineitem",
+                                                           "data0/tpch100_zhichao/mergetree_nullable/lineitem",
+                                                           //"data1/tpc_data/tpch100_zhichao/mergetree/customer",
+                                                           //"/data0/tpch100_zhichao/mergetree_nullable/customer",
                                                            *metadata,
                                                            false,
                                                            global_context,
@@ -151,30 +166,44 @@ static void BM_MergeTreeRead(benchmark::State& state) {
         {
             sum+= chunk.getNumRows();
         }
+
+        std::cerr << "rows:" << sum << std::endl;
+
     }
 }
 
 static void BM_ParquetRead(benchmark::State& state) {
-
+//
+//    const auto * type_string = "columns format version: 1\n"
+//                               "2 columns:\n"
+////                               "`c_custkey` Int64\n"
+////                               "`c_name` String\n"
+////                               "`c_address` String\n"
+////                               "`c_nationkey` Int64\n"
+//                               "`c_phone` String\n"
+////                               "`c_acctbal` Float64\n"
+////                               "`c_mktsegment` String\n"
+//                               "`c_comment` String\n";
+////
 
     const auto * type_string = "columns format version: 1\n"
-                               "16 columns:\n"
-                               "`l_orderkey` Int64\n"
-                               "`l_partkey` Int64\n"
-                               "`l_suppkey` Int64\n"
-                               "`l_linenumber` Int32\n"
-                               "`l_quantity` Float64\n"
-                               "`l_extendedprice` Float64\n"
-                               "`l_discount` Float64\n"
-                               "`l_tax` Float64\n"
+                               "2 columns:\n"
+                               //"`l_orderkey` Nullable(Int64)\n"
+//                               "`l_partkey` Int64\n"
+//                               "`l_suppkey` Int64\n"
+//                               "`l_linenumber` Int32\n"
+//                               "`l_quantity` Float64\n"
+//                               "`l_extendedprice` Float64\n"
+//                               "`l_discount` Float64\n"
+//                               "`l_tax` Float64\n";
                                "`l_returnflag` String\n"
-                               "`l_linestatus` String\n"
-                               "`l_shipdate` Date\n"
-                               "`l_commitdate` Date\n"
-                               "`l_receiptdate` Date\n"
-                               "`l_shipinstruct` String\n"
-                               "`l_shipmode` String\n"
-                               "`l_comment` String\n";
+                               "`l_linestatus` String\n";
+                               //"`l_shipdate` Date\n"
+//                               "`l_commitdate` Nullable(Date32)\n"
+//                               "`l_receiptdate` Nullable(Date32)\n";
+//                               "`l_shipinstruct` String\n"
+//                               "`l_shipmode` String\n"
+//                               "`l_comment` String\n";
     auto names_and_types_list = NamesAndTypesList::parse(type_string);
     ColumnsWithTypeAndName columns;
     for (const auto & item : names_and_types_list)
@@ -191,9 +220,9 @@ static void BM_ParquetRead(benchmark::State& state) {
     {
         auto files = std::make_shared<FilesInfo>();
         files->files = {
-            "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
-            "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00001-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
-            "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00002-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
+           //"file:///data0/tpch100_zhichao/parquet_origin/lineitem/part-00079-066b93b4-39e1-4d46-83ab-d7752096b599-c000.snappy.parquet",
+            "file:///home/hongbin/code/gluten/jvm/src/test/resources/tpch-data/lineitem/part-00000-d08071cb-0dfa-42dc-9198-83cb334ccda3-c000.snappy.parquet",
+
         };
         auto builder = std::make_unique<QueryPipelineBuilder>();
         builder->init(Pipe(std::make_shared<BatchParquetFileSource>(files, header, SerializedPlanParser::global_context)));
@@ -203,6 +232,7 @@ static void BM_ParquetRead(benchmark::State& state) {
         size_t total_rows = 0;
         while (executor.pull(result))
         {
+            debug::headBlock(result);
             total_rows += result.rows();
         }
         std::cerr << "rows:" << total_rows << std::endl;
@@ -605,6 +635,34 @@ static void BM_MERGE_TREE_TPCH_Q6_NEW(benchmark::State& state) {
         }
     }
 }
+
+
+static void BM_MERGE_TREE_TPCH_Q6_FROM_TEXT(benchmark::State & state)
+{
+    SerializedPlanParser::global_context = global_context;
+    local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
+    for (auto _ : state)
+    {
+        state.PauseTiming();
+
+        //const char * path = "/data1/tpc_data/tpch1000_zhichao/serialized_q6_substrait_plan1.txt";
+        const char * path = "/data1/tpc_data/tpch100_zhichao/serialized_q4_substrait_plan_parquet.bin";
+        //const char * path = "/data1/tpc_data/tpch100_zhichao/serialized_q4_substrait_plan_mergetree.bin";
+        std::ifstream t(path);
+        std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+        std::cout << "the plan from: " << path << std::endl;
+
+        auto query_plan = parser.parse(str);
+        local_engine::LocalExecutor local_executor;
+        state.ResumeTiming();
+        local_executor.execute(std::move(query_plan));
+        while (local_executor.hasNext())
+        {
+            auto x = local_executor.nextColumnar();
+        }
+    }
+}
+
 
 static void BM_CHColumnToSparkRowWithString(benchmark::State& state) {
     for (auto _: state)
@@ -1251,7 +1309,7 @@ static void BM_CHColumnToSparkRowNew(benchmark::State& state) {
     auto settings = local_engine::buildMergeTreeSettings();
 
     local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
-                                                           "home/saber/Documents/data/tpch/mergetree/lineitem",
+                                                           "data1/tpc_data/tpch10_liuneng/mergetree/lineitem",
                                                            *metadata,
                                                            false,
                                                            global_context,
@@ -1444,11 +1502,12 @@ static void BM_JoinTest(benchmark::State& state) {
 
 // BENCHMARK(BM_TestDecompress)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
 
-//BENCHMARK(BM_JoinTest)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(250)->ComputeStatistics("80%", quantile);
+//BENCHMARK(BM_JoinTest)->Unit(benchmark::k
+// Millisecond)->Iterations(10)->Repetitions(250)->ComputeStatistics("80%", quantile);
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
- BENCHMARK(BM_MergeTreeRead)->Arg(10)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(5);
- BENCHMARK(BM_ParquetRead)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(5);
+//BENCHMARK(BM_MergeTreeRead)->Arg(1)->Unit(benchmark::kMillisecond)->Iterations(10);
+BENCHMARK(BM_ParquetRead)->Unit(benchmark::kMillisecond)->Iterations(10);
 
 //BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
 //BENCHMARK(BM_HashShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
@@ -1459,6 +1518,8 @@ static void BM_JoinTest(benchmark::State& state) {
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_MERGE_TREE_TPCH_Q6_NEW)->Unit(benchmark::kMillisecond)->Iterations(10);
+
+//BENCHMARK(BM_MERGE_TREE_TPCH_Q6_FROM_TEXT)->Unit(benchmark::kMillisecond)->Iterations(5);
 
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
@@ -1475,7 +1536,7 @@ static void BM_JoinTest(benchmark::State& state) {
 
 
 int main(int argc, char** argv) {
-//    local_engine::Logger::initConsoleLogger();
+    //local_engine::Logger::initConsoleLogger();
     SharedContextHolder shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();

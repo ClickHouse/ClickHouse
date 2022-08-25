@@ -1,11 +1,12 @@
 #include "ArrowParquetBlockInputFormat.h"
 
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <arrow/record_batch.h>
 #include <Common/Stopwatch.h>
 #include <arrow/table.h>
 #include <boost/range/irange.hpp>
 #include <DataTypes/NestedUtils.h>
+
+#include "ch_parquet/ArrowColumnToCHColumn.h"
 
 using namespace DB;
 
@@ -84,11 +85,16 @@ DB::Chunk ArrowParquetBlockInputFormat::generate()
         return {};
 
 
+    Stopwatch watch;
+    watch.start();
     auto batch = current_record_batch_reader->Next();
     if (*batch)
     {
         auto tmp_table = arrow::Table::FromRecordBatches({*batch});
+        non_convert_time += watch.elapsedNanoseconds();
+        watch.restart();
         arrow_column_to_ch_column->arrowTableToCHChunk(res, *tmp_table);
+        convert_time += watch.elapsedNanoseconds();
     }
     else
     {
@@ -105,5 +111,13 @@ DB::Chunk ArrowParquetBlockInputFormat::generate()
                 block_missing_values.setBit(column_idx, row_idx);
     return res;
 }
+//ArrowParquetBlockInputFormat::~ArrowParquetBlockInputFormat()
+//{
+//    std::cerr<<"convert time: " << convert_time / 1000000.0 <<" ms"<<std::endl;
+//    std::cerr<<"non-convert time: " << non_convert_time / 1000000.0 <<" ms"<<std::endl;
+//    std::cerr<<"convert/non-convert " << 1.0 * convert_time / non_convert_time <<" "<<std::endl;
+//    std::cerr<<"real convert " << 1.0 * arrow_column_to_ch_column->real_convert/ 1000000.0 <<" ms"<<std::endl;
+//    std::cerr<<"cast time " << 1.0 * arrow_column_to_ch_column->cast_time/ 1000000.0 <<" ms"<<std::endl;
+//}
 
 }

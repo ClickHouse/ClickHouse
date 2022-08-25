@@ -462,7 +462,7 @@ jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv *
         const auto * nullable = checkAndGetDataType<DataTypeNullable>(block->getByPosition(position).type.get());
         which = WhichDataType(nullable->getNestedType());
     }
-    if (which.isDate())
+    if (which.isDate32())
     {
         type = "Date";
     }

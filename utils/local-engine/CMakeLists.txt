@@ -10,9 +10,16 @@ set(LOCALENGINE_SHARED_LIB ch)
 
 add_subdirectory(proto)
 
+macro(add_headers_and_sources_including_cc prefix common_path)
+    add_glob(${prefix}_headers ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
+    add_glob(${prefix}_sources ${common_path}/*.cpp ${common_path}/*.c ${common_path}/*.cc ${common_path}/*.h)
+endmacro()
+
 add_headers_and_sources(builder Builder)
 add_headers_and_sources(parser Parser)
 add_headers_and_sources(storages Storages)
+add_headers_and_sources(ch_parquet Storages/ch_parquet)
+add_headers_and_sources_including_cc(ch_parquet Storages/ch_parquet/arrow)
 add_headers_and_sources(common Common)
 add_headers_and_sources(external External)
 add_headers_and_sources(shuffle Shuffle)
@@ -32,12 +39,12 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${builder_sources}
         ${parser_sources}
         ${storages_sources}
+        ${ch_parquet_sources}
         ${common_sources}
         ${external_sources}
         ${shuffle_sources}
         ${operator_sources}
-        local_engine_jni.cpp
-        )
+        local_engine_jni.cpp)
 
 
 target_compile_options(${LOCALENGINE_SHARED_LIB} PUBLIC -fPIC)
@@ -211,6 +218,9 @@ target_compile_options(absl_raw_logging_internal PRIVATE -fPIC)
 target_compile_options(absl_int128 PRIVATE -fPIC)
 target_compile_options(absl_raw_hash_set PRIVATE -fPIC)
 target_compile_options(absl_raw_hash_set PRIVATE -fPIC)
+target_compile_options(absl_base PRIVATE -fPIC)
+target_compile_options(absl_spinlock_wait PRIVATE -fPIC)
+
 add_compile_options(-fPIC)
 if (ENABLE_JEMALLOC)
     target_compile_options(_jemalloc PRIVATE -fPIC)

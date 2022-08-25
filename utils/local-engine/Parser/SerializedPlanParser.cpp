@@ -8,6 +8,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -109,7 +110,7 @@ std::string typeName(const substrait::Type & type)
     }
     else if (type.has_date())
     {
-        return "Date";
+        return "Date32";
     }
 
     throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", magic_enum::enum_name(type.kind_case()));
@@ -124,7 +125,7 @@ bool isTypeSame(const substrait::Type & type, DataTypePtr data_type)
            {"I64", "Int64"},
            {"FP32", "Float32"},
            {"FP64", "Float64"},
-           {"Date", "Date"},
+           {"Date", "Date32"},
            {"String", "String"},
            {"Boolean", "UInt8"}};
     std::string type_name = typeName(type);
@@ -168,7 +169,7 @@ std::string getCastFunction(const substrait::Type & type)
     }
     else if (type.has_date())
     {
-        ch_function_name = "toDate";
+        ch_function_name = "toDate32";
     }
     else if (type.has_bool_())
     {
@@ -385,7 +386,7 @@ DataTypePtr SerializedPlanParser::parseType(const substrait::Type & type)
     }
     else if (type.has_date())
     {
-        internal_type = factory.get("Date");
+        internal_type = factory.get("Date32");
         internal_type = wrapNullableType(type.date().nullability(), internal_type);
     }
     else
@@ -1006,7 +1007,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                         ColumnWithTypeAndName(type->createColumnConst(1, literal.i8()), type, getUniqueName(std::to_string(literal.i8()))));
                 }
                 case substrait::Expression_Literal::kDate: {
-                    auto type = std::make_shared<DataTypeDate>();
+                    auto type = std::make_shared<DataTypeDate32>();
                     return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.date()), type, getUniqueName(std::to_string(literal.date()))));
                 }
@@ -1084,7 +1085,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                     }
                     else if (first_value.has_date())
                     {
-                        type = std::make_shared<DataTypeDate>();
+                        type = std::make_shared<DataTypeDate32>();
                         values = type->createColumn();
                         for (int i = 0; i < literal.list().values_size(); ++i)
                         {

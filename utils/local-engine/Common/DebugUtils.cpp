@@ -1,5 +1,6 @@
 #include "DebugUtils.h"
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -67,6 +68,14 @@ void headBlock(const DB::Block & block, size_t count)
             else if (which.isDate())
             {
                 const auto * date_type = DB::checkAndGetDataType<DB::DataTypeDate>(nested_type.get());
+                String date_string;
+                DB::WriteBufferFromString wb(date_string);
+                date_type->getSerialization(DB::ISerialization::Kind::DEFAULT)->serializeText(*nested_col, row, wb, {});
+                std::cerr << date_string.substr(0, 10) << "\t";
+            }
+            else if (which.isDate())
+            {
+                const auto * date_type = DB::checkAndGetDataType<DB::DataTypeDate32>(nested_type.get());
                 String date_string;
                 DB::WriteBufferFromString wb(date_string);
                 date_type->getSerialization(DB::ISerialization::Kind::DEFAULT)->serializeText(*nested_col, row, wb, {});

@@ -464,6 +464,14 @@ foreach (TOOL ${PARQUET_TOOLS})
     target_link_libraries(${TOOL} PRIVATE _parquet)
 endforeach ()
 
-# The library is large - avoid bloat.
-target_compile_options (_arrow PRIVATE -g0)
-target_compile_options (_parquet PRIVATE -g0)
+
+
+if(CMAKE_BUILD_TYPE MATCHES DEBUG)
+    # otherwise we cannot debug arrow code
+    target_compile_options (_arrow PRIVATE)
+    target_compile_options (_parquet PRIVATE)
+else()
+    # The library is large - avoid bloat.
+    target_compile_options (_arrow PRIVATE -g0)
+    target_compile_options (_parquet PRIVATE -g0)
+endif()
