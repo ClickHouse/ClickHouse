@@ -521,6 +521,8 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
+        ftruncate(lock, 0);
+
         printf("No target executable - decompression only was performed.\n");
     }
 }
