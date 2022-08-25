@@ -16,10 +16,7 @@ template <typename ToDataType, typename Transform>
 class FunctionCustomWeekToSomething : public IFunctionCustomWeek<Transform>
 {
 public:
-    static constexpr auto name = Transform::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
-
-    String getName() const override { return name; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -50,7 +47,7 @@ public:
         }
         else
             throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
+                "Illegal type " + arguments[0].type->getName() + " of argument of function " + this->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

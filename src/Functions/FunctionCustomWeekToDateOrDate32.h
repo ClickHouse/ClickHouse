@@ -14,9 +14,6 @@ template <typename Transform>
 class FunctionCustomWeekToDateOrDate32 : public IFunctionCustomWeek<Transform>, WithContext
 {
 public:
-    static constexpr auto name = Transform::name;
-    String getName() const override { return name; }
-
     bool enable_date32_results = false;
 
     static FunctionPtr create(ContextPtr context_)
@@ -72,7 +69,7 @@ public:
         }
         else
             throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
+                "Illegal type " + arguments[0].type->getName() + " of argument of function " + this->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

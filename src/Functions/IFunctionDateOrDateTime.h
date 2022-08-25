@@ -14,10 +14,19 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 template <typename Transform>
 class IFunctionDateOrDateTime : public IFunction
 {
 public:
+    static constexpr auto name = Transform::name;
+    String getName() const override { return name; }
+
     bool isVariadic() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -68,6 +77,41 @@ public:
                 == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), *date_lut)
                 ? is_monotonic : is_not_monotonic;
         }
+    }
+
+    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date) const
+    {
+        if (arguments.size() == 1)
+        {
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+        else if (arguments.size() == 2)
+        {
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (!isString(arguments[1].type))
+                throw Exception(
+                    "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
+                          "must be of type Date or DateTime. The 2nd argument (optional) must be "
+                          "a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date)
+                throw Exception(
+                    "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+        else
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be 1 or 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 };
 
