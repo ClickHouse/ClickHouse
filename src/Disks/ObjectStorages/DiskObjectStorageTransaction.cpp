@@ -170,7 +170,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
             if (!metadata_storage.exists(path))
             {
                 if (if_exists)
-                    return;
+                    continue;
 
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
             }
