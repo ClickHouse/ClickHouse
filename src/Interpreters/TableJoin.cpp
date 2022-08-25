@@ -511,7 +511,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         if (clauses.size() != 1)
             throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-        auto asof_key_type = right_types.find(clauses.back().key_names_right.back());
+        auto asof_key_type = right_types.find(clauses.front().key_names_right.back());
         if (asof_key_type != right_types.end() && asof_key_type->second->isNullable())
             throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -694,13 +694,13 @@ static void sortPairwise(std::vector<String> & lhs, std::vector<String> & rhs, b
 {
     assert(lhs.size() == rhs.size());
     size_t size = lhs.size();
-    if (keep_last)
-        size--;
 
     std::vector<size_t> permutation(size);
     std::iota(permutation.begin(), permutation.end(), 0);
     auto cmp = [&lhs, &rhs](size_t i, size_t j) { return lhs[i] == lhs[j] ? rhs[i] < rhs[j] : lhs[i] < lhs[j]; };
-    std::stable_sort(permutation.begin(), permutation.end(), cmp);
+
+    auto end_it = keep_last ? std::prev(permutation.end()) : permutation.end();
+    std::stable_sort(permutation.begin(), end_it, cmp);
 
     std::vector<String> lhs_sorted(size);
     std::vector<String> rhs_sorted(size);
