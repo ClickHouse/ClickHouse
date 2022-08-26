@@ -72,7 +72,7 @@ IStorageURLBase::IStorageURLBase(
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , uri(uri_)
-    , compression_method(chooseCompressionMethod(uri_, compression_method_))
+    , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
     , format_name(format_name_)
     , format_settings(format_settings_)
     , headers(headers_)
