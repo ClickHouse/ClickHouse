@@ -115,7 +115,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context)
     if (structure == "auto")
         return StorageURL::getTableStructureFromData(format,
             filename,
-            chooseCompressionMethod(filename, compression_method),
+            chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
             getHeaders(),
             std::nullopt,
             context);
