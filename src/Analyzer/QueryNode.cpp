@@ -100,6 +100,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     buffer << ", is_subquery: " << is_subquery;
     buffer << ", is_cte: " << is_cte;
     buffer << ", is_distinct: " << is_distinct;
+    buffer << ", is_limit_with_ties: " << is_limit_with_ties;
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
@@ -143,12 +144,28 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << '\n' << std::string(indent + 2, ' ') << "ORDER BY\n";
         getOrderBy().dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasLimit())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT\n";
+        getLimit()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasOffset())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
+        getOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
-    return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_distinct == rhs_typed.is_distinct;
+    return is_subquery == rhs_typed.is_subquery &&
+        is_cte == rhs_typed.is_cte &&
+        cte_name == rhs_typed.cte_name &&
+        is_distinct == rhs_typed.is_distinct &&
+        is_limit_with_ties == rhs_typed.is_limit_with_ties;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -160,6 +177,7 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(cte_name);
 
     state.update(is_distinct);
+    state.update(is_limit_with_ties);
 }
 
 ASTPtr QueryNode::toASTImpl() const
@@ -187,6 +205,12 @@ ASTPtr QueryNode::toASTImpl() const
 
     if (hasOrderBy())
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST());
+
+    if (hasLimit())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST());
+
+    if (hasOffset())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST());
 
     auto result_select_query = std::make_shared<ASTSelectWithUnionQuery>();
     result_select_query->union_mode = SelectUnionMode::Unspecified;
@@ -216,6 +240,8 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
+    result_query_node->is_distinct = is_distinct;
+    result_query_node->is_limit_with_ties = is_limit_with_ties;
     result_query_node->cte_name = cte_name;
 
     return result_query_node;

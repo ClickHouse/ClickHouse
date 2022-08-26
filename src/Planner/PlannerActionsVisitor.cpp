@@ -526,8 +526,8 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
         }
         case QueryTreeNodeType::CONSTANT:
         {
-            std::string constant_value_dump = node->as<ConstantNode &>().getConstantValue().dump();
-            result = "__constant_" + constant_value_dump;
+            const auto & constant_node = node->as<ConstantNode &>();
+            result = "__constant_" + constant_node.getName() + "_" + constant_node.getResultType()->getName();
             break;
         }
         case QueryTreeNodeType::FUNCTION:

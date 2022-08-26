@@ -23,6 +23,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -263,6 +265,7 @@ public:
 
         const NameSet & group_by_keys_column_names;
         const PlannerContext & planner_context;
+        QueryTreeNodeToName node_to_name;
     };
 
     static void visit(const QueryTreeNodePtr & node, Data & data)
@@ -1111,6 +1114,7 @@ void Planner::buildQueryPlanIfNeeded()
         ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data(aggregate_keys_set, *planner_context);
         ValidateGroupByColumnsVisitor validate_columns_visitor(validate_group_by_visitor_data);
         validate_columns_visitor.visit(query_node.getProjectionNode());
+        validate_columns_visitor.visit(query_node.getOrderByNode());
 
         auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
         actions_chain.addStep(std::move(aggregate_step));
@@ -1187,13 +1191,13 @@ void Planner::buildQueryPlanIfNeeded()
     actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(projection_actions)));
     size_t projection_action_step_index = actions_chain.getLastStepIndex();
 
-    std::cout << "Chain dump before finalize" << std::endl;
-    std::cout << actions_chain.dump() << std::endl;
+    // std::cout << "Chain dump before finalize" << std::endl;
+    // std::cout << actions_chain.dump() << std::endl;
 
     actions_chain.finalize();
 
-    std::cout << "Chain dump after finalize" << std::endl;
-    std::cout << actions_chain.dump() << std::endl;
+    // std::cout << "Chain dump after finalize" << std::endl;
+    // std::cout << actions_chain.dump() << std::endl;
 
     if (where_action_step_index)
     {
@@ -1327,9 +1331,11 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(expression_step_before_order_by));
     }
 
+    SortDescription sort_description;
+
     if (query_node.hasOrderBy())
     {
-        SortDescription sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
+        sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
         String sort_description_dump = dumpSortDescription(sort_description);
 
         UInt64 limit = 0;
@@ -1365,6 +1371,51 @@ void Planner::buildQueryPlanIfNeeded()
             auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_descr);
             query_plan.addStep(std::move(filling_step));
         }
+    }
+
+    UInt64 limit_offset = 0;
+    if (query_node.hasOffset())
+    {
+        /// Validated during query analysis stage
+        limit_offset = query_node.getOffset()->as<ConstantNode &>().getConstantValue().safeGet<UInt64>();
+    }
+
+    if (query_node.hasLimit())
+    {
+        const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+        bool always_read_till_end = settings.exact_rows_before_limit;
+        bool limit_with_ties = query_node.isLimitWithTies();
+
+        /// Validated during query analysis stage
+        UInt64 limit_length = query_node.getLimit()->as<ConstantNode &>().getConstantValue().safeGet<UInt64>();
+
+        SortDescription limit_with_ties_sort_description;
+
+        if (query_node.isLimitWithTies())
+        {
+            /// Validated during parser stage
+            if (!query_node.hasOrderBy())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
+
+            limit_with_ties_sort_description = sort_description;
+        }
+
+        auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(),
+            limit_length,
+            limit_offset,
+            always_read_till_end,
+            limit_with_ties,
+            limit_with_ties_sort_description);
+
+        if (limit_with_ties)
+            limit->setStepDescription("LIMIT WITH TIES");
+
+        query_plan.addStep(std::move(limit));
+    }
+    else if (query_node.hasOffset())
+    {
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
+        query_plan.addStep(std::move(offsets_step));
     }
 
     auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_chain[projection_action_step_index]->getActions());
