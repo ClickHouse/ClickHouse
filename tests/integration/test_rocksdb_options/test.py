@@ -54,10 +54,13 @@ def test_valid_options(start_cluster):
     DROP TABLE test;
     """
     )
+
+
+def test_dirctory_missing_after_stop(start_cluster):
+    # for read_only = false
     node.query(
         """
-    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(0, '/var/lib/clickhouse/store/test_rocksdb_read_only') PRIMARY KEY(key);
-    INSERT INTO test (key, value) VALUES (0, 'a');
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(0, '/var/lib/clickhouse/store/test_rocksdb_read_only_missing') PRIMARY KEY(key);
     """
     )
     node.stop_clickhouse()
@@ -65,16 +68,40 @@ def test_valid_options(start_cluster):
         [
             "bash",
             "-c",
-            "rm -r /var/lib/clickhouse/store/test_rocksdb_read_only",
+            "rm -r /var/lib/clickhouse/store/test_rocksdb_read_only_missing",
         ]
     )
     node.start_clickhouse()
     result = node.query(
-        """SELECT * FROM test;
+        """INSERT INTO test (key, value) VALUES (0, 'a');
+    SELECT * FROM test;
     """
     )
     assert result.strip() == "0\ta"
-    result = node.query(
+    node.query(
+        """DROP TABLE test;
+    """
+    )
+    # for read_only = true
+    node.query(
+        """
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(0, '/var/lib/clickhouse/store/test_rocksdb_read_only_missing', 1) PRIMARY KEY(key);
+    """
+    )
+    node.stop_clickhouse()
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -r /var/lib/clickhouse/store/test_rocksdb_read_only_missing",
+        ]
+    )
+    node.start_clickhouse()
+    with pytest.raises(QueryRuntimeException):
+        node.query("""INSERT INTO test (key, value) VALUES (1, 'b');""")
+    result = node.query("""SELECT * FROM test;""")
+    assert result.strip() == ""
+    node.query(
         """DROP TABLE test;
     """
     )
