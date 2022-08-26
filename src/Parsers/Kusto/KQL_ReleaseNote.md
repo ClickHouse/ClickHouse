@@ -221,13 +221,13 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
 - [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)  
    `print unixtime_nanoseconds_todatetime(1546300800000000000)`  
 
-- [datetime_part] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-partfunction)  
+- [datetime_part](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-partfunction)  
    `print datetime_part('day', datetime(2017-10-30 01:02:03.7654321))`  
 
-- [datetime_add] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-addfunction)  
+- [datetime_add](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-addfunction)  
    `print datetime_add('day',1,datetime(2017-10-30 01:02:03.7654321))`  
 
-- [format_timespan] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-timespanfunction)  
+- [format_timespan](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-timespanfunction)  
    `print format_timespan(time(1d), 'd-[hh:mm:ss]')`  
    `print format_timespan(time('12:30:55.123'), 'ddddd-[hh:mm:ss.ffff]')`  
 
