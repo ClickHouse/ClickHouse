@@ -12,11 +12,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <base/StringRef.h>
-#include <Common/assert_cast.h>
 
-#include <Common/config.h>
+#include <base/StringRef.h>
+#include <base/defines.h>
 #include <Common/TargetSpecific.h>
+#include <Common/assert_cast.h>
+#include <Common/config.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -42,11 +43,21 @@ template <typename T>
 struct AggregateFunctionStandaloneMinData
 {
     bool has_value = false;
+    /// Using max as the initial value allows us to avoid checking if any value has been set before (has_value). Note that this doesn't
+    /// work with floating point since NaN will compare incorrectly, so we deal with those manually
     T min{ std::numeric_limits<T>::max() };
-
 
     void ALWAYS_INLINE inline add(T value)
     {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (!has_value)
+            {
+                has_value = true;
+                min = value;
+                return;
+            }
+        }
         has_value = true;
         min = std::min(min, value);
     }
@@ -58,31 +69,42 @@ struct AggregateFunctionStandaloneMinData
         addManyImpl,
         MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, size_t row_begin, size_t row_end)
         {
-          const auto * last_element = ptr + row_end;
-          ptr += row_begin;
+            const auto * last_element = ptr + row_end;
+            ptr += row_begin;
 
-          if constexpr (std::is_floating_point_v<T>)
-          {
-              constexpr size_t unroll_block = 64 / sizeof(T);
-              std::vector<T> partial_min(unroll_block, std::numeric_limits<T>::max());
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                constexpr size_t unroll_block = 64 / sizeof(T);
+                const auto * unrolled_end = ptr + ((row_end - row_begin) / unroll_block * unroll_block);
 
-              const auto * unrolled_end = ptr + ((row_end - row_begin) / unroll_block * unroll_block);
-              while (ptr < unrolled_end)
-              {
-                  for (size_t i = 0; i < unroll_block; i++)
-                  {
-                      partial_min[i] = std::min(partial_min[i], ptr[i]);
-                  }
-                  ptr += unroll_block;
-              }
+                /// Force initialization to an existing value
+                chassert(row_end - row_begin);
+                if (!has_value)
+                    min = *ptr;
 
-              min = std::min(min, *std::min_element(partial_min.begin(), partial_min.end()));
-          }
-          while (ptr < last_element)
-          {
-              min = std::min(min, *ptr);
-              ptr++;
-          }
+                if (ptr != unrolled_end)
+                {
+                    std::vector<T> partial_min(ptr, ptr + unroll_block);
+                    ptr += unroll_block;
+
+                    while (ptr < unrolled_end)
+                    {
+                        for (size_t i = 0; i < unroll_block; i++)
+                        {
+                            partial_min[i] = std::min(partial_min[i], ptr[i]);
+                        }
+                        ptr += unroll_block;
+                    }
+                    min = std::min(min, *std::min_element(partial_min.begin(), partial_min.end()));
+                }
+            }
+            while (ptr < last_element)
+            {
+                min = std::min(min, *ptr);
+                ptr++;
+            }
+
+            has_value = true;
         })
     )
 
@@ -96,7 +118,12 @@ struct AggregateFunctionStandaloneMinData
         for (size_t i = 0; i < count; i++)
             if (!null_map[i])
                 aux = std::min(aux, ptr[i]);
-        min = aux;
+
+        if (!has_value)
+            min = aux;
+        else
+            min = std::min(min, aux);
+        has_value = true;
     }
 
     void addManyConditionalImpl(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
@@ -109,14 +136,18 @@ struct AggregateFunctionStandaloneMinData
         for (size_t i = 0; i < count; i++)
             if (condition_map[i])
                 aux = std::min(aux, ptr[i]);
-        min = aux;
+
+        if (!has_value)
+            min = aux;
+        else
+            min = std::min(min, aux);
+        has_value = true;
     }
 
     /// Vectorized version
     template <typename Value>
     void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
-        has_value = true;
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX2))
         {
@@ -139,7 +170,6 @@ struct AggregateFunctionStandaloneMinData
         if (null_count == (end - start))
             return;
 
-        has_value = true;
         if (null_count != 0)
             addManyNotNullImpl(ptr, null_map, start, end);
         else
@@ -153,7 +183,6 @@ struct AggregateFunctionStandaloneMinData
         if (!included_count)
             return;
 
-        has_value = true;
         if (included_count != (end - start))
             addManyConditionalImpl(ptr, condition_map, start, end);
         else
