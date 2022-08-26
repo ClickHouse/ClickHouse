@@ -2,7 +2,7 @@
 #include <iostream>
 #include <gtest/gtest.h>
 #include <Common/FileCache.h>
-#include <Common/FileSegment.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/FileCacheSettings.h>

@@ -13,11 +13,11 @@
 
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
-#include <Common/FileCache_fwd.h>
-#include <Common/FileSegment.h>
-#include <Common/IFileCachePriority.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <Common/logger_useful.h>
-#include <Common/FileCacheType.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 
 namespace DB
 {
