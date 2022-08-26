@@ -1,9 +1,9 @@
 ---
-sidebar_position: 3
-sidebar_label: Distributed DDL
+toc_priority: 32
+toc_title: Distributed DDL
 ---
 
-# Distributed DDL Queries (ON CLUSTER Clause)
+# Distributed DDL Queries (ON CLUSTER Clause) {#distributed-ddl-queries-on-cluster-clause}
 
 By default the `CREATE`, `DROP`, `ALTER`, and `RENAME` queries affect only the current server where they are executed. In a cluster setup, it is possible to run such queries in a distributed manner with the `ON CLUSTER` clause.
 
@@ -17,6 +17,5 @@ In order to run these queries correctly, each host must have the same cluster de
 
 The local version of the query will eventually be executed on each host in the cluster, even if some hosts are currently not available.
 
-:::warning    
-The order for executing queries within a single host is guaranteed.
-:::
+!!! warning "Warning"
+    The order for executing queries within a single host is guaranteed.

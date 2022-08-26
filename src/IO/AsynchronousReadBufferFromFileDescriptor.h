@@ -64,10 +64,9 @@ public:
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
-    size_t getFileSize() override;
-
 private:
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 };
 
 }
+

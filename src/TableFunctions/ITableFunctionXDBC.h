@@ -3,7 +3,7 @@
 #include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <BridgeHelper/XDBCBridgeHelper.h>
+#include <Bridge/XDBCBridgeHelper.h>
 
 #include <Common/config.h>
 

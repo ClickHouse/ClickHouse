@@ -80,7 +80,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3IsPentagon)
+void registerFunctionH3IsPentagon(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3IsPentagon>();
 }

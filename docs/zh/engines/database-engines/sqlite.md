@@ -1,6 +1,6 @@
 ---
-sidebar_position: 32
-sidebar_label: SQLite
+toc_priority: 32
+toc_title: SQLite
 ---
 
 # SQLite {#sqlite}

@@ -2,7 +2,6 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -16,16 +15,8 @@ namespace ProfileEvents
 {
     extern const Event ExternalSortWritePart;
     extern const Event ExternalSortMerge;
-    extern const Event ExternalSortCompressedBytes;
-    extern const Event ExternalSortUncompressedBytes;
-    extern const Event ExternalProcessingCompressedBytesTotal;
-    extern const Event ExternalProcessingUncompressedBytesTotal;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric TemporaryFilesForSort;
-}
 
 namespace DB
 {
@@ -59,14 +50,9 @@ public:
     {
         if (out_stream)
         {
-            out_stream->flush();
             compressed_buf_out.next();
             file_buf_out.next();
-
-            auto stat = updateWriteStat();
-
-            LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-                path, ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
+            LOG_INFO(log, "Done writing part of data into temporary file {}", path);
 
             out_stream.reset();
 
@@ -90,24 +76,6 @@ public:
     }
 
 private:
-    struct Stat
-    {
-        size_t compressed_size = 0;
-        size_t uncompressed_size = 0;
-    };
-
-    Stat updateWriteStat()
-    {
-        Stat res{compressed_buf_out.getCompressedBytes(), compressed_buf_out.getUncompressedBytes()};
-
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, res.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, res.uncompressed_size);
-
-        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, res.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, res.uncompressed_size);
-        return res;
-    }
-
     Poco::Logger * log;
     std::string path;
     WriteBufferFromFile file_buf_out;
@@ -122,22 +90,16 @@ private:
 MergeSortingTransform::MergeSortingTransform(
     const Block & header,
     const SortDescription & description_,
-    size_t max_merged_block_size_,
-    UInt64 limit_,
-    bool increase_sort_description_compile_attempts,
+    size_t max_merged_block_size_, UInt64 limit_,
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
-    size_t max_bytes_before_external_sort_,
-    VolumePtr tmp_volume_,
+    size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
-    : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
+    : SortingTransform(header, description_, max_merged_block_size_, limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
-    , max_bytes_before_external_sort(max_bytes_before_external_sort_)
-    , tmp_volume(tmp_volume_)
-    , min_free_disk_space(min_free_disk_space_)
-{
-}
+    , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
+    , min_free_disk_space(min_free_disk_space_) {}
 
 Processors MergeSortingTransform::expandPipeline()
 {
@@ -214,11 +176,11 @@ void MergeSortingTransform::consume(Chunk chunk)
         if (!reservation)
             throw Exception("Not enough space for external sort in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        temporary_files.emplace_back(std::make_unique<TemporaryFileOnDisk>(reservation->getDisk(), CurrentMetrics::TemporaryFilesForSort));
+        const std::string tmp_path(reservation->getDisk()->getPath());
+        temporary_files.emplace_back(createTemporaryFile(tmp_path));
 
         const std::string & path = temporary_files.back()->path();
-        merge_sorter
-            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+        merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
         auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);
 
         processors.emplace_back(current_processor);
@@ -234,7 +196,6 @@ void MergeSortingTransform::consume(Chunk chunk)
                     0,
                     description,
                     max_merged_block_size,
-                    SortingQueueStrategy::Batch,
                     limit,
                     nullptr,
                     quiet,
@@ -262,12 +223,11 @@ void MergeSortingTransform::generate()
     if (!generated_prefix)
     {
         if (temporary_files.empty())
-            merge_sorter
-                = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
         else
         {
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
-            LOG_INFO(log, "There are {} temporary sorted parts to merge", temporary_files.size());
+            LOG_INFO(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
 
             processors.emplace_back(std::make_shared<MergeSorterSource>(
                     header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
@@ -291,7 +251,7 @@ void MergeSortingTransform::remerge()
     LOG_DEBUG(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
-    MergeSorter remerge_sorter(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+    MergeSorter remerge_sorter(std::move(chunks), description, max_merged_block_size, limit);
 
     Chunks new_chunks;
     size_t new_sum_rows_in_blocks = 0;

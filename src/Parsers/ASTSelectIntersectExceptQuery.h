@@ -22,7 +22,7 @@ public:
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    QueryKind getQueryKind() const override { return QueryKind::SelectIntersectExcept; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::SelectIntersectExcept; }
 
     ASTs getListOfSelects() const;
 

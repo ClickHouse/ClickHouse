@@ -106,7 +106,7 @@ FROM t_null
 
 带子查询的IN-s有两个选项（类似于连接）：normal `IN` / `JOIN` 和 `GLOBAL IN` / `GLOBAL JOIN`. 它们在分布式查询处理的运行方式上有所不同。
 
-    :::info "注意"
+!!! attention "注意"
     请记住，下面描述的算法可能会有不同的工作方式取决于 [设置](../../operations/settings/settings.md) `distributed_product_mode` 设置。
 
 当使用常规IN时，查询被发送到远程服务器，并且它们中的每个服务器都在运行子查询 `IN` 或 `JOIN` 条款

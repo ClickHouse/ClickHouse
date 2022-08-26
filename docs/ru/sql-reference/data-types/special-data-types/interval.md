@@ -1,13 +1,13 @@
 ---
-sidebar_position: 61
-sidebar_label: Interval
+toc_priority: 61
+toc_title: Interval
 ---
 
 # Interval {#data-type-interval}
 
 Семейство типов данных, представляющих интервалы дат и времени. Оператор [INTERVAL](../../../sql-reference/data-types/special-data-types/interval.md#operator-interval) возвращает значения этих типов.
 
-:::danger "Внимание"
+!!! warning "Внимание"
     Нельзя использовать типы данных `Interval` для хранения данных в таблице.
 
 Структура:

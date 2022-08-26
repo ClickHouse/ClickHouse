@@ -13,7 +13,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(Atan2)
+void registerFunctionAtan2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAtan2>(FunctionFactory::CaseInsensitive);
 }

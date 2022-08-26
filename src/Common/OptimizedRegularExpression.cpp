@@ -17,7 +17,7 @@ namespace DB
 
 template <bool thread_safe>
 void OptimizedRegularExpressionImpl<thread_safe>::analyze(
-    std::string_view regexp,
+    const std::string & regexp,
     std::string & required_substring,
     bool & is_trivial,
     bool & required_substring_is_prefix)
@@ -28,7 +28,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
       *  in which all metacharacters are escaped,
       *  and also if there are no '|' outside the brackets,
       *  and also avoid substrings of the form `http://` or `www` and some other
-      *   (this is the hack for typical use case in web analytics applications).
+      *   (this is the hack for typical use case in Yandex.Metrica).
       */
     const char * begin = regexp.data();
     const char * pos = begin;
@@ -342,23 +342,6 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     }
 }
 
-template <bool thread_safe>
-OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(OptimizedRegularExpressionImpl && rhs) noexcept
-    : is_trivial(rhs.is_trivial)
-    , required_substring_is_prefix(rhs.required_substring_is_prefix)
-    , is_case_insensitive(rhs.is_case_insensitive)
-    , required_substring(std::move(rhs.required_substring))
-    , re2(std::move(rhs.re2))
-    , number_of_subpatterns(rhs.number_of_subpatterns)
-{
-    if (!required_substring.empty())
-    {
-        if (is_case_insensitive)
-            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
-        else
-            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
-    }
-}
 
 template <bool thread_safe>
 bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const

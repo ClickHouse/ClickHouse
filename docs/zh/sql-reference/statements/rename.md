@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: RENAME
+toc_priority: 48
+toc_title: RENAME
 ---
 
 # RENAME语法 {#misc_operations-rename}

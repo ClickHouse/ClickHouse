@@ -1,4 +1,8 @@
 <test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
     <query>SELECT length(URL) > 1000 ? 'LONG' : 'SHORT' as x FROM hits_100m_single GROUP BY x FORMAT Null</query>
     <query>SELECT transform(number, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other') as x FROM numbers(100000000) GROUP BY x FORMAT Null</query>
     

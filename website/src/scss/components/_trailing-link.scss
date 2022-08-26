@@ -1,0 +1,32 @@
+.trailing-link {
+	align-items: center;
+	color: $black;
+	display: flex;
+	font-size: $font-size-sm;
+	font-weight: $font-weight-bold;
+
+	&:after {
+		background: no-repeat url(#{'../images/icons/icon-arrow.svg'});
+		background-position: right center;
+		background-size: contain;
+		content: '';
+		display: block;
+		height: 12px;
+		transition: 0.2s transform;
+		width: 20px;
+	}
+
+	&:active,
+	&:hover {
+		color: $black;
+		text-decoration: none;
+
+		&:after {
+			transform: translateX(8px);
+		}
+	}
+
+	&.span-full:after {
+		margin-left: auto;
+	}
+}

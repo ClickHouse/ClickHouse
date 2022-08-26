@@ -1,6 +1,7 @@
 ---
 title: Как экспортировать данные из ClickHouse в файл?
-sidebar_position: 10
+toc_hidden: true
+toc_priority: 10
 ---
 
 # Как экспортировать данные из ClickHouse в файл? {#how-to-export-to-file-rus}

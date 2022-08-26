@@ -2,7 +2,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Poco/Event.h>
@@ -98,7 +97,7 @@ struct PushingAsyncPipelineExecutor::Data
 
 static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    setThreadName("QueryPushPipeEx");
+    setThreadName("QueryPipelineEx");
 
     try
     {
@@ -159,7 +158,6 @@ void PushingAsyncPipelineExecutor::start()
 
     data = std::make_unique<Data>();
     data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
-    data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     data->source = pushing_source.get();
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()

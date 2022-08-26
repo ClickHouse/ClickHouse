@@ -1,6 +1,6 @@
 ---
-sidebar_position: 40
-sidebar_label: remote
+toc_priority: 40
+toc_title: remote
 ---
 
 # remote, remoteSecure {#remote-remotesecure}

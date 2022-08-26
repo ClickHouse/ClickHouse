@@ -1,6 +1,6 @@
 ---
-sidebar_position: 46
-sidebar_label: 随机数生成
+toc_priority: 46
+toc_title: 随机数生成
 ---
 
 # 随机数生成表引擎 {#table_engines-generate}

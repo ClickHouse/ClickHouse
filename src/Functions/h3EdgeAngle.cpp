@@ -94,7 +94,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3EdgeAngle)
+void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3EdgeAngle>();
 }
