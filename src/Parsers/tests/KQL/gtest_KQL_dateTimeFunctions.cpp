@@ -178,6 +178,14 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "print datetime_add('day',1,datetime(2017-10-30 01:02:03.7654321))",
             "SELECT parseDateTime64BestEffortOrNull('2017-10-30 01:02:03.7654321', 9, 'UTC') + toIntervalDay(1)"
+        },
+        {
+            "print totimespan(time(1d))"
+            "SELECT 86400."
+        },
+        {
+            "print totimespan('0.01:34:23')"
+            "SELECT 5663."
         }
 
 })));   

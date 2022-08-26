@@ -82,6 +82,11 @@
 -[todatetime] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/todatetimefunction)
    `print  todatetime('2014-05-25T08:20:03.123456Z')`
    `print  todatetime('2014-05-25 20:03.123')`
+
+- [totimespan] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/totimespanfunction)
+   ` print totimespan('0.01:34:23')`
+   `print totimespan(1d)`
+
    
 # August 15, 2022
    **double quote support**  
