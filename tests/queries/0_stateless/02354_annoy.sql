@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-ubsan
 
 DROP TABLE IF EXISTS 02354_annoy;
 
