@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -115,7 +115,7 @@ template <>
 const char * FunctionPolygonsIntersection<SphericalPoint>::name = "polygonsIntersectionSpherical";
 
 
-REGISTER_FUNCTION(PolygonsIntersection)
+void registerFunctionPolygonsIntersection(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsIntersection<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsIntersection<SphericalPoint>>();

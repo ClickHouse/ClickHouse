@@ -1,15 +1,15 @@
 ---
-sidebar_position: 37
-sidebar_label: Logical
+toc_priority: 37
+toc_title: Logical
 ---
 
-# Logical Functions
+# Logical Functions {#logical-functions}
 
 Performs logical operations on arguments of any numeric types, but returns a [UInt8](../../sql-reference/data-types/int-uint.md) number equal to 0, 1 or `NULL` in some cases.
 
 Zero as an argument is considered `false`, while any non-zero value is considered `true`.
 
-## and
+## and {#logical-and-function}
 
 Calculates the result of the logical conjunction between two or more values. Corresponds to [Logical AND Operator](../../sql-reference/operators/index.md#logical-and-operator).
 
@@ -63,7 +63,7 @@ Result:
 └──────────────────────┘
 ```
 
-## or
+## or {#logical-or-function}
 
 Calculates the result of the logical disjunction between two or more values. Corresponds to [Logical OR Operator](../../sql-reference/operators/index.md#logical-or-operator).
 
@@ -117,7 +117,7 @@ Result:
 └─────────────┘
 ```
 
-## not
+## not {#logical-not-function}
 
 Calculates the result of the logical negation of the value. Corresponds to [Logical Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
 
@@ -155,7 +155,7 @@ Result:
 └────────┘
 ```
 
-## xor
+## xor {#logical-xor-function}
 
 Calculates the result of the logical exclusive disjunction between two or more values. For more than two values the function works as if it calculates `XOR` of the first two values and then uses the result with the next value to calculate `XOR` and so on.
 

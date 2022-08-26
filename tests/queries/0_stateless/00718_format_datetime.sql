@@ -42,4 +42,4 @@ SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), 'no formatting pattern'
 SELECT formatDateTime(toDate('2018-01-01'), '%F %T');
 SELECT
     formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'UTC'),
-    formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'Asia/Istanbul')
+    formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'Europe/Moscow')

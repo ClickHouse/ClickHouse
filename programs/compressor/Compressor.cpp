@@ -66,45 +66,43 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
     using namespace DB;
     namespace po = boost::program_options;
 
+    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    desc.add_options()
+        ("help,h", "produce help message")
+        ("input", po::value<std::string>()->value_name("INPUT"), "input file")
+        ("output", po::value<std::string>()->value_name("OUTPUT"), "output file")
+        ("decompress,d", "decompress")
+        ("offset-in-compressed-file", po::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
+        ("offset-in-decompressed-block", po::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
+        ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
+        ("hc", "use LZ4HC instead of LZ4")
+        ("zstd", "use ZSTD instead of LZ4")
+        ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
+        ("level", po::value<int>(), "compression level for codecs specified via flags")
+        ("none", "use no compression instead of LZ4")
+        ("stat", "print block statistics of compressed data")
+    ;
+
+    po::positional_options_description positional_desc;
+    positional_desc.add("input", 1);
+    positional_desc.add("output", 1);
+
+    po::variables_map options;
+    po::store(po::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
+
+    if (options.count("help"))
+    {
+        std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
+        std::cout << desc << std::endl;
+        return 0;
+    }
+
     try
     {
-        po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
-        desc.add_options()
-            ("help,h", "produce help message")
-            ("input", po::value<std::string>()->value_name("INPUT"), "input file")
-            ("output", po::value<std::string>()->value_name("OUTPUT"), "output file")
-            ("decompress,d", "decompress")
-            ("offset-in-compressed-file", po::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
-            ("offset-in-decompressed-block", po::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
-            ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
-            ("hc", "use LZ4HC instead of LZ4")
-            ("zstd", "use ZSTD instead of LZ4")
-            ("deflate_qpl", "use deflate_qpl instead of LZ4")
-            ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
-            ("level", po::value<int>(), "compression level for codecs specified via flags")
-            ("none", "use no compression instead of LZ4")
-            ("stat", "print block statistics of compressed data")
-        ;
-
-        po::positional_options_description positional_desc;
-        positional_desc.add("input", 1);
-        positional_desc.add("output", 1);
-
-        po::variables_map options;
-        po::store(po::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
-
-        if (options.count("help"))
-        {
-            std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
-            std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
-            std::cout << desc << std::endl;
-            return 0;
-        }
-
         bool decompress = options.count("decompress");
         bool use_lz4hc = options.count("hc");
         bool use_zstd = options.count("zstd");
-        bool use_deflate_qpl = options.count("deflate_qpl");
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
         unsigned block_size = options["block-size"].as<unsigned>();
@@ -112,7 +110,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         if (options.count("codec"))
             codecs = options["codec"].as<std::vector<std::string>>();
 
-        if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
+        if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
             throw Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", ErrorCodes::BAD_ARGUMENTS);
 
         if (!codecs.empty() && options.count("level"))
@@ -124,8 +122,6 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             method_family = "LZ4HC";
         else if (use_zstd)
             method_family = "ZSTD";
-        else if (use_deflate_qpl)
-            method_family = "DEFLATE_QPL";
         else if (use_none)
             method_family = "NONE";
 

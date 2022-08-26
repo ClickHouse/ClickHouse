@@ -90,7 +90,6 @@
     #define PCG_EMULATED_128BIT_MATH 1
 #endif
 
-// NOLINTBEGIN(*)
 
 namespace pcg_extras {
 
@@ -552,7 +551,5 @@ std::ostream& operator<<(std::ostream& out, printable_typename<T>) {
 #endif  // __cpp_rtti || __GXX_RTTI
 
 } // namespace pcg_extras
-
-// NOLINTEND(*)
 
 #endif // PCG_EXTRAS_HPP_INCLUDED

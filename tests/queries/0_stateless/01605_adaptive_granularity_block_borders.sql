@@ -22,7 +22,7 @@ OPTIMIZE TABLE adaptive_table FINAL;
 
 SELECT marks FROM system.parts WHERE table = 'adaptive_table' and database=currentDatabase() and active;
 
-SET enable_filesystem_cache = 0;
+SET remote_fs_enable_cache = 0;
 
 -- If we have computed granularity incorrectly than we will exceed this limit.
 SET max_memory_usage='30M';

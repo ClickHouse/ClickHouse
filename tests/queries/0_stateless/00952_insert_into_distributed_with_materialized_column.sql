@@ -15,7 +15,6 @@ SET insert_allow_materialized_columns=0;
 SELECT 'insert_distributed_sync=0';
 SET insert_distributed_sync=0;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE local_00952 (date Date, value Date MATERIALIZED toDate('2017-08-01')) ENGINE = MergeTree(date, date, 8192);
 CREATE TABLE distributed_00952 AS local_00952 ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), local_00952, rand());
 

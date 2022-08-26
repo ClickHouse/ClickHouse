@@ -98,7 +98,7 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
         ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
 
-        bool find(std::string_view key, Element & result) const
+        bool find(const std::string_view & key, Element & result) const
         {
             auto it = ptr->FindMember(rapidjson::StringRef(key.data(), key.length()));
             if (it == ptr->MemberEnd())
@@ -122,7 +122,7 @@ struct RapidJSONParser
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(std::string_view json, Element & result)
+    bool parse(const std::string_view & json, Element & result)
     {
         rapidjson::MemoryStream ms(json.data(), json.size());
         rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);

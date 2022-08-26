@@ -1,14 +1,13 @@
 ---
-sidebar_position: 141
+toc_priority: 141
 ---
 
 # deltaSum {#agg_functions-deltasum}
 
 Суммирует арифметическую разницу между последовательными строками. Если разница отрицательна — она будет проигнорирована.
 
-:::info "Примечание"
+!!! info "Примечание"
     Чтобы эта функция работала должным образом, исходные данные должны быть отсортированы. В [материализованном представлении](../../../sql-reference/statements/create/view.md#materialized) вместо нее рекомендуется использовать [deltaSumTimestamp](../../../sql-reference/aggregate-functions/reference/deltasumtimestamp.md#agg_functions-deltasumtimestamp).
-:::
 
 **Синтаксис**
 

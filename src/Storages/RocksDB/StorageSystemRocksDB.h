@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,8 +12,9 @@ class Context;
 
 /** Implements the `rocksdb` system table, which expose various rocksdb metrics.
   */
-class StorageSystemRocksDB final : public IStorageSystemOneBlock<StorageSystemRocksDB>
+class StorageSystemRocksDB final : public shared_ptr_helper<StorageSystemRocksDB>, public IStorageSystemOneBlock<StorageSystemRocksDB>
 {
+    friend struct shared_ptr_helper<StorageSystemRocksDB>;
 public:
     std::string getName() const override { return "SystemRocksDB"; }
 

@@ -1,15 +1,15 @@
 ---
-sidebar_position: 40
-sidebar_label: remote
+toc_priority: 40
+toc_title: remote
 ---
 
-# remote, remoteSecure
+# remote, remoteSecure {#remote-remotesecure}
 
-Allows accessing remote servers, including migration of data, without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. `remoteSecure` - same as `remote` but with a secured connection.
+Allows to access remote servers without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. `remoteSecure` - same as `remote` but with a secured connection.
 
 Both functions can be used in `SELECT` and `INSERT` queries.
 
-## Syntax
+**Syntax**
 
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password'], sharding_key])
@@ -18,7 +18,7 @@ remoteSecure('addresses_expr', db, table[, 'user'[, 'password'], sharding_key])
 remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
 ```
 
-## Parameters
+**Parameters**
 
 - `addresses_expr` — An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`.
 
@@ -36,31 +36,28 @@ remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
 - `password` — User password. If the password is not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).
 - `sharding_key` — Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
-## Returned value
+**Returned value**
 
 The dataset from remote servers.
 
-## Usage
+**Usage**
 
-Unless you are migrating data from one system to another, using the `remote` table function is less optimal than creating a `Distributed` table because in this case the server connection is re-established for every request. Also, if hostnames are set, the names are resolved, and errors are not counted when working with various replicas. When processing a large number of queries, always create the `Distributed` table ahead of time, and do not use the `remote` table function.
+Using the `remote` table function is less optimal than creating a `Distributed` table because in this case the server connection is re-established for every request. Also, if hostnames are set, the names are resolved, and errors are not counted when working with various replicas. When processing a large number of queries, always create the `Distributed` table ahead of time, and do not use the `remote` table function.
 
 The `remote` table function can be useful in the following cases:
 
-- Migrating data from one system to another
-- Accessing a specific server for data comparison, debugging, and testing.
-- Queries between various ClickHouse clusters for research purposes.
-- Infrequent distributed requests that are made manually.
-- Distributed requests where the set of servers is re-defined each time.
+-   Accessing a specific server for data comparison, debugging, and testing.
+-   Queries between various ClickHouse clusters for research purposes.
+-   Infrequent distributed requests that are made manually.
+-   Distributed requests where the set of servers is re-defined each time.
 
-### Adresses
+**Adresses**
 
 ``` text
 example01-01-1
-example01-01-1:9440
 example01-01-1:9000
 localhost
 127.0.0.1
-[::]:9440
 [::]:9000
 [2a02:6b8:0:1111::11]:9000
 ```
@@ -71,15 +68,15 @@ Multiple addresses can be comma-separated. In this case, ClickHouse will use dis
 example01-01-1,example01-02-1
 ```
 
-## Examples
+**Examples**
 
-### Selecting data from a remote server:
+Selecting data from a remote server:
 
 ``` sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
 ```
 
-### Inserting data from a remote server into a table:
+Inserting data from a remote server into a table:
 
 ``` sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -87,65 +84,7 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-### Migration of tables from one system to another:
-This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`. 
-
-#### On the source ClickHouse system (the system that currently hosts the data)
-- Verify the source database and table name (`imdb.actors`)  
-  ```sql
-  show databases
-  ```
-
-  ```sql
-  show tables in imdb
-  ```
-
-- Get the CREATE TABLE statement from the source:
-  ```
-  select create_table_query
-  from system.tables
-  where database = 'imdb' and table = 'actors'
-  ```
-
-  Response
-  ```sql
-  CREATE TABLE imdb.actors (`id` UInt32,
-                            `first_name` String,
-                            `last_name` String,
-                            `gender` FixedString(1))
-                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
-                  ORDER BY (id, first_name, last_name, gender)
-                  SETTINGS index_granularity = 8192
-  ```
-
-#### On the destination ClickHouse system:
-
-- Create the destination database:
-  ```sql
-  CREATE DATABASE imdb
-  ```
-
-- Using the CREATE TABLE statement from the source, create the destination:
-  ```sql
-  CREATE TABLE imdb.actors (`id` UInt32,
-                            `first_name` String,
-                            `last_name` String,
-                            `gender` FixedString(1))
-                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
-                  ORDER BY (id, first_name, last_name, gender)
-                  SETTINGS index_granularity = 8192
-  ```
-
-#### Back on the source deployment:
-
-Insert into the new database and table created on the remote system.  You will need the host, port, username, password, destination database, and destination table.
-```sql
-INSERT INTO FUNCTION
-remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD', rand())
-SELECT * from imdb.actors
-```
-
-## Globs in Addresses {#globs-in-addresses}
+## Globs in Addresses {globs-in-addresses}
 
 Patterns in curly brackets `{ }` are used to generate a set of shards and to specify replicas. If there are multiple pairs of curly brackets, then the direct product of the corresponding sets is generated.
 The following pattern types are supported.

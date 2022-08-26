@@ -13,7 +13,7 @@ namespace DB
  * * DateTime64 value and scale factor (2)
  * * DateTime64 broken down to components, result of execute is then re-assembled back into DateTime64 value (3)
  *
- * Suitable Transform-types are commonly used in Date/DateTime manipulation functions,
+ * Suitable Transfotm-types are commonly used in Date/DateTime manipulation functions,
  * and should implement static (or const) function with following signatures:
  * 1:
  *     R execute(Int64 whole_value, ... )

@@ -4,11 +4,9 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/JIT/CHJIT.h>
-
 
 namespace DB
 {
@@ -28,7 +26,6 @@ struct ColumnData
   */
 ColumnData getColumnData(const IColumn * column);
 
-using ColumnDataRowsOffset = size_t;
 using ColumnDataRowsSize = size_t;
 
 using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
@@ -54,10 +51,10 @@ struct AggregateFunctionWithOffset
 };
 
 using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
-using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
-using JITAddIntoAggregateStatesFunctionSinglePlace = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr);
+using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
+using JITAddIntoAggregateStatesFunctionSinglePlace = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr);
 using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
-using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
+using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 
 struct CompiledAggregateFunctions
 {
@@ -84,21 +81,6 @@ struct CompiledAggregateFunctions
   * JITInsertAggregateStatesIntoColumnsFunction will insert aggregate states for aggregate functions into result columns.
   */
 CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
-
-
-using JITSortDescriptionFunc = int8_t (*)(size_t, size_t, ColumnData *, ColumnData *);
-
-struct CompiledSortDescriptionFunction
-{
-    JITSortDescriptionFunc comparator_function;
-    CHJIT::CompiledModule compiled_module;
-};
-
-CompiledSortDescriptionFunction compileSortDescription(
-    CHJIT & jit,
-    SortDescription & description,
-    const DataTypes & sort_description_types,
-    const std::string & sort_description_dump);
 
 }
 

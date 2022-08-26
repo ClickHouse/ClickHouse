@@ -10,11 +10,6 @@ namespace DB
 {
 
 /// Get taskstat info from OS kernel via Netlink protocol.
-///
-/// NOTE: unlike procfs interface, netlink interface, rounds some values to KiBs [1].
-///
-///   [1]: https://elixir.bootlin.com/linux/v5.18-rc4/source/kernel/tsacct.c#L101
-///
 class TaskStatsInfoGetter : private boost::noncopyable
 {
 public:

@@ -1,6 +1,7 @@
 ---
-sidebar_label: 日志引擎系列
-sidebar_position: 29
+toc_folder_title: "\u65E5\u5FD7\u7CFB\u5217"
+toc_title: 日志引擎系列
+toc_priority: 29
 ---
 
 # 日志引擎系列 {#table_engines-log-engine-family}

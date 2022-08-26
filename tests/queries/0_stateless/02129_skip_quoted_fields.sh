@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "drop table if exists test_02129"
 $CLICKHOUSE_CLIENT -q "create table test_02129 (x UInt64, y UInt64) engine=Memory()"
 
-QUERY="insert into test_02129 settings input_format_skip_unknown_fields=1, format_custom_escaping_rule='Quoted' format CustomSeparatedWithNames"
+QUERY="insert into test_02129 format CustomSeparatedWithNames settings input_format_skip_unknown_fields=1, format_custom_escaping_rule='Quoted'"
 
 # Skip string
 echo -e "'x'\t'trash'\t'y'\n1\t'Some string'\t42" | $CLICKHOUSE_CLIENT -q "$QUERY"

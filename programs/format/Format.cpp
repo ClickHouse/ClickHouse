@@ -44,47 +44,45 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 {
     using namespace DB;
 
+    boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    desc.add_options()
+        ("query", po::value<std::string>(), "query to format")
+        ("help,h", "produce help message")
+        ("hilite", "add syntax highlight with ANSI terminal escape sequences")
+        ("oneline", "format in single line")
+        ("quiet,q", "just check syntax, no output on success")
+        ("multiquery,n", "allow multiple queries in the same file")
+        ("obfuscate", "obfuscate instead of formatting")
+        ("backslash", "add a backslash at the end of each line of the formatted query")
+        ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
+    ;
+
+    Settings cmd_settings;
+    for (const auto & field : cmd_settings.all())
+    {
+        if (field.getName() == "max_parser_depth" || field.getName() == "max_query_size")
+            cmd_settings.addProgramOption(desc, field);
+    }
+
+    boost::program_options::variables_map options;
+    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+    po::notify(options);
+
+    if (options.count("help"))
+    {
+        std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
+        std::cout << desc << std::endl;
+        return 1;
+    }
+
     try
     {
-        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
-        desc.add_options()
-            ("query", po::value<std::string>(), "query to format")
-            ("help,h", "produce help message")
-            ("hilite", "add syntax highlight with ANSI terminal escape sequences")
-            ("oneline", "format in single line")
-            ("quiet,q", "just check syntax, no output on success")
-            ("multiquery,n", "allow multiple queries in the same file")
-            ("obfuscate", "obfuscate instead of formatting")
-            ("backslash", "add a backslash at the end of each line of the formatted query")
-            ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
-            ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
-        ;
-
-        Settings cmd_settings;
-        for (const auto & field : cmd_settings.all())
-        {
-            if (field.getName() == "max_parser_depth" || field.getName() == "max_query_size")
-                cmd_settings.addProgramOption(desc, field);
-        }
-
-        boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
-        po::notify(options);
-
-        if (options.count("help"))
-        {
-            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
-            std::cout << desc << std::endl;
-            return 1;
-        }
-
         bool hilite = options.count("hilite");
         bool oneline = options.count("oneline");
         bool quiet = options.count("quiet");
         bool multiple = options.count("multiquery");
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
-        bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -145,7 +143,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
-                    || additional_names.contains(what);
+                    || additional_names.count(what);
             };
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);
@@ -156,7 +154,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             const char * pos = query.data();
             const char * end = pos + query.size();
 
-            ParserQuery parser(end, allow_settings_after_format_in_insert);
+            ParserQuery parser(end);
             do
             {
                 ASTPtr res = parseQueryAndMovePosition(

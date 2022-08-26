@@ -1,7 +1,6 @@
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <fmt/format.h>
 
 
 namespace DB
@@ -21,7 +20,7 @@ String ASTShowAccessEntitiesQuery::getKeyword() const
 
 String ASTShowAccessEntitiesQuery::getID(char) const
 {
-    return fmt::format("SHOW {} query", getKeyword());
+    return "SHOW " + String(getKeyword()) + " query";
 }
 
 void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const

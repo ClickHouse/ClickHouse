@@ -1,4 +1,4 @@
-# settings_profiles
+# system.settings_profiles {#system_tables-settings_profiles}
 
 Contains properties of configured setting profiles.
 

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 40
-sidebar_label: "ANSI\u517C\u5BB9\u6027"
+toc_priority: 40
+toc_title: "ANSI\u517C\u5BB9\u6027"
 ---
 
 # ClickHouse SQL方言 与ANSI SQL的兼容性{#ansi-sql-compatibility-of-clickhouse-sql-dialect}
