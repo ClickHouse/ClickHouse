@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2024
 
 set -e -x -a -u
 
