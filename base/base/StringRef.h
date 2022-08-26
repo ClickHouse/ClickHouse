@@ -55,10 +55,9 @@ struct StringRef
     bool empty() const { return size == 0; }
 
     std::string toString() const { return std::string(data, size); }
-
     explicit operator std::string() const { return toString(); }
-    std::string_view toView() const { return std::string_view(data, size); }
 
+    std::string_view toView() const { return std::string_view(data, size); }
     constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
 };
 
