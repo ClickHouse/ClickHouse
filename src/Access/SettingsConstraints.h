@@ -33,12 +33,17 @@ class AccessControl;
   *           <max_memory_usage>
   *               <min>200000</min>
   *               <max>20000000000</max>
-  *               <max_in_readonly>10000000000</max_in_readonly>
   *           </max_memory_usage>
   *           <force_index_by_date>
   *               <readonly/>
   *           </force_index_by_date>
   *       </constraints>
+  *       <allow>
+  *           <max_memory_usage>
+  *               <min>200000</min>
+  *               <max>10000000000</max>
+  *           <max_memory_usage>
+  *       </allow>
   *   </user_profile>
   * </profiles>
   *
@@ -63,23 +68,14 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void setMinValue(std::string_view setting_name, const Field & min_value);
-    Field getMinValue(std::string_view setting_name) const;
+    void constrainMinValue(const String & setting_name, const Field & min_value);
+    void constrainMaxValue(const String & setting_name, const Field & max_value);
+    void constrainReadOnly(const String & setting_name, bool read_only);
+    void allowMinValue(const String & setting_name, const Field & min_value);
+    void allowMaxValue(const String & setting_name, const Field & max_value);
+    void allowReadOnly(const String & setting_name, bool read_only);
 
-    void setMaxValue(std::string_view setting_name, const Field & max_value);
-    Field getMaxValue(std::string_view setting_name) const;
-
-    void setReadOnly(std::string_view setting_name, bool read_only);
-    bool isReadOnly(std::string_view setting_name) const;
-
-    void setMinValueInReadOnly(std::string_view setting_name, const Field & min_value_in_readonly);
-    Field getMinValueInReadOnly(std::string_view setting_name) const;
-
-    void setMaxValueInReadOnly(std::string_view setting_name, const Field & max_value_in_readonly);
-    Field getMaxValueInReadOnly(std::string_view setting_name) const;
-
-    void set(std::string_view setting_name, const Field & min_value, const Field & max_value, bool read_only);
-    void get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only, Field & min_value_in_readonly, Field & max_value_in_readonly) const;
+    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -95,33 +91,60 @@ public:
     friend bool operator !=(const SettingsConstraints & left, const SettingsConstraints & right) { return !(left == right); }
 
 private:
-    struct Constraint
-    {
-        std::shared_ptr<const String> setting_name;
-        bool read_only = false;
-        Field min_value;
-        Field max_value;
-
-        // Allowed range in `readonly=1` mode.
-        // NOTE: only reasonable to be a subset of [min_value; max_value] range, although there is no enforcement.
-        Field min_value_in_readonly;
-        Field max_value_in_readonly;
-
-        bool operator ==(const Constraint & other) const;
-        bool operator !=(const Constraint & other) const { return !(*this == other); }
-    };
-
     enum ReactionOnViolation
     {
         THROW_ON_VIOLATION,
         CLAMP_ON_VIOLATION,
     };
+
+    struct Range
+    {
+        bool read_only = false;
+        Field min_value;
+        Field max_value;
+
+        String explain;
+        int code;
+
+        bool operator ==(const Range & other) const;
+        bool operator !=(const Range & other) const { return !(*this == other); }
+
+        bool check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const;
+
+        static const Range & allowed()
+        {
+            static Range res;
+            return res;
+        }
+
+        static Range forbidden(const String & explain, int code)
+        {
+            return Range{.read_only = true, .explain = explain, .code = code};
+        }
+    };
+
+    struct StringHash
+    {
+        using is_transparent = void;
+        size_t operator()(std::string_view txt) const
+        {
+            return std::hash<std::string_view>{}(txt);
+        }
+        size_t operator()(const String & txt) const
+        {
+            return std::hash<String>{}(txt);
+        }
+    };
+
     bool checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Constraint & getConstraintRef(std::string_view setting_name);
-    const Constraint * tryGetConstraint(std::string_view setting_name) const;
+    Range getRange(const Settings & current_settings, std::string_view setting_name) const;
 
-    std::unordered_map<std::string_view, Constraint> constraints;
+    // Special containter for heterogenous lookups: to avoid `String` construction during `find(std::string_view)`
+    using RangeMap = std::unordered_map<String, Range, StringHash, std::equal_to<>>;
+    RangeMap constraints;
+    RangeMap allowances;
+
     const AccessControl * access_control = nullptr;
 };
 

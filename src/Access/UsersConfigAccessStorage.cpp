@@ -425,7 +425,8 @@ namespace
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
                                                      const String & path_to_constraints,
-                                                     const AccessControl & access_control)
+                                                     const AccessControl & access_control,
+                                                     SettingsProfileElement::RangeKind kind)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -437,6 +438,7 @@ namespace
 
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
+            profile_element.kind = kind;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
@@ -449,10 +451,6 @@ namespace
                     profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly")
                     profile_element.readonly = true;
-                else if (constraint_type == "min_in_readonly")
-                    profile_element.min_value_in_readonly = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
-                else if (constraint_type == "max_in_readonly")
-                    profile_element.max_value_in_readonly = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else
                     throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
@@ -491,7 +489,13 @@ namespace
 
             if (key == "constraints" || key.starts_with("constraints["))
             {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, access_control));
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, access_control, SettingsProfileElement::RangeKind::Constrain));
+                continue;
+            }
+
+            if (key == "allow" || key.starts_with("allow["))
+            {
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, access_control, SettingsProfileElement::RangeKind::Allow));
                 continue;
             }
 

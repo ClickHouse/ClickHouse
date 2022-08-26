@@ -31,7 +31,9 @@ The constraints are defined as the following:
 ```
 
 If the user tries to violate the constraints an exception is thrown and the setting isn’t changed.
-There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all. Also for `readonly = 1` mode there are two additional types of constraints: `min_in_readonly` and `max_in_readonly`, see details below.
+There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all.
+
+If there are multiple profiles active for a user, then constraints are merged. Constraints for the same setting are replaced during merge, such that the last constraint is used and all previous are ignored.
 
 **Example:** Let `users.xml` includes lines:
 
@@ -68,31 +70,37 @@ Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not 
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
 ```
 
-## Constraints in read-only mode {#settings-readonly-constraints}
+## Allowances in read-only mode {#settings-readonly-allowance}
 Read-only mode is enabled by `readonly` setting:
 - `readonly=0`: No read-only restrictions.
 - `readonly=1`: Only read queries are allowed and settings cannot be changes unless explicitly allowed.
 - `readonly=2`: Only read queries are allowed, but settings can be changed, except for `readonly` setting itself.
 
-In both read-only modes settings constraints are applied and additionally in `readonly=1` mode some settings changes can be explicitly allowed in the following way:
+In `readonly=0` and `readonly=2` modes settings constraints are applied as usual. But in `readonly=1` by default all settings changes are forbidden and constraints are ignored. But special allowances can be set in the following way:
 ``` xml
 <profiles>
   <user_name>
-    <constraints>
+    <allow>
       <setting_name_1>
-        <min_in_readonly>lower_boundary</min_in_readonly>
+        <min>lower_boundary</min>
       </setting_name_1>
       <setting_name_2>
-        <max_in_readonly>upper_boundary</max_in_readonly>
+        <max>upper_boundary</max>
       </setting_name_2>
       <setting_name_3>
-        <min_in_readonly>lower_boundary</min_in_readonly>
-        <max_in_readonly>upper_boundary</max_in_readonly>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
       </setting_name_3>
-    </constraints>
+      <setting_name_4>
+        <readonly/>
+      </setting_name_4>
+      <setting_name_5/><!-- allow any value -->
+    </allow>
   </user_name>
 </profiles>
 ```
+
+Constraints and allowances are merged from multiple profiles independently. Previous constraint is not canceled by new allowance, as well as previous allowance is not canceled by new constraint. Instead profile can have one allowance and one constraint for every setting. Allowances are used in `readonly=1` mode, otherwise constraints are used.
 
 **Note:** the `default` profile has special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they’re overridden explicitly for these users.
 
