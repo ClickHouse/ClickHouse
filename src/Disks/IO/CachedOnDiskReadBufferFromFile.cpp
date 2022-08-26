@@ -1008,6 +1008,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     chassert(
                         std::next(current_file_segment_it) == file_segments_holder->file_segments.end()
                         || file_segment->getCurrentWriteOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
+
+                    LOG_TEST(log, "Successfully written {} bytes", size);
                 }
                 else
                 {

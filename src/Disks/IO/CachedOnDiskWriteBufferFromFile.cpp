@@ -1,6 +1,6 @@
 #include "CachedOnDiskWriteBufferFromFile.h"
 
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/FileSegment.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/FilesystemCacheLog.h>

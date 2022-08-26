@@ -22,7 +22,7 @@
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
 
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 
 namespace DB
 {

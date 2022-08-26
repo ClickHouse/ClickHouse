@@ -17,7 +17,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
 #include <Common/ThreadPool.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Disks/WriteMode.h>
 
 

@@ -4,7 +4,7 @@
 #include <mutex>
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Common/FileCacheKey.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 
 namespace DB
 {

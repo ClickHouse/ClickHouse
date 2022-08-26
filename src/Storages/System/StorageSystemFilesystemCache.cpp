@@ -4,9 +4,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Common/FileSegment.h>
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 

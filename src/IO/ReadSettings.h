@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string>
 #include <Core/Defines.h>
-#include <Common/FileCache_fwd.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
 
 namespace DB

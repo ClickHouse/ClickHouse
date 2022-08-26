@@ -4,7 +4,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/hex.h>
 #include <Common/logger_useful.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <filesystem>
@@ -555,7 +555,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         if (state.exception)
             std::rethrow_exception(state.exception);
 
-        LOG_TEST(log, "Current async write state has {} buffers to be written", state.buffers.size());
+        LOG_TEST(log, "Current background download state has {} buffers to be written", state.buffers.size());
 
         if (state.last_added_buffer_range)
         {
@@ -769,6 +769,8 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
         throw;
     }
+
+    LOG_TEST(log, "Submitted task for background download for offset: {}", offset);
 }
 
 void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset)

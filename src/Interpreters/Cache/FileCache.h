@@ -12,13 +12,13 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Types.h>
-#include <IO/ReadSettings.h>
-#include <Common/FileCache_fwd.h>
 #include <Common/FileSegment.h>
-#include <Common/IFileCachePriority.h>
 #include <Common/logger_useful.h>
-#include <Common/FileCacheKey.h>
 #include <Common/ThreadPool.h>
+#include <IO/ReadSettings.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
 
 namespace DB
 {

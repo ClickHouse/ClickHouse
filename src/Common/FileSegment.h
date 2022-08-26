@@ -1,7 +1,7 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-#include <Common/FileCacheKey.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
