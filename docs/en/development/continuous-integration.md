@@ -54,7 +54,7 @@ the documentation is wrong. Go to the check report and look for `ERROR` and `WAR
 Check that the description of your pull request conforms to the template
 [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and
-write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/)
+write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
 
 ## Push To DockerHub
