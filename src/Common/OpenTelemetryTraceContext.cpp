@@ -102,7 +102,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name)
     }
 }
 
-void SpanHolder::finish()
+void SpanHolder::finish() noexcept
 {
     if (!this->isTraceEnabled())
         return;
@@ -294,14 +294,29 @@ TracingContextHolder::~TracingContextHolder()
 {
     if (this->root_span.isTraceEnabled())
     {
-        auto shared_span_log = current_thread_trace_context.span_log.lock();
-        if (shared_span_log)
+        try
         {
-            this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
-            this->root_span.finish_time_us
-                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            auto shared_span_log = current_thread_trace_context.span_log.lock();
+            if (shared_span_log)
+            {
+                try
+                {
+                    this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
+                }
+                catch (...)
+                {
+                    /// Ignore any exceptions
+                }
 
-            shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
+                this->root_span.finish_time_us
+                    = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+                shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__FUNCTION__);
         }
 
         this->root_span.trace_id = UUID();

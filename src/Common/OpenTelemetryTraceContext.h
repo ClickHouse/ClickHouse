@@ -152,7 +152,7 @@ struct SpanHolder : public Span
 
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
-    void finish();
+    void finish() noexcept;
 };
 
 }
