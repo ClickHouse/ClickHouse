@@ -4,7 +4,6 @@
         <!-- Profile that allows only read queries. -->
         <readonly>
             <readonly>1</readonly>
-            <max_threads>8</max_threads> <!-- TODO(serxa): remove it -->
         </readonly>
     </profiles>
 
