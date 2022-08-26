@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/opentelemetry_span_log
+---
 # system.opentelemetry_span_log {#system_tables-opentelemetry_span_log}
 
 包含已执行查询的[跟踪范围](https://opentracing.io/docs/overview/spans/)的信息.

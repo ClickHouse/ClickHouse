@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/statements/insert-into
+---
 ## INSERT INTO 语句 {#insert}
 
 INSERT INTO 语句主要用于向系统中添加数据.
