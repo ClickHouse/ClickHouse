@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/operations/production
 title: Какую версию ClickHouse использовать?
 sidebar_position: 10
 ---

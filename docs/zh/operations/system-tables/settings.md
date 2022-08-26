@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/settings
+---
 # system.settings {#system-tables-system-settings}
 
 包含当前用户会话设置的相关信息。

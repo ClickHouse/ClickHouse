@@ -1,3 +1,6 @@
+---
+slug: /ru/sql-reference/data-types/simpleaggregatefunction
+---
 # SimpleAggregateFunction(func, type) {#data-type-simpleaggregatefunction}
 
 Хранит только текущее значение агрегатной функции и не сохраняет ее полное состояние, как это делает [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md). Такая оптимизация может быть применена к функциям, которые обладают следующим свойством: результат выполнения функции `f` к набору строк `S1 UNION ALL S2` может быть получен путем выполнения `f` к отдельным частям набора строк,
