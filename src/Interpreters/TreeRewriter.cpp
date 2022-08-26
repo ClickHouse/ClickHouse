@@ -270,7 +270,6 @@ using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatch
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
 using FuseSumCountAggregatesVisitor = InDepthNodeVisitor<OneTypeMatcher<FuseSumCountAggregatesVisitorData>, true>;
 
-
 struct ExistsExpressionData
 {
     using TypeToVisit = ASTFunction;
@@ -779,7 +778,6 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
 }
 
-
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -961,7 +959,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 
     source_columns_set = removeDuplicateColumns(source_columns);
 }
-
 
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
@@ -1223,8 +1220,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     // }
 
-
-
     if (table_join)
     {
         LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "analyzeSelect: table_join at the top {}", table_join->dumpStructure());
@@ -1408,7 +1403,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     {
         LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "analyzeSelect: table_join at the bottom {}", table_join->dumpStructure());
     }
-
 
     return std::make_shared<const TreeRewriterResult>(result);
 }

@@ -57,7 +57,6 @@ private:
     size_t max_block_size;
 };
 
-
 class ParallelJoinStep : public IQueryPlanStep
 {
 public:
@@ -74,7 +73,5 @@ private:
     size_t max_block_size;
     Processors processors;
 };
-
-
 
 }

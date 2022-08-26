@@ -299,7 +299,6 @@ void FillingRightJoinSideTransform::work()
     set_totals = for_totals;
 }
 
-
 std::optional<IProcessor::Status> ParallelJoinTransform::processLeft()
 {
     assert(current_input == inputs.begin());
@@ -318,8 +317,6 @@ std::optional<IProcessor::Status> ParallelJoinTransform::processLeft()
             // continue
             return std::nullopt;
         }
-
-
 
         bool left_in_use = false;
         for (size_t right_inp = 1; right_inp < num_inputs; ++right_inp)
@@ -480,7 +477,6 @@ std::optional<IProcessor::Status> ParallelJoinTransform::processRight()
     auto right_names = add_block.getNames();
     auto const & join_column_name_it = std::find_if(std::begin(right_names), std::end(right_names), [&](const auto & column) { return boost::iends_with(column, left_col_name); });
 
-
     assert(join_column_name_it != std::end(right_names));
     assert(add_block.has(*join_column_name_it));
     auto const & right_col = add_block.getByName(*join_column_name_it).column;
@@ -594,10 +590,8 @@ void ParallelJoinTransform::finish()
     }
 }
 
-
 std::optional<IProcessor::Status> ParallelJoinTransform::topCheck()
 {
-
     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "top of loop for input {}", inp);
     bool need_data = true;
 
@@ -697,7 +691,6 @@ std::optional<IProcessor::Status> ParallelJoinTransform::topCheck()
 std::optional<IProcessor::Status> ParallelJoinTransform::endOfInputs()
 {
     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "inputs.end - not left in use");
-
 
     {
         size_t cur_inp_num = 0;
@@ -870,12 +863,9 @@ std::optional<IProcessor::Status> ParallelJoinTransform::endOfInputs()
     // left_read = false;
     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "pushed");
 
-
     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning PortFull");   // !!!!!!!!!!
     return Status::PortFull;
 }
-
-
 
 IProcessor::Status ParallelJoinTransform::prepare()
 {
@@ -906,7 +896,6 @@ IProcessor::Status ParallelJoinTransform::prepare()
         return Status::PortFull;
     }
 
-
     bool all_finished = true;
     bool left_read = false;  // needed ?
 
@@ -927,7 +916,6 @@ IProcessor::Status ParallelJoinTransform::prepare()
             goto EOFL;
         }
 
-
         if (!current_input->isFinished() || current_input->hasData() || status[inp].right_rest)
         {
             if (current_input == inputs.begin())
@@ -938,7 +926,6 @@ IProcessor::Status ParallelJoinTransform::prepare()
             {
                 processRight();
             }
-
 
           EOFL:
             LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "EOFL");
@@ -1033,7 +1020,6 @@ IProcessor::Status ParallelJoinTransform::prepare()
         }
     }
 
-
     for (auto & inp_to_close : inputs)
     {
         inp_to_close.close();
@@ -1088,9 +1074,5 @@ void ParallelJoinTransform::mk_ports()
     // outputs.emplace_back(first) ;
 
 }
-
-
-
-
 
 }

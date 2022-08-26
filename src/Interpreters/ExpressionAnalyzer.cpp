@@ -53,8 +53,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Common/logger_useful.h>
-
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -76,12 +74,10 @@
 
 #include <Common/logger_useful.h>
 
-
 namespace DB
 {
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
-
 
 namespace ErrorCodes
 {
@@ -429,7 +425,6 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
 }
 
-
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain)
 {
     if (do_global)
@@ -439,7 +434,6 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
-
 
 void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options)
 {
@@ -493,7 +487,6 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     return storage_set->getSet();
 }
 
-
 /// Performance optimization for IN() if storage supports it.
 void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 {
@@ -540,7 +533,6 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
     }
 }
 
-
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
@@ -579,7 +571,6 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
     actions = visitor_data.getActions();
 }
 
-
 void ExpressionAnalyzer::getRootActionsForHaving(
     const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
@@ -600,7 +591,6 @@ void ExpressionAnalyzer::getRootActionsForHaving(
     actions = visitor_data.getActions();
 }
 
-
 void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions)
 {
     LogAST log;
@@ -620,7 +610,6 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
-
 
 void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions)
 {
@@ -917,7 +906,6 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
     }
 }
 
-
 const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 {
     const auto * select_query = query->as<ASTSelectQuery>();
@@ -1015,8 +1003,6 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
 
     LOG_TRACE(&Poco::Logger::get("createJoinedBlockActions"), "names {}", names);
 
-
-
     auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
@@ -1105,7 +1091,6 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         original_right_column_names.push_back(pr.first);
     }
 
-
     /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
         * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
         *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
@@ -1123,7 +1108,6 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     WriteBufferFromOwnString ss;
     QueryPlan::ExplainPlanOptions epo;
     epo.header = epo.actions = true;
-
 
     joined_plan->explainPlan(ss, epo);
     LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), "explain {}", ss.str());
@@ -1221,11 +1205,9 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         return storage->getJoinLocked(analyzed_join, getContext());
     }
 
-
     for (auto & join_element : join_elements)
     {
         LOG_TRACE(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "makeTableJoin: join_element dump tree {} ", join_element->dumpTree());
-
 
         auto joined_plan = buildJoinedPlan(getContext(), *join_element, *analyzed_join, query_options);
         LOG_TRACE(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "makeTableJoin: join data stream {} ", joined_plan->getCurrentDataStream().header.dumpStructure());
@@ -1243,8 +1225,6 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
     }
 
     // JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan, getContext());
-
-
     JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plans[0]/*->getCurrentDataStream().header*/, getContext());
 
     // /// Do not make subquery for join over dictionary.
@@ -1743,14 +1723,12 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     return actions;
 }
 
-
 void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
     getRootActions(expr, only_types, step.actions());
     step.addRequiredOutput(expr->getColumnName());
 }
-
 
 ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_result)
 {

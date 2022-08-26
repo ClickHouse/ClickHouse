@@ -714,7 +714,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     /// TODO: add special stage for InterpreterSelectQuery?
 
 #if 0
-    if ( !options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    if (!options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),

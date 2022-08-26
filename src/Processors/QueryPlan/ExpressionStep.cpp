@@ -43,24 +43,6 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
-// // !!!!!  deleted?
-// void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
-// {
-//     Block out_header = keep_header ? std::move(output_stream->header)
-//                                    : ExpressionTransform::transformHeader(input_stream.header, *actions_dag);
-//     LOG_TRACE(&Poco::Logger::get("ExpressionStep"), "updateInputStream keep_header {}, out_header structure {}", keep_header, out_header.dumpStructure());
-//     output_stream = createOutputStream(
-//             input_stream,
-//             std::move(out_header),
-//             getDataStreamTraits());
-
-
-
-
-//     input_streams.clear();
-//     input_streams.emplace_back(std::move(input_stream));
-// }
-
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
@@ -72,7 +54,6 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
     {
-
         LOG_TRACE(&Poco::Logger::get("ExpressionStep"), "transformPipeline from {} to {}", pipeline.getHeader().dumpStructure(), output_stream->header.dumpStructure());
         assert(0);
 

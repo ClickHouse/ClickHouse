@@ -486,8 +486,6 @@ public:
         }
         LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "after ====");
 
-
-
         String short_name = generateUniqueName(long_name);
         long_to_short.emplace(long_name, short_name);
         return short_name;
@@ -498,8 +496,6 @@ public:
           long_to_short()
     {
     }
-
-
 
 private:
     const std::vector<ASTIdentifier *>& using_identifiers;
@@ -565,7 +561,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
     NameSet restored_names;
     for (ASTIdentifier * ident : identifiers)
     {
-        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "ident->name() {} isShort {}", ident->name(), ident->isShort());
+        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "ident->name() {} isShort {}", ident->name(), ident->isShort());
         bool got_alias = aliases.contains(ident->name());
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
@@ -575,7 +571,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
             {
                 if (got_alias)
                 {
-                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "got_alias");
+                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "got_alias");
                     auto alias = aliases.find(ident->name())->second;
                     auto alias_ident = alias->clone();
                     alias_ident->as<ASTIdentifier>()->restoreTable();
@@ -589,13 +585,13 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                     original_long_name = ident->name();
 
                 size_t count = countTablesWithColumn(tables, short_name);
-                LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "count {}", count);
+                LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "count {}", count);
 
                 /// isValidIdentifierBegin required to be consistent with TableJoin::deduplicateAndQualifyColumnNames
                 if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
                 {
                     const auto & table = tables[*table_pos];
-                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "setColumnLongName");
+                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "setColumnLongName");
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     const auto & unique_long_name = ident->name();
 
@@ -604,13 +600,13 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                     {
                         String unique_short_name = unique_names.longToShort(unique_long_name, short_name);
                         ident->setShortName(unique_short_name);
-                        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "column_clashes.emplace(short_name {}, unique_short_name {})", short_name, unique_short_name);
+                        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "column_clashes.emplace(short_name {}, unique_short_name {})", short_name, unique_short_name);
                         needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
                     }
                 }
                 else
                 {
-                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "setShortName");
+                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "setShortName");
                     ident->setShortName(short_name); /// table.column -> column
                     needed_columns[*table_pos].no_clashes.emplace(short_name);
                 }
