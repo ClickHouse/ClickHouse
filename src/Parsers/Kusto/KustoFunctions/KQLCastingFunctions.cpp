@@ -68,10 +68,24 @@ bool ToString::convertImpl(String & out, IParser::Pos & pos)
 } 
 bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
-}
+     const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;   
+    ++pos;
+    if(pos->type == TokenType::StringLiteral || pos->type == TokenType::QuotedIdentifier)
+    {
+        --pos;
+        auto arg = getArgument(function_name,pos);
+        auto out1 =  kqlCallToExpression("time", {arg}, pos.max_depth);
+        out = std::format("{}" , out1);
+    }
+    else
+    {
+        auto arg = getConvertedArgument(function_name,pos);
+        out = std::format("{}" , arg);
+    }
 
+    return true;
+}
 
 }
