@@ -153,7 +153,7 @@ if __name__ == "__main__":
         "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
     }
 
-    docker_env += " ".join([f"-e {name}" for name in env_extra])
+    docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
         result_path,
