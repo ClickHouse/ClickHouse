@@ -263,8 +263,10 @@ public:
             int64_t zxid{0};
         };
 
-        struct Hash {
-            auto operator()(const std::string_view view) const {
+        struct Hash
+        {
+            auto operator()(const std::string_view view) const
+            {
                 SipHash hash;
                 hash.update(view);
                 return hash.get64();
@@ -273,14 +275,17 @@ public:
             using is_transparent = void; // required to make find() work with different type than key_type
         };
 
-        struct Equal {
+        struct Equal
+        {
             auto operator()(const std::string_view a,
-                            const std::string_view b) const {
+                            const std::string_view b) const
+            {
                 return a == b;
             }
 
             using is_transparent = void; // required to make find() work with different type than key_type
         };
+
         mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
 
         struct UncommittedAuth
