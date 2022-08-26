@@ -7,10 +7,6 @@
 # How to install Ninja on Ubuntu:
 #  sudo apt-get install ninja-build
 
-# CLion does not support Ninja
-# You can add your vote on CLion task tracker:
-# https://youtrack.jetbrains.com/issue/CPP-2659
-# https://youtrack.jetbrains.com/issue/CPP-870
 
 if (NOT DEFINED ENV{CLION_IDE} AND NOT DEFINED ENV{XCODE_IDE})
     find_program(NINJA_PATH ninja)
