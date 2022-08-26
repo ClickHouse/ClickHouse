@@ -25,7 +25,8 @@ namespace DB
   * - no cross-team communication impedance;
   *
   * The disadvantages of embedded documentation are:
-  * - it is only suitable for uniform components of the system and not suitable for tutorials and overviews.
+  * - it is only suitable for uniform components of the system and not suitable for tutorials and overviews;
+  * - it is more difficult to edit by random readers;
   *
   * The documentation can contain:
   * - description (the main text);
@@ -37,6 +38,9 @@ namespace DB
   * The description should be represented in Markdown (or just plaintext).
   * Some extensions for Markdown are added:
   * - [example:name] will reference to an example with the corresponding name.
+  *
+  * Documentation does not support multiple languages.
+  * The only available language is English.
   */
 struct Doc
 {
