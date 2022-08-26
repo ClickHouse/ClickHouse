@@ -537,7 +537,7 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
-    return std::pair(info->size, info->checksum);
+    return {info->size, info->checksum};
 }
 
 BackupEntryPtr BackupImpl::readFile(const String & file_name) const
