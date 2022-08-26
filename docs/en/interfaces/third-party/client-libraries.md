@@ -31,6 +31,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [chconn](https://github.com/vahid-sohrabloo/chconn)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
+    -   [uptrace/go-clickhouse](https://clickhouse.uptrace.dev/)
 -   Swift
     -   [ClickHouseNIO](https://github.com/patrick-zippenfenig/ClickHouseNIO)
     -   [ClickHouseVapor ORM](https://github.com/patrick-zippenfenig/ClickHouseVapor)
