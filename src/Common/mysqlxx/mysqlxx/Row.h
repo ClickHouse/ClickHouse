@@ -46,7 +46,7 @@ public:
       */
     Value operator[] (int n) const
     {
-        if (unlikely(static_cast<size_t>(n) >= res->getNumFields()))
+        if (ch_unlikely(static_cast<size_t>(n) >= res->getNumFields()))
             throw Exception("Index of column is out of range.");
         return Value(row[n], lengths[n], res);
     }

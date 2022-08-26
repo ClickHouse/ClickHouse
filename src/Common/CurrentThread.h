@@ -56,7 +56,7 @@ public:
     static ProfileEvents::Counters & getProfileEvents();
     inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
     {
-        if (unlikely(!current_thread))
+        if (ch_unlikely(!current_thread))
             return nullptr;
         return &current_thread->memory_tracker;
     }
@@ -82,7 +82,7 @@ public:
     /// Returns a non-empty string if the thread is attached to a query
     static std::string_view getQueryId()
     {
-        if (unlikely(!current_thread))
+        if (ch_unlikely(!current_thread))
             return {};
         return current_thread->getQueryId();
     }

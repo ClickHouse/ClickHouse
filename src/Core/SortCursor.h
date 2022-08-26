@@ -556,7 +556,7 @@ private:
         else
             return;
 
-        if (unlikely(begin_cursor.totallyLessOrEquals(next_child_cursor)))
+        if (ch_unlikely(begin_cursor.totallyLessOrEquals(next_child_cursor)))
         {
             batch_size = min_cursor_size - min_cursor_pos;
             return;

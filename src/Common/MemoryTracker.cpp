@@ -154,7 +154,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     /// And since total_memory_tracker is reset to the process resident
     /// memory peridically (in AsynchronousMetrics::update()), any limit can be
     /// capped to it, to avoid possible drift.
-    if (unlikely(current_hard_limit
+    if (ch_unlikely(current_hard_limit
         && will_be > current_hard_limit
         && level == VariableContext::User))
     {
@@ -169,7 +169,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     bool memory_limit_exceeded_ignored = false;
 
     bool allocation_traced = false;
-    if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
+    if (ch_unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
@@ -178,7 +178,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
+    if (ch_unlikely(sample_probability && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
@@ -186,7 +186,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     }
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)))
+    if (ch_unlikely(fault_probability && fault(thread_local_rng)))
     {
         if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
         {
@@ -318,7 +318,7 @@ void MemoryTracker::free(Int64 size)
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
+    if (ch_unlikely(sample_probability && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
@@ -340,7 +340,7 @@ void MemoryTracker::free(Int64 size)
           * Memory usage will be calculated with some error.
           * NOTE: The code is not atomic. Not worth to fix.
           */
-        if (unlikely(new_amount < 0))
+        if (ch_unlikely(new_amount < 0))
         {
             amount.fetch_sub(new_amount);
             accounted_size += new_amount;

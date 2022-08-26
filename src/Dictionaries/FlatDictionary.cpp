@@ -204,7 +204,7 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
         if (!is_key_valid)
             return result;
 
-        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+        if (ch_unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
             return result;
 
         UInt64 parent_key = parent_keys[hierarchy_key];
@@ -259,7 +259,7 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
         if (!is_key_valid)
             return result;
 
-        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+        if (ch_unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
             return result;
 
         UInt64 parent_key = parent_keys[hierarchy_key];
@@ -298,7 +298,7 @@ DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() 
         if (!loaded_keys[child_key])
             continue;
 
-        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(child_key))
+        if (ch_unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(child_key))
             continue;
 
         auto parent_key = parent_keys[child_key];
@@ -347,13 +347,13 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
     size_t attributes_size = attributes.size();
 
-    if (unlikely(attributes_size == 0))
+    if (ch_unlikely(attributes_size == 0))
     {
         for (size_t i = 0; i < keys_size; ++i)
         {
             auto key = keys_extractor.extractCurrentKey();
 
-            if (unlikely(key >= configuration.max_array_size))
+            if (ch_unlikely(key >= configuration.max_array_size))
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "{}: identifier should be less than {}",
                     getFullName(),

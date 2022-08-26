@@ -37,7 +37,7 @@ namespace detail
 template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
 {
-    if (likely(reinterpret_cast<uintptr_t>(buf.position()) + max_int_width<T> < reinterpret_cast<uintptr_t>(buf.buffer().end())))
+    if (ch_likely(reinterpret_cast<uintptr_t>(buf.position()) + max_int_width<T> < reinterpret_cast<uintptr_t>(buf.buffer().end())))
         buf.position() = itoa(x, buf.position());
     else
         detail::writeUIntTextFallback(x, buf);

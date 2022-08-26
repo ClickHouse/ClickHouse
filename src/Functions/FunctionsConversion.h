@@ -968,9 +968,9 @@ void convertFromTime(typename DataType::FieldType & x, time_t & time)
 template <>
 inline void convertFromTime<DataTypeDate>(DataTypeDate::FieldType & x, time_t & time)
 {
-    if (unlikely(time < 0))
+    if (ch_unlikely(time < 0))
         x = 0;
-    else if (unlikely(time > 0xFFFF))
+    else if (ch_unlikely(time > 0xFFFF))
         x = 0xFFFF;
     else
         x = time;
@@ -985,9 +985,9 @@ inline void convertFromTime<DataTypeDate32>(DataTypeDate32::FieldType & x, time_
 template <>
 inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, time_t & time)
 {
-    if (unlikely(time < 0))
+    if (ch_unlikely(time < 0))
         x = 0;
-    else if (unlikely(time > 0xFFFFFFFF))
+    else if (ch_unlikely(time > 0xFFFFFFFF))
         x = 0xFFFFFFFF;
     else
         x = time;

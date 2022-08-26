@@ -477,7 +477,7 @@ void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
 
 Arena & ColumnAggregateFunction::createOrGetArena()
 {
-    if (unlikely(!my_arena))
+    if (ch_unlikely(!my_arena))
         my_arena = std::make_shared<Arena>();
 
     return *my_arena.get();

@@ -490,7 +490,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
 void ValuesBlockInputFormat::assertDelimiterAfterValue(size_t column_idx)
 {
-    if (unlikely(!checkDelimiterAfterValue(column_idx)))
+    if (ch_unlikely(!checkDelimiterAfterValue(column_idx)))
         throwAtAssertionFailed((column_idx + 1 == num_columns) ? ")" : ",", *buf);
 }
 
@@ -498,7 +498,7 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
 {
     skipWhitespaceIfAny(*buf);
 
-    if (likely(column_idx + 1 != num_columns))
+    if (ch_likely(column_idx + 1 != num_columns))
         return checkChar(',', *buf);
     else
         return checkChar(')', *buf);

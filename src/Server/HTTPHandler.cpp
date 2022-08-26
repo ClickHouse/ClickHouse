@@ -1053,7 +1053,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
 
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
 {
-    if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
+    if (ch_likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body
         /// (http method need not necessarily be POST). In this case the entire query consists of the
@@ -1148,7 +1148,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
 
 std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
 {
-    if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
+    if (ch_unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);

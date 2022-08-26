@@ -100,10 +100,10 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
 
 bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (unlikely(end_of_stream))
+    if (ch_unlikely(end_of_stream))
         return false;
 
-    if (unlikely(format_reader->checkForSuffix()))
+    if (ch_unlikely(format_reader->checkForSuffix()))
     {
         end_of_stream = true;
         return false;
@@ -111,7 +111,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
 
     updateDiagnosticInfo();
 
-    if (likely(row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types))))
+    if (ch_likely(row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types))))
         format_reader->skipRowBetweenDelimiter();
 
     format_reader->skipRowStartDelimiter();
@@ -181,7 +181,7 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     if (!format_reader->tryParseSuffixWithDiagnosticInfo(out))
         return false;
 
-    if (likely(row_num != 1) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
+    if (ch_likely(row_num != 1) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
         return false;
 
     if (!format_reader->parseRowStartWithDiagnosticInfo(out))

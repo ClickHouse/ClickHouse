@@ -35,7 +35,7 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
     else
         ptr = malloc(size);
 
-    if (likely(ptr != nullptr))
+    if (ch_likely(ptr != nullptr))
         return ptr;
 
     /// @note no std::get_new_handler logic implemented
@@ -63,7 +63,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... align) noexcept
 {
-    if (unlikely(ptr == nullptr))
+    if (ch_unlikely(ptr == nullptr))
         return;
 
     if constexpr (sizeof...(TAlign) == 1)
@@ -98,7 +98,7 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
 #if USE_JEMALLOC
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
-    if (likely(size != 0))
+    if (ch_likely(size != 0))
     {
         if constexpr (sizeof...(TAlign) == 1)
             actual_size = nallocx(size, MALLOCX_ALIGN(alignToSizeT(align...)));
@@ -127,7 +127,7 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
 #if USE_JEMALLOC
 
         /// @note It's also possible to use je_malloc_usable_size() here.
-        if (likely(ptr != nullptr))
+        if (ch_likely(ptr != nullptr))
         {
             if constexpr (sizeof...(TAlign) == 1)
                 CurrentMemoryTracker::free(sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...))));

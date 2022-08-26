@@ -119,12 +119,12 @@ struct ColumnVector<T>::less_stable
     less_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if (unlikely(parent.data[lhs] == parent.data[rhs]))
+        if (ch_unlikely(parent.data[lhs] == parent.data[rhs]))
             return lhs < rhs;
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            if (ch_unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
             {
                 return lhs < rhs;
             }
@@ -151,12 +151,12 @@ struct ColumnVector<T>::greater_stable
     greater_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if (unlikely(parent.data[lhs] == parent.data[rhs]))
+        if (ch_unlikely(parent.data[lhs] == parent.data[rhs]))
             return lhs < rhs;
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            if (ch_unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
             {
                 return lhs < rhs;
             }

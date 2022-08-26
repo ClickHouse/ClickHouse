@@ -211,7 +211,7 @@ private:
         size_t row_size = offsets_y.size();
         for (size_t row = 0; row < row_size; ++row)
         {
-            if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
+            if (ch_unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
             {
                 throw Exception("The argument 1 and argument 3 of function " + getName() + " have different array sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
             }

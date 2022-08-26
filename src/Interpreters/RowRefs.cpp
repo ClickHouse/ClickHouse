@@ -184,7 +184,7 @@ private:
             {
                 if constexpr (std::is_arithmetic_v<TKey> && !std::is_floating_point_v<TKey>)
                 {
-                    if (likely(entries.size() > 256))
+                    if (ch_likely(entries.size() > 256))
                     {
                         struct RadixSortTraits : RadixSortNumTraits<TKey>
                         {

@@ -267,7 +267,7 @@ private:
       */
     void shrinkIfNeed()
     {
-        if (unlikely(m_size > max_fill()))
+        if (ch_unlikely(m_size > max_fill()))
         {
             if (m_size > UNIQUES_HASH_MAX_SIZE)
             {

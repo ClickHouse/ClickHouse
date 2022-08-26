@@ -134,7 +134,7 @@ public:
     ALWAYS_INLINE bool emplace(Interval interval)
     {
         assert(!tree_is_built);
-        if (unlikely(interval.left > interval.right))
+        if (ch_unlikely(interval.left > interval.right))
             return false;
 
         sorted_intervals.emplace_back(interval);
@@ -147,7 +147,7 @@ public:
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
         assert(!tree_is_built);
-        if (unlikely(interval.left > interval.right))
+        if (ch_unlikely(interval.left > interval.right))
             return false;
 
         sorted_intervals.emplace_back(
@@ -218,7 +218,7 @@ public:
     template <typename IntervalCallback>
     void find(IntervalStorageType point, IntervalCallback && callback) const
     {
-        if (unlikely(!tree_is_built))
+        if (ch_unlikely(!tree_is_built))
         {
             findIntervalsNonConstructedImpl(point, callback);
             return;
@@ -267,7 +267,7 @@ public:
         size_t end_index = findLastIteratorNodeIndex();
         size_t last_interval_index = 0;
 
-        if (likely(end_index < nodes.size()))
+        if (ch_likely(end_index < nodes.size()))
             last_interval_index = nodes[end_index].sorted_intervals_range_size;
 
         return Iterator(end_index, last_interval_index, this);
@@ -284,7 +284,7 @@ public:
         size_t end_index = findLastIteratorNodeIndex();
         size_t last_interval_index = 0;
 
-        if (likely(end_index < nodes.size()))
+        if (ch_likely(end_index < nodes.size()))
             last_interval_index = nodes[end_index].sorted_intervals_range_size;
 
         return Iterator(end_index, last_interval_index, this);
@@ -558,7 +558,7 @@ private:
                         break;
 
                     bool should_continue = callCallback(interval_with_value_left_sorted_asc, callback);
-                    if (unlikely(!should_continue))
+                    if (ch_unlikely(!should_continue))
                         return;
                 }
 
@@ -578,11 +578,11 @@ private:
                         break;
 
                     bool should_continue = callCallback(interval_with_value_right_sorted_desc, callback);
-                    if (unlikely(!should_continue))
+                    if (ch_unlikely(!should_continue))
                         return;
                 }
 
-                if (likely(point > middle_element))
+                if (ch_likely(point > middle_element))
                 {
                     size_t right_child_index = current_index * 2 + 2;
                     current_index = right_child_index;
@@ -619,7 +619,7 @@ private:
                 break;
         }
 
-        if (unlikely(result_index == nodes_size))
+        if (ch_unlikely(result_index == nodes_size))
             result_index = 0;
 
         return result_index;
@@ -627,7 +627,7 @@ private:
 
     inline size_t findLastIteratorNodeIndex() const
     {
-        if (unlikely(nodes.empty()))
+        if (ch_unlikely(nodes.empty()))
             return 0;
 
         size_t nodes_size = nodes.size();

@@ -26,21 +26,21 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
     /// Is it better to use siglongjmp instead of checks?
 
-    if (unlikely(b == 0))
+    if (ch_unlikely(b == 0))
         throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
+    if (ch_unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    if (unlikely(b == 0))
+    if (ch_unlikely(b == 0))
         return true;
 
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
+    if (ch_unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         return true;
 
     return false;

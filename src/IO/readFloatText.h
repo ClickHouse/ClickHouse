@@ -152,12 +152,12 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
     static constexpr int MAX_LENGTH = 316;
 
-    if (likely(!buf.eof() && buf.position() + MAX_LENGTH <= buf.buffer().end()))
+    if (ch_likely(!buf.eof() && buf.position() + MAX_LENGTH <= buf.buffer().end()))
     {
         auto * initial_position = buf.position();
         auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);
 
-        if (unlikely(res.ec != std::errc()))
+        if (ch_unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
                 throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
@@ -240,7 +240,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
         auto res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x);
 
-        if (unlikely(res.ec != std::errc()))
+        if (ch_unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
                 throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
@@ -351,7 +351,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     int read_digits = in.count() - count_after_sign;
 
-    if (unlikely(read_digits > significant_digits))
+    if (ch_unlikely(read_digits > significant_digits))
     {
         int before_point_additional_exponent = read_digits - significant_digits;
         x = shift10(before_point, before_point_additional_exponent);

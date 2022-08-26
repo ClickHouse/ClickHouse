@@ -68,7 +68,7 @@ struct ModuloByConstantImpl
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
         /// Modulo with too small divisor.
-        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
+        if (ch_unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = 0;
@@ -76,7 +76,7 @@ struct ModuloByConstantImpl
         }
 
         /// Modulo with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
+        if (ch_unlikely(b > std::numeric_limits<A>::max()
             || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
         {
             for (size_t i = 0; i < size; ++i)
@@ -86,7 +86,7 @@ struct ModuloByConstantImpl
 
 #pragma GCC diagnostic pop
 
-        if (unlikely(static_cast<A>(b) == 0))
+        if (ch_unlikely(static_cast<A>(b) == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
         /// Division by min negative value.

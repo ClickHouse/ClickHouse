@@ -381,7 +381,7 @@ static inline char * writeSIntText(T x, char * pos)
     using UnsignedT = make_unsigned_t<T>;
     static constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
 
-    if (unlikely(x == min_int))
+    if (ch_unlikely(x == min_int))
     {
         if constexpr (std::is_same_v<T, Int128>)
         {

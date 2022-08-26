@@ -21,7 +21,7 @@ public:
     static Derived & instance()
     {
         Derived * ptr = instance_raw_ptr.load();
-        if (likely(ptr))
+        if (ch_likely(ptr))
             return *ptr;
 
         return createInstanceOrThrow();

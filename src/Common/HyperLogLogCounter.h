@@ -396,12 +396,12 @@ private:
     /// Rank is number of trailing zeros.
     inline UInt8 calculateRank(HashValueType val) const
     {
-        if (unlikely(val == 0))
+        if (ch_unlikely(val == 0))
             return max_rank;
 
         auto zeros_plus_one = details::TrailingZerosCounter<HashValueType>::apply(val) + 1;
 
-        if (unlikely(zeros_plus_one) > max_rank)
+        if (ch_unlikely(zeros_plus_one) > max_rank)
             return max_rank;
 
         return zeros_plus_one;

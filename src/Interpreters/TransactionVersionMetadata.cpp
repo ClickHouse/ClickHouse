@@ -168,7 +168,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     chassert(removal == Tx::UnknownCSN || removal == Tx::PrehistoricCSN || Tx::MaxReservedCSN < removal);
 
     /// Special snapshot for introspection purposes
-    if (unlikely(snapshot_version == Tx::EverythingVisibleCSN))
+    if (ch_unlikely(snapshot_version == Tx::EverythingVisibleCSN))
         return true;
 
     /// Fast path:

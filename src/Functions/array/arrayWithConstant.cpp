@@ -63,12 +63,12 @@ public:
         {
             auto array_size = col_num->getInt(i);
 
-            if (unlikely(array_size < 0))
+            if (ch_unlikely(array_size < 0))
                 throw Exception("Array size cannot be negative: while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
             offset += array_size;
 
-            if (unlikely(offset > max_arrays_size_in_columns))
+            if (ch_unlikely(offset > max_arrays_size_in_columns))
                 throw Exception("Too large array size while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
             offsets.push_back(offset);

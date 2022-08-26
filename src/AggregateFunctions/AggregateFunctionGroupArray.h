@@ -261,10 +261,10 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+        if (ch_unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        if (limit_num_elems && unlikely(size > max_elems))
+        if (limit_num_elems && ch_unlikely(size > max_elems))
             throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         auto & value = this->data(place).value;
@@ -575,13 +575,13 @@ public:
         UInt64 elems;
         readVarUInt(elems, buf);
 
-        if (unlikely(elems == 0))
+        if (ch_unlikely(elems == 0))
             return;
 
-        if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+        if (ch_unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        if (limit_num_elems && unlikely(elems > max_elems))
+        if (limit_num_elems && ch_unlikely(elems > max_elems))
             throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         auto & value = data(place).value;
@@ -714,7 +714,7 @@ public:
 
         Node * node = Node::allocate(*columns[0], row_num, arena);
 
-        if (unlikely(!data(place).first))
+        if (ch_unlikely(!data(place).first))
         {
             data(place).first = node;
             data(place).last = node;
@@ -752,7 +752,7 @@ public:
         Node * p_rhs = data(rhs).first;
         Node * p_lhs;
 
-        if (unlikely(!data(place).last)) /// lhs state is empty
+        if (ch_unlikely(!data(place).last)) /// lhs state is empty
         {
             p_lhs = p_rhs->clone(arena);
             data(place).first = data(place).last = p_lhs;
@@ -795,13 +795,13 @@ public:
         readVarUInt(elems, buf);
         data(place).elems = elems;
 
-        if (unlikely(elems == 0))
+        if (ch_unlikely(elems == 0))
             return;
 
-        if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+        if (ch_unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        if (limit_num_elems && unlikely(elems > max_elems))
+        if (limit_num_elems && ch_unlikely(elems > max_elems))
             throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         Node * prev = Node::read(buf, arena);

@@ -57,7 +57,7 @@ public:
     /// Получить значение bool.
     bool getBool() const
     {
-        if (unlikely(isNull()))
+        if (ch_unlikely(isNull()))
             throwException("Value is NULL");
 
         return m_length > 0 && m_data[0] != '0';
@@ -66,7 +66,7 @@ public:
     /// Получить беззнаковое целое.
     UInt64 getUInt() const
     {
-        if (unlikely(isNull()))
+        if (ch_unlikely(isNull()))
             throwException("Value is NULL");
 
         return readUIntText(m_data, m_length);
@@ -81,7 +81,7 @@ public:
     /// Получить число с плавающей запятой.
     double getDouble() const
     {
-        if (unlikely(isNull()))
+        if (ch_unlikely(isNull()))
             throwException("Value is NULL");
 
         return readFloatText(m_data, m_length);
@@ -102,7 +102,7 @@ public:
     /// Получить строку.
     std::string getString() const
     {
-        if (unlikely(isNull()))
+        if (ch_unlikely(isNull()))
             throwException("Value is NULL");
 
         return std::string(m_data, m_length);
@@ -196,7 +196,7 @@ private:
 
     Int64 getIntOrDateTime() const
     {
-        if (unlikely(isNull()))
+        if (ch_unlikely(isNull()))
             throwException("Value is NULL");
 
         if (checkDateTime())
@@ -208,7 +208,7 @@ private:
 
     Int64 getIntOrDate() const
     {
-        if (unlikely(isNull()))
+        if (ch_unlikely(isNull()))
             throwException("Value is NULL");
 
         if (checkDateTime())

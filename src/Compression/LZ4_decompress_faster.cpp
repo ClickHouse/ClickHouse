@@ -505,19 +505,19 @@ bool NO_INLINE decompressImpl(
             {
                 s = *ip++;
                 length += s;
-            } while (unlikely(s == 255 && ip < input_end));
+            } while (ch_unlikely(s == 255 && ip < input_end));
         };
 
         /// Get literal length.
 
-        if (unlikely(ip >= input_end))
+        if (ch_unlikely(ip >= input_end))
             return false;
 
         const unsigned token = *ip++;
         length = token >> 4;
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            if (ch_unlikely(ip + 1 >= input_end))
                 return false;
             continue_read_length();
         }
@@ -537,7 +537,7 @@ bool NO_INLINE decompressImpl(
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        if (unlikely(copy_end > output_end))
+        if (ch_unlikely(copy_end > output_end))
             return false;
 
         // Due to implementation specifics the copy length is always a multiple of copy_amount
@@ -551,7 +551,7 @@ bool NO_INLINE decompressImpl(
         else if constexpr (copy_amount == 32)
             real_length = (((length >> 5) + 1) * 32);
 
-        if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
+        if (ch_unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
              return false;
 
         wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
@@ -562,7 +562,7 @@ bool NO_INLINE decompressImpl(
         ip += length;
         op = copy_end;
 
-        if (unlikely(ip + 1 >= input_end))
+        if (ch_unlikely(ip + 1 >= input_end))
             return false;
 
         /// Get match offset.
@@ -571,7 +571,7 @@ bool NO_INLINE decompressImpl(
         ip += 2;
         const UInt8 * match = op - offset;
 
-        if (unlikely(match < output_begin))
+        if (ch_unlikely(match < output_begin))
             return false;
 
         /// Get match length.
@@ -579,7 +579,7 @@ bool NO_INLINE decompressImpl(
         length = token & 0x0F;
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            if (ch_unlikely(ip + 1 >= input_end))
                 return false;
             continue_read_length();
         }
@@ -593,7 +593,7 @@ bool NO_INLINE decompressImpl(
           * The worst case when offset = 1 and length = 4
           */
 
-        if (unlikely(offset < copy_amount))
+        if (ch_unlikely(offset < copy_amount))
         {
             /// output: Hello
             ///              ^-op
@@ -619,7 +619,7 @@ bool NO_INLINE decompressImpl(
         copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
         {
-            if (unlikely(copy_end > output_end))
+            if (ch_unlikely(copy_end > output_end))
                 return false;
             wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end);
         }
@@ -731,7 +731,7 @@ void statistics(
             {
                 s = *ip++;
                 length += s;
-            } while (unlikely(s == 255));
+            } while (ch_unlikely(s == 255));
         };
 
         auto token = *ip++;

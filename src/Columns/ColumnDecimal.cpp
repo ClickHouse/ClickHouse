@@ -128,7 +128,7 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
     auto comparator_ascending = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
     auto comparator_ascending_stable = [this](size_t lhs, size_t rhs)
     {
-        if (unlikely(data[lhs] == data[rhs]))
+        if (ch_unlikely(data[lhs] == data[rhs]))
             return lhs < rhs;
 
         return data[lhs] < data[rhs];
@@ -136,7 +136,7 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
     auto comparator_descending = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
     auto comparator_descending_stable = [this](size_t lhs, size_t rhs)
     {
-        if (unlikely(data[lhs] == data[rhs]))
+        if (ch_unlikely(data[lhs] == data[rhs]))
             return lhs < rhs;
 
         return data[lhs] > data[rhs];
@@ -159,7 +159,7 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
     auto comparator_descending = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
     auto comparator_descending_stable = [this](size_t lhs, size_t rhs)
     {
-        if (unlikely(data[lhs] == data[rhs]))
+        if (ch_unlikely(data[lhs] == data[rhs]))
             return lhs < rhs;
 
         return data[lhs] > data[rhs];
@@ -168,7 +168,7 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
     auto comparator_ascending = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
     auto comparator_ascending_stable = [this](size_t lhs, size_t rhs)
     {
-        if (unlikely(data[lhs] == data[rhs]))
+        if (ch_unlikely(data[lhs] == data[rhs]))
             return lhs < rhs;
 
         return data[lhs] < data[rhs];

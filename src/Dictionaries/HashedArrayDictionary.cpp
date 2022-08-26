@@ -214,7 +214,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
 
             size_t key_index = it->getMapped();
 
-            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+            if (ch_unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
                 return result;
 
             UInt64 parent_key = parent_keys_container[key_index];
@@ -282,7 +282,7 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 
             size_t key_index = it->getMapped();
 
-            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+            if (ch_unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
                 return result;
 
             UInt64 parent_key = parent_keys_container[key_index];
@@ -334,7 +334,7 @@ DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key
         size_t parent_keys_container_size = parent_keys_container.size();
         for (size_t i = 0; i < parent_keys_container_size; ++i)
         {
-            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[i])
+            if (ch_unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[i])
                 continue;
 
             const auto * it = index_to_key.find(i);
@@ -529,7 +529,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
 template <DictionaryKeyType dictionary_key_type>
 void HashedArrayDictionary<dictionary_key_type>::resize(size_t added_rows)
 {
-    if (unlikely(!added_rows))
+    if (ch_unlikely(!added_rows))
         return;
 
     key_attribute.container.reserve(added_rows);

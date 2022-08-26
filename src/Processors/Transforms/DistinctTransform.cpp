@@ -50,7 +50,7 @@ void DistinctTransform::buildFilter(
 
 void DistinctTransform::transform(Chunk & chunk)
 {
-    if (unlikely(!chunk.hasRows()))
+    if (ch_unlikely(!chunk.hasRows()))
         return;
 
     /// Convert to full column, because SetVariant for sparse column is not implemented.
@@ -60,7 +60,7 @@ void DistinctTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     /// Special case, - only const columns, return single row
-    if (unlikely(key_columns_pos.empty()))
+    if (ch_unlikely(key_columns_pos.empty()))
     {
         for (auto & column : columns)
             column = column->cut(0, 1);

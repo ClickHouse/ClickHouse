@@ -83,7 +83,7 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
 
 void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 {
-    if (unlikely(!enable_persistence))
+    if (ch_unlikely(!enable_persistence))
         return;
 
     LOG_DEBUG(log, "Loading user defined objects");
@@ -118,7 +118,7 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 
 void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast, bool replace)
 {
-    if (unlikely(!enable_persistence))
+    if (ch_unlikely(!enable_persistence))
         return;
 
     String dir_path = context->getUserDefinedPath();
@@ -154,7 +154,7 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
 
 void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name)
 {
-    if (unlikely(!enable_persistence))
+    if (ch_unlikely(!enable_persistence))
         return;
 
     String dir_path = context->getUserDefinedPath();

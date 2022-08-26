@@ -339,7 +339,7 @@ UserPtr ContextAccess::getUser() const
 {
     auto res = tryGetUser();
 
-    if (likely(res))
+    if (ch_likely(res))
         return res;
 
     if (user_was_dropped)

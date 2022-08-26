@@ -780,7 +780,7 @@ static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t 
 
     for (size_t index = 0; index < rows_data.size(); index += 2)
     {
-        if (likely(!writeable_rows_mask[index]))
+        if (ch_likely(!writeable_rows_mask[index]))
         {
             sign_column_data.emplace_back(1);
             version_column_data.emplace_back(version);

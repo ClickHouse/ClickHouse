@@ -66,7 +66,7 @@ struct SortColumnDescription
 
     static bool compareCollators(const std::shared_ptr<Collator> & a, const std::shared_ptr<Collator> & b)
     {
-        if (unlikely(a && b))
+        if (ch_unlikely(a && b))
             return *a == *b;
 
         return a == b;

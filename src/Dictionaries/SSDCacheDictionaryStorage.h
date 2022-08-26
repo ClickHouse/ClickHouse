@@ -1032,7 +1032,7 @@ private:
 
             const auto & cell = it->getMapped();
 
-            if (unlikely(now > cell.deadline + strict_max_lifetime_seconds))
+            if (ch_unlikely(now > cell.deadline + strict_max_lifetime_seconds))
             {
                 ++result.not_found_keys_size;
                 continue;

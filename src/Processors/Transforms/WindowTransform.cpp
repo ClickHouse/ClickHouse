@@ -2328,7 +2328,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
         }
         state.previous_metric = curr_metric;
 
-        if (unlikely(!transform->current_row.row))
+        if (ch_unlikely(!transform->current_row.row))
             result = 0;
 
         WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, result >= 0 ? result : 0);

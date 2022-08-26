@@ -88,7 +88,7 @@ protected:
         public:
             DataPtr() : data(new Data())
             {
-                if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
+                if (ch_unlikely((getUInt(data) & FLAGS_MASK) != 0))
                     throw Exception("Not alignment memory for Port", ErrorCodes::LOGICAL_ERROR);
             }
             /// Pointer can store flags in case of exception in swap.
@@ -132,7 +132,7 @@ protected:
         /// Not finished, not needed, has not data.
         State() : data(new Data())
         {
-            if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
+            if (ch_unlikely((getUInt(data) & FLAGS_MASK) != 0))
                 throw Exception("Not alignment memory for Port", ErrorCodes::LOGICAL_ERROR);
         }
 
@@ -159,7 +159,7 @@ protected:
             /// if ((flags & IS_NEEDED) == 0)
             ///    throw Exception("Cannot push block to port which is not needed.", ErrorCodes::LOGICAL_ERROR);
 
-            if (unlikely(flags & HAS_DATA))
+            if (ch_unlikely(flags & HAS_DATA))
                 throw Exception("Cannot push block to port which already has data", ErrorCodes::LOGICAL_ERROR);
         }
 
@@ -173,10 +173,10 @@ protected:
             flags = data_.swap(data, 0, mask);
 
             /// It's ok to check because this flag can be changed only by pulling thread.
-            if (unlikely((flags & IS_NEEDED) == 0) && !set_not_needed)
+            if (ch_unlikely((flags & IS_NEEDED) == 0) && !set_not_needed)
                 throw Exception("Cannot pull block from port which is not needed", ErrorCodes::LOGICAL_ERROR);
 
-            if (unlikely((flags & HAS_DATA) == 0))
+            if (ch_unlikely((flags & HAS_DATA) == 0))
                 throw Exception("Cannot pull block from port which has no data", ErrorCodes::LOGICAL_ERROR);
         }
 
@@ -224,7 +224,7 @@ public:
 
     void ALWAYS_INLINE assumeConnected() const
     {
-        if (unlikely(!isConnected()))
+        if (ch_unlikely(!isConnected()))
             throw Exception("Port is not connected", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -251,7 +251,7 @@ public:
 protected:
     void inline ALWAYS_INLINE updateVersion()
     {
-        if (likely(update_info))
+        if (ch_likely(update_info))
             update_info->update();
     }
 
@@ -289,7 +289,7 @@ public:
 
         is_finished = flags & State::IS_FINISHED;
 
-        if (unlikely(!data->exception && data->chunk.getNumColumns() != header.columns()))
+        if (ch_unlikely(!data->exception && data->chunk.getNumColumns() != header.columns()))
         {
             auto & chunk = data->chunk;
 
@@ -410,7 +410,7 @@ public:
 
     void ALWAYS_INLINE pushData(Data data_)
     {
-        if (unlikely(!data_.exception && data_.chunk.getNumColumns() != header.columns()))
+        if (ch_unlikely(!data_.exception && data_.chunk.getNumColumns() != header.columns()))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,

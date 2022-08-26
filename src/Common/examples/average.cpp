@@ -103,7 +103,7 @@ Float NO_INLINE baseline_baseline(const PODArray<UInt8> & keys, const PODArray<F
     for (size_t i = 0; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);
@@ -122,7 +122,7 @@ Float NO_INLINE baseline(const PODArray<UInt8> & keys, const PODArray<Float> & v
     for (size_t i = 0; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);
@@ -141,7 +141,7 @@ Float NO_INLINE implicit_zero(const PODArray<UInt8> & keys, const PODArray<Float
     for (size_t i = 0; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);
@@ -167,7 +167,7 @@ Float NO_INLINE calculated_size(const PODArray<UInt8> & keys, const PODArray<Flo
     for (size_t i = 0; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);
@@ -186,7 +186,7 @@ Float NO_INLINE implicit_zero_and_calculated_size(const PODArray<UInt8> & keys, 
     for (size_t i = 0; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);
@@ -236,7 +236,7 @@ Float NO_INLINE simple_lookup_table(const PODArray<UInt8> & keys, const PODArray
     for (size_t i = 0; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);
@@ -272,7 +272,7 @@ Float NO_INLINE unrolled(const PODArray<UInt8> & keys, const PODArray<Float> & v
         for (size_t j = 0; j < UNROLL_COUNT; ++j)
         {
             StatePtr & place = map[keys[i + j]];
-            if (unlikely(!place))
+            if (ch_unlikely(!place))
                 place = new (arena.alloc<State>()) State();
 
             places[j] = place;
@@ -285,7 +285,7 @@ Float NO_INLINE unrolled(const PODArray<UInt8> & keys, const PODArray<Float> & v
     for (; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);
@@ -310,7 +310,7 @@ Float NO_INLINE simple_lookup_table_unrolled(const PODArray<UInt8> & keys, const
         for (size_t j = 0; j < UNROLL_COUNT; ++j)
         {
             StatePtr & place = map[keys[i + j]];
-            if (unlikely(!place))
+            if (ch_unlikely(!place))
                 place = new (arena.alloc<State>()) State();
 
             places[j] = place;
@@ -323,7 +323,7 @@ Float NO_INLINE simple_lookup_table_unrolled(const PODArray<UInt8> & keys, const
     for (; i < size; ++i)
     {
         StatePtr & place = map[keys[i]];
-        if (unlikely(!place))
+        if (ch_unlikely(!place))
             place = new (arena.alloc<State>()) State();
 
         place->add(values[i]);

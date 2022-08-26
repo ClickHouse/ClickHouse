@@ -222,7 +222,7 @@ namespace
                 Int64 t_milliseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000) / scale_multiplier, t_milliseconds))
                     throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t_milliseconds / milliseconds * milliseconds;
                 else
                     return ((t_milliseconds + 1) / milliseconds - 1) * milliseconds;
@@ -230,13 +230,13 @@ namespace
             else if (scale_multiplier > 1000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t / milliseconds / scale_diff * milliseconds;
                 else
                     return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
             }
             else
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t / milliseconds * milliseconds;
                 else
                     return ((t + 1) / milliseconds - 1) * milliseconds;
@@ -259,7 +259,7 @@ namespace
                 Int64 t_microseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000000) / scale_multiplier, t_microseconds))
                     throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t_microseconds / microseconds * microseconds;
                 else
                     return ((t_microseconds + 1) / microseconds - 1) * microseconds;
@@ -267,13 +267,13 @@ namespace
             else if (scale_multiplier > 1000000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t / microseconds / scale_diff * microseconds;
                 else
                     return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
             }
             else
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t / microseconds * microseconds;
                 else
                     return ((t + 1) / microseconds - 1) * microseconds;
@@ -296,13 +296,13 @@ namespace
                 Int64 t_nanoseconds = 0;
                 if (common::mulOverflow(t, (static_cast<Int64>(1000000000) / scale_multiplier), t_nanoseconds))
                     throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t_nanoseconds / nanoseconds * nanoseconds;
                 else
                     return ((t_nanoseconds + 1) / nanoseconds - 1) * nanoseconds;
             }
             else
-                if (likely(t >= 0))
+                if (ch_likely(t >= 0))
                     return t / nanoseconds * nanoseconds;
                 else
                     return ((t + 1) / nanoseconds - 1) * nanoseconds;

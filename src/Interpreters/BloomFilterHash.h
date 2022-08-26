@@ -167,7 +167,7 @@ struct BloomFilterHash
     {
         const auto * index_column = typeid_cast<const ColumnVector<Type> *>(column);
 
-        if (unlikely(!index_column))
+        if (ch_unlikely(!index_column))
             throw Exception("Illegal column type was passed to the bloom filter index.", ErrorCodes::ILLEGAL_COLUMN);
 
         const typename ColumnVector<Type>::Container & vec_from = index_column->getData();

@@ -110,7 +110,7 @@ namespace
                 auto child_key = keys_to_request[i];
                 auto parent_key = parent_keys[i];
 
-                if (unlikely(in_key_column_nullable_mask) && (*in_key_column_nullable_mask)[i])
+                if (ch_unlikely(in_key_column_nullable_mask) && (*in_key_column_nullable_mask)[i])
                 {
                     child_key_parent_key_is_null->insert(child_key);
                     continue;
@@ -180,7 +180,7 @@ ColumnPtr getKeysHierarchyDefaultImplementation(
 
     auto is_key_valid_func = [&](auto & key)
     {
-        if (unlikely(child_to_parent_hierarchical_context.child_key_parent_key_is_null)
+        if (ch_unlikely(child_to_parent_hierarchical_context.child_key_parent_key_is_null)
             && child_to_parent_hierarchical_context.child_key_parent_key_is_null->find(key))
             return true;
 
@@ -242,7 +242,7 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
 
     auto is_key_valid_func = [&](auto & key)
     {
-        if (unlikely(child_to_parent_hierarchical_context.child_key_parent_key_is_null)
+        if (ch_unlikely(child_to_parent_hierarchical_context.child_key_parent_key_is_null)
             && child_to_parent_hierarchical_context.child_key_parent_key_is_null->find(key))
             return true;
 

@@ -190,7 +190,7 @@ std::pair<size_t, size_t> DistinctSortedChunkTransform::continueWithPrevRange(co
 void DistinctSortedChunkTransform::transform(Chunk & chunk)
 {
     const size_t chunk_rows = chunk.getNumRows();
-    if (unlikely(0 == chunk_rows))
+    if (ch_unlikely(0 == chunk_rows))
         return;
 
     Columns input_columns = chunk.detachColumns();

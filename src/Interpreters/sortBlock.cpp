@@ -132,7 +132,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
         }
     }
 
-    if (unlikely(all_const))
+    if (ch_unlikely(all_const))
         return;
 
     /// If only one column to sort by

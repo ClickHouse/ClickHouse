@@ -83,7 +83,7 @@ inline size_t decodeBase58(const char8_t * src, size_t srclen, char8_t * dst)
     while (processed < srclen-1)
     {
         unsigned int carry = map_digits[*src];
-        if (unlikely(carry == UINT_MAX))
+        if (ch_unlikely(carry == UINT_MAX))
         {
             return 0;
         }

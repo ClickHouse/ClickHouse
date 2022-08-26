@@ -179,7 +179,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
     size_t keys_found = 0;
 
-    if (unlikely(attributes.empty()))
+    if (ch_unlikely(attributes.empty()))
     {
         for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
         {
@@ -242,7 +242,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
-            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            if (ch_unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
                 return true;
 
             return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
@@ -313,7 +313,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
-            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            if (ch_unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
                 return true;
 
             return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
@@ -489,7 +489,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
 
     size_t attributes_size = attributes.size();
 
-    if (unlikely(attributes_size == 0))
+    if (ch_unlikely(attributes_size == 0))
     {
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
@@ -566,12 +566,12 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::resize(size_t added_rows)
 {
-    if (unlikely(!added_rows))
+    if (ch_unlikely(!added_rows))
         return;
 
     size_t attributes_size = attributes.size();
 
-    if (unlikely(attributes_size == 0))
+    if (ch_unlikely(attributes_size == 0))
     {
         size_t reserve_size = added_rows + no_attributes_container.size();
 
@@ -731,7 +731,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
             bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
     }
 
-    if (unlikely(attributes_size == 0))
+    if (ch_unlikely(attributes_size == 0))
     {
         bytes_allocated += sizeof(no_attributes_container);
 

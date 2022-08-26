@@ -399,7 +399,7 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
     auto comparator = [this, ascending, stability, nan_direction_hint](size_t lhs, size_t rhs)
     {
         int ret = getDictionary().compareAt(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), getDictionary(), nan_direction_hint);
-        if (unlikely(stability == IColumn::PermutationSortStability::Stable && ret == 0))
+        if (ch_unlikely(stability == IColumn::PermutationSortStability::Stable && ret == 0))
             return lhs < rhs;
 
         if (ascending)
@@ -436,7 +436,7 @@ void ColumnLowCardinality::updatePermutationWithCollation(const Collator & colla
 
         int ret = nested_column->compareAtWithCollation(lhs_index, rhs_index, *nested_column, nan_direction_hint, collator);
 
-        if (unlikely(stability == IColumn::PermutationSortStability::Stable && ret == 0))
+        if (ch_unlikely(stability == IColumn::PermutationSortStability::Stable && ret == 0))
             return lhs < rhs;
 
         if (ascending)

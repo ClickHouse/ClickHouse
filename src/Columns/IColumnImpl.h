@@ -221,7 +221,7 @@ struct ComparatorHelperImpl : public ComparatorBase
 
         if constexpr (stability == IColumn::PermutationSortStability::Stable)
         {
-            if (unlikely(res == 0))
+            if (ch_unlikely(res == 0))
                 return lhs < rhs;
         }
 

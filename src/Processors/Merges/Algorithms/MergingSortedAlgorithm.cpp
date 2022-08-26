@@ -274,7 +274,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             limit_reached = true;
         }
 
-        if (unlikely(current.impl->isFirst() &&
+        if (ch_unlikely(current.impl->isFirst() &&
             current.impl->isLast(initial_batch_size) &&
             !current_inputs[current.impl->order].skip_last_row))
         {

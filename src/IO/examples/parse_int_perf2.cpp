@@ -15,7 +15,7 @@ namespace test
         bool negative = false;
         x = 0;
 
-        if (unlikely(buf.eof()))
+        if (ch_unlikely(buf.eof()))
             DB::throwReadAfterEOF();
 
         if (is_signed_v<T> && *buf.position() == '-')

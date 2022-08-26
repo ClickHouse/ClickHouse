@@ -110,7 +110,7 @@ DistinctSortedTransform::DistinctSortedTransform(
 
 void DistinctSortedTransform::transform(Chunk & chunk)
 {
-    if (unlikely(!chunk.hasRows()))
+    if (ch_unlikely(!chunk.hasRows()))
         return;
 
     /// get DISTINCT columns from chunk

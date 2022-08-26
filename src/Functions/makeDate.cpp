@@ -196,13 +196,13 @@ protected:
     {
         ///  Note that hour, minute and second are checked against 99 to behave consistently with parsing DateTime from String
         ///  E.g. "select cast('1984-01-01 99:99:99' as DateTime);" returns "1984-01-05 04:40:39"
-        if (unlikely(std::isnan(year) || std::isnan(month) || std::isnan(day_of_month) ||
+        if (ch_unlikely(std::isnan(year) || std::isnan(month) || std::isnan(day_of_month) ||
             std::isnan(hour) || std::isnan(minute) || std::isnan(second) ||
             year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31 ||
             hour < 0 || hour > 99 || minute < 0 || minute > 99 || second < 0 || second > 99))
             return minDateTime(lut);
 
-        if (unlikely(year > DATE_LUT_MAX_YEAR))
+        if (ch_unlikely(year > DATE_LUT_MAX_YEAR))
             return maxDateTime(lut);
 
         return lut.makeDateTime(year, month, day_of_month, hour, minute, second);
@@ -287,9 +287,9 @@ public:
             const auto second = second_data[i];
 
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
-            if (unlikely(date_time < 0))
+            if (ch_unlikely(date_time < 0))
                 date_time = 0;
-            else if (unlikely(date_time > 0x0ffffffffll))
+            else if (ch_unlikely(date_time > 0x0ffffffffll))
                 date_time = 0x0ffffffffll;
 
             result_data[i] = date_time;
@@ -391,21 +391,21 @@ public:
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
 
             double fraction = 0;
-            if (unlikely(date_time == min_date_time))
+            if (ch_unlikely(date_time == min_date_time))
                 fraction = 0;
-            else if (unlikely(date_time == max_date_time))
+            else if (ch_unlikely(date_time == max_date_time))
                 fraction = 999999999ll;
             else
             {
                 fraction = fraction_data ? (*fraction_data)[i] : 0;
-                if (unlikely(std::isnan(fraction)))
+                if (ch_unlikely(std::isnan(fraction)))
                 {
                     date_time = min_date_time;
                     fraction = 0;
                 }
-                else if (unlikely(fraction < 0))
+                else if (ch_unlikely(fraction < 0))
                     fraction = 0;
-                else if (unlikely(fraction > max_fraction))
+                else if (ch_unlikely(fraction > max_fraction))
                     fraction = max_fraction;
             }
 

@@ -352,7 +352,7 @@ private:
         /// Check that arrays in both columns are the sames size
         for (size_t row = 0; row < offsets_x.size(); ++row)
         {
-            if (unlikely(offsets_x[row] != offsets_y[row]))
+            if (ch_unlikely(offsets_x[row] != offsets_y[row]))
             {
                 ColumnArray::Offset prev_offset = row > 0 ? offsets_x[row] : 0;
                 throw Exception(
@@ -418,7 +418,7 @@ private:
         ColumnArray::Offset prev_offset = 0;
         for (size_t row : collections::range(0, offsets_y.size()))
         {
-            if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
+            if (ch_unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
             {
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,

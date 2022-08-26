@@ -836,7 +836,7 @@ void TCPHandler::processTablesStatusRequest()
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
 
     /// For testing hedged requests
-    if (unlikely(sleep_in_send_tables_status.totalMilliseconds()))
+    if (ch_unlikely(sleep_in_send_tables_status.totalMilliseconds()))
     {
         out->next();
         std::chrono::milliseconds ms(sleep_in_send_tables_status.totalMilliseconds());
@@ -1210,7 +1210,7 @@ bool TCPHandler::receivePacket()
         case Protocol::Client::Cancel:
         {
             /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
+            if (ch_unlikely(sleep_in_receive_cancel.totalMilliseconds()))
             {
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
@@ -1259,7 +1259,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         {
             state.is_cancelled = true;
             /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
+            if (ch_unlikely(sleep_in_receive_cancel.totalMilliseconds()))
             {
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
@@ -1292,7 +1292,7 @@ std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTa
         {
             state.is_cancelled = true;
             /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
+            if (ch_unlikely(sleep_in_receive_cancel.totalMilliseconds()))
             {
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
@@ -1460,7 +1460,7 @@ void TCPHandler::receiveQuery()
     query_context->addQueryParameters(convertToQueryParameters(passed_params));
 
     /// For testing hedged requests
-    if (unlikely(sleep_after_receiving_query.totalMilliseconds()))
+    if (ch_unlikely(sleep_after_receiving_query.totalMilliseconds()))
     {
         std::chrono::milliseconds ms(sleep_after_receiving_query.totalMilliseconds());
         std::this_thread::sleep_for(ms);
@@ -1705,7 +1705,7 @@ bool TCPHandler::isQueryCancelled()
                 state.is_cancelled = true;
                 /// For testing connection collector.
                 {
-                    if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
+                    if (ch_unlikely(sleep_in_receive_cancel.totalMilliseconds()))
                     {
                         std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                         std::this_thread::sleep_for(ms);

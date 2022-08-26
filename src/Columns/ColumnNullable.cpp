@@ -309,7 +309,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     bool lval_is_null = isNullAt(n);
     bool rval_is_null = nullable_rhs.isNullAt(m);
 
-    if (unlikely(lval_is_null || rval_is_null))
+    if (ch_unlikely(lval_is_null || rval_is_null))
     {
         if (lval_is_null && rval_is_null)
             return 0;
@@ -368,7 +368,7 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
         limit = std::min(res_size, limit);
 
     /// For stable sort we must process all NULL values
-    if (unlikely(stability == IColumn::PermutationSortStability::Stable))
+    if (ch_unlikely(stability == IColumn::PermutationSortStability::Stable))
         limit = res_size;
 
     if (is_nulls_last)
@@ -407,7 +407,7 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
             ++read_idx;
         }
 
-        if (unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != res_size)
+        if (ch_unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != res_size)
         {
             ::sort(res.begin() + write_idx, res.begin() + res_size);
         }
@@ -437,7 +437,7 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
             --read_idx;
         }
 
-        if (unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != 0)
+        if (ch_unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != 0)
         {
             ::sort(res.begin(), res.begin() + write_idx + 1);
         }
@@ -556,7 +556,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
     equal_ranges = std::move(new_ranges);
 
-    if (unlikely(stability == PermutationSortStability::Stable))
+    if (ch_unlikely(stability == PermutationSortStability::Stable))
     {
         for (auto & null_range : null_ranges)
             ::sort(res.begin() + null_range.first, res.begin() + null_range.second);

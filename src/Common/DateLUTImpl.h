@@ -76,7 +76,7 @@ private:
 
     static inline LUTIndex normalizeLUTIndex(Int64 index)
     {
-        if (unlikely(index < 0))
+        if (ch_unlikely(index < 0))
             return LUTIndex(0);
         if (index >= DATE_LUT_SIZE)
             return LUTIndex(DATE_LUT_SIZE - 1);
@@ -223,7 +223,7 @@ private:
         Time guess = (t / 86400) + daynum_offset_epoch;
 
         /// For negative Time the integer division was rounded up, so the guess is offset by one.
-        if (unlikely(t < 0))
+        if (ch_unlikely(t < 0))
             --guess;
 
         if (guess < 0)
@@ -276,9 +276,9 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        if (ch_likely(offset_is_whole_number_of_hours_during_epoch))
         {
-            if (likely(x >= 0))
+            if (ch_likely(x >= 0))
                 return x / divisor * divisor;
 
             /// Integer division for negative numbers rounds them towards zero (up).
@@ -290,7 +290,7 @@ private:
         Time res = date + (x - date) / divisor * divisor;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
-            if (unlikely(res < 0))
+            if (ch_unlikely(res < 0))
                 return 0;
             return res;
         }
@@ -480,7 +480,7 @@ public:
     inline UInt8 daysInMonth(Int16 year, UInt8 month) const
     {
         UInt16 idx = year - DATE_LUT_MIN_YEAR;
-        if (unlikely(idx >= DATE_LUT_YEARS))
+        if (ch_unlikely(idx >= DATE_LUT_YEARS))
             return 31;  /// Implementation specific behaviour on overflow.
 
         /// 32 makes arithmetic more simple.
@@ -551,10 +551,10 @@ public:
 
     inline unsigned toSecond(Time t) const
     {
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (ch_likely(offset_is_whole_number_of_minutes_during_epoch))
         {
             Time res = t % 60;
-            if (likely(res >= 0))
+            if (ch_likely(res >= 0))
                 return res;
             return res + 60;
         }
@@ -922,7 +922,7 @@ public:
         UInt16 year = lut[i].year / years * years;
 
         /// For example, rounding down 1925 to 100 years will be 1900, but it's less than min supported year.
-        if (unlikely(year < DATE_LUT_MIN_YEAR))
+        if (ch_unlikely(year < DATE_LUT_MIN_YEAR))
             year = DATE_LUT_MIN_YEAR;
 
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
@@ -1024,7 +1024,7 @@ public:
         Time res = values.date + time;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
-            if (unlikely(res < 0))
+            if (ch_unlikely(res < 0))
                 return 0;
             return res;
         }
@@ -1036,9 +1036,9 @@ public:
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
         UInt64 divisor = 60 * minutes;
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (ch_likely(offset_is_whole_number_of_minutes_during_epoch))
         {
-            if (likely(t >= 0))
+            if (ch_likely(t >= 0))
                 return t / divisor * divisor;
             return (t + 1 - divisor) / divisor * divisor;
         }
@@ -1047,7 +1047,7 @@ public:
         Time res = date + (t - date) / divisor * divisor;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
-            if (unlikely(res < 0))
+            if (ch_unlikely(res < 0))
                 return 0;
             return res;
         }
@@ -1068,10 +1068,10 @@ public:
 
     inline LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (ch_unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return LUTIndex(0);
 
-        if (unlikely(year > DATE_LUT_MAX_YEAR))
+        if (ch_unlikely(year > DATE_LUT_MAX_YEAR))
             return LUTIndex(DATE_LUT_SIZE - 1);
 
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
@@ -1083,7 +1083,7 @@ public:
     /// Create DayNum from year, month, day of month.
     inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (ch_unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
@@ -1176,7 +1176,7 @@ public:
         if (time >= values.time_at_offset_change())
             time += values.amount_of_offset_change();
 
-        if (unlikely(time < 0))
+        if (ch_unlikely(time < 0))
         {
             res.time.second = 0;
             res.time.minute = 0;
@@ -1190,7 +1190,7 @@ public:
         }
 
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
-        if (unlikely(res.time.hour > 23))
+        if (ch_unlikely(res.time.hour > 23))
             res.time.hour = 23;
 
         return res;
@@ -1248,7 +1248,7 @@ public:
 
     inline UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (likely(day_of_month <= 28))
+        if (ch_likely(day_of_month <= 28))
             return day_of_month;
 
         UInt8 days_in_month = daysInMonth(year, month);
@@ -1338,7 +1338,7 @@ public:
         auto day_of_month = values.day_of_month;
 
         /// Saturation to 28 Feb can happen.
-        if (unlikely(day_of_month == 29 && month == 2))
+        if (ch_unlikely(day_of_month == 29 && month == 2))
             day_of_month = saturateDayOfMonth(year, month, day_of_month);
 
         return makeLUTIndex(year, month, day_of_month);

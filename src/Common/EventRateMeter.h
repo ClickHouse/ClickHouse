@@ -39,7 +39,7 @@ public:
     double rate(double now)
     {
         add(now, 0);
-        if (unlikely(now <= start))
+        if (ch_unlikely(now <= start))
             return 0;
         if (now - period <= start) // precise counting mode
             return events.value / (now - start);
