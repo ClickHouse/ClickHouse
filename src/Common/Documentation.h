@@ -20,6 +20,7 @@ namespace DB
   * - the documentation can be generated in various formats;
   * - it is easy to generate a documentation with information about the version when the feature appeared or changed;
   * - it is easy to point to the source code from the documentation;
+  * - it is easy to point to the tests that covered every component, and order the tests by relevance;
   * - it is easy to point to the authors of every feature;
   * - the examples from the documentation can be automatically validated to be always correct and serve the role of tests;
   * - no cross-team communication impedance;
