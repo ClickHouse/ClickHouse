@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical
 sidebar_position: 45
 sidebar_label: "Иерархические словари"
 ---

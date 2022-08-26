@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/install
 sidebar_position: 11
 sidebar_label: "Установка"
 ---
