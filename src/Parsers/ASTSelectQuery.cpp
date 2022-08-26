@@ -192,7 +192,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitOffset()->formatImpl(s, state, frame);
     }
 
-    if (settings())
+    if (settings() && assert_cast<ASTSetQuery *>(settings().get())->print_in_format)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings()->formatImpl(s, state, frame);
