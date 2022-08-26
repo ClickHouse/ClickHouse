@@ -375,7 +375,10 @@ void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
         const auto & added_delta = deltas.emplace_back(std::move(delta));
 
         if (!added_delta.path.empty())
+        {
+            deltas_for_path[added_delta.path].push_back(&added_delta);
             applyDelta(added_delta);
+        }
     }
 }
 
@@ -390,6 +393,25 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
             deltas.pop_front();
             break;
         }
+        auto & front_delta = deltas.front();
+
+        if (!front_delta.path.empty())
+        {
+            auto & path_deltas = deltas_for_path.at(front_delta.path);
+            assert(path_deltas.front() == &front_delta);
+            path_deltas.pop_front();
+            if (path_deltas.empty())
+                deltas_for_path.erase(front_delta.path);
+        }
+        else if (auto * add_auth = std::get_if<AddAuthDelta>(&front_delta.operation))
+        {
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id].auth;
+            assert(uncommitted_auth.front() == add_auth->auth_id);
+            uncommitted_auth.pop_front();
+            if (uncommitted_auth.empty())
+                session_and_auth.erase(add_auth->session_id);
+
+        }
 
         deltas.pop_front();
     }
@@ -397,10 +419,7 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
     // delete all cached nodes that were not modified after the commit_zxid
     // the commit can end on SubDeltaEnd so we don't want to clear cached nodes too soon
     if (deltas.empty() || deltas.front().zxid > commit_zxid)
-    {
         std::erase_if(nodes, [commit_zxid](const auto & node) { return node.second.zxid == commit_zxid; });
-        std::erase_if(session_and_auth, [commit_zxid](const auto & auth) { return auth.second.zxid == commit_zxid; });
-    }
 }
 
 void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
@@ -442,6 +461,12 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                     }
                 },
                 delta_it->operation);
+
+            auto & path_deltas = deltas_for_path.at(delta_it->path);
+            assert(path_deltas.back() == &*delta_it);
+            path_deltas.pop_back();
+            if (path_deltas.empty())
+                deltas_for_path.erase(delta_it->path);
         }
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta_it->operation))
         {
@@ -472,10 +497,16 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
         });
 
     // recalculate all the uncommitted deleted nodes
-    for (const auto & delta : deltas)
+    for (const auto & deleted_node : deleted_nodes)
     {
-        if (!delta.path.empty() && deleted_nodes.contains(delta.path))
-            applyDelta(delta);
+        auto path_delta_it = deltas_for_path.find(deleted_node);
+        if (path_delta_it != deltas_for_path.end())
+        {
+            for (const auto & delta : path_delta_it->second)
+            {
+                applyDelta(*delta);
+            }
+        }
     }
 }
 
