@@ -13,21 +13,25 @@ namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionMin(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *settings)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
     const DataTypePtr & argument_type = argument_types[0];
 
-    WhichDataType which(argument_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return std::make_shared<AggregateFunctionMin<TYPE>>(argument_type);
-    FOR_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
-    // TODO: Work on the rest of the types
-    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionMinData>(name, argument_types, parameters, settings));
+    AggregateFunctionPtr f = AggregateFunctionPtr(createWithNumericBasedType<AggregateFunctionMin>(*argument_type, argument_type));
+    if (f)
+        return f;
+    f.reset(createWithDecimalType<AggregateFunctionMin>(*argument_type, argument_type));
+    if (f)
+        return f;
 
+    // TODO: Add String and generic type support to AggregateFunctionMin
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::String)
+        return AggregateFunctionPtr(new AggregateFunctionsSingleValue<AggregateFunctionMinData<SingleValueDataString>>(argument_type));
+    return AggregateFunctionPtr(new AggregateFunctionsSingleValue<AggregateFunctionMinData<SingleValueDataGeneric>>(argument_type));
 }
 
 AggregateFunctionPtr createAggregateFunctionArgMin(

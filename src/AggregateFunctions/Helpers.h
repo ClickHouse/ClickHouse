@@ -99,6 +99,8 @@ static IAggregateFunction * createWithBasicNumberOrDateOrDateTime(const IDataTyp
 
     if (which.idx == TypeIndex::Date)
         return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Date32)
+        return new AggregateFunctionTemplate<UInt32, Data<Int32>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime)
         return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
 
@@ -115,6 +117,7 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Date32) return new AggregateFunctionTemplate<Int32>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID>(std::forward<TArgs>(args)...);
     return nullptr;
