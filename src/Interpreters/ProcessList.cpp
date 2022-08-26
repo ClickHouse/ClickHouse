@@ -83,6 +83,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
     {
         std::unique_lock lock(mutex);
+        OvercommitTrackerBlockerInThread overcommit_blocker; // To avoid deadlock in case of OOM
         IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
