@@ -120,10 +120,8 @@ std::exception_ptr AsynchronousInsertQueue::InsertData::Entry::getException() co
 }
 
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, const Timeout & timeouts)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size)
     : WithContext(context_)
-    , busy_timeout(timeouts.busy)
-    , stale_timeout(timeouts.stale)
     , pool(pool_size)
     , dump_by_first_update_thread(&AsynchronousInsertQueue::busyCheck, this)
     , cleanup_thread(&AsynchronousInsertQueue::cleanup, this)
@@ -131,9 +129,6 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     using namespace std::chrono;
 
     assert(pool_size);
-
-    if (stale_timeout > 0ms)
-        dump_by_last_update_thread = ThreadFromGlobalPool(&AsynchronousInsertQueue::staleCheck, this);
 }
 
 AsynchronousInsertQueue::~AsynchronousInsertQueue()
@@ -153,9 +148,6 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 
     assert(cleanup_thread.joinable());
     cleanup_thread.join();
-
-    if (dump_by_last_update_thread.joinable())
-        dump_by_last_update_thread.join();
 
     pool.wait();
 
@@ -233,12 +225,15 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     std::lock_guard data_lock(data_mutex);
 
     if (!data)
-        data = std::make_unique<InsertData>();
+    {
+        auto now = std::chrono::steady_clock::now();
+        data = std::make_unique<InsertData>(now);
+        deadline_queue.insert({now, it});
+    }
 
     size_t entry_data_size = entry->bytes.size();
 
     data->size += entry_data_size;
-    data->last_update = std::chrono::steady_clock::now();
     data->entries.emplace_back(entry);
 
     {
@@ -284,46 +279,37 @@ void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, co
 
 void AsynchronousInsertQueue::busyCheck()
 {
-    auto timeout = busy_timeout;
-
-    while (!waitForShutdown(timeout))
+    while (!shutdown)
     {
-        /// TODO: use priority queue instead of raw unsorted queue.
-        timeout = busy_timeout;
-        std::shared_lock read_lock(rwlock);
+        std::unique_lock lock(deadline_mutex);
+        are_tasks_available.wait(lock, [this]()
+        {
+            if (shutdown)
+                return true;
+
+            if (!deadline_queue.empty() && deadline_queue.begin()->first >= std::chrono::steady_clock::now())
+                return true;
+
+            return false;
+        });
 
         const auto now = std::chrono::steady_clock::now();
 
-        for (auto & [key, elem] : queue)
+        while (true)
         {
+            if (deadline_queue.empty() || deadline_queue.begin()->first < now)
+                break;
+
+
+            std::shared_lock read_lock(rwlock);
+            auto main_queue_it = deadline_queue.begin()->second;
+            auto & [key, elem] = *main_queue_it;
+
             std::lock_guard data_lock(elem->mutex);
             if (!elem->data)
                 continue;
 
-            const auto deadline = elem->data->first_update + std::chrono::milliseconds(key.settings.async_insert_busy_timeout_ms);
-            if (now >= deadline)
-                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
-            else
-                timeout = std::min(timeout, std::chrono::ceil<std::chrono::milliseconds>(deadline - now));
-        }
-    }
-}
-
-void AsynchronousInsertQueue::staleCheck()
-{
-    while (!waitForShutdown(stale_timeout))
-    {
-        std::shared_lock read_lock(rwlock);
-
-        for (auto & [key, elem] : queue)
-        {
-            std::lock_guard data_lock(elem->mutex);
-            if (!elem->data)
-                continue;
-
-            auto lag = std::chrono::steady_clock::now() - elem->data->last_update;
-            if (lag >= stale_timeout)
-                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
+            scheduleDataProcessingJob(key, std::move(elem->data), getContext());
         }
     }
 }
@@ -332,7 +318,8 @@ void AsynchronousInsertQueue::cleanup()
 {
     /// Do not run cleanup too often,
     /// because it holds exclusive lock.
-    auto timeout = busy_timeout * 5;
+    /// FIXME: Come up with another mechanism.
+    auto timeout = Milliseconds(1000);
 
     while (!waitForShutdown(timeout))
     {
