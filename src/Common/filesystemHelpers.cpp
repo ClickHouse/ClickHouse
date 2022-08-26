@@ -79,6 +79,22 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #endif
 }
 
+
+std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path)
+{
+#if defined(OS_LINUX)
+    struct stat sb;
+    if (lstat(path.c_str(), &sb))
+        return {};
+    WriteBufferFromOwnString ss;
+    ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
+    return ss.str();
+#else
+    return {};
+#endif
+
+}
+
 #if !defined(OS_LINUX)
 [[noreturn]]
 #endif
