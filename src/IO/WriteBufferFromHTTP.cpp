@@ -35,9 +35,8 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
 
 void WriteBufferFromHTTP::finalizeImpl()
 {
-    // for compressed body, the data is stored in buffered first
-    // here, make sure the content in the buffer has been flushed
-    this->nextImpl();
+    // Make sure the content in the buffer has been flushed
+    this->next();
 
     receiveResponse(*session, request, response, false);
     /// TODO: Response body is ignored.

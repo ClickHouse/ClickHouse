@@ -230,14 +230,14 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
 
     if (bytes == 0)
     {
-        LOG_DEBUG(log, "Reserving 0 bytes on disk {}", backQuote(name));
+        LOG_DEBUG(logger, "Reserving 0 bytes on disk {}", backQuote(name));
         ++reservation_count;
         return {unreserved_space};
     }
 
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
+        LOG_DEBUG(logger, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
@@ -497,6 +497,14 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     , keep_free_space_bytes(keep_free_space_bytes_)
     , logger(&Poco::Logger::get("DiskLocal"))
 {
+    data_source_description.type = DataSourceType::Local;
+
+    if (auto block_device_id = tryGetBlockDeviceId(disk_path); block_device_id.has_value())
+        data_source_description.description = *block_device_id;
+    else
+        data_source_description.description = disk_path;
+    data_source_description.is_encrypted = false;
+    data_source_description.is_cached = false;
 }
 
 DiskLocal::DiskLocal(
@@ -505,6 +513,11 @@ DiskLocal::DiskLocal(
 {
     if (local_disk_check_period_ms > 0)
         disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
+}
+
+DataSourceDescription DiskLocal::getDataSourceDescription() const
+{
+    return data_source_description;
 }
 
 void DiskLocal::startup(ContextPtr)
@@ -615,7 +628,6 @@ DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
         "Local",
         metadata_storage,
         object_storage,
-        DiskType::Local,
         false,
         /* threadpool_size */16
     );
@@ -712,6 +724,13 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
     DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+MetadataStoragePtr DiskLocal::getMetadataStorage()
+{
+    auto object_storage = std::make_shared<LocalObjectStorage>();
+    return std::make_shared<FakeMetadataStorageFromDisk>(
+        std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
 }
 
 void registerDiskLocal(DiskFactory & factory)
