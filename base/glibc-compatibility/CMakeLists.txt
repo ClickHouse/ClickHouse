@@ -27,7 +27,7 @@ if (GLIBC_COMPATIBILITY)
     endif()
 
     # Need to omit frame pointers to match the performance of glibc
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer -D_GNU_SOURCE")
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 

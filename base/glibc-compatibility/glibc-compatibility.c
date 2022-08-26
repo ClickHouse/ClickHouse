@@ -215,6 +215,80 @@ struct statx {
 	uint64_t spare[14];
 };
 
+static int fstatat_statx(int fd, const char *restrict path, struct stat *restrict st, int flag)
+{
+	struct statx stx;
+
+	int ret = syscall(SYS_statx, fd, path, flag, 0x7ff, &stx);
+	if (ret) return ret;
+
+	*st = (struct stat){
+		.st_dev = makedev(stx.stx_dev_major, stx.stx_dev_minor),
+		.st_ino = stx.stx_ino,
+		.st_mode = stx.stx_mode,
+		.st_nlink = stx.stx_nlink,
+		.st_uid = stx.stx_uid,
+		.st_gid = stx.stx_gid,
+		.st_rdev = makedev(stx.stx_rdev_major, stx.stx_rdev_minor),
+		.st_size = stx.stx_size,
+		.st_blksize = stx.stx_blksize,
+		.st_blocks = stx.stx_blocks,
+		.st_atim.tv_sec = stx.stx_atime.tv_sec,
+		.st_atim.tv_nsec = stx.stx_atime.tv_nsec,
+		.st_mtim.tv_sec = stx.stx_mtime.tv_sec,
+		.st_mtim.tv_nsec = stx.stx_mtime.tv_nsec,
+		.st_ctim.tv_sec = stx.stx_ctime.tv_sec,
+		.st_ctim.tv_nsec = stx.stx_ctime.tv_nsec,
+#if _REDIR_TIME64
+		.__st_atim32.tv_sec = stx.stx_atime.tv_sec,
+		.__st_atim32.tv_nsec = stx.stx_atime.tv_nsec,
+		.__st_mtim32.tv_sec = stx.stx_mtime.tv_sec,
+		.__st_mtim32.tv_nsec = stx.stx_mtime.tv_nsec,
+		.__st_ctim32.tv_sec = stx.stx_ctime.tv_sec,
+		.__st_ctim32.tv_nsec = stx.stx_ctime.tv_nsec,
+#endif
+	};
+	return 0;
+}
+
+#define _GNU_SOURCE
+#include <unistd.h>
+#include <syscall.h>
+#include "syscall.h"
+
+ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
+{
+    /// There was cancellable syscall (syscall_cp), but I don't care too.
+    return syscall(SYS_getrandom, buf, buflen, flags);
+}
+
+
+typedef struct {
+	int __flags;
+	pid_t __pgrp;
+	sigset_t __def, __mask;
+	int __prio, __pol;
+	void *__fn;
+	char __pad[64-sizeof(void *)];
+} posix_spawnattr_t;
+
+typedef struct {
+	int __pad0[2];
+	void *__actions;
+	int __pad[16];
+} posix_spawn_file_actions_t;
+
+int posix_spawnp(pid_t *restrict res, const char *restrict file,
+	const posix_spawn_file_actions_t *fa,
+	const posix_spawnattr_t *restrict attr,
+	char *const argv[restrict], char *const envp[restrict])
+{
+	posix_spawnattr_t spawnp_attr = { 0 };
+	if (attr) spawnp_attr = *attr;
+	spawnp_attr.__fn = (void *)execvpe;
+	return posix_spawn(res, file, fa, &spawnp_attr, argv, envp);
+}
+
 
 #if defined (__cplusplus)
 }
