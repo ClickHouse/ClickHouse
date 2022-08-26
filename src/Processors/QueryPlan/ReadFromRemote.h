@@ -33,7 +33,9 @@ public:
         Tables external_tables_,
         Poco::Logger * log_,
         UInt32 shard_count_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
+        SortDescription output_sort_description_,
+        DataStream::SortScope output_sort_scope_);
 
     String getName() const override { return "ReadFromRemote"; }
 

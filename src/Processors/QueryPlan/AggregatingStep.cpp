@@ -1,21 +1,22 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/CopyTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Columns/ColumnFixedString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Aggregator.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
-#include <Interpreters/Aggregator.h>
-#include <Functions/FunctionFactory.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Columns/ColumnFixedString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/CopyTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MemoryBoundMerging.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
     {
         {
             .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
-            .returns_single_stream = should_produce_results_in_order_of_bucket_number, /// Actually, may also return single stream if should_produce_results_in_order_of_bucket_number = false
+            .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
         },
@@ -88,9 +89,14 @@ AggregatingStep::AggregatingStep(
     bool group_by_use_nulls_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_,
-    bool should_produce_results_in_order_of_bucket_number_)
+    bool precedes_merging_,
+    bool should_produce_results_in_order_of_bucket_number_,
+    bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
-        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, grouping_sets_params_, group_by_use_nulls_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
+        input_stream_,
+        appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, grouping_sets_params_, group_by_use_nulls_),
+        getTraits(precedes_merging_ && should_produce_results_in_order_of_bucket_number_),
+        false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(final_)
@@ -102,8 +108,15 @@ AggregatingStep::AggregatingStep(
     , group_by_use_nulls(group_by_use_nulls_)
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
+    , precedes_merging(precedes_merging_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
+    , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
+    if (memoryBoundMergingWillBeUsed())
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    }
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -336,10 +349,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// Do merge of aggregated data in parallel.
             pipeline.resize(merge_threads);
 
-            pipeline.addSimpleTransform([&](const Block &)
+            const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            pipeline.addSimpleTransform(
+                [&](const Block &)
+                { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
+
+            if (memoryBoundMergingWillBeUsed())
             {
-                return std::make_shared<MergingAggregatedBucketTransform>(transform_params);
-            });
+                pipeline.addTransform(std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(
+                    pipeline.getHeader(), pipeline.getNumStreams(), group_by_sort_description));
+            }
 
             aggregating_sorted = collector.detachProcessors(1);
         }
@@ -380,8 +399,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
 
-        /// We add the explicit resize here, but not in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
+        pipeline.resize(precedes_merging && should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
 
         aggregating = collector.detachProcessors(0);
     }
@@ -389,7 +407,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     {
         pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false /* force */);
+        pipeline.resize(precedes_merging && should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false /* force */);
 
         aggregating = collector.detachProcessors(0);
     }
@@ -424,6 +442,11 @@ void AggregatingStep::updateOutputStream()
         input_streams.front(),
         appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, grouping_sets_params, group_by_use_nulls),
         getDataStreamTraits());
+}
+
+bool AggregatingStep::memoryBoundMergingWillBeUsed() const
+{
+    return precedes_merging && memory_bound_merging_of_aggregation_results_enabled && group_by_info;
 }
 
 }

@@ -1,19 +1,24 @@
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/ProcessList.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
-#include <DataTypes/DataTypesNumber.h>
 
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 
 namespace DB
 {
@@ -190,6 +195,32 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
+        /// We determine output stream sort properties by a local plan (local because otherwise table could be unknown).
+        /// If no local shard exist for this cluster, no sort properties will be provided, c'est la vie.
+        SortDescription sort_description;
+        DataStream::SortScope sort_scope = DataStream::SortScope::None;
+        if (!plans.empty())
+        {
+            const IQueryPlanStep * step = nullptr;
+            if (const auto * aggregating_step = dynamic_cast<const AggregatingStep *>(plans.front()->getRootNode()->step.get());
+                aggregating_step && aggregating_step->memoryBoundMergingWillBeUsed())
+                step = aggregating_step;
+            if (const auto * merging_step = dynamic_cast<const MergingAggregatedStep *>(plans.front()->getRootNode()->step.get());
+                merging_step && merging_step->memoryBoundMergingWillBeUsed())
+                step = merging_step;
+            if (step)
+            {
+                /// Currently we've implemented sorting properties enforcing only for memory bound merging (and MBM is implemented only for aggregation in order).
+                /// So, we synchronize the corresponding settings.
+                new_context->setSetting("enable_memory_bound_merging_of_aggregation_results", true);
+                new_context->setSetting("optimize_aggregation_in_order", true);
+                /// And explicitly set the setting which will tell remote node to use aggregation in order and memory bound merging no matter what.
+                new_context->setSetting("force_aggregation_in_order", true);
+                sort_description = step->getOutputStream().sort_description;
+                sort_scope = step->getOutputStream().sort_scope;
+            }
+        }
+
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
             std::move(remote_shards),
@@ -203,7 +234,9 @@ void executeQuery(
             std::move(external_tables),
             log,
             shards,
-            query_info.storage_limits);
+            query_info.storage_limits,
+            sort_description,
+            sort_scope);
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));

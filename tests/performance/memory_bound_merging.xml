@@ -1,0 +1,10 @@
+<test>
+  <create_query>create table t_mbm(a UInt64) engine=MergeTree order by a</create_query>
+
+  <fill_query>insert into t_mbm select * from numbers_mt(5e6)</fill_query>
+  <fill_query>optimize table t_mbm final</fill_query>
+
+  <query>select avg(a) from remote('127.0.0.{{1,2}}', default, t_mbm) group by a format Null settings optimize_aggregation_in_order = 1</query>
+
+  <drop_query>drop table t_mbm</drop_query>
+</test>
