@@ -664,8 +664,8 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                "Policy '{} is used temporary files, such policy should have exactly one volume", policy_name);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 

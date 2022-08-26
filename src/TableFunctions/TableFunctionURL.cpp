@@ -54,7 +54,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
         filename = configuration.url;
         format = configuration.format;
         if (format == "auto")
-            format = FormatFactory::instance().getFormatFromFileName(filename, true);
+            format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
         structure = configuration.structure;
         compression_method = configuration.compression_method;
     }
@@ -116,6 +116,11 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context)
         return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
 
     return parseColumnsListFromString(structure, context);
+}
+
+String TableFunctionURL::getFormatFromFirstArgument()
+{
+    return FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
