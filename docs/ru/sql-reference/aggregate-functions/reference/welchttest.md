@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/welchttest
 sidebar_position: 301
 sidebar_label: welchTTest
 ---

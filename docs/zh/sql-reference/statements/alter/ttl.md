@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/alter/ttl
 sidebar_position: 44
 sidebar_label: TTL
 ---

@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/distributed_ddl_queue
+---
 # system.distributed_ddl_queue {#system_tables-distributed_ddl_queue}
 
 Содержит информацию о [распределенных ddl запросах (секция ON CLUSTER)](../../sql-reference/distributed-ddl.md), которые были выполнены на кластере.

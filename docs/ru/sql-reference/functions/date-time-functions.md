@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/date-time-functions
 sidebar_position: 39
 sidebar_label: "Функции для работы с датами и временем"
 ---
