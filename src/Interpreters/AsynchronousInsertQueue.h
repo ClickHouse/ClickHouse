@@ -18,14 +18,7 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    /// Using structure to allow and benefit from designated initialization and not mess with a positional arguments in ctor.
-    struct Timeout
-    {
-        Milliseconds busy;
-        Milliseconds stale;
-    };
-
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, const Timeout & timeouts);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size);
     ~AsynchronousInsertQueue();
 
     void push(ASTPtr query, ContextPtr query_context);
@@ -69,6 +62,10 @@ private:
             std::exception_ptr exception;
         };
 
+        explicit InsertData(std::chrono::steady_clock::time_point now)
+            : first_update(now)
+        {}
+
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
@@ -76,11 +73,7 @@ private:
 
         /// Timestamp of the first insert into queue, or after the last queue dump.
         /// Used to detect for how long the queue is active, so we can dump it by timer.
-        std::chrono::time_point<std::chrono::steady_clock> first_update = std::chrono::steady_clock::now();
-
-        /// Timestamp of the last insert into queue.
-        /// Used to detect for how long the queue is stale, so we can dump it by another timer.
-        std::chrono::time_point<std::chrono::steady_clock> last_update;
+        std::chrono::time_point<std::chrono::steady_clock> first_update;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -96,9 +89,16 @@ private:
 
     using Queue = std::unordered_map<InsertQuery, std::shared_ptr<Container>, InsertQuery::Hash>;
     using QueueIterator = Queue::iterator;
+    /// Ordered container
+    using DeadlineQueue = std::map<std::chrono::steady_clock::time_point, QueueIterator>;
+
 
     mutable std::shared_mutex rwlock;
     Queue queue;
+
+    mutable std::mutex deadline_mutex;
+    mutable std::condition_variable are_tasks_available;
+    DeadlineQueue deadline_queue;
 
     using QueryIdToEntry = std::unordered_map<String, InsertData::EntryPtr>;
     mutable std::mutex currently_processing_mutex;
@@ -113,22 +113,15 @@ private:
     /// During processing incoming INSERT queries we can also check whether the maximum size of data in buffer is reached (async_insert_max_data_size setting)
     /// If so, then again we dump the data.
 
-    const Milliseconds busy_timeout;
-    const Milliseconds stale_timeout;
-
-    std::mutex shutdown_mutex;
-    std::condition_variable shutdown_cv;
-    bool shutdown{false};
+    std::atomic<bool> shutdown{false};
 
     ThreadPool pool;  /// dump the data only inside this pool.
     ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
-    ThreadFromGlobalPool dump_by_last_update_thread;   /// uses stale_timeout and staleCheck()
     ThreadFromGlobalPool cleanup_thread;               /// uses busy_timeout and cleanup()
 
     Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
 
     void busyCheck();
-    void staleCheck();
     void cleanup();
 
     /// Should be called with shared or exclusively locked 'rwlock'.

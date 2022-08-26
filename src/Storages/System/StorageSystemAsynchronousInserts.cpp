@@ -77,7 +77,8 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 
         res_columns[i++]->insert(insert_query.format);
         res_columns[i++]->insert(time_in_microseconds(elem->data->first_update));
-        res_columns[i++]->insert(time_in_microseconds(elem->data->last_update));
+        /// FIXME: 
+        res_columns[i++]->insert(time_in_microseconds(std::chrono::steady_clock::now()));
         res_columns[i++]->insert(elem->data->size);
 
         Array arr_query_id;
