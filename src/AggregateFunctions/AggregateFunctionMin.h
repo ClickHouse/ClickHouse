@@ -3,16 +3,17 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <Columns/ColumnVector.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/IDataType.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <base/StringRef.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Common/config.h>
 #include <Common/TargetSpecific.h>
@@ -35,7 +36,6 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -50,6 +50,8 @@ struct AggregateFunctionStandaloneMinData
         has_value = true;
         min = std::min(min, value);
     }
+
+    void ALWAYS_INLINE inline addManyDefaults(T value, size_t /*length*/) { add(value); }
 
     MULTITARGET_FUNCTION_AVX2_SSE42(
         MULTITARGET_FUNCTION_HEADER(void),
@@ -84,6 +86,32 @@ struct AggregateFunctionStandaloneMinData
         })
     )
 
+    void addManyNotNullImpl(const T * __restrict ptr, const UInt8 * __restrict null_map, size_t row_begin, size_t row_end)
+    {
+        T aux{min}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
+        size_t count = row_end - row_begin;
+        ptr += row_begin;
+        null_map += row_begin;
+
+        for (size_t i = 0; i < count; i++)
+            if (!null_map[i])
+                aux = std::min(aux, ptr[i]);
+        min = aux;
+    }
+
+    void addManyConditionalImpl(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
+    {
+        T aux{min};
+        size_t count = row_end - row_begin;
+        ptr += row_begin;
+        condition_map += row_begin;
+
+        for (size_t i = 0; i < count; i++)
+            if (condition_map[i])
+                aux = std::min(aux, ptr[i]);
+        min = aux;
+    }
+
     /// Vectorized version
     template <typename Value>
     void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
@@ -102,6 +130,34 @@ struct AggregateFunctionStandaloneMinData
         }
 #endif
         addManyImpl(ptr, start, end);
+    }
+
+    template <typename Value>
+    void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t start, size_t end)
+    {
+        size_t null_count = countBytesInFilter(null_map, start, end);
+        if (null_count == (end - start))
+            return;
+
+        has_value = true;
+        if (null_count != 0)
+            addManyNotNullImpl(ptr, null_map, start, end);
+        else
+            addMany(ptr, start, end);
+    }
+
+    template <typename Value>
+    void NO_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+    {
+        size_t included_count = countBytesInFilter(condition_map, start, end);
+        if (!included_count)
+            return;
+
+        has_value = true;
+        if (included_count != (end - start))
+            addManyConditionalImpl(ptr, condition_map, start, end);
+        else
+            addMany(ptr, start, end);
     }
 
     void merge(const AggregateFunctionStandaloneMinData & rhs)
@@ -131,7 +187,6 @@ struct AggregateFunctionStandaloneMinData
 };
 
 
-
 template <typename T>
 class AggregateFunctionMin final : public IAggregateFunctionDataHelper<AggregateFunctionStandaloneMinData<T>, AggregateFunctionMin<T>>
 {
@@ -147,28 +202,13 @@ public:
 
     String getName() const override { return "min"; }
 
-    DataTypePtr getReturnType() const override
-    {
-        auto result_type = this->argument_types.at(0);
-//        if constexpr (T::is_nullable)
-//            return makeNullable(result_type);
-        return result_type;
-    }
+    DataTypePtr getReturnType() const override { return this->argument_types.at(0); }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         this->data(place).add(assert_cast<const T &>(column.getData()[row_num]));
     }
-
-//    void addManyDefaults(
-//        AggregateDataPtr __restrict place,
-//        const IColumn ** columns,
-//        size_t length,
-//        Arena * arena) const override
-//    {
-//        this->data(place).addManyDefaults(*columns[0], length, arena);
-//    }
 
     void addBatchSinglePlace(
         size_t row_begin,
@@ -182,13 +222,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                {
-                    this->data(place).add(assert_cast<const T &>(column.getData()[i]));
-                }
-            }
+            this->data(place).addManyConditional(column.getData().data(), flags.data(), row_begin, row_end);
         }
         else
         {
@@ -196,45 +230,37 @@ public:
         }
     }
 
-//    void addBatchSinglePlaceNotNull( /// NOLINT
-//        size_t row_begin,
-//        size_t row_end,
-//        AggregateDataPtr place,
-//        const IColumn ** columns,
-//        const UInt8 * null_map,
-//        Arena * arena,
-//        ssize_t if_argument_pos = -1) const override
-//    {
-//        if constexpr (is_any)
-//            if (this->data(place).has())
-//                return;
-//
-//        if (if_argument_pos >= 0)
-//        {
-//            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-//            for (size_t i = row_begin; i < row_end; ++i)
-//            {
-//                if (!null_map[i] && flags[i])
-//                {
-//                    this->data(place).changeIfBetter(*columns[0], i, arena);
-//                    if constexpr (is_any)
-//                        break;
-//                }
-//            }
-//        }
-//        else
-//        {
-//            for (size_t i = row_begin; i < row_end; ++i)
-//            {
-//                if (!null_map[i])
-//                {
-//                    this->data(place).changeIfBetter(*columns[0], i, arena);
-//                    if constexpr (is_any)
-//                        break;
-//                }
-//            }
-//        }
-//    }
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos = -1) const override
+    {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+
+        if (if_argument_pos >= 0)
+        {
+            const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+            auto final_null_flags = std::make_unique<UInt8[]>(row_end);
+            for (size_t i = row_begin; i < row_end; ++i)
+                final_null_flags[i] = null_map[i] & !if_flags[i];
+
+            this->data(place).addManyNotNull(column.getData().data(), final_null_flags.get(), row_begin, row_end);
+        }
+        else
+        {
+            this->data(place).addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena *) const override
+    {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+        this->data(place).addManyDefaults(assert_cast<const T &>(column.getData()[0]), length);
+    }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
