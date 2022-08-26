@@ -1,6 +1,6 @@
 ---
 slug: /zh/faq/general/why-clickhouse-is-so-fast
-title: Why ClickHouse is so fast?
+title: Why is ClickHouse so fast?
 toc_hidden: true
 sidebar_position: 8
 ---
