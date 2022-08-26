@@ -143,6 +143,11 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
         shutdown_cv.notify_all();
     }
 
+    {
+        std::lock_guard lock(deadline_mutex);
+        are_tasks_available.notify_one();
+    }
+
     assert(dump_by_first_update_thread.joinable());
     dump_by_first_update_thread.join();
 
@@ -228,7 +233,10 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     {
         auto now = std::chrono::steady_clock::now();
         data = std::make_unique<InsertData>(now);
-        deadline_queue.insert({now, it});
+
+        std::lock_guard lock(deadline_mutex);
+        deadline_queue.insert({now + Milliseconds{it->first.settings.async_insert_busy_timeout_ms}, it});
+        are_tasks_available.notify_one();
     }
 
     size_t entry_data_size = entry->bytes.size();
@@ -282,7 +290,7 @@ void AsynchronousInsertQueue::busyCheck()
     while (!shutdown)
     {
         std::unique_lock lock(deadline_mutex);
-        are_tasks_available.wait(lock, [this]()
+        are_tasks_available.wait_for(lock, Milliseconds(getContext()->getSettingsRef().async_insert_busy_timeout_ms), [this]()
         {
             if (shutdown)
                 return true;
@@ -293,6 +301,9 @@ void AsynchronousInsertQueue::busyCheck()
             return false;
         });
 
+        if (shutdown)
+            return;
+
         const auto now = std::chrono::steady_clock::now();
 
         while (true)
@@ -302,8 +313,11 @@ void AsynchronousInsertQueue::busyCheck()
 
 
             std::shared_lock read_lock(rwlock);
+            std::unique_lock deadline_lock(deadline_mutex);
             auto main_queue_it = deadline_queue.begin()->second;
             auto & [key, elem] = *main_queue_it;
+
+            deadline_queue.erase(deadline_queue.begin());
 
             std::lock_guard data_lock(elem->mutex);
             if (!elem->data)
