@@ -5,30 +5,31 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3.h>
 
-namespace Poco {
-    class Logger;
+namespace Poco
+{
+class Logger;
 }
 
 namespace Aws::S3
 {
-    class S3Client;
+class S3Client;
 }
 
 namespace DB
 {
 
-class StorageHudi : public IStorage {
+class StorageHudi : public IStorage
+{
 public:
     StorageHudi(
-        const S3::URI& uri_,
-        const String& access_key_,
-        const String& secret_access_key_,
+        const S3::URI & uri_,
+        const String & access_key_,
+        const String & secret_access_key_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_
-    );
+        ContextPtr context_);
 
     String getName() const override { return "Hudi"; }
 
@@ -46,7 +47,7 @@ private:
 
 private:
     std::vector<std::string> getKeysFromS3();
-    std::string generateQueryFromKeys(std::vector<std::string>&& keys);
+    std::string generateQueryFromKeys(std::vector<std::string> && keys);
 
 private:
     StorageS3::S3Configuration base_configuration;
