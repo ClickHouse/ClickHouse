@@ -256,6 +256,14 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
+        struct UncommittedAuth
+        {
+            std::deque<AuthID> auth;
+            int64_t zxid{0};
+        };
+
+        mutable std::unordered_map<int64_t, UncommittedAuth> session_and_auth;
+
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
@@ -287,15 +295,7 @@ public:
         };
 
         mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
-
-        struct UncommittedAuth
-        {
-            AuthIDs auth;
-            int64_t zxid{0};
-        };
-
-        using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-        mutable std::unordered_map<int64_t, UncommittedAuth> session_and_auth;
+        mutable std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
         std::list<Delta> deltas;
         KeeperStorage & storage;
