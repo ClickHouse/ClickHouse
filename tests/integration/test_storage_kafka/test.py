@@ -4115,7 +4115,6 @@ def test_num_consumers_limit(kafka_cluster):
 
     assert "BAD_ARGUMENTS" in error
 
-
     instance.query(
         """
         SET kafka_disable_num_consumers_limit = 1;
