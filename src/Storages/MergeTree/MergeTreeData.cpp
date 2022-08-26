@@ -4975,6 +4975,8 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
 void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part, DataPartStorageBuilderPtr builder)
 {
     precommitted_parts.insert(part);
+    if (asInMemoryPart(part))
+        has_in_memory_parts = true;
     part_builders.push_back(builder);
 }
 
@@ -4997,6 +4999,12 @@ void MergeTreeData::Transaction::rollback()
     clear();
 }
 
+void MergeTreeData::Transaction::clear()
+{
+    precommitted_parts.clear();
+    has_in_memory_parts = false;
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData::DataPartsLock * acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
@@ -5004,20 +5012,30 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
     if (!isEmpty())
     {
         auto settings = data.getSettings();
-        MergeTreeData::WriteAheadLogPtr wal;
         auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
         for (auto & builder : part_builders)
             builder->commit();
 
-        if (txn)
+        bool commit_to_wal = has_in_memory_parts && settings->in_memory_parts_enable_wal;
+        if (txn || commit_to_wal)
         {
+            MergeTreeData::WriteAheadLogPtr wal;
+            if (commit_to_wal)
+                wal = data.getWriteAheadLog();
+
             for (const DataPartPtr & part : precommitted_parts)
             {
-                DataPartPtr covering_part;
-                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
+                if (txn)
+                {
+                    DataPartPtr covering_part;
+                    DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
+                }
+
+                if (auto part_in_memory = asInMemoryPart(part))
+                    wal->addPart(part_in_memory);
             }
         }
 
@@ -5034,15 +5052,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
             for (const DataPartPtr & part : precommitted_parts)
             {
-                auto part_in_memory = asInMemoryPart(part);
-                if (part_in_memory && settings->in_memory_parts_enable_wal)
-                {
-                    if (!wal)
-                        wal = data.getWriteAheadLog();
-
-                    wal->addPart(part_in_memory);
-                }
-
                 DataPartPtr covering_part;
                 DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
                 if (covering_part)
