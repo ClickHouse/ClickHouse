@@ -195,6 +195,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsCTE(!cte_name.empty());
     current_query_tree->setCTEName(cte_name);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
+    current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
 
     current_query_tree->getJoinTree() = buildJoinTree(select_query_typed.tables());
     current_query_tree->setOriginalAST(select_query);
@@ -222,6 +223,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
         current_query_tree->getOrderByNode() = buildSortColumnList(select_order_by_list);
+
+    auto select_limit = select_query_typed.limitLength();
+    if (select_limit)
+        current_query_tree->getLimit() = buildExpression(select_limit);
+
+    auto select_offset = select_query_typed.limitOffset();
+    if (select_offset)
+        current_query_tree->getOffset() = buildExpression(select_offset);
 
     return current_query_tree;
 }

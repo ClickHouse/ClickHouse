@@ -90,6 +90,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int AMBIGUOUS_IDENTIFIER;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int INVALID_LIMIT_EXPRESSION;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -363,20 +364,30 @@ struct TableExpressionColumns
     std::unordered_map<std::string, ColumnNodePtr> column_name_to_column_node;
     std::unordered_set<std::string> column_identifier_first_parts;
 
-    bool canBindIdentifier(IdentifierView identifier)
+    bool hasFullIdentifierName(IdentifierView identifier) const
     {
-        return column_identifier_first_parts.find(std::string(identifier.at(0))) != column_identifier_first_parts.end();
+        return column_name_to_column_node.contains(std::string(identifier.getFullName()));
     }
 
-    [[maybe_unused]] void dump(WriteBuffer & buffer)
+    bool canBindIdentifier(IdentifierView identifier) const
+    {
+        return column_identifier_first_parts.contains(std::string(identifier.at(0)));
+    }
+
+    [[maybe_unused]] void dump(WriteBuffer & buffer) const
     {
         buffer << "Columns size " << column_name_to_column_node.size() << '\n';
 
-        for (auto & [column_name, column_node] : column_name_to_column_node)
-        {
-            buffer << "Column name " << column_name << " column node " << column_node->formatASTForErrorMessage();
-            buffer << " is alias " << column_node->hasExpression() << '\n';
-        }
+        for (const auto & [column_name, column_node] : column_name_to_column_node)
+            buffer << "Column name " << column_name << " column node " << column_node->dumpTree() << '\n';
+    }
+
+    [[maybe_unused]] String dump() const
+    {
+        WriteBufferFromOwnString buffer;
+        dump(buffer);
+
+        return buffer.str();
     }
 };
 
@@ -1380,13 +1391,14 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTable(const IdentifierLo
         return result_expression;
     };
 
-     /** If identifier first part binds to some column start. Then we can try to find whole identifier in table.
+     /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
        * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
        * Storage alias works for subquery, table function as well.
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
-    if (storage_columns.canBindIdentifier(IdentifierView(identifier)))
+    if (storage_columns.canBindIdentifier(IdentifierView(identifier)) ||
+        storage_columns.hasFullIdentifierName(IdentifierView(identifier)))
         return resolve_identifier_from_storage_or_throw(0 /*identifier_column_qualifier_parts*/);
 
     if (identifier.getPartsSize() == 1)
@@ -3595,6 +3607,40 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasOrderBy())
         resolveSortColumnsNodeList(query_node_typed.getOrderByNode(), scope);
+
+    if (query_node_typed.hasLimit())
+    {
+        resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        const auto * limit_constant_node = query_node_typed.getLimit()->as<ConstantNode>();
+        if (!limit_constant_node || !isNativeNumber(limit_constant_node->getResultType()))
+            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+                "Limit expression must be constant with numeric type. Actual {}. In scope {}",
+                query_node_typed.getLimit()->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        Field converted = convertFieldToType(limit_constant_node->getConstantValue(), DataTypeUInt64());
+        if (converted.isNull())
+            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+                "Limit numeric constant expression is not representable as UInt64");
+    }
+
+    if (query_node_typed.getOffset())
+    {
+        resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        const auto * offset_constant_node = query_node_typed.getOffset()->as<ConstantNode>();
+        if (!offset_constant_node || !isNativeNumber(offset_constant_node->getResultType()))
+            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+                "Offset expression must be constant with numeric type. Actual {}. In scope {}",
+                query_node_typed.getLimit()->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        Field converted = convertFieldToType(offset_constant_node->getConstantValue(), DataTypeUInt64());
+        if (converted.isNull())
+            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+                "Offset numeric constant expression is not representable as UInt64");
+    }
 
     resolveExpressionNodeList(query_node_typed.getProjectionNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 

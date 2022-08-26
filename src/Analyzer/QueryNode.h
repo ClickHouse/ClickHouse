@@ -57,6 +57,16 @@ public:
         return is_distinct;
     }
 
+    void setIsLimitWithTies(bool is_limit_with_ties_value)
+    {
+        is_limit_with_ties = is_limit_with_ties_value;
+    }
+
+    bool isLimitWithTies() const
+    {
+        return is_limit_with_ties;
+    }
+
     bool hasWith() const
     {
         return !getWith().getNodes().empty();
@@ -192,6 +202,36 @@ public:
         return children[order_by_child_index];
     }
 
+    bool hasLimit() const
+    {
+        return children[limit_child_index] != nullptr;
+    }
+
+    const QueryTreeNodePtr & getLimit() const
+    {
+        return children[limit_child_index];
+    }
+
+    QueryTreeNodePtr & getLimit()
+    {
+        return children[limit_child_index];
+    }
+
+    bool hasOffset() const
+    {
+        return children[offset_child_index] != nullptr;
+    }
+
+    const QueryTreeNodePtr & getOffset() const
+    {
+        return children[offset_child_index];
+    }
+
+    QueryTreeNodePtr & getOffset()
+    {
+        return children[offset_child_index];
+    }
+
     /// Compute query node columns using projection section
     NamesAndTypesList computeProjectionColumns() const;
 
@@ -217,6 +257,7 @@ private:
     bool is_subquery = false;
     bool is_cte = false;
     bool is_distinct = false;
+    bool is_limit_with_ties = false;
     std::string cte_name;
 
     static constexpr size_t with_child_index = 0;
@@ -228,7 +269,8 @@ private:
     static constexpr size_t having_child_index = 6;
     static constexpr size_t order_by_child_index = 7;
     static constexpr size_t limit_child_index = 8;
-    static constexpr size_t children_size = limit_child_index + 1;
+    static constexpr size_t offset_child_index = 9;
+    static constexpr size_t children_size = offset_child_index + 1;
 };
 
 }
