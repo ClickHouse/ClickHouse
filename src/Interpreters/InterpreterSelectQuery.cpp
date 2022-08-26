@@ -98,7 +98,6 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
-    extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -497,14 +496,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
-        if (context->hasQueryContext())
-        {
-            std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
-            ++current_query_analyze_count;
-            if (settings.max_analyze_depth && current_query_analyze_count >= settings.max_analyze_depth)
-                throw DB::Exception(ErrorCodes::TOO_DEEP_RECURSION, "Query analyze overflow. Try to increase `max_analyze_depth` or simplify the query");
-        }
-
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
         if (view)
@@ -648,8 +639,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
+    bool can_analyze_again = false;
+    if (context->hasQueryContext())
+    {
+        /// Check number of calls of 'analyze' function.
+        /// If it is too big, we will not analyze the query again not to have exponential blowup.
+        std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
+        ++current_query_analyze_count;
+        can_analyze_again = settings.max_analyze_depth == 0 || current_query_analyze_count < settings.max_analyze_depth;
+    }
 
-    if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
+    if (can_analyze_again && (analysis_result.prewhere_constant_filter_description.always_false ||
+                              analysis_result.prewhere_constant_filter_description.always_true))
     {
         if (analysis_result.prewhere_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
@@ -658,7 +659,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         need_analyze_again = true;
     }
 
-    if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
+    if (can_analyze_again && (analysis_result.where_constant_filter_description.always_false ||
+                              analysis_result.where_constant_filter_description.always_true))
     {
         if (analysis_result.where_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
@@ -669,7 +671,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
-        LOG_TRACE(log, "Running 'analyze' second time");
+        size_t current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter.load();
+        LOG_TRACE(log, "Running 'analyze' second time (current analyze depth: {})", current_query_analyze_count);
 
         /// Reuse already built sets for multiple passes of analysis
         prepared_sets = query_analyzer->getPreparedSets();
