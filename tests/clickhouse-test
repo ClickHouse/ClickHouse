@@ -1861,8 +1861,8 @@ def main(args):
         )
 
         if value != "":
-            print("\nThe following functions were not covered by tests:\n\n")
-            sys.stdout.buffer.write(value)
+            print("\nThe following functions were not covered by tests:\n")
+            print(value.decode())
             print("\n")
 
     sys.exit(exit_code.value)
