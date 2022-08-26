@@ -119,18 +119,27 @@
     \
     M(ExecuteShellCommand, "Number of shell command executions.") \
     \
+    M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggragating/joining)") \
+    M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggragating/joining)") \
+    M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggragating/joining)") \
     M(ExternalSortWritePart, "Number of times a temporary file was written to disk for sorting in external memory.") \
     M(ExternalSortMerge, "Number of times temporary files were merged for sorting in external memory.") \
+    M(ExternalSortCompressedBytes, "Number of compressed bytes written for sorting in external memory.") \
+    M(ExternalSortUncompressedBytes, "Amount of data (uncompressed, before compression) written for sorting in external memory.") \
     M(ExternalAggregationWritePart, "Number of times a temporary file was written to disk for aggregation in external memory.") \
     M(ExternalAggregationMerge, "Number of times temporary files were merged for aggregation in external memory.") \
     M(ExternalAggregationCompressedBytes, "Number of bytes written to disk for aggregation in external memory.") \
     M(ExternalAggregationUncompressedBytes, "Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.") \
+    M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for join in external memory.") \
+    M(ExternalJoinMerge, "Number of times temporary files were merged for join in external memory.) \
+    M(ExternalJoinCompressedBytes, "Number of compressed bytes written for join in external memory.") \
+    M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for join in external memory.") \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
     \
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
-    \
+    \Number of uncompressed bytes
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
