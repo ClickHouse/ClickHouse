@@ -133,11 +133,8 @@ ASTPtr FunctionNode::toASTImpl() const
     }
 
     const auto & arguments = getArguments();
-    if (!arguments.getNodes().empty())
-    {
-        function_ast->children.push_back(arguments.toAST());
-        function_ast->arguments = function_ast->children.back();
-    }
+    function_ast->children.push_back(arguments.toAST());
+    function_ast->arguments = function_ast->children.back();
 
     return function_ast;
 }
