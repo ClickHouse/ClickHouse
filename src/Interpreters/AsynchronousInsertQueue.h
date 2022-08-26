@@ -25,7 +25,7 @@ public:
         Milliseconds stale;
     };
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, const Timeout & timeouts);
     ~AsynchronousInsertQueue();
 
     void push(ASTPtr query, ContextPtr query_context);
@@ -109,9 +109,10 @@ private:
     ///                    grow for a long period of time and users will be able to select new data in deterministic manner.
     ///  - stale_timeout:  if queue is stale for too long, then we dump the data too, so that users will be able to select the last
     ///                    piece of inserted data.
-    ///  - max_data_size:  if the maximum size of data is reached, then again we dump the data.
+    ///
+    /// During processing incoming INSERT queries we can also check whether the maximum size of data in buffer is reached (async_insert_max_data_size setting)
+    /// If so, then again we dump the data.
 
-    const size_t max_data_size;  /// in bytes
     const Milliseconds busy_timeout;
     const Milliseconds stale_timeout;
 

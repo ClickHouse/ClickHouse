@@ -120,9 +120,8 @@ std::exception_ptr AsynchronousInsertQueue::InsertData::Entry::getException() co
 }
 
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size_, const Timeout & timeouts)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, const Timeout & timeouts)
     : WithContext(context_)
-    , max_data_size(max_data_size_)
     , busy_timeout(timeouts.busy)
     , stale_timeout(timeouts.stale)
     , pool(pool_size)
@@ -250,7 +249,10 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     LOG_TRACE(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
         data->entries.size(), data->size, queryToString(it->first.query));
 
-    if (data->size > max_data_size)
+    /// Here we check whether we hit the limit on maximum data size in the buffer.
+    /// And use setting from query context!
+    /// It works, because queries with the same set of settings are already grouped together.
+    if (data->size > it->first.settings.async_insert_max_data_size)
         scheduleDataProcessingJob(it->first, std::move(data), getContext());
 
     CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
@@ -290,17 +292,19 @@ void AsynchronousInsertQueue::busyCheck()
         timeout = busy_timeout;
         std::shared_lock read_lock(rwlock);
 
+        const auto now = std::chrono::steady_clock::now();
+
         for (auto & [key, elem] : queue)
         {
             std::lock_guard data_lock(elem->mutex);
             if (!elem->data)
                 continue;
 
-            auto lag = std::chrono::steady_clock::now() - elem->data->first_update;
-            if (lag >= busy_timeout)
+            const auto deadline = elem->data->first_update + std::chrono::milliseconds(key.settings.async_insert_busy_timeout_ms);
+            if (now >= deadline)
                 scheduleDataProcessingJob(key, std::move(elem->data), getContext());
             else
-                timeout = std::min(timeout, std::chrono::ceil<std::chrono::milliseconds>(busy_timeout - lag));
+                timeout = std::min(timeout, std::chrono::ceil<std::chrono::milliseconds>(deadline - now));
         }
     }
 }

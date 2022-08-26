@@ -1417,7 +1417,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
             settings.async_insert_threads,
-            settings.async_insert_max_data_size,
             AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
 
     /// Size of cache for marks (index of MergeTree family of tables).
