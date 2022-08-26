@@ -40,7 +40,7 @@ private:
     std::deque<EnqueuedRequest> pending_requests;
     std::unordered_map<UInt64, EnqueuedRequest> in_flight_requests;
 
-    bool submitToRing(EnqueuedRequest & enqueued);
+    int submitToRing(EnqueuedRequest & enqueued);
 
     using EnqueuedIterator = std::unordered_map<UInt64, EnqueuedRequest>::iterator;
 
