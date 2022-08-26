@@ -2,3 +2,7 @@
 1
 10000000000	0
 1
+DB::(anonymous namespace)::NumbersMultiThreadedSource::generate()
+DB::ISource::prepare()
+DB::ISource::tryGenerate()
+DB::ISource::work()
