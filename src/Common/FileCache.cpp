@@ -86,6 +86,7 @@ void FileCache::assertInitialized() const
 void FileCache::initialize()
 {
     std::lock_guard cache_lock(mutex);
+    LOG_TRACE(log, "Initializing cache... ({})", StackTrace().toString());
     if (!is_initialized)
     {
         if (fs::exists(cache_base_path))
@@ -96,6 +97,7 @@ void FileCache::initialize()
             }
             catch (...)
             {
+                LOG_TRACE(log, "Initialization failed");
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 throw;
             }
@@ -105,6 +107,7 @@ void FileCache::initialize()
 
         is_initialized = true;
     }
+    LOG_TRACE(log, "Initialization finished");
 }
 
 void FileCache::useCell(
@@ -499,6 +502,12 @@ ThreadPool & FileCache::getThreadPoolForAsyncWrite()
     return *async_write_threadpool;
 }
 
+bool FileCache::getCurrentMemoryUsageOfBackgroundDownload() const
+{
+    std::lock_guard lock(background_download_memory_usage_mutex);
+    return background_download_current_memory_usage;
+}
+
 void FileCache::incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & /* background_download_memory_usage_mutex */)
 {
     background_download_current_memory_usage += increment;
@@ -875,9 +884,11 @@ void FileCache::removeIfReleasable()
 
         auto * cell = getCell(key, offset, cache_lock);
         if (!cell)
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cache is in inconsistent state: LRU queue contains entries with no cache cell");
+        }
 
         if (cell->releasable())
         {
@@ -904,6 +915,28 @@ void FileCache::removeIfReleasable()
 #ifndef NDEBUG
     assertCacheCorrectness(cache_lock);
 #endif
+}
+
+void FileCache::dropBackgroundDownload()
+{
+    std::lock_guard cache_lock(mutex);
+    for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
+    {
+        const auto & key = it->key();
+        auto offset = it->offset();
+
+        auto * cell = getCell(key, offset, cache_lock);
+        if (!cell)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cache is in inconsistent state: LRU queue contains entries with no cache cell");
+        }
+
+        auto & file_segment = cell->file_segment;
+        std::unique_lock segment_lock(file_segment->mutex);
+        file_segment->cancelBackgroundDownloadIfExists(segment_lock);
+    }
 }
 
 void FileCache::remove(

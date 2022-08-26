@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 static Block getSampleBlock()
 {
     ColumnsWithTypeAndName columns{
@@ -25,7 +30,8 @@ static Block getSampleBlock()
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "current_elements"},
         ColumnWithTypeAndName{std::make_shared<DataTypeString>(), "path"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt8>>(), "do_not_evict_index_and_mark_files"},
-        ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "background_download_max_memory_usage"}
+        ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "background_download_max_memory_usage"},
+        ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "background_download_current_memory_usage"}
     };
     return Block(columns);
 }
@@ -38,7 +44,10 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-    auto cache_data = FileCacheFactory::instance().getByName(ast.cache_name);
+    FileCacheFactory::FileCacheData cache_data;
+    bool found = FileCacheFactory::instance().tryGetByName(cache_data, ast.cache_name);
+    if (!found)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find cache identified by {}", ast.cache_name);
     const auto & settings = cache_data.settings;
     const auto & cache = cache_data.cache;
 
@@ -52,6 +61,7 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res_columns[7]->insert(cache->getBasePath());
     res_columns[8]->insert(settings.do_not_evict_index_and_mark_files);
     res_columns[9]->insert(settings.background_download_max_memory_usage);
+    res_columns[10]->insert(cache->getCurrentMemoryUsageOfBackgroundDownload());
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();

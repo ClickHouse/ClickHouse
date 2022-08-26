@@ -59,7 +59,13 @@ Pipe StorageSystemRemoteDataPaths::read(
             auto cache_base_path = disk->supportsCache() ? disk->getCacheBasePath() : "";
 
             if (!cache_base_path.empty())
-                cache = FileCacheFactory::instance().get(cache_base_path);
+            {
+                FileCacheFactory::FileCacheData cache_data;
+                bool found = FileCacheFactory::instance().tryGetByPath(cache_data, cache_base_path);
+                if (!found)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find cache identified by {}", cache_base_path);
+                cache = cache_data.cache;
+            }
 
             for (const auto & [local_path, storage_objects] : remote_paths_by_local_path)
             {

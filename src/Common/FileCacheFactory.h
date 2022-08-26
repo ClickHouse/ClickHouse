@@ -22,6 +22,7 @@ public:
         FileCachePtr cache;
         FileCacheSettings settings;
 
+        FileCacheData() = default;
         FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
     };
 
@@ -33,15 +34,15 @@ public:
 
     FileCachePtr getOrCreate(const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name);
 
-    FileCachePtr get(const std::string & cache_base_path);
+    bool tryGetByPath(FileCacheData & result, const std::string & cache_path);
+
+    bool tryGetByName(FileCacheData & result, const std::string & cache_name);
 
     CacheByBasePath getAll();
 
-    const FileCacheSettings & getSettings(const std::string & cache_base_path);
-
-    FileCacheData getByName(const std::string & name);
-
     CacheByName getAllByName();
+
+    const FileCacheSettings & getSettings(const std::string & cache_base_path);
 
 private:
     std::mutex mutex;

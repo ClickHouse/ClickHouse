@@ -235,7 +235,7 @@ void FileSegment::resetDownloader()
 void FileSegment::resetDownloaderUnlocked(std::unique_lock<std::mutex> & /* segment_lock */)
 {
     chassert(!isInternal());
-    LOG_TEST(log, "Resettings downloader from {}", downloader_id);
+    LOG_TEST(log, "Resetting downloader from {}", downloader_id);
     downloader_id.clear();
 }
 
@@ -547,6 +547,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
     assertNotDetachedUnlocked(segment_lock);
 
+    FileSegmentsHolder holder;
     {
         auto & state = *background_download;
 
@@ -577,6 +578,12 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
         state.last_added_buffer_range = {offset, size};
         state.future_downloaded_size += size;
+
+         /// This holder is moved to `task` - protection against segfault: file segment object must
+         /// exist while `task` is executed. Note: shared_from_this() must be done under segment_lock.
+         /// It is also important to wrap in FileSegmentHolder as
+         /// need to unsure complete() is called by each user of the file segment.
+        holder.file_segments.push_back(shared_from_this());
     }
 
     ThreadGroupStatusPtr thread_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
@@ -586,10 +593,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
     auto task = std::make_shared<std::packaged_task<void()>>(
         [this,
          executor_id = getCallerId() + "_async", /// Id for background downloader
-         /// Protection against segfault.
-         /// It is also important to wrap in FileSegmentHolder as
-         /// need to unsure complete() is called by each user of the file segment.
-         holder = FileSegmentsHolder({shared_from_this()}),
+         holder = std::move(holder),
          thread_group]
     {
         if (thread_group)
@@ -1088,8 +1092,9 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         return;
 
     bool is_downloader = isDownloaderUnlocked(segment_lock);
+    bool is_internal = isInternal();
     bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
-    bool can_update_segment_state = (isInternal() ? downloader_id.empty() : is_downloader) || is_last_holder;
+    bool can_update_segment_state = (is_internal ? downloader_id.empty() : is_downloader) || is_last_holder;
     size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
     SCOPE_EXIT({
@@ -1101,8 +1106,8 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
 
     LOG_TEST(
         log,
-        "Complete without state (is_last_holder: {}). File segment info: {}",
-        is_last_holder, getInfoForLogUnlocked(segment_lock));
+        "Complete based on current state (is_last_holder: {}, is_internal: {}, can_update_segment_state: {}). File segment info: {}",
+        is_last_holder, is_internal, can_update_segment_state, getInfoForLogUnlocked(segment_lock));
 
     if (can_update_segment_state)
     {
@@ -1201,6 +1206,7 @@ String FileSegment::getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment
     info << "current write offset: " << getCurrentWriteOffsetUnlocked(segment_lock) << ", ";
     info << "first non-downloaded offset: " << getFirstNonDownloadedOffsetUnlocked(segment_lock) << ", ";
     info << "caller id: " << getCallerId() << ", ";
+    info << "detached: " << is_detached << ", ";
     info << "persistent: " << is_persistent;
 
     return info.str();

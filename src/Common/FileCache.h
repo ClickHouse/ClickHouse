@@ -78,6 +78,9 @@ public:
     /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeIfReleasable();
 
+    /// Clear background download queue.
+    void dropBackgroundDownload();
+
     static Key hash(const String & path);
 
     String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const;
@@ -111,6 +114,8 @@ public:
 
     /// For debug.
     String dumpStructure(const Key & key);
+
+    bool getCurrentMemoryUsageOfBackgroundDownload() const;
 
     /// Save a query context information, and adopt different cache policies
     /// for different queries through the context cache layer.
@@ -150,7 +155,7 @@ private:
 
     std::optional<ThreadPool> async_write_threadpool;
     ssize_t background_download_current_memory_usage = 0;
-    std::mutex background_download_memory_usage_mutex;
+    mutable std::mutex background_download_memory_usage_mutex;
 
     ThreadPool & getThreadPoolForAsyncWrite();
     void incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & background_download_memory_usage_mutex);

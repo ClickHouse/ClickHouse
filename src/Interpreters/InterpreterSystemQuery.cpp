@@ -317,7 +317,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            if (query.filesystem_cache_path.empty())
+
+            if (query.filesystem_cache_path_or_name.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
@@ -325,8 +326,39 @@ BlockIO InterpreterSystemQuery::execute()
             }
             else
             {
-                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->removeIfReleasable();
+                FileCacheFactory::FileCacheData cache_data;
+
+                bool found = FileCacheFactory::instance().tryGetByPath(cache_data, query.filesystem_cache_path_or_name);
+                if (!found)
+                    found = FileCacheFactory::instance().tryGetByName(cache_data, query.filesystem_cache_path_or_name);
+                if (!found)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no cache identified by {}", query.filesystem_cache_path_or_name);
+
+                cache_data.cache->removeIfReleasable();
+            }
+            break;
+        }
+        case Type::DROP_BACKGROUND_FILESYSTEM_CACHE_DOWNLOAD:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_BACKGROUND_FILESYSTEM_CACHE_DOWNLOAD);
+
+            if (query.filesystem_cache_path_or_name.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [_, cache_data] : caches)
+                    cache_data->cache->dropBackgroundDownload();
+            }
+            else
+            {
+                FileCacheFactory::FileCacheData cache_data;
+
+                bool found = FileCacheFactory::instance().tryGetByPath(cache_data, query.filesystem_cache_path_or_name);
+                if (!found)
+                    found = FileCacheFactory::instance().tryGetByName(cache_data, query.filesystem_cache_path_or_name);
+                if (!found)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no cache identified by {}", query.filesystem_cache_path_or_name);
+
+                cache_data.cache->removeIfReleasable();
             }
             break;
         }
@@ -861,10 +893,19 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
+            break;
+        }
+        case Type::DROP_FILESYSTEM_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+            break;
+        }
+        case Type::DROP_BACKGROUND_FILESYSTEM_CACHE_DOWNLOAD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_BACKGROUND_FILESYSTEM_CACHE_DOWNLOAD);
             break;
         }
         case Type::RELOAD_DICTIONARY:

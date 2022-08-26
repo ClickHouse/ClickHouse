@@ -29,6 +29,7 @@ public:
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
         DROP_FILESYSTEM_CACHE,
+        DROP_BACKGROUND_FILESYSTEM_CACHE_DOWNLOAD,
         DROP_SCHEMA_CACHE,
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
@@ -94,7 +95,7 @@ public:
     String disk;
     UInt64 seconds{};
 
-    String filesystem_cache_path;
+    String filesystem_cache_path_or_name;
 
     String backup_name;
 

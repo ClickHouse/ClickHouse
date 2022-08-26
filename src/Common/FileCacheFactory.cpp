@@ -31,13 +31,16 @@ const FileCacheSettings & FileCacheFactory::getSettings(const std::string & cach
 
 }
 
-FileCachePtr FileCacheFactory::get(const std::string & cache_base_path)
+bool FileCacheFactory::tryGetByPath(FileCacheData & result, const std::string & cache_path)
 {
     std::lock_guard lock(mutex);
-    auto it = caches_by_path.find(cache_base_path);
+
+    auto it = caches_by_path.find(cache_path);
     if (it == caches_by_path.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by path: {}", cache_base_path);
-    return it->second->cache;
+        return false;
+
+    result = *it->second;
+    return true;
 
 }
 
@@ -63,15 +66,16 @@ FileCachePtr FileCacheFactory::getOrCreate(
     return cache;
 }
 
-FileCacheFactory::FileCacheData FileCacheFactory::getByName(const std::string & name)
+bool FileCacheFactory::tryGetByName(FileCacheData & result, const std::string & cache_name)
 {
     std::lock_guard lock(mutex);
 
-    auto it = caches_by_name.find(name);
+    auto it = caches_by_name.find(cache_name);
     if (it == caches_by_name.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by name: {}", name);
+        return false;
 
-    return *it->second;
+    result = *it->second;
+    return true;
 }
 
 FileCacheFactory::CacheByName FileCacheFactory::getAllByName()

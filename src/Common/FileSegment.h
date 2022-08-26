@@ -334,14 +334,6 @@ friend class FileSegment;
 public:
     explicit BackgroundDownload(FileCache * cache_) : cache(cache_) {}
 
-    bool isCancelled(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_cancelled; }
-
-    bool hasError(std::unique_lock<std::mutex> & /* segment_lock */) const { return exception != nullptr; }
-
-    /// Get size of the file segment as it would be if all entries
-    /// in this queue would be downloaded successfully.
-    size_t getFutureDownloadedSize(std::unique_lock<std::mutex> & /* segment_lock */) const { return future_downloaded_size; }
-
     /// If some range is being downloaded, return it. It is guaranteed that
     /// at the moment of time there is only one range which can be downloaded
     /// because execution of entries from a single BackgroundDownload can
@@ -355,6 +347,16 @@ public:
     getDownloadQueueRanges(std::unique_lock<std::mutex> & segment_lock) const;
 
 private:
+    bool hasError(std::unique_lock<std::mutex> & /* segment_lock */) const { return exception != nullptr; }
+
+    /// Get size of the file segment as it would be if all entries
+    /// in this queue would be downloaded successfully.
+    size_t getFutureDownloadedSize(std::unique_lock<std::mutex> & /* segment_lock */) const { return future_downloaded_size; }
+
+    /// Reserve space for background download. Background download has a limited size,
+    /// so if we reach the limit, new downloads will be discarded.
+    bool reserve(size_t size, std::unique_lock<std::mutex> & segment_lock);
+
     struct BackgroundDownloadResult
     {
         std::shared_future<void> shared_future;
@@ -403,7 +405,7 @@ private:
     std::exception_ptr exception;
 
     /// Whether the download was cancelled. For example because file segment was removed from cache.
-    size_t is_cancelled = false;
+    bool is_cancelled = false;
 
     struct OffsetAndSize
     {
@@ -423,10 +425,6 @@ private:
     std::atomic<size_t> future_downloaded_size = 0;
 
     FileCache * cache;
-
-    /// Reserve space for background download. Background download has a limited size,
-    /// so if we reach the limit, new downloads will be discarded.
-    bool reserve(size_t size, std::unique_lock<std::mutex> & segment_lock);
 
     /// Buffer placeholder is put here in file_segment.reserve() method. It will be moved from here
     /// to Buffers queue when write() method is called.

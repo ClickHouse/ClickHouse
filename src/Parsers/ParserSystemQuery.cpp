@@ -355,11 +355,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::DROP_BACKGROUND_FILESYSTEM_CACHE_DOWNLOAD:
         {
             ParserLiteral path_parser;
+            ParserIdentifier name_parser;
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
-                res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
+                res->filesystem_cache_path_or_name = ast->as<ASTLiteral>()->value.safeGet<String>();
+            else if (name_parser.parse(pos, ast, expected))
+                res->filesystem_cache_path_or_name = ast->as<ASTIdentifier>()->name();
             parseQueryWithOnCluster(res, pos, expected);
             break;
         }
