@@ -14,6 +14,14 @@
 namespace DB
 {
 
+FunctionNode::FunctionNode(String function_name_)
+    : function_name(function_name_)
+{
+    children.resize(2);
+    children[parameters_child_index] = std::make_shared<ListNode>();
+    children[arguments_child_index] = std::make_shared<ListNode>();
+}
+
 void FunctionNode::resolveAsFunction(FunctionOverloadResolverPtr function_value, DataTypePtr result_type_value)
 {
     aggregate_function = nullptr;

@@ -21,6 +21,8 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -37,6 +39,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/SortColumnNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -51,6 +54,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerJoins.h>
+#include <Planner/PlannerSorting.h>
 #include <Planner/ActionsChain.h>
 
 namespace DB
@@ -65,6 +69,7 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int ILLEGAL_AGGREGATION;
     extern const int NOT_AN_AGGREGATE;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 /** ClickHouse query planner.
@@ -88,6 +93,9 @@ namespace ErrorCodes
   * TODO: Support max streams
   * TODO: Support GROUPINS SETS, const aggregation keys, overflow row
   * TODO: Simplify buildings SETS for IN function
+  * TODO: Support interpolate, LIMIT BY.
+  * TODO: Support ORDER BY read in order optimization
+  * TODO: Support GROUP BY read in order optimization
   */
 
 namespace
@@ -1102,12 +1110,39 @@ void Planner::buildQueryPlanIfNeeded()
 
         ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data(aggregate_keys_set, *planner_context);
         ValidateGroupByColumnsVisitor validate_columns_visitor(validate_group_by_visitor_data);
-
         validate_columns_visitor.visit(query_node.getProjectionNode());
 
         auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
         actions_chain.addStep(std::move(aggregate_step));
         aggregate_step_index = actions_chain.getLastStepIndex();
+    }
+
+    std::optional<size_t> before_order_by_step_index;
+    if (query_node.hasOrderBy())
+    {
+        const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+        const auto & order_by_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+        ActionsDAGPtr actions_dag = std::make_shared<ActionsDAG>(order_by_input);
+        auto & actions_dag_outputs = actions_dag->getOutputs();
+        actions_dag_outputs.clear();
+
+        PlannerActionsVisitor actions_visitor(planner_context);
+
+        /** We add only sort column sort expression in before ORDER BY actions DAG.
+          * WITH fill expressions must be constant nodes.
+          */
+        auto & order_by_node_list = query_node.getOrderByNode()->as<ListNode &>();
+        for (auto & sort_column_node : order_by_node_list.getNodes())
+        {
+            auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
+            auto expression_dag_index_nodes = actions_visitor.visit(actions_dag, sort_column_node_typed.getExpression());
+            actions_dag_outputs.insert(actions_dag_outputs.end(), expression_dag_index_nodes.begin(), expression_dag_index_nodes.end());
+        }
+
+        auto actions_step_before_order_by = std::make_unique<ActionsChainStep>(std::move(actions_dag));
+        actions_chain.addStep(std::move(actions_step_before_order_by));
+        before_order_by_step_index = actions_chain.getLastStepIndex();
     }
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
@@ -1152,13 +1187,13 @@ void Planner::buildQueryPlanIfNeeded()
     actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(projection_actions)));
     size_t projection_action_step_index = actions_chain.getLastStepIndex();
 
-    // std::cout << "Chain dump before finalize" << std::endl;
-    // std::cout << actions_chain.dump() << std::endl;
+    std::cout << "Chain dump before finalize" << std::endl;
+    std::cout << actions_chain.dump() << std::endl;
 
     actions_chain.finalize();
 
-    // std::cout << "Chain dump after finalize" << std::endl;
-    // std::cout << actions_chain.dump() << std::endl;
+    std::cout << "Chain dump after finalize" << std::endl;
+    std::cout << actions_chain.dump() << std::endl;
 
     if (where_action_step_index)
     {
@@ -1281,6 +1316,55 @@ void Planner::buildQueryPlanIfNeeded()
             distinct_step->setStepDescription("DISTINCT");
 
         query_plan.addStep(std::move(distinct_step));
+    }
+
+    if (before_order_by_step_index)
+    {
+        auto & aggregate_actions_chain_node = actions_chain.at(*before_order_by_step_index);
+        auto expression_step_before_order_by = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(),
+            aggregate_actions_chain_node->getActions());
+        expression_step_before_order_by->setStepDescription("Before ORDER BY");
+        query_plan.addStep(std::move(expression_step_before_order_by));
+    }
+
+    if (query_node.hasOrderBy())
+    {
+        SortDescription sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
+        String sort_description_dump = dumpSortDescription(sort_description);
+
+        UInt64 limit = 0;
+
+        const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+
+        /// Merge the sorted blocks.
+        auto sorting_step = std::make_unique<SortingStep>(
+            query_plan.getCurrentDataStream(),
+            sort_description,
+            settings.max_block_size,
+            limit,
+            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
+            settings.max_bytes_before_remerge_sort,
+            settings.remerge_sort_lowered_memory_bytes_ratio,
+            settings.max_bytes_before_external_sort,
+            planner_context->getQueryContext()->getTemporaryVolume(),
+            settings.min_free_disk_space_for_temporary_data);
+
+        sorting_step->setStepDescription("Sorting for ORDER BY");
+        query_plan.addStep(std::move(sorting_step));
+
+        SortDescription fill_description;
+        for (auto & description : sort_description)
+        {
+            if (description.with_fill)
+                fill_description.push_back(description);
+        }
+
+        if (!fill_description.empty())
+        {
+            InterpolateDescriptionPtr interpolate_descr = nullptr;
+            auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_descr);
+            query_plan.addStep(std::move(filling_step));
+        }
     }
 
     auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_chain[projection_action_step_index]->getActions());

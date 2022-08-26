@@ -57,6 +57,11 @@ public:
         return is_distinct;
     }
 
+    bool hasWith() const
+    {
+        return !getWith().getNodes().empty();
+    }
+
     const ListNode & getWith() const
     {
         return children[with_child_index]->as<const ListNode &>();
@@ -160,6 +165,31 @@ public:
     QueryTreeNodePtr & getGroupByNode()
     {
         return children[group_by_child_index];
+    }
+
+    bool hasOrderBy() const
+    {
+        return !getOrderBy().getNodes().empty();
+    }
+
+    const ListNode & getOrderBy() const
+    {
+        return children[order_by_child_index]->as<const ListNode &>();
+    }
+
+    ListNode & getOrderBy()
+    {
+        return children[order_by_child_index]->as<ListNode &>();
+    }
+
+    const QueryTreeNodePtr & getOrderByNode() const
+    {
+        return children[order_by_child_index];
+    }
+
+    QueryTreeNodePtr & getOrderByNode()
+    {
+        return children[order_by_child_index];
     }
 
     /// Compute query node columns using projection section
