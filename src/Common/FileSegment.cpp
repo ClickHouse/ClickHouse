@@ -662,6 +662,8 @@ void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex> & segment_loc
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
 {
+    std::lock_guard segment_lock(file_segment->mutex);
+
     auto snapshot = std::make_shared<FileSegment>(
         file_segment->offset(),
         file_segment->range().size(),
@@ -671,8 +673,8 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
 
     snapshot->hits_count = file_segment->getHitsCount();
     snapshot->ref_count = file_segment.use_count();
-    snapshot->downloaded_size = file_segment->getDownloadedSize();
-    snapshot->download_state = file_segment->state();
+    snapshot->downloaded_size = file_segment->getDownloadedSize(segment_lock);
+    snapshot->download_state = file_segment->download_state;
     snapshot->is_persistent = file_segment->isPersistent();
 
     return snapshot;
@@ -829,7 +831,7 @@ void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
             /// and therefore cannot be concurrently accessed. Nevertheless, it can be
             /// accessed by cache system tables if someone read from them,
             /// therefore we need a mutex.
-            std::scoped_lock lock(cache->mutex, file_segment.mutex);
+            std::lock_guard segment_lock(file_segment.mutex);
 
             assert(file_segment.downloaded_size <= file_segment.range().size());
             file_segment.segment_range = FileSegment::Range(
