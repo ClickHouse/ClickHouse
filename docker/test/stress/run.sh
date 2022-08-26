@@ -104,12 +104,16 @@ EOL
 
 function stop()
 {
+    local pid
+    # Preserve the pid, since the server can hung after the PID will be deleted.
+    pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
+
     clickhouse stop --do-not-kill && return
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
     echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
-    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 }
 
