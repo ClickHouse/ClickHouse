@@ -131,7 +131,7 @@
     M(ExternalAggregationCompressedBytes, "Number of bytes written to disk for aggregation in external memory.") \
     M(ExternalAggregationUncompressedBytes, "Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.") \
     M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for join in external memory.") \
-    M(ExternalJoinMerge, "Number of times temporary files were merged for join in external memory.) \
+    M(ExternalJoinMerge, "Number of times temporary files were merged for join in external memory.") \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for join in external memory.") \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for join in external memory.") \
     \
