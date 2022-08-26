@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SELECT regionToName(number::UInt32, 'en') FROM numbers(13);
 SELECT regionToName(number::UInt32, 'xy') FROM numbers(13); -- { serverError 1000 }
 
