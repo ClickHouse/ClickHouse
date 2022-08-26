@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/parametric-functions
 sidebar_position: 38
 sidebar_label: 参数聚合函数
 ---

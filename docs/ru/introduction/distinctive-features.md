@@ -1,4 +1,5 @@
 ---
+slug: /ru/introduction/distinctive-features
 sidebar_position: 4
 sidebar_label: "Отличительные возможности ClickHouse"
 ---

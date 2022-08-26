@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/table-engines/log-family/
 sidebar_label: 日志引擎系列
 sidebar_position: 29
 ---
