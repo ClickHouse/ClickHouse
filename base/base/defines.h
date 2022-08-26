@@ -143,8 +143,8 @@
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
 /// Consider adding a comment before using these macros.
-#   define TSA_SUPPRESS_WARNING_FOR_READ(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }()
-#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }()
+#   define TSA_SUPPRESS_WARNING_FOR_READ(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }())
+#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }())
 
 /// This macro is useful when only one thread writes to a member
 /// and you want to read this member from the same thread without locking a mutex.
