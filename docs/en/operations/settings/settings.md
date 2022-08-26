@@ -3242,7 +3242,7 @@ Possible values:
 -   Positive integer.
 -   0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `100000`.
 
 ## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
