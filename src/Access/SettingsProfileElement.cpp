@@ -208,16 +208,25 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     {
         if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
         {
-            if (!elem.min_value.isNull())
-                res.setMinValue(elem.setting_name, elem.min_value);
-            if (!elem.max_value.isNull())
-                res.setMaxValue(elem.setting_name, elem.max_value);
-            if (elem.readonly)
-                res.setReadOnly(elem.setting_name, *elem.readonly);
-            if (!elem.min_value_in_readonly.isNull())
-                res.setMinValueInReadOnly(elem.setting_name, elem.min_value_in_readonly);
-            if (!elem.max_value_in_readonly.isNull())
-                res.setMaxValueInReadOnly(elem.setting_name, elem.max_value_in_readonly);
+            switch (elem.kind)
+            {
+                case SettingsProfileElement::RangeKind::Constrain:
+                    if (!elem.min_value.isNull())
+                        res.constrainMinValue(elem.setting_name, elem.min_value);
+                    if (!elem.max_value.isNull())
+                        res.constrainMaxValue(elem.setting_name, elem.max_value);
+                    if (elem.readonly)
+                        res.constrainReadOnly(elem.setting_name, *elem.readonly);
+                    break;
+                case SettingsProfileElement::RangeKind::Allow:
+                    if (!elem.min_value.isNull())
+                        res.allowMinValue(elem.setting_name, elem.min_value);
+                    if (!elem.max_value.isNull())
+                        res.allowMaxValue(elem.setting_name, elem.max_value);
+                    if (elem.readonly)
+                        res.allowReadOnly(elem.setting_name, *elem.readonly);
+                    break;
+            }
         }
     }
     return res;

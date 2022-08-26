@@ -21,15 +21,19 @@ struct SettingsProfileElement
 {
     std::optional<UUID> parent_profile;
 
+    enum class RangeKind {
+        Constrain = 0,
+        Allow
+    };
+
     String setting_name;
     Field value;
+    RangeKind kind = RangeKind::Constrain;
     Field min_value;
     Field max_value;
     std::optional<bool> readonly;
-    Field min_value_in_readonly;
-    Field max_value_in_readonly;
 
-    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, readonly, min_value_in_readonly, max_value_in_readonly); }
+    auto toTuple() const { return std::tie(parent_profile, setting_name, value, kind, min_value, max_value, readonly); }
     friend bool operator==(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() == rhs.toTuple(); }
     friend bool operator!=(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return !(lhs == rhs); }
     friend bool operator <(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() < rhs.toTuple(); }

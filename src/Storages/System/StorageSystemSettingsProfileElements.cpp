@@ -29,8 +29,7 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
-        {"min_in_readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"max_in_readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"allowance", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
         {"inherit_profile", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
     };
     return names_and_types;
@@ -66,10 +65,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
     auto & column_max_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_readonly = assert_cast<ColumnUInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn()).getData();
     auto & column_readonly_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
-    auto & column_min_in_readonly = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
-    auto & column_min_in_readonly_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
-    auto & column_max_in_readonly = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
-    auto & column_max_in_readonly_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
+    auto & column_allowance = assert_cast<ColumnUInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn()).getData();
+    auto & column_allowance_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_inherit_profile = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
     auto & column_inherit_profile_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
 
@@ -114,26 +111,16 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             inserted_readonly = true;
         }
 
-        bool inserted_min_in_readonly = false;
-        if (!element.min_value_in_readonly.isNull() && !element.setting_name.empty())
+        bool inserted_allowance = false;
+        if (element.kind == SettingsProfileElement::RangeKind::Allow && !element.setting_name.empty())
         {
-            String str = Settings::valueToStringUtil(element.setting_name, element.min_value_in_readonly);
-            column_min_in_readonly.insertData(str.data(), str.length());
-            column_min_in_readonly_null_map.push_back(false);
-            inserted_min_in_readonly = true;
-        }
-
-        bool inserted_max_in_readonly = false;
-        if (!element.max_value_in_readonly.isNull() && !element.setting_name.empty())
-        {
-            String str = Settings::valueToStringUtil(element.setting_name, element.max_value_in_readonly);
-            column_max_in_readonly.insertData(str.data(), str.length());
-            column_max_in_readonly_null_map.push_back(false);
-            inserted_max_in_readonly = true;
+            column_allowance.push_back(true);
+            column_allowance_null_map.push_back(false);
+            inserted_allowance = true;
         }
 
         bool inserted_setting_name = false;
-        if (inserted_value || inserted_min || inserted_max || inserted_readonly || inserted_min_in_readonly || inserted_max_in_readonly)
+        if (inserted_value || inserted_min || inserted_max || inserted_readonly || inserted_allowance)
         {
             const auto & setting_name = element.setting_name;
             column_setting_name.insertData(setting_name.data(), setting_name.size());
