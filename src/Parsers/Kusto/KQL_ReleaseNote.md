@@ -1,31 +1,111 @@
 
 ## KQL implemented features
 
-# August 15, 2022
-## Dynamic Array Functions
-- [array_sort_asc](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysortascfunction)  
-   `print t = array_sort_asc(dynamic([null, 'd', 'a', 'c', 'c']))`  
-   `print t = array_sort_asc(dynamic([4, 1, 3, 2]))`  
-   `print array_sort_asc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))`  
-   `print array_sort_asc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))`  
-   `print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , false)`  
-   `print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2)`  
-   `print t = array_sort_asc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)`  
-   `print t = array_sort_asc( dynamic([null, null, null]) , false)`  
-   `print array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 > 2)`  
-   `print array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50, 3]), 1 > 2)`  
-- [array_sort_desc](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysortdescfunction)  
-   `print t = array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c']))`  
-   `print t = array_sort_desc(dynamic([4, 1, 3, 2]))`  
-   `print array_sort_desc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))`  
-   `print array_sort_desc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))`  
-   `print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , 1 < 2)`  
-   `print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , false)`  
-   `print t = array_sort_desc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)`  
-   `print t = array_sort_desc( dynamic([null, null, null]) , false)`  
-   `print array_sort_desc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 > 2)`  
-## Aggregate Functions
+# August 29, 2022
 
+## **make-series operator**  
+https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoperator
+
+- test case make-series on datetime column  
+   ```
+   CREATE TABLE T
+   (    
+      Supplier Nullable(String),
+      Fruit String ,
+      Price Float64,
+      Purchase Date 
+   ) ENGINE = Memory;
+
+   INSERT INTO T VALUES  ('Aldi','Apple',4,'2016-09-10');
+   INSERT INTO T VALUES  ('Costco','Apple',2,'2016-09-11');
+   INSERT INTO T VALUES  ('Aldi','Apple',6,'2016-09-10');
+   INSERT INTO T VALUES  ('Costco','Snargaluff',100,'2016-09-12');
+   INSERT INTO T VALUES  ('Aldi','Apple',7,'2016-09-12');
+   INSERT INTO T VALUES  ('Aldi','Snargaluff',400,'2016-09-11');
+   INSERT INTO T VALUES  ('Costco','Snargaluff',104,'2016-09-12');
+   INSERT INTO T VALUES  ('Aldi','Apple',5,'2016-09-12');
+   INSERT INTO T VALUES  ('Aldi','Snargaluff',600,'2016-09-11');
+   INSERT INTO T VALUES  ('Costco','Snargaluff',200,'2016-09-10');
+   ```  
+   Have from and to  
+   ```
+   T |  make-series PriceAvg = avg(Price) default=0 on Purchase from datetime(2016-09-10)  to datetime(2016-09-13) step 1d by Supplier, Fruit
+   ```
+   Has from , without to  
+   ```
+   T |  make-series PriceAvg = avg(Price) default=0 on Purchase from datetime(2016-09-10)  step 1d by Supplier, Fruit
+   ```
+   Without from , has to  
+   ```
+   T |  make-series PriceAvg = avg(Price) default=0 on Purchase  to datetime(2016-09-13) step 1d by Supplier, Fruit
+   ```
+   Without from , without to
+   ```
+   T |  make-series PriceAvg = avg(Price) default=0 on Purchase step 1d by Supplier, Fruit
+   ```
+   Without by clause
+   ```
+   T |  make-series PriceAvg = avg(Price) default=0 on Purchase step 1d
+   ```
+   Without aggregation alias
+   ```
+   T |  make-series avg(Price) default=0 on Purchase step 1d by Supplier, Fruit
+   ```
+   Has group expression alias
+   ```
+   T |  make-series avg(Price) default=0 on Purchase step 1d by Supplier_Name = Supplier, Fruit
+   ```
+   Use different step value
+   ```
+   T |  make-series PriceAvg = avg(Price) default=0 on Purchase from datetime(2016-09-10)  to datetime(2016-09-13) step 3d by Supplier, Fruit
+   ```
+- test case make-series on numeric column  
+   ```
+   CREATE TABLE T2
+   (    
+      Supplier Nullable(String),
+      Fruit String ,
+      Price Int32,
+      Purchase Int32  
+   ) ENGINE = Memory;
+
+   INSERT INTO T2 VALUES  ('Aldi','Apple',4,10);
+   INSERT INTO T2 VALUES  ('Costco','Apple',2,11);
+   INSERT INTO T2 VALUES  ('Aldi','Apple',6,10);
+   INSERT INTO T2 VALUES  ('Costco','Snargaluff',100,12);
+   INSERT INTO T2 VALUES  ('Aldi','Apple',7,12);
+   INSERT INTO T2 VALUES  ('Aldi','Snargaluff',400,11);
+   INSERT INTO T2 VALUES  ('Costco','Snargaluff',104,12);
+   INSERT INTO T2 VALUES  ('Aldi','Apple',5,12);
+   INSERT INTO T2 VALUES  ('Aldi','Snargaluff',600,11);
+   INSERT INTO T2 VALUES  ('Costco','Snargaluff',200,10);
+   ```
+   Have from and to  
+   ```
+   T2 | make-series PriceAvg=avg(Price) default=0 on Purchase from 10 to  15 step  1.0  by Supplier, Fruit;
+   ```
+   Has from , without to  
+   ```
+   T2 | make-series PriceAvg=avg(Price) default=0 on Purchase from 10 step  1.0  by Supplier, Fruit;
+   ```
+   Without from , has to  
+   ```
+   T2 | make-series PriceAvg=avg(Price) default=0 on Purchase to 18 step  4.0  by Supplier, Fruit;
+   ```
+   Without from , without to  
+   ```
+   T2 | make-series PriceAvg=avg(Price) default=0 on Purchase step  2.0  by Supplier, Fruit;
+   ```
+   Without by clause
+   ```
+   T2 | make-series PriceAvg=avg(Price) default=0 on Purchase step  2.0;
+   ```
+
+## Aggregate Functions
+- [bin](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binfunction)  
+   `print bin(4.5, 1)`  
+   `print bin(time(16d), 7d)`  
+   `print bin(datetime(1970-05-11 13:45:07), 1d)`  
 - [stdev](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdev-aggfunction)  
    `Customers | summarize t = stdev(Age) by FirstName`  
 
@@ -54,65 +134,86 @@
    `DataTable | summarize t = percentilew(Bucket, Frequency, 50)`  
 
 ## Dynamic functions
-- [array_concat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayconcatfunction)
-   `print array_concat(dynamic([1, 2, 3]), dynamic([4, 5]), dynamic([6, 7, 8, 9])) == dynamic([1, 2, 3, 4, 5, 6, 7, 8, 9])`
+- [array_concat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayconcatfunction)  
+   `print array_concat(dynamic([1, 2, 3]), dynamic([4, 5]), dynamic([6, 7, 8, 9])) == dynamic([1, 2, 3, 4, 5, 6, 7, 8, 9])`  
 
-- [array_iff / array_iif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayifffunction)
-   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
-   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
-   `print array_iif(dynamic([true, false, true, false]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, null])`
-   `print array_iif(dynamic([1, 0, -1, 44, 0]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, 4, null])`
+- [array_iff / array_iif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayifffunction)  
+   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`  
+   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`  
+   `print array_iif(dynamic([true, false, true, false]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, null])`  
+   `print array_iif(dynamic([1, 0, -1, 44, 0]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, 4, null])`  
 
-- [array_slice](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayslicefunction)
-   `print array_slice(dynamic([1,2,3]), 1, 2) == dynamic([2, 3])`
-   `print array_slice(dynamic([1,2,3,4,5]), 2, -1) == dynamic([3, 4, 5])`
-   `print array_slice(dynamic([1,2,3,4,5]), -3, -2) == dynamic([3, 4])`
+- [array_slice](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayslicefunction)  
+   `print array_slice(dynamic([1,2,3]), 1, 2) == dynamic([2, 3])`  
+   `print array_slice(dynamic([1,2,3,4,5]), 2, -1) == dynamic([3, 4, 5])`  
+   `print array_slice(dynamic([1,2,3,4,5]), -3, -2) == dynamic([3, 4])`  
 
-- [array_split](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysplitfunction)
-   `print array_split(dynamic([1,2,3,4,5]), 2) == dynamic([[1,2],[3,4,5]])`
-   `print array_split(dynamic([1,2,3,4,5]), dynamic([1,3])) == dynamic([[1],[2,3],[4,5]])`
+- [array_split](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysplitfunction)  
+   `print array_split(dynamic([1,2,3,4,5]), 2) == dynamic([[1,2],[3,4,5]])`  
+   `print array_split(dynamic([1,2,3,4,5]), dynamic([1,3])) == dynamic([[1],[2,3],[4,5]])`  
 
 ## DateTimeFunctions
 
-- [ago](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/agofunction)
-   `print ago(2h)`
+- [ago](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/agofunction)  
+   `print ago(2h)`  
 
-- [endofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofdayfunction)
-   `print endofday(datetime(2017-01-01 10:10:17), -1)`
-   `print endofday(datetime(2017-01-01 10:10:17), 1)`
-   `print endofday(datetime(2017-01-01 10:10:17))`
+- [endofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofdayfunction)  
+   `print endofday(datetime(2017-01-01 10:10:17), -1)`  
+   `print endofday(datetime(2017-01-01 10:10:17), 1)`  
+   `print endofday(datetime(2017-01-01 10:10:17))`  
 
-- [endofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofmonthfunction)
-   `print endofmonth(datetime(2017-01-01 10:10:17), -1)`
-   `print endofmonth(datetime(2017-01-01 10:10:17), 1)`
-   `print endofmonth(datetime(2017-01-01 10:10:17))`
+- [endofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofmonthfunction)  
+   `print endofmonth(datetime(2017-01-01 10:10:17), -1)`  
+   `print endofmonth(datetime(2017-01-01 10:10:17), 1)`  
+   `print endofmonth(datetime(2017-01-01 10:10:17))`  
 
-- [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)
-   `print unixtime_nanoseconds_todatetime(1546300800000000000)`
+- [endofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofweekfunction)  
+   `print endofweek(datetime(2017-01-01 10:10:17), 1)`  
+   `print endofweek(datetime(2017-01-01 10:10:17), -1)`  
+   `print endofweek(datetime(2017-01-01 10:10:17))`  
 
-- [datetime_part] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-partfunction)
-   `print datetime_part('day', datetime(2017-10-30 01:02:03.7654321))`
+- [endofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofyearfunction)  
+   `print endofyear(datetime(2017-01-01 10:10:17), -1)`  
+   `print endofyear(datetime(2017-01-01 10:10:17), 1)`  
+   `print endofyear(datetime(2017-01-01 10:10:17))`  
 
-- [datetime_add] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-addfunction)
-   `print datetime_add('day',1,datetime(2017-10-30 01:02:03.7654321))`
+- [make_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-datetimefunction)  
+   `print make_datetime(2017,10,01)`  
+   `print make_datetime(2017,10,01,12,10)`  
+   `print make_datetime(2017,10,01,12,11,0.1234567)`  
 
--[format_timespan] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-timespanfunction)
-   `print format_timespan(time(1d), 'd-[hh:mm:ss]')`
-   `print format_timespan(time('12:30:55.123'), 'ddddd-[hh:mm:ss.ffff]')`
+-  [datetime_diff](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-difffunction)  
+   `print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))`  
+   `print datetime_diff('quarter',datetime(2017-07-01),datetime(2017-03-30))`  
+   `print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))`  
 
--[format_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-datetimefunction)
-   `print format_datetime(todatetime('2009-06-15T13:45:30.6175425'), 'yy-M-dd [H:mm:ss.fff]')`
-   `print format_datetime(datetime(2015-12-14 02:03:04.12345), 'y-M-d h:m:s tt')`
+- [unixtime_microseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-microseconds-todatetimefunction)  
+   `print unixtime_microseconds_todatetime(1546300800000000)`  
 
--[todatetime] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/todatetimefunction)
-   `print  todatetime('2014-05-25T08:20:03.123456Z')`
-   `print  todatetime('2014-05-25 20:03.123')`
+- [unixtime_milliseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-milliseconds-todatetimefunction)  
+   `print unixtime_milliseconds_todatetime(1546300800000)`  
 
-- [totimespan] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/totimespanfunction)
-   ` print totimespan('0.01:34:23')`
-   `print totimespan(1d)`
+- [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)  
+   `print unixtime_nanoseconds_todatetime(1546300800000000000)`  
 
-   
+- [datetime_part] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-partfunction)  
+   `print datetime_part('day', datetime(2017-10-30 01:02:03.7654321))`  
+
+- [datetime_add] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-addfunction)  
+   `print datetime_add('day',1,datetime(2017-10-30 01:02:03.7654321))`  
+
+-[format_timespan] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-timespanfunction)  
+   `print format_timespan(time(1d), 'd-[hh:mm:ss]')`  
+   `print format_timespan(time('12:30:55.123'), 'ddddd-[hh:mm:ss.ffff]')`  
+
+-[format_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-datetimefunction)  
+   `print format_datetime(todatetime('2009-06-15T13:45:30.6175425'), 'yy-M-dd [H:mm:ss.fff]')`  
+   `print format_datetime(datetime(2015-12-14 02:03:04.12345), 'y-M-d h:m:s tt')`  
+
+-[todatetime] (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/todatetimefunction)  
+   `print  todatetime('2014-05-25T08:20:03.123456Z')`  
+   `print  todatetime('2014-05-25 20:03.123')`  
+
 # August 15, 2022
    **double quote support**  
    ``print res = strcat("double ","quote")``  
