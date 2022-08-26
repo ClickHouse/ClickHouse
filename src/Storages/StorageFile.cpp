@@ -8,7 +8,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/executeQuery.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -20,7 +19,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
@@ -47,7 +45,6 @@
 #include <unistd.h>
 #include <re2/re2.h>
 #include <filesystem>
-#include <fstream>
 
 
 namespace fs = std::filesystem;
@@ -521,7 +518,17 @@ public:
             if (!input_format || (input_format->isEmptyErrorRows() && input_format->isEmptyMultiErrorRows()))
                 return;
 
-            String table_or_file_name = context->getSettingsRef().input_format_record_errors_table_or_file_name;
+            String errors_file_name = context->getSettingsRef().input_format_record_errors_file_name;
+            String errors_file_path = context->getUserFilesPath();
+            if (!errors_file_path.empty())
+                trimLeft(errors_file_name, '/');
+            errors_file_path += errors_file_name;
+            if (context->getSettingsRef().isChanged("input_format_record_errors_file_name"))
+            {
+                while (fs::exists(errors_file_path))
+                    errors_file_path += "_new";
+            }
+
             String database_name;
             String table_name;
             try
@@ -536,63 +543,48 @@ public:
 
             if (context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER))
             {
-                InputFormatErrorRows & error_rows = input_format->getErrorRows();
                 Poco::Logger * log = &Poco::Logger::get("StorageFileSource");
 
+                InputFormatErrorRows & error_rows = input_format->getErrorRows();
                 try
                 {
-                    auto copy_context = Context::createCopy(context);
-
-                    String query = "create table if not exists " + table_or_file_name
-                        + "(time DateTime, database String, table String, offset UInt32, reason String, raw_data String) engine MergeTree "
-                          "order by time "
-                          "comment 'Record error rows while reading text formats (like CSV, TSV).'";
-                    executeQuery(query, copy_context, true);
-
-                    copy_context->setInternalQuery(true);
-                    copy_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-                    copy_context->setCurrentQueryId("");
-
-                    String insert_query = "insert into " + table_or_file_name + " values ";
+                    WriteBufferFromFile out(errors_file_path);
                     for (auto & error_row : error_rows)
                     {
-                        for (char & ch : error_row.reason)
-                        {
-                            if (ch == '\'')
-                                ch = '_';
-                        }
-                        insert_query = insert_query + "('" + error_row.time + "','" + database_name + "','" + table_name + "',"
-                            + toString(error_row.offset) + ",'" + error_row.reason + "','" + error_row.raw_data + "'),";
+                        String row_in_file = "Time: " + error_row.time + "\nDatabase: " + database_name + "\nTable: " + table_name
+                            + "\nOffset: " + toString(error_row.offset) + "\nReason: \n" + error_row.reason
+                            + "\nRaw data: " + error_row.raw_data + "\n------\n";
+                        out.write(row_in_file.data(), row_in_file.size());
                     }
-
-                    ReadBufferFromString insert_read_buf(insert_query);
-                    String dummy_string;
-                    WriteBufferFromString insert_write_buf(dummy_string);
-
-                    executeQuery(insert_read_buf, insert_write_buf, false, copy_context, nullptr, {});
-                }
-                catch (Exception & e)
-                {
-                    LOG_INFO(log, "Error occurred while executing a query that handles error rows: {}", e.message());
+                    out.sync();
                 }
                 catch (...)
                 {
-                    LOG_INFO(log, "Unknown error occurred while executing a query that handles error rows.");
+                    LOG_ERROR(
+                        log, "Caught Exception {} while writing the Errors file {}", getCurrentExceptionMessage(false), errors_file_path);
                 }
             }
             else
             {
                 const auto & multi_error_rows = input_format->getMultiErrorRows();
-
-                std::ofstream out(table_or_file_name, std::ios::app);
-                if (out.is_open())
+                try
                 {
+                    WriteBufferFromFile out(errors_file_path);
                     for (const auto & error_rows : multi_error_rows)
+                    {
                         for (const auto & error_row : error_rows)
-                            out << "Time: " << error_row.time << "\nDatabase: " << database_name << "\nTable: " << table_name
-                                << "\nOffset: " << error_row.offset << "\nReason: \n"
-                                << error_row.reason << "\nRaw data: " << error_row.raw_data << "\n------\n";
-                    out.close();
+                        {
+                            String row_in_file = "Time: " + error_row.time + "\nDatabase: " + database_name + "\nTable: " + table_name
+                                + "\nOffset: " + toString(error_row.offset) + "\nReason: \n" + error_row.reason
+                                + "\nRaw data: " + error_row.raw_data + "\n------\n";
+                            out.write(row_in_file.data(), row_in_file.size());
+                        }
+                    }
+                    out.sync();
+                }
+                catch (...)
+                {
+                    /// Ignore
                 }
             }
         }

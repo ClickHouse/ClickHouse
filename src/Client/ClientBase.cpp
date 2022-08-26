@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <map>
 #include <unordered_map>
-#include <fstream>
 
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
@@ -1160,7 +1159,13 @@ void ClientBase::errorRowsSink(const QueryPipeline & pipeline)
         if (!input_format || input_format->isEmptyMultiErrorRows())
             return;
 
-        String file_name = global_context->getSettingsRef().input_format_record_errors_table_or_file_name;
+        String errors_file_path = global_context->getSettingsRef().input_format_record_errors_file_name;
+        if (global_context->getSettingsRef().isChanged("input_format_record_errors_file_name"))
+        {
+            while (fs::exists(errors_file_path))
+                errors_file_path += "_new";
+        }
+
         String database_name;
         String table_name;
         try
@@ -1174,20 +1179,25 @@ void ClientBase::errorRowsSink(const QueryPipeline & pipeline)
         }
 
         const auto & multi_error_rows = input_format->getMultiErrorRows();
-
-        std::ofstream out(file_name, std::ios::app);
-        if (out.is_open())
+        try
         {
+            WriteBufferFromFile out(errors_file_path);
             for (const auto & error_rows : multi_error_rows)
+            {
                 for (const auto & error_row : error_rows)
-                    out << "Time: " << error_row.time << "\nDatabase: " << database_name << "\nTable: " << table_name
-                        << "\nOffset: " << error_row.offset << "\nReason: \n"
-                        << error_row.reason << "\nRaw data: " << error_row.raw_data << "\n------\n";
-            out.close();
+                {
+                    String row_in_file = "Time: " + error_row.time + "\nDatabase: " + database_name + "\nTable: " + table_name
+                        + "\nOffset: " + toString(error_row.offset) + "\nReason: \n" + error_row.reason
+                        + "\nRaw data: " + error_row.raw_data + "\n------\n";
+                    out.write(row_in_file.data(), row_in_file.size());
+                }
+            }
+            out.sync();
         }
-        else
+        catch (...)
         {
-            std::cout << "Failed to open file that records error rows." << std::endl;
+            std::cout << "Caught Exception " + getCurrentExceptionMessage(false) + " while writing the Errors file " + errors_file_path
+                      << std::endl;
         }
     }
 }
