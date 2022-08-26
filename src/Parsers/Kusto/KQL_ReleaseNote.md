@@ -13,6 +13,7 @@
    `print t = array_sort_asc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)`  
    `print t = array_sort_asc( dynamic([null, null, null]) , false)`  
    `print array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 > 2)`  
+   `print array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50, 3]), 1 > 2)`  
 - [array_sort_desc](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysortdescfunction)  
    `print t = array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c']))`  
    `print t = array_sort_desc(dynamic([4, 1, 3, 2]))`  

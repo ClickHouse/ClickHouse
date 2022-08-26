@@ -66,6 +66,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
              "SELECT\n    if(true, arraySort([2, 1, NULL, 3, NULL]), concat(arraySlice(arraySort([2, 1, NULL, 3, NULL]) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS array0_sorted,\n    If(true, arraySort((x, y) -> y, [20, 10, 40, 30, 50], [2, 1, NULL, 3, NULL]), arrayConcat(arraySlice(arraySort((x, y) -> y, [20, 10, 40, 30, 50], [2, 1, NULL, 3, NULL]), (length([2, 1, NULL, 3, NULL]) - 2) + 1), arraySlice(arraySort((x, y) -> y, [20, 10, 40, 30, 50], [2, 1, NULL, 3, NULL]), 1, length([2, 1, NULL, 3, NULL]) - 2))) AS array1_sorted"
          },
          {
+            "print array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50, 3]), 1 > 2)",
+            "SELECT\n    if(1 > 2, arraySort([2, 1, NULL, 3, NULL]), concat(arraySlice(arraySort([2, 1, NULL, 3, NULL]) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS array0_sorted,\n    NULL AS array1_sorted"
+         },
+         {
              "print t = array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c']))",
              "SELECT arrayReverseSort([NULL, 'd', 'a', 'c', 'c']) AS t"
          },
@@ -124,5 +128,9 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
          {
              "print array_sort_desc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]))",
              "SELECT\n    if(true, arrayReverseSort([2, 1, NULL, 3, NULL]), concat(arraySlice(arrayReverseSort([2, 1, NULL, 3, NULL]) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS array0_sorted,\n    If(true, arrayReverseSort((x, y) -> y, [20, 10, 40, 30, 50], [2, 1, NULL, 3, NULL]), arrayConcat(arraySlice(arrayReverseSort((x, y) -> y, [20, 10, 40, 30, 50], [2, 1, NULL, 3, NULL]), (length([2, 1, NULL, 3, NULL]) - 2) + 1), arraySlice(arrayReverseSort((x, y) -> y, [20, 10, 40, 30, 50], [2, 1, NULL, 3, NULL]), 1, length([2, 1, NULL, 3, NULL]) - 2))) AS array1_sorted"
+         },
+         {
+            "print array_sort_desc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50, 3]), 1 > 2)",
+            "SELECT\n    if(1 > 2, arrayReverseSort([2, 1, NULL, 3, NULL]), concat(arraySlice(arrayReverseSort([2, 1, NULL, 3, NULL]) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))) AS array0_sorted,\n    NULL AS array1_sorted"
          }
  })));

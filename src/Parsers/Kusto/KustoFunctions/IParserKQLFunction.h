@@ -53,5 +53,6 @@ protected:
     static String getKQLFunctionName(IParser::Pos & pos);
     static String ArraySortHelper(String & out, IParser::Pos & pos, bool ascending);
     static int getNullCounts(String arg);
+    static int getArrayLength(String arg);
 };
 }
