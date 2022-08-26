@@ -358,6 +358,12 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
                 acls = operation.acls;
                 last_applied_zxid = delta.zxid;
             }
+            else if constexpr (std::same_as<DeltaType, AddAuthDelta>)
+            {
+                auto & uncommitted_auth = session_and_auth[operation.session_id];
+                uncommitted_auth.auth.emplace_back(operation.auth_id);
+                uncommitted_auth.zxid = delta.zxid;
+            }
         },
         delta.operation);
 }
@@ -391,7 +397,10 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
     // delete all cached nodes that were not modified after the commit_zxid
     // the commit can end on SubDeltaEnd so we don't want to clear cached nodes too soon
     if (deltas.empty() || deltas.front().zxid > commit_zxid)
+    {
         std::erase_if(nodes, [commit_zxid](const auto & node) { return node.second.zxid == commit_zxid; });
+        std::erase_if(session_and_auth, [commit_zxid](const auto & auth) { return auth.second.zxid == commit_zxid; });
+    }
 }
 
 void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
@@ -405,10 +414,12 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
             deltas.back().zxid,
             rollback_zxid);
 
+    auto delta_it = deltas.rbegin();
+
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
     // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
-    for (auto delta_it = deltas.rbegin(); delta_it != deltas.rend(); ++delta_it)
+    for (; delta_it != deltas.rend(); ++delta_it)
     {
         if (delta_it->zxid < rollback_zxid)
             break;
@@ -432,18 +443,29 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                 },
                 delta_it->operation);
         }
+        else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta_it->operation))
+        {
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id].auth;
+            assert(uncommitted_auth.back() == add_auth->auth_id);
+            uncommitted_auth.pop_back();
+            if (uncommitted_auth.empty())
+                session_and_auth.erase(add_auth->session_id);
+        }
     }
 
-    std::erase_if(deltas, [rollback_zxid](const auto & delta) { return delta.zxid == rollback_zxid; });
+    if (delta_it == deltas.rend())
+        deltas.clear();
+    else
+        deltas.erase(delta_it.base(), deltas.end());
 
-    std::unordered_set<std::string> deleted_nodes;
+    absl::flat_hash_set<std::string> deleted_nodes;
     std::erase_if(
         nodes,
         [&, rollback_zxid](const auto & node)
         {
             if (node.second.zxid == rollback_zxid)
             {
-                deleted_nodes.emplace(node.first);
+                deleted_nodes.emplace(std::move(node.first));
                 return true;
             }
             return false;
