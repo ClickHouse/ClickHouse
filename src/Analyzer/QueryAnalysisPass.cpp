@@ -40,6 +40,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/SortColumnNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -88,6 +89,7 @@ namespace ErrorCodes
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int TYPE_MISMATCH;
     extern const int AMBIGUOUS_IDENTIFIER;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -811,6 +813,8 @@ private:
     void resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
     void resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
+
+    void resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope);
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
@@ -2846,6 +2850,14 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
             /// Lambda must be resolved by caller
             break;
         }
+
+        case QueryTreeNodeType::SORT_COLUMN:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Sort column {} is not allowed in expression. In scope {}",
+                node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
         case QueryTreeNodeType::TABLE:
         {
             if (!allow_table_expression)
@@ -2887,14 +2899,14 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Array join is not allowed {} in expression. In scope {}",
+                "Array join {} is not allowed in expression. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
         case QueryTreeNodeType::JOIN:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Join is not allowed {} in expression. In scope {}",
+                "Join {} is not allowed in expression. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
@@ -2956,6 +2968,58 @@ void QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, Iden
     }
 
     node_list = std::move(result_node_list);
+}
+
+/** Resolve sort columns nodes list.
+  */
+void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope)
+{
+    auto & sort_columns_node_list_typed = sort_columns_node_list->as<ListNode &>();
+    for (auto & node : sort_columns_node_list_typed.getNodes())
+    {
+        auto & sort_column_node = node->as<SortColumnNode &>();
+        resolveExpressionNode(sort_column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (sort_column_node.hasFillFrom())
+        {
+            resolveExpressionNode(sort_column_node.getFillFrom(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            const auto * constant_node = sort_column_node.getFillFrom()->as<const ConstantNode>();
+            if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "WITH FILL FROM expression must be constant with numeric type. Actual {}. In scope {}",
+                    sort_column_node.getFillFrom()->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+        if (sort_column_node.hasFillTo())
+        {
+            resolveExpressionNode(sort_column_node.getFillTo(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            const auto * constant_node = sort_column_node.getFillTo()->as<const ConstantNode>();
+            if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "WITH FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
+                    sort_column_node.getFillFrom()->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+        if (sort_column_node.hasFillStep())
+        {
+            resolveExpressionNode(sort_column_node.getFillStep(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            const auto * constant_node = sort_column_node.getFillStep()->as<const ConstantNode>();
+            if (!constant_node)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "WITH FILL TO expression must be constant with numeric or interval type. Actual {}. In scope {}",
+                    sort_column_node.getFillStep()->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            bool is_number = isColumnedAsNumber(constant_node->getResultType());
+            bool is_interval = WhichDataType(constant_node->getResultType()).isInterval();
+            if (!is_number && !is_interval)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "WITH FILL TO expression must be constant with numeric or interval type. Actual {}. In scope {}",
+                    sort_column_node.getFillStep()->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+    }
 }
 
 /** Initialize query join tree node.
@@ -3447,7 +3511,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     QueryExpressionsAliasVisitor::Data data{scope};
     QueryExpressionsAliasVisitor visitor(data);
 
-    if (!query_node_typed.getWith().getNodes().empty())
+    if (query_node_typed.hasWith())
         visitor.visit(query_node_typed.getWithNode());
 
     if (!query_node_typed.getProjection().getNodes().empty())
@@ -3458,6 +3522,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.getWhere())
         visitor.visit(query_node_typed.getWhere());
+
+    if (query_node_typed.hasGroupBy())
+        visitor.visit(query_node_typed.getGroupByNode());
+
+    if (query_node_typed.hasOrderBy())
+        visitor.visit(query_node_typed.getOrderByNode());
 
     /// Register CTE subqueries and remove them from WITH section
 
@@ -3511,7 +3581,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     /// Resolve query node sections.
 
-    if (!query_node_typed.getWith().getNodes().empty())
+    if (query_node_typed.hasWith())
         resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.getPrewhere())
@@ -3520,8 +3590,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.getWhere())
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    if (!query_node_typed.getGroupBy().getNodes().empty())
-        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    if (query_node_typed.hasGroupBy())
+        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (query_node_typed.hasOrderBy())
+        resolveSortColumnsNodeList(query_node_typed.getOrderByNode(), scope);
 
     resolveExpressionNodeList(query_node_typed.getProjectionNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 

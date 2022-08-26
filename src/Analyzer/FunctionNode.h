@@ -36,13 +36,7 @@ public:
     /** Initialize function node with function name.
       * Later during query analysis path function must be resolved.
       */
-    explicit FunctionNode(String function_name_)
-        : function_name(function_name_)
-    {
-        children.resize(2);
-        children[parameters_child_index] = std::make_shared<ListNode>();
-        children[arguments_child_index] = std::make_shared<ListNode>();
-    }
+    explicit FunctionNode(String function_name_);
 
     /// Get name
     const String & getFunctionName() const

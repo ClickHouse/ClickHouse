@@ -21,6 +21,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTOrderByElement.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -29,6 +30,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/SortColumnNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -77,6 +79,8 @@ private:
     QueryTreeNodePtr buildSelectIntersectExceptQuery(const ASTPtr & select_intersect_except_query, bool is_subquery, const std::string & cte_name) const;
 
     QueryTreeNodePtr buildSelectExpression(const ASTPtr & select_query, bool is_subquery, const std::string & cte_name) const;
+
+    QueryTreeNodePtr buildSortColumnList(const ASTPtr & order_by_expression_list) const;
 
     QueryTreeNodePtr buildExpressionList(const ASTPtr & expression_list) const;
 
@@ -215,7 +219,48 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (group_by_list)
         current_query_tree->getGroupByNode() = buildExpressionList(group_by_list);
 
+    auto select_order_by_list = select_query_typed.orderBy();
+    if (select_order_by_list)
+        current_query_tree->getOrderByNode() = buildSortColumnList(select_order_by_list);
+
     return current_query_tree;
+}
+
+QueryTreeNodePtr QueryTreeBuilder::buildSortColumnList(const ASTPtr & order_by_expression_list) const
+{
+    auto list_node = std::make_shared<ListNode>();
+
+    auto & expression_list_typed = order_by_expression_list->as<ASTExpressionList &>();
+    list_node->getNodes().reserve(expression_list_typed.children.size());
+
+    for (auto & expression : expression_list_typed.children)
+    {
+        const auto & order_by_element = expression->as<const ASTOrderByElement &>();
+
+        auto sort_direction = order_by_element.direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
+        std::optional<SortDirection> nulls_sort_direction;
+        if (order_by_element.nulls_direction_was_explicitly_specified)
+            nulls_sort_direction = order_by_element.nulls_direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
+
+        std::shared_ptr<Collator> collator;
+        if (order_by_element.collation)
+            collator = std::make_shared<Collator>(order_by_element.collation->as<ASTLiteral &>().value.get<String>());
+
+        const auto & sort_expression_ast = order_by_element.children.at(0);
+        auto sort_expression = buildExpression(sort_expression_ast);
+        auto sort_column_node = std::make_shared<SortColumnNode>(std::move(sort_expression), sort_direction, nulls_sort_direction, std::move(collator));
+
+        if (order_by_element.fill_from)
+            sort_column_node->getFillFrom() = buildExpression(order_by_element.fill_from);
+        if (order_by_element.fill_to)
+            sort_column_node->getFillTo() = buildExpression(order_by_element.fill_to);
+        if (order_by_element.fill_step)
+            sort_column_node->getFillStep() = buildExpression(order_by_element.fill_step);
+
+        list_node->getNodes().push_back(std::move(sort_column_node));
+    }
+
+    return list_node;
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildExpressionList(const ASTPtr & expression_list) const
@@ -456,7 +501,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                     for (const auto & argument : function_arguments_list)
                     {
                         if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
-                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, true /*is_subquery*/, {} /*cte_name*/));
+                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/));
                         else
                             node->getArguments().getNodes().push_back(buildExpression(argument));
                     }

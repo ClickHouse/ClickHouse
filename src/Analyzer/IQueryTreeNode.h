@@ -35,6 +35,7 @@ enum class QueryTreeNodeType
     FUNCTION,
     COLUMN,
     LAMBDA,
+    SORT_COLUMN,
     TABLE,
     TABLE_FUNCTION,
     QUERY,
