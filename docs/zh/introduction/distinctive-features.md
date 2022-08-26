@@ -1,4 +1,5 @@
 ---
+slug: /zh/introduction/distinctive-features
 sidebar_position: 2
 sidebar_label: ClickHouse的特性
 ---

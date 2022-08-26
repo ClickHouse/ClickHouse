@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/array-functions
+---
 # 数组函数 {#shu-zu-han-shu}
 
 ## empty {#empty函数}

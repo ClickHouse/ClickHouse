@@ -2198,7 +2198,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         query_info.syntax_analyzer_result);
                 }
             }
-            else
+            else if (optimize_aggregation_in_order)
             {
                 if (query_info.projection)
                 {
