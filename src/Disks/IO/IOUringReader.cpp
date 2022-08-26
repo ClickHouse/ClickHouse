@@ -97,7 +97,8 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
     // otherwise push it to the back of the pending queue
     if (in_flight_requests.size() < cq_entries)
     {
-        if (submitToRing(enqueued_request))
+        int ret = submitToRing(enqueued_request);
+        if (ret > 0)
         {
             const auto [kv, success] = in_flight_requests.emplace(request_id, std::move(enqueued_request));
             if (!success)
@@ -110,7 +111,8 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
         else
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            return makeFailedResult(ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed submitting SQE");
+            return makeFailedResult(ErrorCodes::IO_URING_SUBMIT_ERROR,
+                "Failed submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted");
         }
     }
     else
@@ -121,11 +123,11 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
     }
 }
 
-bool IOUringReader::submitToRing(EnqueuedRequest & enqueued)
+int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
 {
     struct io_uring_sqe * sqe = io_uring_get_sqe(&ring);
     if (!sqe)
-        return false;
+        return 0;
 
     auto request = enqueued.request;
     auto request_id = reinterpret_cast<UInt64>(request.buf);
@@ -133,19 +135,21 @@ bool IOUringReader::submitToRing(EnqueuedRequest & enqueued)
 
     io_uring_sqe_set_data64(sqe, request_id);
     io_uring_prep_read(sqe, fd, request.buf, static_cast<unsigned>(request.size - enqueued.bytes_read), request.offset + enqueued.bytes_read);
-    int submitted = io_uring_submit(&ring);
+    int ret = 0;
 
-    if (submitted <= 0)
-        return false;
+    do
+    {
+        ret = io_uring_submit(&ring);
+    } while (ret == -EINTR || ret == -EAGAIN);
 
-    if (!enqueued.resubmitting)
+    if (ret > 0 && !enqueued.resubmitting)
     {
         ProfileEvents::increment(ProfileEvents::IOUringSQEsSubmitted);
         CurrentMetrics::add(CurrentMetrics::IOUringInFlightEvents);
         CurrentMetrics::add(CurrentMetrics::Read);
     }
 
-    return true;
+    return ret;
 }
 
 void IOUringReader::failRequest(const EnqueuedIterator & requestIt, int code, const std::string & message)
@@ -170,20 +174,21 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
         auto pending_request = std::move(pending_requests.front());
         pending_requests.pop_front();
 
-        if (submitToRing(pending_request))
+        int ret = submitToRing(pending_request);
+        if (ret > 0)
         {
             auto request_id = reinterpret_cast<UInt64>(pending_request.request.buf);
             if (!in_flight_requests.contains(request_id))
                 in_flight_requests.emplace(request_id, std::move(pending_request));
             else
-                failPromise(pending_request.promise,
-                    ErrorCodes::LOGICAL_ERROR,
+                failPromise(pending_request.promise, ErrorCodes::LOGICAL_ERROR,
                     "Tried enqueuing pending read request for {} that is already submitted", request_id);
         }
         else
         {
-            failPromise(pending_request.promise, ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed submitting SQE for pending request");
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            failPromise(pending_request.promise, ErrorCodes::IO_URING_SUBMIT_ERROR,
+                "Failed submitting SQE for pending request: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted");
         }
 
         CurrentMetrics::sub(CurrentMetrics::IOUringPendingEvents);
@@ -199,11 +204,16 @@ void IOUringReader::monitorRing()
         // we can't use wait_cqe_* variants with timeouts as they can
         // submit timeout events in older kernels that do not support IORING_FEAT_EXT_ARG
         // and it is not safe to mix submission and consumption event threads.
-        struct io_uring_cqe * cqe;
+        struct io_uring_cqe * cqe = nullptr;
         int ret = io_uring_wait_cqe(&ring, &cqe);
 
         if (ret == -EAGAIN || ret == -EINTR)
+        {
+            LOG_DEBUG(log, "Restarting waiting for CQEs due to: {}", errnoToString(-ret));
+
+            io_uring_cqe_seen(&ring, cqe);
             continue;
+        }
 
         if (ret < 0)
         {
@@ -212,9 +222,11 @@ void IOUringReader::monitorRing()
         }
 
         // user_data zero means a noop event sent from the destructor meant to interrupt the thread
-        if (cancelled.load(std::memory_order_relaxed) || cqe->user_data == 0)
+        if (cancelled.load(std::memory_order_relaxed) || (cqe && cqe->user_data == 0))
         {
             LOG_DEBUG(log, "Stopping IOUringMonitor thread");
+
+            io_uring_cqe_seen(&ring, cqe);
             break;
         }
 
@@ -226,18 +238,24 @@ void IOUringReader::monitorRing()
         if (it == in_flight_requests.end())
         {
             LOG_ERROR(log, "Got a completion event for a request {} that was not submitted", request_id);
+
+            io_uring_cqe_seen(&ring, cqe);
             continue;
         }
 
         auto & enqueued = it->second;
 
-        if (cqe->res == -EAGAIN)
+        if (cqe->res == -EAGAIN || cqe->res == -EINTR)
         {
             enqueued.resubmitting = true;
             ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmits);
 
-            if (!submitToRing(enqueued))
-                failRequest(it, ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed re-submitting SQE");
+            ret = submitToRing(enqueued);
+            if (ret <= 0)
+            {
+                failRequest(it, ErrorCodes::IO_URING_SUBMIT_ERROR,
+                    fmt::format("Failed re-submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
+            }
 
             io_uring_cqe_seen(&ring, cqe);
             continue;
@@ -246,7 +264,8 @@ void IOUringReader::monitorRing()
         if (cqe->res < 0)
         {
             int fd = assert_cast<const LocalFileDescriptor &>(*enqueued.request.descriptor).fd;
-            failRequest(it, ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, fmt::format("Cannot read from file {}", fd));
+            failRequest(it, ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                fmt::format("Cannot read from file {}: {}", fd, errnoToString(-cqe->res)));
 
             ProfileEvents::increment(ProfileEvents::IOUringCQEsFailed);
             io_uring_cqe_seen(&ring, cqe);
@@ -269,8 +288,14 @@ void IOUringReader::monitorRing()
             // potential short read, re-submit
             enqueued.resubmitting = true;
             enqueued.bytes_read += bytes_read;
-            if (!submitToRing(enqueued))
-                failRequest(it, ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed re-submitting SQE for short read");
+
+            ret = submitToRing(enqueued);
+            if (ret <= 0)
+            {
+                failRequest(it,
+                    ErrorCodes::IO_URING_SUBMIT_ERROR,
+                    fmt::format("Failed re-submitting SQE for short read: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
+            }
         }
         else
         {
