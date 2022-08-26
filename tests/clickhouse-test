@@ -1714,6 +1714,77 @@ def removesuffix(text, *suffixes):
     return text
 
 
+def reportCoverageFor(args, what, query):
+    value = clickhouse_execute(args, query)
+
+    if value != "":
+        print(f"\nThe following {what} were not covered by tests:\n")
+        print(value.decode())
+        print("\n")
+
+
+def reportCoverage(args):
+    reportCoverageFor(
+        args,
+        "functions",
+        """
+            SELECT name
+            FROM system.functions
+            WHERE NOT is_aggregate AND origin = 'System' AND alias_to = ''
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_functions) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """
+    )
+
+    reportCoverageFor(
+        args,
+        "aggregate functions",
+        """
+            SELECT name
+            FROM system.functions
+            WHERE is_aggregate AND origin = 'System' AND alias_to = ''
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_aggregate_functions) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """
+    )
+
+    reportCoverageFor(
+        args,
+        "aggregate function combinators",
+        """
+            SELECT name
+            FROM system.aggregate_function_combinators
+            WHERE NOT is_internal
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_aggregate_function_combinators) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """
+    )
+
+    reportCoverageFor(
+        args,
+        "data type families",
+        """
+            SELECT name
+            FROM system.data_type_families
+            WHERE alias_to = ''
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_data_type_families) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """
+    )
+
+
 def main(args):
     global server_died
     global stop_time
@@ -1846,24 +1917,7 @@ def main(args):
         print("All tests have finished.")
 
     if args.report_coverage:
-        value = clickhouse_execute(
-            args,
-            """
-                SELECT name
-                FROM system.functions
-                WHERE NOT is_aggregate AND origin = 'System' AND alias_to = ''
-                    AND name NOT IN
-                    (
-                        SELECT arrayJoin(used_functions) FROM system.query_log WHERE event_date >= yesterday()
-                    )
-                ORDER BY name
-            """
-        )
-
-        if value != "":
-            print("\nThe following functions were not covered by tests:\n")
-            print(value.decode())
-            print("\n")
+        reportCoverage(args)
 
     sys.exit(exit_code.value)
 
