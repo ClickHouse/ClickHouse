@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/string-search-functions
 sidebar_position: 41
 sidebar_label: "Функции поиска в строках"
 ---
