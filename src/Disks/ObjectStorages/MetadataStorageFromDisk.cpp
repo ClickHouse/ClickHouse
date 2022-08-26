@@ -1,9 +1,8 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/TemporaryFileOnDisk.h>
+#include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Poco/TemporaryFile.h>
 #include <ranges>
 #include <filesystem>
 
