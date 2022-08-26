@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <shared_mutex>
+#include <utility>
 
 
 namespace fs = std::filesystem;
@@ -172,17 +173,14 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
+    , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
     , read_only(read_only_)
 {
     setInMemoryMetadata(metadata_);
-    if (rocksdb_dir_.empty())
+    if (rocksdb_dir.empty())
     {
         rocksdb_dir = context_->getPath() + relative_data_path_;
-    }
-    else
-    {
-        rocksdb_dir = rocksdb_dir_;
     }
     if (!attach)
     {
@@ -397,7 +395,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, rocksdb_dir, read_only);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
