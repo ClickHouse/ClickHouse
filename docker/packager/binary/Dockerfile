@@ -78,6 +78,7 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get update \
     && apt-get install \
         clang-15 \
+        llvm-15 \
         clang-tidy-15 \
         --yes --no-install-recommends \
     && apt-get clean
