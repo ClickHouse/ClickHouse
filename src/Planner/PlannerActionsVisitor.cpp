@@ -575,6 +575,8 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
             result = buffer.str();
             break;
         }
+        case QueryTreeNodeType::UNION:
+            [[fallthrough]];
         case QueryTreeNodeType::QUERY:
         {
             auto query_hash = node->getTreeHash();
