@@ -1,16 +1,16 @@
 -- check conversion of numbers to date/time --
-SELECT toDate(toInt32(toDate32('1930-01-01'))),
-       toDate(toInt32(toDate32('2151-01-01'))),
-       toDate(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'))),
-       toDate(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC'))),
-       toDate32(toInt32(toDate32('1900-01-01')) - 1),
-       toDate32(toInt32(toDate32('2299-12-31')) + 1),
+SELECT toDate(toInt32(toDate32('1930-01-01', 'UTC')), 'UTC'),
+       toDate(toInt32(toDate32('2151-01-01', 'UTC')), 'UTC'),
+       toDate(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC')), 'UTC'),
+       toDate(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC')), 'UTC'),
+       toDate32(toInt32(toDate32('1900-01-01', 'UTC')) - 1, 'UTC'),
+       toDate32(toInt32(toDate32('2299-12-31', 'UTC')) + 1, 'UTC'),
        toDateTime(toInt64(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC')), 'UTC'),
        toDateTime(toInt64(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC')), 'UTC');
 
 -- check conversion of extended range type to normal range type --
-SELECT toDate(toDate32('1930-01-01')),
-       toDate(toDate32('2151-01-01'));
+SELECT toDate(toDate32('1930-01-01', 'UTC'), 'UTC'),
+       toDate(toDate32('2151-01-01', 'UTC'), 'UTC');
 
 SELECT toDate(toDateTime64('1930-01-01 12:12:12.12', 3, 'UTC'), 'UTC'),
        toDate(toDateTime64('2151-01-01 12:12:12.12', 3, 'UTC'), 'UTC');
@@ -32,17 +32,17 @@ SELECT toStartOfDay(toDate('2141-01-01', 'UTC'), 'UTC'),
        toStartOfDay(toDateTime64('2141-01-01 12:12:12.123', 3, 'UTC'), 'UTC');
 
 SELECT 'toStartOfWeek';
-SELECT toStartOfWeek(toDate('1970-01-01')),
-       toStartOfWeek(toDate32('1970-01-01')),
-       toStartOfWeek(toDateTime('1970-01-01 10:10:10', 'UTC')),
-       toStartOfWeek(toDateTime64('1970-01-01 10:10:10.123', 3, 'UTC')),
-       toStartOfWeek(toDate32('1930-01-01')),
-       toStartOfWeek(toDate32('2151-01-01')),
-       toStartOfWeek(toDateTime64('1930-01-01 12:12:12.123', 3)),
-       toStartOfWeek(toDateTime64('2151-01-01 12:12:12.123', 3));
+SELECT toStartOfWeek(toDate('1970-01-01', 'UTC')),
+       toStartOfWeek(toDate32('1970-01-01', 'UTC')),
+       toStartOfWeek(toDateTime('1970-01-01 10:10:10', 'UTC'), 0, 'UTC'),
+       toStartOfWeek(toDateTime64('1970-01-01 10:10:10.123', 3, 'UTC'), 1, 'UTC'),
+       toStartOfWeek(toDate32('1930-01-01', 'UTC')),
+       toStartOfWeek(toDate32('2151-01-01', 'UTC')),
+       toStartOfWeek(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'), 2, 'UTC'),
+       toStartOfWeek(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC'), 3, 'UTC');
 
 SELECT 'toMonday';
-SELECT toMonday(toDate('1970-01-02')),
+SELECT toMonday(toDate('1970-01-02', 'UTC')),
        toMonday(toDate32('1930-01-01', 'UTC')),
        toMonday(toDate32('2151-01-01', 'UTC')),
        toMonday(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'), 'UTC'),
@@ -55,7 +55,7 @@ SELECT toStartOfMonth(toDate32('1930-01-01', 'UTC')),
        toStartOfMonth(toDateTime64('2151-01-01 12:12:12.123', 3, 'UTC'), 'UTC');
 
 SELECT 'toLastDayOfMonth';
-SELECT toLastDayOfMonth(toDate('2149-06-03')),
+SELECT toLastDayOfMonth(toDate('2149-06-03', 'UTC')),
        toLastDayOfMonth(toDate32('1930-01-01', 'UTC')),
        toLastDayOfMonth(toDate32('2151-01-01', 'UTC')),
        toLastDayOfMonth(toDateTime64('1930-01-01 12:12:12.123', 3, 'UTC'), 'UTC'),
