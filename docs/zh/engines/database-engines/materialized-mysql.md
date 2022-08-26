@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/database-engines/materialized-mysql
 sidebar_position: 29
 sidebar_label: MaterializedMySQL
 ---
@@ -152,8 +153,8 @@ ClickHouse只有一个物理排序，由 `order by` 条件决定。要创建一�
 
  * 修改列类型。必须与原始类型兼容，否则复制将失败。例如，可以将`UInt32`列修改为`UInt64`，不能将 `String` 列修改为 `Array(String)`。
  * 修改 [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
- * 修改 [column compression codec](../../sql-reference/statements/create/table/#codecs).
- * 增加 [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * 修改 [column compression codec](../../sql-reference/statements/create/table.md/#codecs).
+ * 增加 [ALIAS columns](../../sql-reference/statements/create/table.md/#alias).
  * 增加 [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
  * 增加 [projections](../table-engines/mergetree-family/mergetree/#projections). 
  请注意，当使用 `SELECT ... FINAL ` (MaterializedMySQL默认是这样做的) 时，预测优化是被禁用的，所以这里是受限的， `INDEX ... TYPE hypothesis `[在v21.12的博客文章中描述]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)可能在这种情况下更有用。
