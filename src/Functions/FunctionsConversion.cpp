@@ -29,7 +29,7 @@ REGISTER_FUNCTION(Conversion)
 
     factory.registerFunction<FunctionToDate>();
     /// MySQL compatibility alias.
-    factory.registerFunction<FunctionToDate>("DATE", {}, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("DATE", "toDate", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToDateTime32>();
