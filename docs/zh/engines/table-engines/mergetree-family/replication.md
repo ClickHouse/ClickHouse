@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/replication
+---
 # 数据副本 {#table_engines-replication}
 
 只有 MergeTree 系列里的表可支持副本：

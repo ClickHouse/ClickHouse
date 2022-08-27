@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/
 toc_hidden_folder: true
 sidebar_position: 42
 sidebar_label: "Манипуляции с индексами"

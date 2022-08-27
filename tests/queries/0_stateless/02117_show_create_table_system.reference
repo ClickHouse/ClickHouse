@@ -186,6 +186,7 @@ CREATE TABLE system.disks
     `total_space` UInt64,
     `keep_free_space` UInt64,
     `type` String,
+    `is_encrypted` UInt8,
     `cache_path` String
 )
 ENGINE = SystemDisks

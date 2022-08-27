@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/columns
+---
 # system.columns {#system-columns}
 
 此系统表包含所有表中列的信息。

@@ -2,6 +2,7 @@
 
 #include <list>
 #include <Common/IFileCachePriority.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -32,6 +33,7 @@ public:
 
 private:
     LRUQueue queue;
+    Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
 };
 
 class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator

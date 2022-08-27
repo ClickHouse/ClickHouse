@@ -103,14 +103,12 @@ DiskObjectStorage::DiskObjectStorage(
     const String & log_name,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
-    DiskType disk_type_,
     bool send_metadata_,
     uint64_t thread_pool_size_)
     : IDisk(getAsyncExecutor(log_name, thread_pool_size_))
     , name(name_)
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
-    , disk_type(disk_type_)
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(send_metadata_)
@@ -214,6 +212,22 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
     transaction->commit();
+}
+
+
+void DiskObjectStorage::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+{
+    /// It's the same object storage disk
+    if (this == to_disk.get())
+    {
+        auto transaction = createObjectStorageTransaction();
+        transaction->copyFile(from_path, to_path);
+        transaction->commit();
+    }
+    else
+    {
+        IDisk::copy(from_path, to_disk, to_path);
+    }
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
@@ -469,7 +483,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         getName(),
         metadata_storage,
         object_storage,
-        disk_type,
         send_metadata,
         threadpool_size);
 }
