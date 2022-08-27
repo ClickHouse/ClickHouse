@@ -1,7 +1,5 @@
 #include "PrometheusMetricsWriter.h"
 
-#include <algorithm>
-
 #include <IO/WriteHelpers.h>
 #include <Common/StatusInfo.h>
 #include <regex>    /// TODO: this library is harmful.
