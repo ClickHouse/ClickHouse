@@ -1006,13 +1006,6 @@ uptime
 validateNestedArraySizes
 version
 visibleWidth
-visitParamExtractBool
-visitParamExtractFloat
-visitParamExtractInt
-visitParamExtractRaw
-visitParamExtractString
-visitParamExtractUInt
-visitParamHas
 windowID
 wkt
 wordShingleMinHash
