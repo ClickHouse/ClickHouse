@@ -1714,17 +1714,20 @@ def removesuffix(text, *suffixes):
     return text
 
 
-def reportCoverageFor(args, what, query):
+def reportCoverageFor(args, what, query, permissive = False):
     value = clickhouse_execute(args, query).decode()
 
     if value != "":
         print(f"\nThe following {what} were not covered by tests:\n")
         print(value)
         print("\n")
+        return permissive
+
+    return True
 
 
 def reportCoverage(args):
-    reportCoverageFor(
+    return reportCoverageFor(
         args,
         "functions",
         """
@@ -1736,10 +1739,9 @@ def reportCoverage(args):
                     SELECT arrayJoin(used_functions) FROM system.query_log WHERE event_date >= yesterday()
                 )
             ORDER BY name
-        """
-    )
-
-    reportCoverageFor(
+        """,
+        True
+    ) and reportCoverageFor(
         args,
         "aggregate functions",
         """
@@ -1752,9 +1754,7 @@ def reportCoverage(args):
                 )
             ORDER BY name
         """
-    )
-
-    reportCoverageFor(
+    ) and reportCoverageFor(
         args,
         "aggregate function combinators",
         """
@@ -1767,9 +1767,7 @@ def reportCoverage(args):
                 )
             ORDER BY name
         """
-    )
-
-    reportCoverageFor(
+    ) and reportCoverageFor(
         args,
         "data type families",
         """
@@ -1916,8 +1914,8 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    if args.report_coverage:
-        reportCoverage(args)
+    if args.report_coverage and not reportCoverage(args):
+        exit_code.value = 1
 
     sys.exit(exit_code.value)
 
