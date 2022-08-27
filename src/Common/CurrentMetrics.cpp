@@ -29,6 +29,10 @@
     M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
+    M(TotalTemporaryFiles, "Number of temporary files created") \
+    M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
+    M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
+    M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \

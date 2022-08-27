@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/array-join
+---
 # arrayJoin函数 {#functions_arrayjoin}
 
 这是一个非常有用的函数。
