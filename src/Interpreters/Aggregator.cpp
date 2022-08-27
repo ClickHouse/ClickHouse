@@ -1005,6 +1005,8 @@ void NO_INLINE Aggregator::executeImplBatch(
 {
     /// During processing of row #i will also prefetch row number #(row + prefetch_look_ahead).
     static constexpr uint8_t prefetch_look_ahead = 8;
+    /// Small hash tables fit in fast caches and thus there are no cache miss to avoid.
+    const bool apply = method.data.size() > DEFAULT_BLOCK_SIZE;
 
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
@@ -1018,7 +1020,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
             {
-                if (i + prefetch_look_ahead < row_end)
+                if (apply && i + prefetch_look_ahead < row_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
                     method.data.prefetch(std::move(key_holder));
@@ -1081,7 +1083,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
             {
-                if (i + prefetch_look_ahead < row_end)
+                if (apply && i + prefetch_look_ahead < row_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
                     method.data.prefetch(std::move(key_holder));
