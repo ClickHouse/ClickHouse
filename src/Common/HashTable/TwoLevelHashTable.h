@@ -231,11 +231,10 @@ public:
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
     {
         const auto & key = keyHolderGetKey(key_holder);
-        const auto hash_key = hash(key);
-        const auto buck = getBucketFromHash(hash_key);
-        impls[buck].prefetchByHash(hash_key);
+        const auto key_hash = hash(key);
+        const auto bucket = getBucketFromHash(key_hash);
+        impls[bucket].prefetchByHash(key_hash);
     }
-
 
     /** Insert the key,
       * return an iterator to a position that can be used for `placement new` of value,

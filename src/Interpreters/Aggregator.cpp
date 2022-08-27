@@ -1003,7 +1003,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr overflow_row) const
 {
-    // During processing of row #i will also prefetch row number #(row + prefetch_indent).
+    /// During processing of row #i will also prefetch row number #(row + prefetch_look_ahead).
     static constexpr uint8_t prefetch_look_ahead = 8;
 
     /// Optimization for special case when there are no aggregate functions.

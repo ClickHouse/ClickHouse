@@ -914,7 +914,7 @@ protected:
         if constexpr (!Cell::need_zero_value_storage)
             return false;
 
-        if unlikely (Cell::isZero(x, *this))
+        if (unlikely(Cell::isZero(x, *this)))
         {
             it = this->zeroValue();
 
@@ -992,10 +992,9 @@ protected:
 
     void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
     {
-        const auto place_value = grower.place(hash_key);
-        __builtin_prefetch(&buf[place_value]);
+        const auto place = grower.place(hash_key);
+        __builtin_prefetch(&buf[place]);
     }
-
 
 public:
     void reserve(size_t num_elements)
@@ -1020,7 +1019,6 @@ public:
         return res;
     }
 
-
     /// Reinsert node pointed to by iterator
     void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
     {
@@ -1035,8 +1033,8 @@ public:
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
     {
         const auto & key = keyHolderGetKey(key_holder);
-        const auto hash_key = hash(key);
-        prefetchByHash(hash_key);
+        const auto key_hash = hash(key);
+        prefetchByHash(key_hash);
     }
 
     /** Insert the key.

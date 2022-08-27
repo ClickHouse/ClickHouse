@@ -21,7 +21,6 @@ public:
     using LookupResult = typename Impl::LookupResult;
 
     using Base::Base;
-
     using Base::prefetch;
 
     template <typename Func>
