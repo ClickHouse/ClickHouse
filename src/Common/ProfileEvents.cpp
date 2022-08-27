@@ -122,18 +122,18 @@
     M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggragating/joining)") \
     M(ExternalProcessingUncompressedBytesTotal, "Number of uncompressed bytes written by external processing (sorting/aggragating/joining)") \
     M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggragating/joining)") \
-    M(ExternalSortWritePart, "") \
-    M(ExternalSortMerge, "") \
+    M(ExternalSortWritePart, "Number of temporary files for external sorting") \
+    M(ExternalSortMerge, "Number of merging streams for temporary on-disk data written by external sorting") \
     M(ExternalSortCompressedBytes, "Number of compressed bytes written by external sort") \
     M(ExternalSortUncompressedBytes, "Number of uncompressed bytes written by external sort") \
-    M(ExternalAggregationWritePart, "") \
-    M(ExternalAggregationMerge, "") \
+    M(ExternalAggregationWritePart, "Number of temporary files for external aggregation") \
+    M(ExternalAggregationMerge, "Number of merging streams for temporary on-disk data written by external aggregation") \
     M(ExternalAggregationCompressedBytes, "Number of compressed bytes written by external aggregation") \
     M(ExternalAggregationUncompressedBytes, "Number of uncompressed bytes written by external aggregation") \
-    M(ExternalJoinWritePart, "") \
-    M(ExternalJoinMerge, "") \
-    M(ExternalJoinCompressedBytes, "Number of compressed bytes written by external join") \
-    M(ExternalJoinUncompressedBytes, "Number of uncompressed bytes written by external join") \
+    M(ExternalJoinWritePart, "Number of temporary files for external JOIN") \
+    M(ExternalJoinMerge, "Number of merging streams for temporary on-disk data written by external JOIN") \
+    M(ExternalJoinCompressedBytes, "Number of compressed bytes written by external JOIN") \
+    M(ExternalJoinUncompressedBytes, "Number of uncompressed bytes written by external JOIN") \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
