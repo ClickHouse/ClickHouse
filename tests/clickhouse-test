@@ -1715,11 +1715,11 @@ def removesuffix(text, *suffixes):
 
 
 def reportCoverageFor(args, what, query):
-    value = clickhouse_execute(args, query)
+    value = clickhouse_execute(args, query).decode()
 
     if value != "":
         print(f"\nThe following {what} were not covered by tests:\n")
-        print(value.decode())
+        print(value)
         print("\n")
 
 
@@ -1775,7 +1775,7 @@ def reportCoverage(args):
         """
             SELECT name
             FROM system.data_type_families
-            WHERE alias_to = ''
+            WHERE alias_to = '' AND name NOT LIKE 'Interval%'
                 AND name NOT IN
                 (
                     SELECT arrayJoin(used_data_type_families) FROM system.query_log WHERE event_date >= yesterday()
