@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/detached_parts
+---
 # system.detached_parts {#system_tables-detached_parts}
 
 包含关于 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 表的分离分区的信息。`reason` 列详细说明了该分区被分离的原因。

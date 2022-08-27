@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/tables
+---
 # system.tables {#system-tables}
 
 包含服务器知道的每个表的元数据。 [分离的](../../sql-reference/statements/detach.md)表不在 `system.tables` 显示。

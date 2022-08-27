@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/statements/create
+---
 ## CREATE DATABASE {#create-database}
 
 该查询用于根据指定名称创建数据库。
