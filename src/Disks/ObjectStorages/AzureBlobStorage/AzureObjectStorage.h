@@ -57,6 +57,8 @@ public:
         AzureClientPtr && client_,
         SettingsPtr && settings_);
 
+    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+
     std::string getName() const override { return "AzureObjectStorage"; }
 
     bool exists(const StoredObject & object) const override;
@@ -128,6 +130,8 @@ private:
     MultiVersion<AzureObjectStorageSettings> settings;
 
     Poco::Logger * log;
+
+    DataSourceDescription data_source_description;
 };
 
 }

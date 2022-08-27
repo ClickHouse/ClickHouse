@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/databases
+---
 # system.databases  {#system-databases}
 
 包含当前用户可用的数据库的相关信息。

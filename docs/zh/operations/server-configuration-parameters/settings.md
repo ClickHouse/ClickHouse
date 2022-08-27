@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
