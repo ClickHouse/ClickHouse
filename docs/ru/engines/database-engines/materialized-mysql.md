@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/database-engines/materialized-mysql
 sidebar_position: 29
 sidebar_label: "[experimental] MaterializedMySQL"
 ---

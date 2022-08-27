@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/
 sidebar_label: "Справочник"
 sidebar_position: 36
 ---

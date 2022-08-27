@@ -31,8 +31,8 @@
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).") \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).") \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).") \
-    M(UncompressedCacheHits, "Number of times, a block of data has been found in the uncompressed cache (and decompression was avoided).") \
-    M(UncompressedCacheMisses, "Number of times, a block of data has not been found in the uncompressed cache (and required decompression).") \
+    M(UncompressedCacheHits, "Number of times a block of data has been found in the uncompressed cache (and decompression was avoided).") \
+    M(UncompressedCacheMisses, "Number of times a block of data has not been found in the uncompressed cache (and required decompression).") \
     M(UncompressedCacheWeightLost, "Number of bytes evicted from the uncompressed cache.") \
     M(MMappedFileCacheHits, "Number of times a file has been found in the MMap cache (for the 'mmap' read_method), so we didn't have to mmap it again.") \
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.") \
@@ -48,13 +48,13 @@
     M(ArenaAllocBytes, "Number of bytes allocated for memory Arena (used for GROUP BY and similar operations)") \
     M(FunctionExecute, "Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).") \
     M(TableFunctionExecute, "Number of table function calls.") \
-    M(MarkCacheHits, "Number of times, an entry has been found in the mark cache, so we didn't have to load a mark file.") \
-    M(MarkCacheMisses, "Number of times, an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
-    M(CreatedReadBufferOrdinary, "Number of times, ordinary read buffer was created for reading data (while choosing among other read methods).") \
-    M(CreatedReadBufferDirectIO, "Number of times, a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
-    M(CreatedReadBufferDirectIOFailed, "Number of times, a read buffer with O_DIRECT was attempted to create for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
-    M(CreatedReadBufferMMap, "Number of times, a read buffer using 'mmap' was created for reading data (while choosing among other read methods).") \
-    M(CreatedReadBufferMMapFailed, "Number of times, a read buffer with 'mmap' was attempted to create for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
+    M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.") \
+    M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
+    M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
+    M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
+    M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
+    M(CreatedReadBufferMMap, "Number of times a read buffer using 'mmap' was created for reading data (while choosing among other read methods).") \
+    M(CreatedReadBufferMMapFailed, "Number of times a read buffer with 'mmap' was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "Total time spent waiting for data to receive or receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
@@ -119,12 +119,21 @@
     \
     M(ExecuteShellCommand, "Number of shell command executions.") \
     \
+    M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggragating/joining)") \
+    M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggragating/joining)") \
+    M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggragating/joining)") \
     M(ExternalSortWritePart, "Number of times a temporary file was written to disk for sorting in external memory.") \
     M(ExternalSortMerge, "Number of times temporary files were merged for sorting in external memory.") \
+    M(ExternalSortCompressedBytes, "Number of compressed bytes written for sorting in external memory.") \
+    M(ExternalSortUncompressedBytes, "Amount of data (uncompressed, before compression) written for sorting in external memory.") \
     M(ExternalAggregationWritePart, "Number of times a temporary file was written to disk for aggregation in external memory.") \
     M(ExternalAggregationMerge, "Number of times temporary files were merged for aggregation in external memory.") \
     M(ExternalAggregationCompressedBytes, "Number of bytes written to disk for aggregation in external memory.") \
     M(ExternalAggregationUncompressedBytes, "Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.") \
+    M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.") \
+    M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.") \
+    M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.") \
+    M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.") \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
@@ -207,8 +216,8 @@ The server successfully detected this situation and will download merged part fr
     M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.") \
     M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.") \
     \
-    M(RWLockAcquiredReadLocks, "Number of times a read lock were acquired (in a heavy RWLock).") \
-    M(RWLockAcquiredWriteLocks, "Number of times a write lock were acquired (in a heavy RWLock).") \
+    M(RWLockAcquiredReadLocks, "Number of times a read lock was acquired (in a heavy RWLock).") \
+    M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).") \
     M(RWLockReadersWaitMilliseconds, "Total time spent waiting for a read lock to be acquired (in a heavy RWLock).") \
     M(RWLockWritersWaitMilliseconds, "Total time spent waiting for a write lock to be acquired (in a heavy RWLock).") \
     M(DNSError, "Total count of errors in DNS resolution") \
