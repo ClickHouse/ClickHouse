@@ -58,6 +58,7 @@
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/ActionsChain.h>
+#include <Planner/PlannerCollectSets.h>
 
 namespace DB
 {
@@ -94,7 +95,6 @@ namespace ErrorCodes
   * TODO: Interpreter resources
   * TODO: Support max streams
   * TODO: Support GROUPINS SETS, const aggregation keys, overflow row
-  * TODO: Simplify buildings SETS for IN function
   * TODO: Support interpolate, LIMIT BY.
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
@@ -1063,6 +1063,8 @@ void Planner::buildQueryPlanIfNeeded()
     CollectSourceColumnsVisitor::Data data {*planner_context};
     CollectSourceColumnsVisitor collect_source_columns_visitor(data);
     collect_source_columns_visitor.visit(query_tree);
+
+    collectSets(query_tree, *planner_context);
 
     query_plan = buildQueryPlanForJoinTreeNode(query_node.getJoinTree(), select_query_info, select_query_options, planner_context);
 

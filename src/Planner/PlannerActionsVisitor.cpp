@@ -327,49 +327,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     const auto & function_node = node->as<FunctionNode &>();
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
-    auto in_second_argument_node_type = in_second_argument->getNodeType();
 
-    auto set_source_hash = in_second_argument->getTreeHash();
-    String set_key = "__set_" + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
-    auto prepared_set = planner_context->getGlobalPlannerContext()->getSet(set_key);
-
-    if (!prepared_set)
-    {
-        if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
-            in_second_argument_node_type == QueryTreeNodeType::UNION)
-        {
-            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-            bool tranform_null_in = settings.transform_null_in;
-
-            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
-
-            planner_context->getGlobalPlannerContext()->registerSet(set_key, set);
-            planner_context->getGlobalPlannerContext()->registerSubqueryNodeForSet(set_key, SubqueryNodeForSet{in_second_argument, set});
-
-            prepared_set = std::move(set);
-        }
-        else if (in_second_argument_node_type == QueryTreeNodeType::CONSTANT)
-        {
-            auto & in_second_argument_constant_node = in_second_argument->as<ConstantNode &>();
-
-            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-
-            auto set = makeSetForConstantValue(
-                in_first_argument->getResultType(),
-                in_second_argument_constant_node.getResultType(),
-                in_second_argument_constant_node.getConstantValue(),
-                settings);
-
-            planner_context->getGlobalPlannerContext()->registerSet(set_key, set);
-            prepared_set = std::move(set);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function IN is supported only if second argument is constant or table expression");
-        }
-    }
+    const auto & global_planner_context = planner_context->getGlobalPlannerContext();
+    auto set_key = global_planner_context->getSetKey(in_second_argument.get());
+    auto prepared_set = global_planner_context->getSetOrThrow(set_key);
 
     auto column_set = ColumnSet::create(1, std::move(prepared_set));
     auto column_set_const = ColumnConst::create(std::move(column_set), 1);

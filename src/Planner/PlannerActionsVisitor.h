@@ -21,13 +21,14 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 /** Planner actions visitor is responsible for adding necessary actions to calculate query tree expression node
   * into actions dag.
   *
-  * Column name to identifier map in planner context must be already initialized.
+  * Preconditions:
+  * 1. Column name to identifier map in planner context must be already initialized.
   * Identifiers in this map are used as action dag node names for column query tree nodes.
+  * 2. Sets for IN functions are already collected in global context.
   *
   * During actions build, there is special handling for following functions:
   * 1. Aggregate functions are added in actions dag as INPUT nodes. Aggregate functions arguments are not added.
-  * 2. For function `in` and its variants, planner context is populated with necessary table expressions to compute for sets,
-  * and prepared sets.
+  * 2. For function `in` and its variants, already collected sets from global context are used.
   */
 class PlannerActionsVisitor
 {

@@ -110,49 +110,45 @@ private:
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
 };
 
+/// Subquery node for set
 struct SubqueryNodeForSet
 {
     QueryTreeNodePtr subquery_node;
     SetPtr set;
 };
 
+/** Global planner context contains common objects that are shared between each planner context.
+  *
+  * 1. Prepared sets.
+  * 2. Subqueries for sets.
+  */
 class GlobalPlannerContext
 {
 public:
     GlobalPlannerContext() = default;
 
+    using SetKey = std::string;
     using SetKeyToSet = std::unordered_map<String, SetPtr>;
     using SetKeyToSubqueryNode = std::unordered_map<String, SubqueryNodeForSet>;
 
-    void registerSet(const String & key, const SetPtr & set)
-    {
-        set_key_to_set.emplace(key, set);
-    }
+    /// Get set key for query node
+    SetKey getSetKey(const IQueryTreeNode * set_source_node) const;
 
-    SetPtr getSet(const String & key) const
-    {
-        auto it = set_key_to_set.find(key);
-        if (it == set_key_to_set.end())
-            return nullptr;
+    /// Register set for set key
+    void registerSet(const SetKey & key, SetPtr set);
 
-        return it->second;
-    }
+    /// Get set for key, if no set is registered null is returned
+    SetPtr getSetOrNull(const SetKey & key) const;
 
-    void registerSubqueryNodeForSet(const String & key, const SubqueryNodeForSet & subquery_node_for_set)
-    {
-        auto node_type = subquery_node_for_set.subquery_node->getNodeType();
-        if (node_type != QueryTreeNodeType::QUERY &&
-            node_type != QueryTreeNodeType::UNION)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Invalid node for set table expression. Expected query or union. Actual {}",
-                subquery_node_for_set.subquery_node->formatASTForErrorMessage());
-        if (!subquery_node_for_set.set)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Set must be initialized");
+    /// Get set for key, if no set is registered logical exception is throwed
+    SetPtr getSetOrThrow(const SetKey & key) const;
 
-        set_key_to_subquery_node.emplace(key, subquery_node_for_set);
-    }
+    /** Register subquery node for set
+      * Subquery node for set node must have QUERY or UNION type and set must be initialized.
+      */
+    void registerSubqueryNodeForSet(const SetKey & key, SubqueryNodeForSet subquery_node_for_set);
 
+    /// Get subquery nodes for sets
     const SetKeyToSubqueryNode & getSubqueryNodesForSets() const
     {
         return set_key_to_subquery_node;
