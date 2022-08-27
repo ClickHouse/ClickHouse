@@ -97,8 +97,6 @@ protected:
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
-            std::cerr << object->elf << "\n";
-
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
@@ -106,7 +104,6 @@ protected:
             Dwarf::LocationInfo location;
             std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
             ResultT result;
-
             if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, locationInfoMode, frames))
             {
                 setResult(result, location, frames);
