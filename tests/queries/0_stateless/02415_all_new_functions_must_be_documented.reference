@@ -239,7 +239,7 @@ dateDiff
 dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
-date_trunc
+dateTrunc
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
