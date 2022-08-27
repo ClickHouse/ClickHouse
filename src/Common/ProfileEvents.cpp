@@ -130,10 +130,10 @@
     M(ExternalAggregationMerge, "Number of times temporary files were merged for aggregation in external memory.") \
     M(ExternalAggregationCompressedBytes, "Number of bytes written to disk for aggregation in external memory.") \
     M(ExternalAggregationUncompressedBytes, "Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.") \
-    M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for join in external memory.") \
-    M(ExternalJoinMerge, "Number of times temporary files were merged for join in external memory.") \
-    M(ExternalJoinCompressedBytes, "Number of compressed bytes written for join in external memory.") \
-    M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for join in external memory.") \
+    M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.") \
+    M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.") \
+    M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.") \
+    M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.") \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \

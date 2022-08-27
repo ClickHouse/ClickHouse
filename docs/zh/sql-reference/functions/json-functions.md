@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/json-functions
+---
 # JSON函数 {#jsonhan-shu}
 
 在Yandex.Metrica中，用户使用JSON作为访问参数。为了处理这些JSON，实现了一些函数。（尽管在大多数情况下，JSON是预先进行额外处理的，并将结果值放在单独的列中。）所有的这些函数都进行了尽可能的假设。以使函数能够尽快的完成工作。

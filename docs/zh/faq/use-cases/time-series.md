@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/use-cases/time-series
 title: 我能把 ClickHouse 当做时序数据库来使用吗?
 toc_hidden: true
 sidebar_position: 101

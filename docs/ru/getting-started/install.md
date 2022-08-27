@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/install
 sidebar_position: 11
 sidebar_label: "Установка"
 ---
@@ -137,8 +138,6 @@ do
     || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
 done
 
-exit 0
-
 tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
@@ -149,7 +148,7 @@ sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
 tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
+sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
 sudo /etc/init.d/clickhouse-server start
 
 tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
