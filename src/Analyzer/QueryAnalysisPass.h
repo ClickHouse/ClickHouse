@@ -35,7 +35,7 @@ namespace DB
   *
   * For function `in` and its variations arguments are resolved, but sets are not build.
   * If left and right arguments are constants constant folding is performed.
-  * If right argument resolved as table function, or table, it is replaced with query that read only ordinary columns from underlying
+  * If right argument resolved as table function, or table, and table is not of type Set, it is replaced with query that read only ordinary columns from underlying
   * storage.
   * Example: SELECT id FROM test_table WHERE id IN test_table_other;
   * Result: SELECT id FROM test_table WHERE id IN (SELECT test_table_column FROM test_table_other);

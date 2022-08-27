@@ -508,7 +508,7 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
                 for (size_t i = 0; i < function_parameters_nodes_size; ++i)
                 {
                     const auto & function_parameter_node = function_parameters_nodes[i];
-                    calculateActionsDAGNodeName(function_parameter_node.get(), planner_context);
+                    calculateActionsDAGNodeName(function_parameter_node.get(), planner_context, node_to_name);
 
                     if (i + 1 != function_parameters_nodes_size)
                         buffer << ", ";
@@ -525,7 +525,7 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
             for (size_t i = 0; i < function_arguments_nodes_size; ++i)
             {
                 const auto & function_argument_node = function_arguments_nodes[i];
-                buffer << calculateActionsDAGNodeName(function_argument_node.get(), planner_context);
+                buffer << calculateActionsDAGNodeName(function_argument_node.get(), planner_context, node_to_name);
 
                 if (i + 1 != function_arguments_nodes_size)
                     buffer << ", ";

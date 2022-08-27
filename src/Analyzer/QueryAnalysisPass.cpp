@@ -53,6 +53,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageSet.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/StorageID.h>
@@ -2358,7 +2359,11 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         auto * query_node = in_second_argument->as<QueryNode>();
         auto * union_node = in_second_argument->as<UnionNode>();
 
-        if (table_node || table_function_node)
+        if (table_node && dynamic_cast<StorageSet *>(table_node->getStorage().get()) != nullptr)
+        {
+            /// If table is already prepared set, we do not replace it with subquery
+        }
+        else if (table_node || table_function_node)
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
@@ -2412,7 +2417,6 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             function_lambda_arguments_indexes.push_back(function_argument_index);
         }
         else if (is_special_function_in && (function_argument->getNodeType() == QueryTreeNodeType::TABLE ||
-            function_argument->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION ||
             function_argument->getNodeType() == QueryTreeNodeType::QUERY ||
             function_argument->getNodeType() == QueryTreeNodeType::UNION))
         {

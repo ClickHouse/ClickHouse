@@ -2,11 +2,14 @@
 
 #include <Interpreters/Context.h>
 
+#include <Storages/StorageSet.h>
+
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableNode.h>
 
 namespace DB
 {
@@ -44,7 +47,15 @@ public:
         if (prepared_set)
             return;
 
-        if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
+        /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
+        auto * second_argument_table = in_second_argument->as<TableNode>();
+        StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
+
+        if (storage_set)
+        {
+            global_planner_context->registerSet(set_key, storage_set->getSet());
+        }
+        else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION)
         {
             SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
