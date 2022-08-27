@@ -38,8 +38,6 @@ BUILD_LOG_NAME = "build_log.log"
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
-    if build_config["bundled"] != "bundled":
-        return False
     if build_config["libraries"] == "shared":
         return False
     if build_config["sanitizer"] != "":
