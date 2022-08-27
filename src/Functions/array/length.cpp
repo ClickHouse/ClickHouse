@@ -86,7 +86,7 @@ It is ok to have ASCII NUL bytes in strings, and they will be counted as well.
                               "       isConstant(length(str::FixedString(6))) AS fixed_str_length_is_constant\n"
                               "FROM numbers(3)"},
                 {"unicode", "SELECT 'ёлка' AS str1, length(str1), lengthUTF8(str1), normalizeUTF8NFKD(str1) AS str2, length(str2), lengthUTF8(str2)"},
-                {"nul", R"(SELECT 'abc\\0\\0\\0' AS str, length(str))"},
+                {"nul", R"(SELECT 'abc\0\0\0' AS str, length(str))"},
                 },
             Documentation::Categories{"String", "Array"}
         },
