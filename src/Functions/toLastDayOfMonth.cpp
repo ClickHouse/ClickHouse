@@ -13,9 +13,7 @@ REGISTER_FUNCTION(ToLastDayOfMonth)
     factory.registerFunction<FunctionToLastDayOfMonth>();
 
     /// MySQL compatibility alias.
-    factory.registerFunction<FunctionToLastDayOfMonth>("LAST_DAY", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToLastDayOfMonth>("LAST_DAY", {}, FunctionFactory::CaseInsensitive);
 }
 
 }
-
-

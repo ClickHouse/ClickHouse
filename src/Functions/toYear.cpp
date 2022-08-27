@@ -13,9 +13,7 @@ REGISTER_FUNCTION(ToYear)
 {
     factory.registerFunction<FunctionToYear>();
     /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToYear>("YEAR", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToYear>("YEAR", {}, FunctionFactory::CaseInsensitive);
 }
 
 }
-
-
