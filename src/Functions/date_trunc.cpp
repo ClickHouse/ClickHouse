@@ -155,7 +155,7 @@ private:
 
 REGISTER_FUNCTION(DateTrunc)
 {
-    factory.registerFunction<FunctionDateTrunc>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateTrunc>({}, FunctionFactory::CaseInsensitive);
 
     /// Compatibility alias.
     factory.registerAlias("dateTrunc", FunctionDateTrunc::name);
