@@ -7,19 +7,19 @@ from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-            "node", 
-            main_configs=[
-                "configs/config.d/minio.xml",
-            ], 
-            with_minio=True
+    "node",
+    main_configs=[
+        "configs/config.d/minio.xml",
+    ],
+    with_minio=True,
 )
 
 settings = {
-        "s3_max_connections": "1",
-        "max_insert_threads": "1",
-        "s3_truncate_on_insert": "1",
-        "s3_min_upload_part_size": "33554432",
-    }
+    "s3_max_connections": "1",
+    "max_insert_threads": "1",
+    "s3_truncate_on_insert": "1",
+    "s3_min_upload_part_size": "33554432",
+}
 
 
 @pytest.fixture(scope="module")
@@ -54,10 +54,10 @@ def test_s3_table_functions(started_cluster):
         """,
         settings=settings,
     )
-    
-    assert(
+
+    assert (
         node.query(
-        """
+            """
             SELECT count(*) FROM s3
             (
                 nc_s3, 
@@ -71,17 +71,18 @@ def test_s3_table_functions(started_cluster):
         == "1000000\n"
     )
 
+
 def test_s3_table_functions_timeouts(started_cluster):
     """
-    Test with timeout limit of 1200ms. 
+    Test with timeout limit of 1200ms.
     This should raise an Exception and pass.
-    """    
+    """
     with PartitionManager() as pm:
         pm.add_network_delay(node, 1200)
 
         with pytest.raises(QueryRuntimeException):
             node.query(
-            """
+                """
                 INSERT INTO FUNCTION s3
                     (
                         nc_s3, 
@@ -92,5 +93,5 @@ def test_s3_table_functions_timeouts(started_cluster):
                     )
                 SELECT * FROM numbers(1000000)
             """,
-            settings=settings,
+                settings=settings,
             )
