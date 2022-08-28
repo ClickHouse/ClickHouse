@@ -368,8 +368,7 @@ endif()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
-# Our built-in unwinder only supports DWARF version up to 4.
-set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
+set (DEBUG_INFO_FLAGS "-g")
 
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
