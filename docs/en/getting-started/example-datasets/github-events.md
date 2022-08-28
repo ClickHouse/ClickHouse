@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/github-events
 sidebar_label: GitHub Events
 ---
 
