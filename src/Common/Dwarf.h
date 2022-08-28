@@ -444,7 +444,7 @@ private:
 
     // Read one attribute value, remove_prefix sp
     using AttributeValue = std::variant<uint64_t, std::string_view>;
-    AttributeValue readAttributeValue(std::string_view & sp, uint64_t form, bool is64Bit) const;
+    AttributeValue readAttributeValue(std::string_view & sp, uint64_t form, bool is64_bit) const;
 
     // Get an ELF section by name, return true if found
     std::string_view getSection(const char * name) const;
