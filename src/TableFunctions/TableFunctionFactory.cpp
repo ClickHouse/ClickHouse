@@ -17,14 +17,15 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionFactory::registerFunction(const std::string & name, TableFunctionCreator creator, Doc doc, CaseSensitiveness case_sensitiveness)
+void TableFunctionFactory::registerFunction(
+    const std::string & name, TableFunctionCreator creator, Documentation doc, CaseSensitiveness case_sensitiveness)
 {
-    if (!table_functions.emplace(name, TableFunctionData{creator, doc}).second)
+    if (!table_functions.emplace(name, TableFunctionFactoryData{creator, doc}).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
     if (case_sensitiveness == CaseInsensitive
-        && !case_insensitive_table_functions.emplace(Poco::toLower(name), TableFunctionData{creator, doc}).second)
+        && !case_insensitive_table_functions.emplace(Poco::toLower(name), TableFunctionFactoryData{creator, doc}).second)
         throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 }
@@ -85,7 +86,7 @@ bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
     return table_functions.contains(name);
 }
 
-Doc TableFunctionFactory::getDocumentation(const std::string & name) const
+Documentation TableFunctionFactory::getDocumentation(const std::string & name) const
 {
     auto it = table_functions.find(name);
     if (it == table_functions.end())
