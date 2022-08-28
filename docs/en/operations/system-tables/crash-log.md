@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/crash-log
 ---
 # crash_log
 

@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/row_policies
 ---
 # row_policies
 

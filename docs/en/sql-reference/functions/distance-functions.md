@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/distance-functions
 ---
 # Distance functions
 

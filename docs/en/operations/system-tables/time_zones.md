@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/time_zones
 ---
 # time_zones
 

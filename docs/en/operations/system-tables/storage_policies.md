@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/storage_policies
 ---
 # storage_policies
 

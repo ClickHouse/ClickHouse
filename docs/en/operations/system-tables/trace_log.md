@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/trace_log
 ---
 # trace_log
 

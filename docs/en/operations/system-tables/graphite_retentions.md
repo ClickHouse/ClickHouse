@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/graphite_retentions
 ---
 # graphite_retentions
 

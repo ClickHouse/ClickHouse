@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/external-authenticators/ssl-x509
 ---
 # SSL X.509 certificate authentication
 

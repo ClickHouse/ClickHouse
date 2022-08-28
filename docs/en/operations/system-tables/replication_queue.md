@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/replication_queue
 ---
 # replication_queue
 

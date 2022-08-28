@@ -1,4 +1,5 @@
 ---
+slug: /en/development/integrating_rust_libraries
 ---
 # Integrating Rust libraries
 

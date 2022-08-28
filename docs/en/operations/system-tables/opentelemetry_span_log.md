@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/opentelemetry_span_log
 ---
 # opentelemetry_span_log
 

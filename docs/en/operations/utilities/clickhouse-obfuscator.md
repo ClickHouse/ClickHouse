@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/utilities/clickhouse-obfuscator
 ---
 # clickhouse-obfuscator 
 

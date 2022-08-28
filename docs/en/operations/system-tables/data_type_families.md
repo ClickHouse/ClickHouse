@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/data_type_families
 ---
 # data_type_families
 

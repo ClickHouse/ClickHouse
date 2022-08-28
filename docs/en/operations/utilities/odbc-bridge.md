@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/utilities/odbc-bridge
 ---
 # clickhouse-odbc-bridge
 
