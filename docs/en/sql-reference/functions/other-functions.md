@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/other-functions
 sidebar_position: 67
 sidebar_label: Other
 ---

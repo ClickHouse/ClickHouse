@@ -1,4 +1,5 @@
 ---
+slug: /en/development/build-cross-arm
 sidebar_position: 67
 sidebar_label: Build on Linux for AARCH64 (ARM64)
 ---

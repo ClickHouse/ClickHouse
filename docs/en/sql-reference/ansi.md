@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/ansi
 sidebar_position: 40
 sidebar_label: ANSI Compatibility
 ---
