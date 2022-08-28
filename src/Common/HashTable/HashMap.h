@@ -191,7 +191,6 @@ public:
     using LookupResult = typename Base::LookupResult;
 
     using Base::Base;
-
     using Base::prefetch;
 
     /// Merge every cell's value of current map into the destination map via emplace.

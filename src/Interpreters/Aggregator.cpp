@@ -976,24 +976,37 @@ void NO_INLINE Aggregator::executeImpl(
 
     if (!no_more_keys)
     {
+        /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+        const bool prefetch = method.data.size() > DEFAULT_BLOCK_SIZE;
+
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
         {
-            executeImplBatch<false, true>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            if (prefetch)
+                executeImplBatch<false, true, true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            else
+                executeImplBatch<false, true, false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
         }
         else
 #endif
         {
-            executeImplBatch<false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            if (prefetch)
+                executeImplBatch<false, false, true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            else
+                executeImplBatch<false, false, false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
         }
     }
     else
     {
-        executeImplBatch<true, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+        executeImplBatch<true, false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
     }
 }
 
-template <bool no_more_keys, bool use_compiled_functions, typename Method>
+template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     typename Method::State & state,
@@ -1003,10 +1016,10 @@ void NO_INLINE Aggregator::executeImplBatch(
     AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr overflow_row) const
 {
+    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
     /// During processing of row #i will also prefetch row number #(row + prefetch_look_ahead).
     static constexpr uint8_t prefetch_look_ahead = 8;
-    /// Small hash tables fit in fast caches and thus there are no cache miss to avoid.
-    const bool apply = method.data.size() > DEFAULT_BLOCK_SIZE;
 
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
@@ -1018,9 +1031,9 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = aggregates_pool->alloc(0);
         for (size_t i = row_begin; i < row_end; ++i)
         {
-            if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
-                if (apply && i + prefetch_look_ahead < row_end)
+                if (i + prefetch_look_ahead < row_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
                     method.data.prefetch(std::move(key_holder));
@@ -1081,9 +1094,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         if constexpr (!no_more_keys)
         {
-            if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
-                if (apply && i + prefetch_look_ahead < row_end)
+                if (i + prefetch_look_ahead < row_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
                     method.data.prefetch(std::move(key_holder));

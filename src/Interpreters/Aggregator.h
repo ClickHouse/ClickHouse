@@ -1211,7 +1211,7 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, bool use_compiled_functions, typename Method>
+    template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
     void executeImplBatch(
         Method & method,
         typename Method::State & state,
