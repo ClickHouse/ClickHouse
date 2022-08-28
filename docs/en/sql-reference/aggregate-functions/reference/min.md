@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/min
 sidebar_position: 2
 ---
 
