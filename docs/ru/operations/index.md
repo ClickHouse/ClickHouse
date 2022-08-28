@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/
 sidebar_position: 41
 sidebar_label: "Эксплуатация"
 ---

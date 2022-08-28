@@ -79,8 +79,7 @@
     :default ""]
    [nil, "--bench-opts STR" "Run perf-test mode"
     :default "--generator list_medium_nodes -c 30 -i 1000"]
-   ["-c" "--clickhouse-source URL" "URL for clickhouse deb or tgz package"
-    :default "https://clickhouse-builds.s3.yandex.net/21677/ef82333089156907a0979669d9374c2e18daabe5/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/clickhouse-common-static_21.4.1.6313_amd64.deb"]
+   ["-c" "--clickhouse-source URL" "URL for clickhouse deb or tgz package"]
    [nil "--bench-path path" "Path to keeper-bench util"
     :default "/home/alesap/code/cpp/BuildCH/utils/keeper-bench/keeper-bench"]])
 
