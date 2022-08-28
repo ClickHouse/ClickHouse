@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/time_zones
+---
 # time_zones
 
 Contains a list of time zones that are supported by the ClickHouse server. This list of timezones might vary depending on the version of ClickHouse.

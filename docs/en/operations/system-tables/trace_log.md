@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/trace_log
+---
 # trace_log
 
 Contains stack traces collected by the sampling query profiler.
