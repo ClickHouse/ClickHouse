@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/performance-test
 sidebar_position: 54
 sidebar_label: Testing Hardware
 ---
