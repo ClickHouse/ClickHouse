@@ -244,9 +244,9 @@ int64_t readSLEB(std::string_view & sp)
 }
 
 // Read a value of "section offset" type, which may be 4 or 8 bytes
-uint64_t readOffset(std::string_view & sp, bool is64Bit)
+uint64_t readOffset(std::string_view & sp, bool is64_bit)
 {
-    return is64Bit ? read<uint64_t>(sp) : read<uint32_t>(sp);
+    return is64_bit ? read<uint64_t>(sp) : read<uint32_t>(sp);
 }
 
 // Read "len" bytes
@@ -561,7 +561,7 @@ Dwarf::Attribute Dwarf::readAttribute(const CompilationUnit & cu,
     // The DW_AT_*_base attrs are CU specific; so we read them just after
     // reading the CU header. During this first pass return empty values
     // when encountering a FORM that depends on DW_AT_*_base.
-    auto getStringUsingOffsetTable = [&](uint64_t index)
+    auto get_string_using_offset_table = [&](uint64_t index)
     {
         if (!cu.str_offsets_base.has_value())
         {
@@ -572,11 +572,11 @@ Dwarf::Attribute Dwarf::readAttribute(const CompilationUnit & cu,
         // the header. The entries are indexed sequentially from this base entry,
         // starting from 0.
         auto sp = str_offsets_.substr(*cu.str_offsets_base + index * (cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t)));
-        uint64_t strOffset = readOffset(sp, cu.is64Bit);
-        return getStringFromStringSection(str_, strOffset);
+        uint64_t str_offset = readOffset(sp, cu.is64Bit);
+        return getStringFromStringSection(str_, str_offset);
     };
 
-    auto readDebugAddr = [&](uint64_t index)
+    auto read_debug_addr = [&](uint64_t index)
     {
         if (!cu.addr_base.has_value())
         {
@@ -654,29 +654,29 @@ Dwarf::Attribute Dwarf::readAttribute(const CompilationUnit & cu,
             return {spec, die, static_cast<uint64_t>(spec.implicitConst)};
 
         case DW_FORM_addrx:
-            return {spec, die, readDebugAddr(readULEB(info))};
+            return {spec, die, read_debug_addr(readULEB(info))};
         case DW_FORM_addrx1:
-            return {spec, die, readDebugAddr(readU64<1>(info))};
+            return {spec, die, read_debug_addr(readU64<1>(info))};
         case DW_FORM_addrx2:
-            return {spec, die, readDebugAddr(readU64<2>(info))};
+            return {spec, die, read_debug_addr(readU64<2>(info))};
         case DW_FORM_addrx3:
-            return {spec, die, readDebugAddr(readU64<3>(info))};
+            return {spec, die, read_debug_addr(readU64<3>(info))};
         case DW_FORM_addrx4:
-            return {spec, die, readDebugAddr(readU64<4>(info))};
+            return {spec, die, read_debug_addr(readU64<4>(info))};
 
         case DW_FORM_line_strp:
             return {spec, die, getStringFromStringSection(line_str_, readOffset(info, die.is64Bit))};
 
         case DW_FORM_strx:
-            return {spec, die, getStringUsingOffsetTable(readULEB(info))};
+            return {spec, die, get_string_using_offset_table(readULEB(info))};
         case DW_FORM_strx1:
-            return {spec, die, getStringUsingOffsetTable(readU64<1>(info))};
+            return {spec, die, get_string_using_offset_table(readU64<1>(info))};
         case DW_FORM_strx2:
-            return {spec, die, getStringUsingOffsetTable(readU64<2>(info))};
+            return {spec, die, get_string_using_offset_table(readU64<2>(info))};
         case DW_FORM_strx3:
-            return {spec, die, getStringUsingOffsetTable(readU64<3>(info))};
+            return {spec, die, get_string_using_offset_table(readU64<3>(info))};
         case DW_FORM_strx4:
-            return {spec, die, getStringUsingOffsetTable(readU64<4>(info))};
+            return {spec, die, get_string_using_offset_table(readU64<4>(info))};
 
         case DW_FORM_rnglistx: {
             auto index = readULEB(info);
@@ -684,8 +684,8 @@ Dwarf::Attribute Dwarf::readAttribute(const CompilationUnit & cu,
             {
                 return {spec, die, 0ULL};
             }
-            const uint64_t offsetSize = cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
-            auto sp = rnglists_.substr(*cu.rnglists_base + index * offsetSize);
+            const uint64_t offset_size = cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
+            auto sp = rnglists_.substr(*cu.rnglists_base + index * offset_size);
             auto offset = readOffset(sp, cu.is64Bit);
             return {spec, die, *cu.rnglists_base + offset};
         }
@@ -696,8 +696,8 @@ Dwarf::Attribute Dwarf::readAttribute(const CompilationUnit & cu,
             {
                 return {spec, die, 0ULL};
             }
-            const uint64_t offsetSize = cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
-            auto sp = loclists_.substr(*cu.loclists_base + index * offsetSize);
+            const uint64_t offset_size = cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
+            auto sp = loclists_.substr(*cu.loclists_base + index * offset_size);
             auto offset = readOffset(sp, cu.is64Bit);
             return {spec, die, *cu.loclists_base + offset};
         }
@@ -738,9 +738,9 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
     chunk.remove_prefix(offset);
 
     // 1) unit_length
-    auto initialLength = read<uint32_t>(chunk);
-    cu.is64Bit = (initialLength == uint32_t(-1));
-    cu.size = cu.is64Bit ? read<uint64_t>(chunk) : initialLength;
+    auto initial_length = read<uint32_t>(chunk);
+    cu.is64Bit = (initial_length == uint32_t(-1));
+    cu.size = cu.is64Bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(cu.size <= chunk.size(), "invalid chunk size");
     cu.size += cu.is64Bit ? 12 : 4;
 
@@ -832,11 +832,11 @@ Dwarf::CompilationUnit Dwarf::findCompilationUnit(uint64_t targetOffset) const
         std::string_view chunk(info_);
         chunk.remove_prefix(offset);
 
-        auto initialLength = read<uint32_t>(chunk);
-        auto is64Bit = (initialLength == static_cast<uint32_t>(-1));
-        auto size = is64Bit ? read<uint64_t>(chunk) : initialLength;
+        auto initial_length = read<uint32_t>(chunk);
+        auto is64_bit = (initial_length == static_cast<uint32_t>(-1));
+        auto size = is64_bit ? read<uint64_t>(chunk) : initial_length;
         SAFE_CHECK(size <= chunk.size(), "invalid chunk size");
-        size += is64Bit ? 12 : 4;
+        size += is64_bit ? 12 : 4;
 
         if (offset + size > targetOffset)
         {
@@ -862,7 +862,7 @@ Dwarf::DIEAbbreviation Dwarf::getAbbreviation(uint64_t code, uint64_t offset) co
     SAFE_CHECK(false, "could not find abbreviation code");
 }
 
-Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t form, bool is64Bit) const
+Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t form, bool is64_bit) const
 {
     switch (form)
     {
@@ -900,13 +900,13 @@ Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t 
             return uint64_t(1);
         case DW_FORM_sec_offset: [[fallthrough]];
         case DW_FORM_ref_addr:
-            return readOffset(sp, is64Bit);
+            return readOffset(sp, is64_bit);
         case DW_FORM_string:
             return readNullTerminated(sp);
         case DW_FORM_strp:
-            return getStringFromStringSection(str_, readOffset(sp, is64Bit));
+            return getStringFromStringSection(str_, readOffset(sp, is64_bit));
         case DW_FORM_indirect: // form is explicitly specified
-            return readAttributeValue(sp, readULEB(sp), is64Bit);
+            return readAttributeValue(sp, readULEB(sp), is64_bit);
         default:
             SAFE_CHECK(false, "invalid attribute form");
     }
@@ -1470,16 +1470,16 @@ bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
     SAFE_CHECK(addr_size == 4 || addr_size == 8, "wrong address size");
     if (cu.version <= 4 && !ranges_.empty())
     {
-        const bool is64BitAddr = addr_size == 8;
+        const bool is64_bit_addr = addr_size == 8;
         std::string_view sp = ranges_;
         sp.remove_prefix(offset);
-        const uint64_t maxAddr = is64BitAddr ? std::numeric_limits<uint64_t>::max() : std::numeric_limits<uint32_t>::max();
+        const uint64_t max_addr = is64_bit_addr ? std::numeric_limits<uint64_t>::max() : std::numeric_limits<uint32_t>::max();
         while (!sp.empty())
         {
-            uint64_t begin = readOffset(sp, is64BitAddr);
-            uint64_t end = readOffset(sp, is64BitAddr);
+            uint64_t begin = readOffset(sp, is64_bit_addr);
+            uint64_t end = readOffset(sp, is64_bit_addr);
             // The range list entry is a base address selection entry.
-            if (begin == maxAddr)
+            if (begin == max_addr)
             {
                 base_addr = end;
                 continue;
@@ -1523,13 +1523,13 @@ bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
                 break;
 
                 case DW_RLE_startx_endx: {
-                    auto indexStart = readULEB(rnglists);
-                    auto indexEnd = readULEB(rnglists);
-                    auto spStart = addr_.substr(*cu.addr_base + indexStart * sizeof(uint64_t));
-                    auto start = read<uint64_t>(spStart);
+                    auto index_start = readULEB(rnglists);
+                    auto index_end = readULEB(rnglists);
+                    auto sp_start = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t));
+                    auto start = read<uint64_t>(sp_start);
 
-                    auto spEnd = addr_.substr(*cu.addr_base + indexEnd * sizeof(uint64_t));
-                    auto end = read<uint64_t>(spEnd);
+                    auto sp_end = addr_.substr(*cu.addr_base + index_end * sizeof(uint64_t));
+                    auto end = read<uint64_t>(sp_end);
                     if (address >= start && address < end)
                     {
                         return true;
@@ -1538,13 +1538,13 @@ bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
                 break;
 
                 case DW_RLE_startx_length: {
-                    auto indexStart = readULEB(rnglists);
+                    auto index_start = readULEB(rnglists);
                     auto length = readULEB(rnglists);
-                    auto spStart = addr_.substr(*cu.addr_base + indexStart * sizeof(uint64_t));
-                    auto start = read<uint64_t>(spStart);
+                    auto sp_start = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t));
+                    auto start = read<uint64_t>(sp_start);
 
-                    auto spEnd = addr_.substr(*cu.addr_base + indexStart * sizeof(uint64_t) + length);
-                    auto end = read<uint64_t>(spEnd);
+                    auto sp_end = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t) + length);
+                    auto end = read<uint64_t>(sp_end);
                     if (start != end && address >= start && address < end)
                     {
                         return true;
@@ -1553,9 +1553,9 @@ bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
                 break;
 
                 case DW_RLE_offset_pair: {
-                    auto offsetStart = readULEB(rnglists);
-                    auto offsetEnd = readULEB(rnglists);
-                    if (base_addr && address >= (*base_addr + offsetStart) && address < (*base_addr + offsetEnd))
+                    auto offset_start = readULEB(rnglists);
+                    auto offset_end = readULEB(rnglists);
+                    if (base_addr && address >= (*base_addr + offset_start) && address < (*base_addr + offset_end))
                     {
                         return true;
                     }
@@ -1628,33 +1628,33 @@ void Dwarf::LineNumberVM::reset()
 
 struct LineNumberAttribute
 {
-    uint64_t contentTypeCode;
-    uint64_t formCode;
+    uint64_t content_type_code;
+    uint64_t form_code;
     std::variant<uint64_t, std::string_view> attr_value;
 };
 
 LineNumberAttribute readLineNumberAttribute(
-    bool is64Bit, std::string_view & format, std::string_view & entries, std::string_view debugStr, std::string_view debugLineStr)
+    bool is64_bit, std::string_view & format, std::string_view & entries, std::string_view debugStr, std::string_view debugLineStr)
 {
-    uint64_t contentTypeCode = readULEB(format);
-    uint64_t formCode = readULEB(format);
+    uint64_t content_type_code = readULEB(format);
+    uint64_t form_code = readULEB(format);
     std::variant<uint64_t, std::string_view> attr_value;
 
-    switch (contentTypeCode)
+    switch (content_type_code)
     {
         case DW_LNCT_path: {
-            switch (formCode)
+            switch (form_code)
             {
                 case DW_FORM_string:
                     attr_value = readNullTerminated(entries);
                     break;
                 case DW_FORM_line_strp: {
-                    auto off = readOffset(entries, is64Bit);
+                    auto off = readOffset(entries, is64_bit);
                     attr_value = getStringFromStringSection(debugLineStr, off);
                 }
                 break;
                 case DW_FORM_strp:
-                    attr_value = getStringFromStringSection(debugStr, readOffset(entries, is64Bit));
+                    attr_value = getStringFromStringSection(debugStr, readOffset(entries, is64_bit));
                     break;
                 case DW_FORM_strp_sup:
                     SAFE_CHECK(false, "Unexpected DW_FORM_strp_sup");
@@ -1667,7 +1667,7 @@ LineNumberAttribute readLineNumberAttribute(
         break;
 
         case DW_LNCT_directory_index: {
-            switch (formCode)
+            switch (form_code)
             {
                 case DW_FORM_data1:
                     attr_value = read<uint8_t>(entries);
@@ -1686,7 +1686,7 @@ LineNumberAttribute readLineNumberAttribute(
         break;
 
         case DW_LNCT_timestamp: {
-            switch (formCode)
+            switch (form_code)
             {
                 case DW_FORM_udata:
                     attr_value = readULEB(entries);
@@ -1707,7 +1707,7 @@ LineNumberAttribute readLineNumberAttribute(
         break;
 
         case DW_LNCT_size: {
-            switch (formCode)
+            switch (form_code)
             {
                 case DW_FORM_udata:
                     attr_value = readULEB(entries);
@@ -1732,7 +1732,7 @@ LineNumberAttribute readLineNumberAttribute(
         break;
 
         case DW_LNCT_MD5: {
-            switch (formCode)
+            switch (form_code)
             {
                 case DW_FORM_data16:
                     attr_value = readBytes(entries, 16);
@@ -1750,8 +1750,8 @@ LineNumberAttribute readLineNumberAttribute(
             break;
     }
     return {
-        .contentTypeCode = contentTypeCode,
-        .formCode = formCode,
+        .content_type_code = content_type_code,
+        .form_code = form_code,
         .attr_value = attr_value,
     };
 }
@@ -1762,8 +1762,8 @@ void Dwarf::LineNumberVM::init()
     SAFE_CHECK(version_ >= 2 && version_ <= 5, "invalid version in line number VM: {}", version_);
     if (version_ == 5)
     {
-        auto addressSize = read<uint8_t>(data_);
-        SAFE_CHECK(addressSize == sizeof(uintptr_t), "Unexpected Line Number Table address_size");
+        auto address_size = read<uint8_t>(data_);
+        SAFE_CHECK(address_size == sizeof(uintptr_t), "Unexpected Line Number Table address_size");
         auto segment_selector_size = read<uint8_t>(data_);
         SAFE_CHECK(segment_selector_size == 0, "Segments not supported");
     }
@@ -1876,10 +1876,10 @@ Dwarf::LineNumberVM::FileName Dwarf::LineNumberVM::getFileName(uint64_t index) c
         FileName fn;
         if (index <= v4_.fileNameCount)
         {
-            std::string_view fileNames = v4_.fileNames;
+            std::string_view file_names = v4_.fileNames;
             for (; index; --index)
             {
-                if (!readFileName(fileNames, fn))
+                if (!readFileName(file_names, fn))
                 {
                     abort();
                 }
@@ -1901,16 +1901,16 @@ Dwarf::LineNumberVM::FileName Dwarf::LineNumberVM::getFileName(uint64_t index) c
     {
         FileName fn;
         SAFE_CHECK(index < v5_.fileNamesCount, "invalid file index");
-        std::string_view fileNames = v5_.fileNames;
+        std::string_view file_names = v5_.fileNames;
         for (uint64_t i = 0; i < v5_.fileNamesCount; i++)
         {
             std::string_view format = v5_.fileNameEntryFormat;
             for (uint8_t f = 0; f < v5_.fileNameEntryFormatCount; f++)
             {
-                auto attr = readLineNumberAttribute(is64Bit_, format, fileNames, debugStr_, debugLineStr_);
+                auto attr = readLineNumberAttribute(is64Bit_, format, file_names, debugStr_, debugLineStr_);
                 if (i == index)
                 {
-                    switch (attr.contentTypeCode)
+                    switch (attr.content_type_code)
                     {
                         case DW_LNCT_path:
                             fn.relativeName = std::get<std::string_view>(attr.attr_value);
@@ -1941,11 +1941,11 @@ std::string_view Dwarf::LineNumberVM::getIncludeDirectory(uint64_t index) const
 
         SAFE_CHECK(index <= v4_.includeDirectoryCount, "invalid include directory");
 
-        std::string_view includeDirectories = v4_.includeDirectories;
+        std::string_view include_directories = v4_.includeDirectories;
         std::string_view dir;
         for (; index; --index)
         {
-            dir = readNullTerminated(includeDirectories);
+            dir = readNullTerminated(include_directories);
             if (dir.empty())
             {
                 abort(); // BUG
@@ -1964,7 +1964,7 @@ std::string_view Dwarf::LineNumberVM::getIncludeDirectory(uint64_t index) const
             for (uint8_t f = 0; f < v5_.directoryEntryFormatCount; f++)
             {
                 auto attr = readLineNumberAttribute(is64Bit_, format, directories, debugStr_, debugLineStr_);
-                if (i == index && attr.contentTypeCode == DW_LNCT_path)
+                if (i == index && attr.content_type_code == DW_LNCT_path)
                 {
                     return std::get<std::string_view>(attr.attr_value);
                 }
