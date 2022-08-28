@@ -3460,6 +3460,13 @@ ReadSettings Context::getReadSettings() const
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
+    /// Zero read buffer will not make progress.
+    if (!settings.max_read_buffer_size)
+    {
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value '{}' for max_read_buffer_size", settings.max_read_buffer_size);
+    }
+
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.remote_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
