@@ -1,1 +1,4 @@
-../../../tests/config/config.d/legacy_geobase.xml
+<clickhouse>
+    <path_to_regions_hierarchy_file>config.d/regions_hierarchy.txt</path_to_regions_hierarchy_file>
+    <path_to_regions_names_files>config.d/</path_to_regions_names_files>
+</clickhouse>
