@@ -103,7 +103,6 @@ TEST(Common, SensitiveDataMasker)
 
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule>
@@ -154,7 +153,6 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule>
@@ -184,7 +182,6 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule><name>test</name></rule>
@@ -207,7 +204,6 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
