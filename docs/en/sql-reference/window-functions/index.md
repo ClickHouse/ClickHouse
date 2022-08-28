@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/window-functions/
 sidebar_position: 62
 sidebar_label: Window Functions
 ---

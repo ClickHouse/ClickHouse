@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/geo/coordinates
 sidebar_label: Geographical Coordinates
 sidebar_position: 62
 ---

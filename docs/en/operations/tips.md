@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/tips
 sidebar_position: 58
 sidebar_label: Usage Recommendations
 ---
