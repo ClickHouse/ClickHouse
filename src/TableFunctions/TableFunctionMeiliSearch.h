@@ -7,7 +7,7 @@ namespace DB
 class TableFunctionMeiliSearch : public ITableFunction
 {
 public:
-    static constexpr auto name = "MeiliSearch";
+    static constexpr auto name = "meiliSearch";
     String getName() const override { return name; }
 
 private:
