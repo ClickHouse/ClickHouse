@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/zookeeper_log
+---
 # system.zookeeper_log {#system-zookeeper_log}
 
 Эта таблица содержит информацию о параметрах запроса к серверу ZooKeeper и ответа от него.

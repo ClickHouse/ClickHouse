@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/url-functions
 sidebar_position: 54
 sidebar_label: "Функции для работы с URL"
 ---

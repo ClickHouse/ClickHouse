@@ -283,7 +283,6 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Compiler</th>
 <th>Build type</th>
 <th>Sanitizer</th>
-<th>Bundled</th>
 <th>Libraries</th>
 <th>Status</th>
 <th>Build log</th>
@@ -328,7 +327,6 @@ def create_build_html_report(
         else:
             row += "<td>{}</td>".format("none")
 
-        row += "<td>{}</td>".format(build_result.bundled)
         row += "<td>{}</td>".format(build_result.libraries)
 
         if build_result.status:

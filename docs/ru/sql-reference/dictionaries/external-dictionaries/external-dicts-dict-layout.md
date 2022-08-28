@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 sidebar_position: 41
 sidebar_label: "Хранение словарей в памяти"
 ---
