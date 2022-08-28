@@ -110,6 +110,10 @@ void MergeTreeDataPartWriterWide::addStreams(
         else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
+        ParserCodec codec_parser;
+        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
+
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
             data_part_storage_builder,
@@ -117,6 +121,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             stream_name, marks_file_extension,
             compression_codec,
             settings.max_compress_block_size,
+            marks_compression_codec,
+            settings.marks_compress_block_size,
             settings.query_write_settings);
     };
 
@@ -266,10 +272,10 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
     Stream & stream = *column_streams[stream_with_mark.stream_name];
-    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.marks);
-    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.marks);
+    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
+    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
     if (settings.can_use_adaptive_granularity)
-        writeIntBinary(rows_in_mark, stream.marks);
+        writeIntBinary(rows_in_mark, stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -420,7 +426,13 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     if (!data_part_storage->exists(mrk_path))
         return;
 
-    auto mrk_in = data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt);
+    auto mrk_file_in = data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt);
+    std::unique_ptr<ReadBuffer> mrk_in;
+    if (data_part->index_granularity_info.compress_marks)
+        mrk_in = std::make_unique<CompressedReadBufferFromFile>(std::move(mrk_file_in));
+    else
+        mrk_in = std::move(mrk_file_in);
+
     DB::CompressedReadBufferFromFile bin_in(data_part_storage->readFile(bin_path, {}, std::nullopt, std::nullopt));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;

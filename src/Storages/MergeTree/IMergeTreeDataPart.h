@@ -582,5 +582,9 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
+inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
+std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
+bool isCompressedFromIndexExtension(const String & index_extension);
+bool isCompressedFromMrkExtension(const String & mrk_extension);
 
 }

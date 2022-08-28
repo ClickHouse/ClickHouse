@@ -27,6 +27,9 @@ public:
     /// Approximate bytes size of one granule
     size_t index_granularity_bytes = 0;
 
+    /// Whether to compress marks
+    bool compress_marks;
+
     MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_);
 
     void changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage);
@@ -46,10 +49,10 @@ private:
     void setNonAdaptive();
 };
 
-constexpr inline auto getNonAdaptiveMrkExtension() { return ".mrk"; }
+constexpr inline auto getNonAdaptiveMrkExtension(bool compress_marks) { return compress_marks ? ".cmrk" : ".mrk"; }
 constexpr inline auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
 constexpr inline auto getAdaptiveMrkSizeWide() { return sizeof(UInt64) * 3; }
 inline size_t getAdaptiveMrkSizeCompact(size_t columns_num);
-std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type);
+std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type, bool compress_marks);
 
 }

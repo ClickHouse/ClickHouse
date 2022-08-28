@@ -2,8 +2,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <utility>
+
 
 namespace DB
 {
@@ -35,6 +37,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
 {
 }
 
+
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
     if (!marks)
@@ -49,6 +52,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
     return (*marks)[row_index * columns_in_mark + column_index];
 }
 
+
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
@@ -56,44 +60,52 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
     size_t file_size = data_part_storage->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
-    size_t expected_file_size = mark_size * marks_count;
+    size_t expected_uncompressed_size = mark_size * marks_count;
 
-    if (expected_file_size != file_size)
+    auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
+
+    if (!index_granularity_info.compress_marks && expected_uncompressed_size != file_size)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Bad size of marks file '{}': {}, must be: {}",
             std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
-            std::to_string(file_size), std::to_string(expected_file_size));
+            std::to_string(file_size), std::to_string(expected_uncompressed_size));
 
-    auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
+    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
+    std::unique_ptr<ReadBuffer> reader;
+    if (index_granularity_info.compress_marks)
+        reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    else
+        reader = std::move(buffer);
 
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
-        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
-        buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
+        reader->readStrict(reinterpret_cast<char *>(res->data()), expected_uncompressed_size);
 
-        if (!buffer->eof())
-            throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof())
-            + ", buffer size: " + std::to_string(buffer->buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
+        if (!reader->eof())
+            throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(reader->eof())
+                            + ", buffer size: " + std::to_string(reader->buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
     }
     else
     {
-        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
         size_t i = 0;
-        while (!buffer->eof())
+        size_t granularity;
+        while (!reader->eof())
         {
-            res->read(*buffer, i * columns_in_mark, columns_in_mark);
-            buffer->seek(sizeof(size_t), SEEK_CUR);
+            res->read(*reader, i * columns_in_mark, columns_in_mark);
+            readIntBinary(granularity, *reader);
             ++i;
         }
 
         if (i * mark_size != file_size)
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
+
     res->protect();
     return res;
 }
+
 
 void MergeTreeMarksLoader::loadMarks()
 {
