@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/table-functions/view
 sidebar_position: 51
 sidebar_label: view
 ---

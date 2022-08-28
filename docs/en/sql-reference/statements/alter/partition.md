@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/alter/partition
 sidebar_position: 38
 sidebar_label: PARTITION
 ---

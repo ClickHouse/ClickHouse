@@ -1,4 +1,5 @@
 ---
+slug: /en/development/
 sidebar_label: Development
 sidebar_position: 58
 ---
