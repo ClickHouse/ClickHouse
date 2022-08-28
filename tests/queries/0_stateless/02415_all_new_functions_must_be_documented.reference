@@ -2,6 +2,7 @@ CAST
 CRC32
 CRC32IEEE
 CRC64
+DATE
 FQDN
 IPv4CIDRToRange
 IPv4NumToString
@@ -699,7 +700,6 @@ splitByString
 splitByWhitespace
 sqrt
 startsWith
-stem
 subBitmap
 substring
 substringUTF8
@@ -715,7 +715,6 @@ subtractSeconds
 subtractWeeks
 subtractYears
 svg
-synonyms
 tan
 tanh
 tcpPort
