@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/metric_log
 ---
 # metric_log
 

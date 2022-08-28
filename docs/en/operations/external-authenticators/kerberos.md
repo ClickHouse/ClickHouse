@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/external-authenticators/kerberos
 ---
 # Kerberos
 

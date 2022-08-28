@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/simpleaggregatefunction
 ---
 # SimpleAggregateFunction
 

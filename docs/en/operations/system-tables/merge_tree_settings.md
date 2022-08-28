@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/merge_tree_settings
 ---
 # merge_tree_settings
 

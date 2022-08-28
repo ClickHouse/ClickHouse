@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/operators/exists
 ---
 # EXISTS
 

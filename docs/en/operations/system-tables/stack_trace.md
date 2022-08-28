@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/stack_trace
 ---
 # stack_trace
 

@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/zookeeper_log
 ---
 # zookeeper_log
 

@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/query_log
 ---
 # query_log
 

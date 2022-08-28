@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/query_thread_log
 ---
 # query_thread_log
 

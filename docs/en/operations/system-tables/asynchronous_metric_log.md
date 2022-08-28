@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/asynchronous_metric_log
 ---
 # asynchronous_metric_log
 

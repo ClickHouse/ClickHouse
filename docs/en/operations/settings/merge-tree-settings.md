@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/settings/merge-tree-settings
 ---
 # MergeTree tables settings
 

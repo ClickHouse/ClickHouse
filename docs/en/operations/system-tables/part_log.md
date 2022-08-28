@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/system-tables/part_log
 ---
 # part_log
 

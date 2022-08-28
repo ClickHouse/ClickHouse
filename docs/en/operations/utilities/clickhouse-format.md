@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/utilities/clickhouse-format
 ---
 # clickhouse-format 
 
