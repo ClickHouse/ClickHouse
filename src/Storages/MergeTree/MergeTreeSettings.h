@@ -145,7 +145,7 @@ struct Settings;
     M(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", "ZooKeeper path for Zero-copy table-independet info.", 0) \
     M(Bool, remote_fs_zero_copy_path_compatible_mode, false, "Run zero-copy in compatible mode during conversion process.", 0) \
     \
-    /** compress marks and primary */ \
+    /** Compress marks and primary key. */ \
     M(Bool, compress_marks, false, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
     M(Bool, compress_primary_key, false, "Primary key support compression, reduce primary key file size and speed up network transmission.", 0) \
     M(String, marks_compression_codec, "ZSTD(3)", "Compression encoding used by marks, marks are small enough and cached, so the default compression is ZSTD(3).", 0) \
