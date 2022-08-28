@@ -165,7 +165,7 @@ public:
 
     template<typename ...Args>
     static std::shared_ptr<ContextAccess> make(Args&& ...args) {
-        return std::make_shared<make_shared_helper<ContextAccess>>(std::forward<Args>(args)...);
+        return std::make_shared<MakeSharedHelper<ContextAccess>>(std::forward<Args>(args)...);
     }
 
     ~ContextAccess();
@@ -178,9 +178,9 @@ private:
     friend class AccessControl;
 
     template<typename T>
-    struct make_shared_helper : public T {
+    struct MakeSharedHelper : public T {
         template<typename ...Args>
-        make_shared_helper(Args&& ...args) : T(std::forward<Args>(args)...) {}
+        explicit MakeSharedHelper(Args&& ...args) : T(std::forward<Args>(args)...) {}
     };
 
     void initialize();
