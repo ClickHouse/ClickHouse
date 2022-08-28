@@ -175,7 +175,6 @@ void __explicit_bzero_chk(void * buf, size_t len, size_t unused)
     return explicit_bzero(buf, len);
 }
 
-#define _GNU_SOURCE
 #include <unistd.h>
 #include "syscall.h"
 
@@ -215,8 +214,7 @@ struct statx {
 	uint64_t spare[14];
 };
 
-static int fstatat_statx(int fd, const char *restrict path, struct stat *restrict st, int flag)
-{
+static int fstatat_statx(int fd, const char *restrict path, struct stat *restrict st, int flag) {
 	struct statx stx;
 
 	int ret = syscall(SYS_statx, fd, path, flag, 0x7ff, &stx);
@@ -251,7 +249,6 @@ static int fstatat_statx(int fd, const char *restrict path, struct stat *restric
 	return 0;
 }
 
-#define _GNU_SOURCE
 #include <unistd.h>
 #include <syscall.h>
 #include "syscall.h"
@@ -289,6 +286,100 @@ int posix_spawnp(pid_t *restrict res, const char *restrict file,
 	return posix_spawn(res, file, fa, &spawnp_attr, argv, envp);
 }
 
+#define FDOP_CLOSE 1
+#define FDOP_DUP2 2
+#define FDOP_OPEN 3
+#define FDOP_CHDIR 4
+#define FDOP_FCHDIR 5
+
+struct fdop {
+	struct fdop *next, *prev;
+	int cmd, fd, srcfd, oflag;
+	mode_t mode;
+	char path[];
+};
+
+#define ENOMEM 12
+#define EBADF 9
+
+int posix_spawn_file_actions_init(posix_spawn_file_actions_t *fa) {
+	fa->__actions = 0;
+	return 0;
+}
+
+int posix_spawn_file_actions_addchdir_np(posix_spawn_file_actions_t *restrict fa, const char *restrict path) {
+	struct fdop *op = malloc(sizeof *op + strlen(path) + 1);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_CHDIR;
+	op->fd = -1;
+	strcpy(op->path, path);
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_addclose(posix_spawn_file_actions_t *fa, int fd) {
+	if (fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_CLOSE;
+	op->fd = fd;
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_adddup2(posix_spawn_file_actions_t *fa, int srcfd, int fd) {
+	if (srcfd < 0 || fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_DUP2;
+	op->srcfd = srcfd;
+	op->fd = fd;
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_addfchdir_np(posix_spawn_file_actions_t *fa, int fd) {
+	if (fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_FCHDIR;
+	op->fd = fd;
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_addopen(posix_spawn_file_actions_t *restrict fa, int fd, const char *restrict path, int flags, mode_t mode) {
+	if (fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op + strlen(path) + 1);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_OPEN;
+	op->fd = fd;
+	op->oflag = flags;
+	op->mode = mode;
+	strcpy(op->path, path);
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_destroy(posix_spawn_file_actions_t *fa) {
+	struct fdop *op = fa->__actions, *next;
+	while (op) {
+		next = op->next;
+		free(op);
+		op = next;
+	}
+	return 0;
+}
 
 #if defined (__cplusplus)
 }
