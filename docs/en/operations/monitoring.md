@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/monitoring
 sidebar_position: 45
 sidebar_label: Monitoring
 ---

@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/clickhouse-keeper
 sidebar_position: 66
 sidebar_label: ClickHouse Keeper
 ---
