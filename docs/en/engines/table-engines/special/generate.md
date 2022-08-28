@@ -2,9 +2,8 @@
 slug: /en/engines/table-engines/special/generate
 sidebar_position: 140
 sidebar_label:  GenerateRandom
+title: "GenerateRandom Table Engine"
 ---
-
-# GenerateRandom Table Engine
 
 The GenerateRandom table engine produces random data for given table schema.
 
