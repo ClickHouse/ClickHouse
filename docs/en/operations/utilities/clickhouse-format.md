@@ -1,3 +1,5 @@
+---
+---
 # clickhouse-format 
 
 Allows formatting input queries.

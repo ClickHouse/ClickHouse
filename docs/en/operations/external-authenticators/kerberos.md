@@ -1,3 +1,5 @@
+---
+---
 # Kerberos
 
 Existing and properly configured ClickHouse users can be authenticated via Kerberos authentication protocol.

@@ -1,3 +1,5 @@
+---
+---
 # merge_tree_settings
 
 Contains information about settings for `MergeTree` tables.

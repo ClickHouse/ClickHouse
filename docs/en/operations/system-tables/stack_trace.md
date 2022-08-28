@@ -1,3 +1,5 @@
+---
+---
 # stack_trace
 
 Contains stack traces of all server threads. Allows developers to introspect the server state.

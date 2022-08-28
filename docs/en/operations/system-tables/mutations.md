@@ -1,3 +1,5 @@
+---
+---
 # mutations
 
 The table contains information about [mutations](../../sql-reference/statements/alter/index.md#mutations) of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
