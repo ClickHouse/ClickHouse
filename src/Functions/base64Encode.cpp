@@ -14,7 +14,7 @@ REGISTER_FUNCTION(Base64Encode)
     factory.registerFunction<FunctionBase64Conversion<Base64Encode>>();
 
     /// MysQL compatibility alias.
-    factory.registerFunction<FunctionBase64Conversion<Base64Encode>>("TO_BASE64", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("TO_BASE64", "base64Encode", FunctionFactory::CaseInsensitive);
 }
 }
 #endif
