@@ -419,11 +419,6 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
     return res;
 }
 
-std::shared_ptr<ContextAccess> ContextAccess::make(const AccessControl & access_control, const Params & params) {
-    return std::make_shared<ContextAccess>(access_control, params);
-}
-
-
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
