@@ -5541,6 +5541,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (select_query->interpolate() && !select_query->interpolate()->children.empty())
         return std::nullopt;
 
+    // Currently projections don't support GROUPING SET yet.
+    if (select_query->group_by_with_grouping_sets)
+        return std::nullopt;
+
     auto query_options = SelectQueryOptions(
         QueryProcessingStage::WithMergeableState,
         /* depth */ 1,
