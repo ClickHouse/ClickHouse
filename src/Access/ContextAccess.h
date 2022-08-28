@@ -163,6 +163,8 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
+    static std::shared_ptr<ContextAccess> make(const AccessControl & access_control, const Params & params);
+
     ~ContextAccess();
 
 private:
