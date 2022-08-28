@@ -1,3 +1,5 @@
+---
+---
 # query_log
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.

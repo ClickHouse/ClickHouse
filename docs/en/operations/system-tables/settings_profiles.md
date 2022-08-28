@@ -1,3 +1,5 @@
+---
+---
 # settings_profiles
 
 Contains properties of configured setting profiles.

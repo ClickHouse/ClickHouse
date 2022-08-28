@@ -1,3 +1,5 @@
+---
+---
 # distributed_ddl_queue
 
 Contains information about [distributed ddl queries (ON CLUSTER clause)](../../sql-reference/distributed-ddl.md) that were executed on a cluster.

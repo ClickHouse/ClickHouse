@@ -1,3 +1,5 @@
+---
+---
 # query_thread_log
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.

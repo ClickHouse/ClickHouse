@@ -1,3 +1,5 @@
+---
+---
 # opentelemetry_span_log
 
 Contains information about [trace spans](https://opentracing.io/docs/overview/spans/) for executed queries.

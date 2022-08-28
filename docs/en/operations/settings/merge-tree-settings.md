@@ -1,3 +1,5 @@
+---
+---
 # MergeTree tables settings
 
 The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.

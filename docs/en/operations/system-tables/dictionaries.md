@@ -1,3 +1,5 @@
+---
+---
 # dictionaries
 
 Contains information about [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
