@@ -405,7 +405,6 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
     return {};
 }
 
-
 std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 {
     static const std::shared_ptr<const ContextAccess> res = []
