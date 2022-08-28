@@ -43,7 +43,7 @@ namespace DB
   * Documentation does not support multiple languages.
   * The only available language is English.
   */
-struct Doc
+struct Documentation
 {
     using Description = std::string;
     using ExampleName = std::string;
@@ -56,13 +56,13 @@ struct Doc
     Examples examples;
     Categories categories;
 
-    Doc(Description description_) : description(std::move(description_)) {}
-    Doc(Description description_, Examples examples_) : description(std::move(description_)), examples(std::move(examples_)) {}
-    Doc(Description description_, Examples examples_, Categories categories_)
+    Documentation(Description description_) : description(std::move(description_)) {}
+    Documentation(Description description_, Examples examples_) : description(std::move(description_)), examples(std::move(examples_)) {}
+    Documentation(Description description_, Examples examples_, Categories categories_)
         : description(std::move(description_)), examples(std::move(examples_)), categories(std::move(categories_)) {}
 
     /// TODO: Please remove this constructor. Documentation should always be non-empty.
-    Doc() {}
+    Documentation() {}
 };
 
 }

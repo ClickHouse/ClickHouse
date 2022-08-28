@@ -170,18 +170,10 @@ public:
 
     ~ContextAccess();
 
-protected:
-    ContextAccess() {} /// NOLINT
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
-
 private:
     friend class AccessControl;
-
-    template<typename T>
-    struct make_shared_helper : public T {
-        template<typename ...Args>
-        make_shared_helper(Args&& ...args) : T(std::forward<Args>(args)...) {}
-    };
+    ContextAccess() {} /// NOLINT
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void initialize();
     void setUser(const UserPtr & user_) const;

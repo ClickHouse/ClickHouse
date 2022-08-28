@@ -18,21 +18,25 @@ namespace DB
 class Context;
 
 using TableFunctionCreator = std::function<TableFunctionPtr()>;
-using TableFunctionData = std::pair<TableFunctionCreator, Doc>;
+using TableFunctionFactoryData = std::pair<TableFunctionCreator, Documentation>;
 
 /** Lets you get a table function by its name.
   */
-class TableFunctionFactory final: private boost::noncopyable, public IFactoryWithAliases<TableFunctionData>
+class TableFunctionFactory final: private boost::noncopyable, public IFactoryWithAliases<TableFunctionFactoryData>
 {
 public:
     static TableFunctionFactory & instance();
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
-    void registerFunction(const std::string & name, TableFunctionCreator creator, Doc doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerFunction(
+        const std::string & name,
+        TableFunctionCreator creator,
+        Documentation doc = {},
+        CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     template <typename Function>
-    void registerFunction(Doc doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
+    void registerFunction(Documentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
         registerFunction(Function::name, std::move(creator), std::move(doc), case_sensitiveness);
@@ -44,7 +48,7 @@ public:
     /// Returns nullptr if not found.
     TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
 
-    Doc getDocumentation(const std::string & name) const;
+    Documentation getDocumentation(const std::string & name) const;
 
     bool isTableFunctionName(const std::string & name) const;
 
