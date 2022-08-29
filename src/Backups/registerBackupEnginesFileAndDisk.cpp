@@ -46,7 +46,7 @@ namespace
     void checkPath(const String & disk_name, const DiskPtr & disk, fs::path & path)
     {
         path = path.lexically_normal();
-        if (!path.is_relative() && (disk->getType() == DiskType::Local))
+        if (!path.is_relative() && (disk->getDataSourceDescription().type == DataSourceType::Local))
             path = path.lexically_proximate(disk->getPath());
 
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
