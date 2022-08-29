@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/disks
+---
 # system.disks {#system_tables-disks}
 
 Cодержит информацию о дисках, заданных в [конфигурации сервера](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).

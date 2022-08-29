@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/backup
 sidebar_position: 49
 sidebar_label: Data Backup
 ---

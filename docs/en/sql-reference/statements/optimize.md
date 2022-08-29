@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/optimize
 sidebar_position: 47
 sidebar_label: OPTIMIZE
 ---
