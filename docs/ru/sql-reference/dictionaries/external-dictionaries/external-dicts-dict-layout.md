@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 sidebar_position: 41
 sidebar_label: "Хранение словарей в памяти"
 ---
@@ -444,6 +445,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 :::danger "Warning"
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
+:::
 
 ### complex_key_cache {#complex-key-cache}
 

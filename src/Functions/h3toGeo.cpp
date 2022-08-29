@@ -100,7 +100,7 @@ public:
 
 }
 
-void registerFunctionH3ToGeo(FunctionFactory & factory)
+REGISTER_FUNCTION(H3ToGeo)
 {
     factory.registerFunction<FunctionH3ToGeo>();
 }

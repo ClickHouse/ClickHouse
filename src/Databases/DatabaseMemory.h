@@ -50,6 +50,8 @@ public:
 
     void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
+
 private:
     const String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;

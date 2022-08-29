@@ -1,6 +1,7 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Backups/RestoreSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -14,6 +15,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <base/range.h>
 #include <filesystem>
 #include <fstream>
 
@@ -650,19 +652,24 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 }
 
 
-void DiskAccessStorage::insertFromBackup(
-    const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup,
-    const RestoreSettings & restore_settings,
-    std::shared_ptr<IRestoreCoordination>)
+void DiskAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 {
     if (!isRestoreAllowed())
         throwRestoreNotAllowed();
 
-    bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
+    auto entities = restorer.getAccessEntitiesToRestore();
+    if (entities.empty())
+        return;
 
-    for (const auto & [id, entity] : entities_from_backup)
-        insertWithID(id, entity, replace_if_exists, throw_if_exists);
+    auto create_access = restorer.getRestoreSettings().create_access;
+    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+
+    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    {
+        for (const auto & [id, entity] : entities)
+            insertWithID(id, entity, replace_if_exists, throw_if_exists);
+    });
 }
 
 }

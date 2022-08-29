@@ -19,6 +19,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+MergeFromLogEntryTask::MergeFromLogEntryTask(
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
+    StorageReplicatedMergeTree & storage_,
+    IExecutableTask::TaskResultCallback & task_result_callback_)
+    : ReplicatedMergeMutateTaskBase(
+        &Poco::Logger::get(
+            storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
+        storage_,
+        selected_entry_,
+        task_result_callback_)
+{
+}
+
 
 ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
@@ -260,11 +273,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     part = merge_task->getFuture().get();
+    auto builder = merge_task->getBuilder();
 
     /// Task is not needed
     merge_task.reset();
 
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr, builder);
 
     try
     {

@@ -421,6 +421,13 @@ void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restore
         return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
+bool StorageMaterializedView::supportsBackupPartition() const
+{
+    if (hasInnerTable())
+        return getTargetTable()->supportsBackupPartition();
+    return false;
+}
+
 std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
 {
     if (hasInnerTable())

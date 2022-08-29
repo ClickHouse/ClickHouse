@@ -23,6 +23,7 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
@@ -238,7 +239,7 @@ struct AggregationMethodString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -270,7 +271,7 @@ struct AggregationMethodStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -302,7 +303,7 @@ struct AggregationMethodFixedString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -333,7 +334,7 @@ struct AggregationMethodFixedStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -501,7 +502,7 @@ struct AggregationMethodSerialized
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         const auto * pos = key.data;
         for (auto & column : key_columns)
@@ -1058,14 +1059,15 @@ public:
     std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const;
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
+
+    TemporaryFileOnDiskHolder createTempFile(size_t max_temp_file_size) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
     struct TemporaryFiles
     {
-        std::vector<std::unique_ptr<Poco::TemporaryFile>> files;
+        std::vector<TemporaryFileOnDiskHolder> files;
         size_t sum_size_uncompressed = 0;
         size_t sum_size_compressed = 0;
         mutable std::mutex mutex;
@@ -1348,8 +1350,11 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
-        const ColumnRawPtrs & key_columns) const;
+        const ColumnRawPtrs & key_columns,
+        Arena * arena_for_keys) const;
 
+    /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
+    /// If not provided, aggregates_pool is used instead. Refer to mergeBlocks() for an usage example.
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         Block block,
@@ -1357,7 +1362,9 @@ private:
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
-        bool no_more_keys) const;
+        bool no_more_keys,
+        Arena * arena_for_keys = nullptr) const;
+
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         Arena * aggregates_pool,
@@ -1368,7 +1375,8 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
-        const ColumnRawPtrs & key_columns) const;
+        const ColumnRawPtrs & key_columns,
+        Arena * arena_for_keys) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
         Block block,

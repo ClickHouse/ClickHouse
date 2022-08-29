@@ -64,9 +64,10 @@ public:
     void truncateFile(const String & path, size_t size) override;
     String getUniqueId(const String & path) const override;
     bool checkUniqueId(const String & id) const override;
-    String getCacheBasePath() const override;
-    PathsWithSize getObjectStoragePaths(const String & path) const override;
-    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
+
+    const String & getCacheBasePath() const override;
+    StoredObjects getStorageObjects(const String & path) const override;
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
     void restart(ContextPtr context);
 

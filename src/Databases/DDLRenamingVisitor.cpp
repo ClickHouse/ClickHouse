@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int WRONG_DDL_RENAMING_SETTINGS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -31,24 +30,40 @@ namespace
         {
             /// CREATE TEMPORARY TABLE
             String table_name = create.getTable();
-            const auto & new_table_name = data.renaming_map.getNewTemporaryTableName(table_name);
-            if (new_table_name != table_name)
-                create.setTable(new_table_name);
+            QualifiedTableName full_table_name{DatabaseCatalog::TEMPORARY_DATABASE, table_name};
+            const auto & new_table_name = data.renaming_map.getNewTableName(full_table_name);
+            if (new_table_name != full_table_name)
+            {
+                create.setTable(new_table_name.table);
+                if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
+                {
+                    create.temporary = false;
+                    create.setDatabase(new_table_name.database);
+                }
+            }
         }
         else if (create.table)
         {
             /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW
-            QualifiedTableName qualified_name;
-            qualified_name.table = create.getTable();
-            qualified_name.database = create.getDatabase();
+            QualifiedTableName full_name;
+            full_name.table = create.getTable();
+            full_name.database = create.getDatabase();
 
-            if (!qualified_name.database.empty() && !qualified_name.table.empty())
+            if (!full_name.database.empty() && !full_name.table.empty())
             {
-                auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
-                if (new_qualified_name != qualified_name)
+                auto new_table_name = data.renaming_map.getNewTableName(full_name);
+                if (new_table_name != full_name)
                 {
-                    create.setTable(new_qualified_name.table);
-                    create.setDatabase(new_qualified_name.database);
+                    create.setTable(new_table_name.table);
+                    if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                    {
+                        create.temporary = true;
+                        create.setDatabase("");
+                    }
+                    else
+                    {
+                        create.setDatabase(new_table_name.database);
+                    }
                 }
             }
         }
@@ -291,17 +306,10 @@ void DDLRenamingVisitor::visit(ASTPtr ast, const Data & data)
 bool DDLRenamingVisitor::needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
 
-void renameDatabaseAndTableNameInCreateQuery(const ContextPtr & global_context, const DDLRenamingMap & renaming_map, ASTPtr & ast)
-{
-    DDLRenamingVisitor::Data data{global_context, renaming_map, ast};
-    DDLRenamingVisitor::Visitor{data}.visit(ast);
-}
-
-
 void DDLRenamingMap::setNewTableName(const QualifiedTableName & old_table_name, const QualifiedTableName & new_table_name)
 {
     if (old_table_name.table.empty() || old_table_name.database.empty() || new_table_name.table.empty() || new_table_name.database.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty names are not allowed");
+        throw Exception(ErrorCodes::WRONG_DDL_RENAMING_SETTINGS, "Empty names are not allowed");
 
     auto it = old_to_new_table_names.find(old_table_name);
     if ((it != old_to_new_table_names.end()))
@@ -321,7 +329,7 @@ void DDLRenamingMap::setNewTableName(const QualifiedTableName & old_table_name, 
 void DDLRenamingMap::setNewDatabaseName(const String & old_database_name, const String & new_database_name)
 {
     if (old_database_name.empty() || new_database_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty names are not allowed");
+        throw Exception(ErrorCodes::WRONG_DDL_RENAMING_SETTINGS, "Empty names are not allowed");
 
     auto it = old_to_new_database_names.find(old_database_name);
     if ((it != old_to_new_database_names.end()))
@@ -351,28 +359,11 @@ QualifiedTableName DDLRenamingMap::getNewTableName(const QualifiedTableName & ol
     return {getNewDatabaseName(old_table_name.database), old_table_name.table};
 }
 
-void DDLRenamingMap::setNewTemporaryTableName(const String & old_table_name, const String & new_table_name)
-{
-    if (old_table_name.empty() || new_table_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty names are not allowed");
 
-    auto it = old_to_new_temporary_table_names.find(old_table_name);
-    if ((it != old_to_new_temporary_table_names.end()))
-    {
-        if (it->second == new_table_name)
-            return;
-        throw Exception(ErrorCodes::WRONG_DDL_RENAMING_SETTINGS, "Wrong renaming: it's specified that temporary table {} should be renamed to {} and to {} at the same time",
-                        backQuoteIfNeed(old_table_name), backQuoteIfNeed(it->second), backQuoteIfNeed(new_table_name));
-    }
-    old_to_new_temporary_table_names[old_table_name] = new_table_name;
-}
-
-const String & DDLRenamingMap::getNewTemporaryTableName(const String & old_table_name) const
+void renameDatabaseAndTableNameInCreateQuery(ASTPtr ast, const DDLRenamingMap & renaming_map, const ContextPtr & global_context)
 {
-    auto it = old_to_new_temporary_table_names.find(old_table_name);
-    if (it != old_to_new_temporary_table_names.end())
-        return it->second;
-    return old_table_name;
+    DDLRenamingVisitor::Data data{ast, renaming_map, global_context};
+    DDLRenamingVisitor::Visitor{data}.visit(ast);
 }
 
 }

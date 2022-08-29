@@ -62,7 +62,7 @@ protected:
             DataTypePtr argument_type = arguments[i].type;
             if (!isNumber(argument_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument '{}' for function {} must be number", std::string(argument_names[i]), getName());
+                    "Argument '{}' for function {} must be a number", std::string(argument_names[i]), getName());
         }
     }
 
@@ -164,9 +164,9 @@ struct MakeDate32Traits
     using ReturnDataType = DataTypeDate32;
     using ReturnColumnType = ColumnInt32;
 
-    static constexpr auto MIN_YEAR = 1925;
-    static constexpr auto MAX_YEAR = 2283;
-    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 11, 11);
+    static constexpr auto MIN_YEAR = 1900;
+    static constexpr auto MAX_YEAR = 2299;
+    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 12, 31);
 };
 
 /// Common implementation for makeDateTime, makeDateTime64
@@ -322,7 +322,7 @@ public:
             const auto& fraction_argument = arguments[argument_names.size()];
             if (!isNumber(fraction_argument.type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument 'fraction' for function {} must be number", getName());
+                    "Argument 'fraction' for function {} must be a number", getName());
         }
 
         /// Optional precision argument
@@ -433,7 +433,7 @@ private:
 
 }
 
-void registerFunctionsMakeDate(FunctionFactory & factory)
+REGISTER_FUNCTION(MakeDate)
 {
     factory.registerFunction<FunctionMakeDate<MakeDateTraits>>();
     factory.registerFunction<FunctionMakeDate<MakeDate32Traits>>();

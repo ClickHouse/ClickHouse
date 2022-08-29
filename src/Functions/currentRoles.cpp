@@ -81,7 +81,7 @@ namespace
     };
 }
 
-void registerFunctionCurrentRoles(FunctionFactory & factory)
+REGISTER_FUNCTION(CurrentRoles)
 {
     factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>();
     factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>();

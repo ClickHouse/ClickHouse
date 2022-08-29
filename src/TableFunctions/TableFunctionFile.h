@@ -24,7 +24,7 @@ public:
 
 protected:
     int fd = -1;
-    void parseFirstArguments(const ASTPtr & arg, ContextPtr context) override;
+    void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
     String getFormatFromFirstArgument() override;
 
 private:

@@ -11,6 +11,7 @@
 #include <aws/s3/model/HeadObjectResult.h>
 #include <aws/s3/model/ListObjectsV2Result.h>
 #include <Storages/StorageS3Settings.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB
@@ -43,37 +44,48 @@ class S3ObjectStorage : public IObjectStorage
 {
 public:
     S3ObjectStorage(
-        FileCachePtr && cache_,
         std::unique_ptr<Aws::S3::S3Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         String version_id_,
         const S3Capabilities & s3_capabilities_,
-        String bucket_)
-        : IObjectStorage(std::move(cache_))
-        , bucket(bucket_)
+        String bucket_,
+        String connection_string)
+        : bucket(bucket_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
-    {}
+    {
+        data_source_description.type = DataSourceType::S3;
+        data_source_description.description = connection_string;
+        data_source_description.is_cached = false;
+        data_source_description.is_encrypted = false;
+    }
 
-    bool exists(const std::string & path) const override;
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return data_source_description;
+    }
 
-    std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
-        const std::string & path,
+    std::string getName() const override { return "S3ObjectStorage"; }
+
+    bool exists(const StoredObject & object) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+        const StoredObject & object,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const PathsWithSize & paths_to_read,
+        const StoredObjects & objects,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
-        const std::string & path,
+        const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
         FinalizeCallback && finalize_callback = {},
@@ -82,25 +94,30 @@ public:
 
     void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
-    /// Remove file. Throws exception if file doesn't exist or it's a directory.
-    void removeObject(const std::string & path) override;
+    /// Uses `DeleteObjectRequest`.
+    void removeObject(const StoredObject & object) override;
 
-    void removeObjects(const PathsWithSize & paths) override;
+    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
+    /// `DeleteObjectsRequest` is not supported on GCS, see https://issuetracker.google.com/issues/162653700 .
+    void removeObjects(const StoredObjects & objects) override;
 
-    void removeObjectIfExists(const std::string & path) override;
+    /// Uses `DeleteObjectRequest`.
+    void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const PathsWithSize & paths) override;
+    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
+    /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
-        const std::string & object_from,
-        const std::string & object_to,
+        const StoredObject & object_from,
+        const StoredObject & object_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void copyObjectToAnotherObjectStorage( /// NOLINT
-        const std::string & object_from,
-        const std::string & object_to,
+        const StoredObject & object_from,
+        const StoredObject & object_to,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
@@ -113,13 +130,21 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    String getObjectsNamespace() const override { return bucket; }
+    std::string getObjectsNamespace() const override { return bucket; }
+
+    std::string generateBlobNameForPath(const std::string & path) override;
+
+    bool isRemote() const override { return true; }
+
+    void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         ContextPtr context) override;
+
+    bool supportParallelWrite() const override { return true; }
 
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
@@ -142,8 +167,8 @@ private:
         std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
-    void removeObjectImpl(const std::string & path, bool if_exists);
-    void removeObjectsImpl(const PathsWithSize & paths, bool if_exists);
+    void removeObjectImpl(const StoredObject & object, bool if_exists);
+    void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
     Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
 
@@ -151,9 +176,11 @@ private:
 
     MultiVersion<Aws::S3::S3Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
-    const S3Capabilities s3_capabilities;
+    S3Capabilities s3_capabilities;
 
     const String version_id;
+
+    DataSourceDescription data_source_description;
 };
 
 }

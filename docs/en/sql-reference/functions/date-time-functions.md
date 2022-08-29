@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/date-time-functions
 sidebar_position: 39
 sidebar_label: Dates and Times
 ---
@@ -266,8 +267,14 @@ Result:
 └────────────────┘
 ```
 
-:::note    
-The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
+:::Attention
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is `Date` or `DateTime`.
+Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+In case argument is out of normal range:
+  * If the argument is smaller than 1970, the result will be calculated from the argument `1970-01-01 (00:00:00)` instead.
+  * If the return type is `DateTime` and the argument is larger than `2106-02-07 08:28:15`, the result will be calculated from the argument `2106-02-07 08:28:15` instead.
+  * If the return type is `Date` and the argument is larger than `2149-06-06`, the result will be calculated from the argument `2149-06-06` instead.
+  *  If `toLastDayOfMonth` is called with an argument greater then `2149-05-31`, the result will be calculated from the argument `2149-05-31` instead.
 :::
 
 ## toStartOfYear
@@ -291,20 +298,23 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-:::note    
-The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
-:::
+## toLastDayOfMonth
+
+Rounds up a date or date with time to the last day of the month.
+Returns the date.
 
 ## toMonday
 
 Rounds down a date or date with time to the nearest Monday.
+As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` return date `1970-01-01`.
 Returns the date.
 
 ## toStartOfWeek(t\[,mode\])
 
 Rounds down a date or date with time to the nearest Sunday or Monday by mode.
 Returns the date.
-The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` (and `1970-01-05` if `mode` is `1`) return date `1970-01-01`.
+The `mode` argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
 
 ## toStartOfDay
 
@@ -836,7 +846,7 @@ Result:
 
 ## now
 
-Returns the current date and time.
+Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
 **Syntax**
 
@@ -884,14 +894,93 @@ Result:
 └──────────────────────┘
 ```
 
+## now64
+
+Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
+
+**Syntax**
+
+``` sql
+now64([scale], [timezone])
+```
+
+**Arguments**
+
+-   `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Current date and time with sub-second precision.
+
+Type: [Datetime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+SELECT now64(), now64(9, 'Asia/Istanbul');
+```
+
+Result:
+
+``` text
+┌─────────────────now64()─┬─────now64(9, 'Asia/Istanbul')─┐
+│ 2022-08-21 19:34:26.196 │ 2022-08-21 22:34:26.196542766 │
+└─────────────────────────┴───────────────────────────────┘
+```
+
+## nowInBlock
+
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+
+It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
+
+**Syntax**
+
+``` sql
+nowInBlock([timezone])
+```
+
+**Arguments**
+
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Current date and time at the moment of processing of each block of data.
+
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+``` sql
+SELECT
+    now(),
+    nowInBlock(),
+    sleep(1)
+FROM numbers(3)
+SETTINGS max_block_size = 1
+FORMAT PrettyCompactMonoBlock
+```
+
+Result:
+
+``` text
+┌───────────────now()─┬────────nowInBlock()─┬─sleep(1)─┐
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:19 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
+└─────────────────────┴─────────────────────┴──────────┘
+```
+
 ## today
 
-Accepts zero arguments and returns the current date at one of the moments of request execution.
+Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
 
 ## yesterday
 
-Accepts zero arguments and returns yesterday’s date at one of the moments of request execution.
+Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
 The same as ‘today() - 1’.
 
 ## timeSlot
@@ -950,9 +1039,28 @@ SELECT
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 
-For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter: a constant UInt32, set to 1800 by default.
-For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
-This is necessary for searching for pageviews in the corresponding session.
+For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.  
+This is necessary, for example, when searching for pageviews in the corresponding session.  
+Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.  
+Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
+
+Example:
+```sql
+SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
+SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
+SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
+```
+``` text
+┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
+│ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
+└─────────────────────────────────────────────────────────────┘
+┌─timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299)─┐
+│ ['1980-12-12 20:56:13','1980-12-12 21:01:12','1980-12-12 21:06:11']     │
+└─────────────────────────────────────────────────────────────────────────┘
+┌─timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0))─┐
+│ ['1980-12-12 20:56:13.0000','1980-12-12 21:01:12.0000','1980-12-12 21:06:11.0000']                        │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## formatDateTime
 
@@ -1043,7 +1151,10 @@ Query:
 
 ```sql
 WITH toDateTime('2021-04-14 11:22:33') AS date_value
-SELECT dateName('year', date_value), dateName('month', date_value), dateName('day', date_value);
+SELECT
+    dateName('year', date_value),
+    dateName('month', date_value),
+    dateName('day', date_value);
 ```
 
 Result:
@@ -1051,7 +1162,44 @@ Result:
 ```text
 ┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
 │ 2021                         │ April                         │ 14                          │
-└──────────────────────────────┴───────────────────────────────┴─────────────────────────────
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
+```
+
+## monthName
+
+Returns name of the month.
+
+**Syntax**
+
+``` sql
+monthName(date)
+```
+
+**Arguments**
+
+-   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+-   The name of the month.
+
+Type: [String](../../sql-reference/data-types/string.md#string)
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT monthName(date_value);
+```
+
+Result:
+
+```text
+┌─monthName(date_value)─┐
+│ April                 │
+└───────────────────────┘
 ```
 
 ## FROM\_UNIXTIME

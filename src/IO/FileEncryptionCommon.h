@@ -80,6 +80,7 @@ public:
     /// the initialization vector is increased by an index of the current block
     /// and the index of the current block is calculated from this offset.
     void setOffset(size_t offset_) { offset = offset_; }
+    size_t getOffset() const { return offset; }
 
     /// Encrypts some data.
     /// Also the function moves `offset` by `size` (for successive encryptions).

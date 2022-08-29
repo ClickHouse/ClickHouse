@@ -26,6 +26,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const Names & column_names_,
+    const Names & virtual_column_names_,
     const BackoffSettings & backoff_settings_,
     size_t preferred_block_size_bytes_,
     bool do_not_steal_tasks_)
@@ -34,6 +35,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     , data{data_}
     , storage_snapshot{storage_snapshot_}
     , column_names{column_names_}
+    , virtual_column_names{virtual_column_names_}
     , do_not_steal_tasks{do_not_steal_tasks_}
     , predict_block_size_bytes{preferred_block_size_bytes_ > 0}
     , prewhere_info{prewhere_info_}
@@ -213,7 +215,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
 
         auto task_columns = getReadTaskColumns(
             data, storage_snapshot, part.data_part,
-            column_names, prewhere_info, /*with_subcolumns=*/ true);
+            column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);

@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/query_views_log
+---
 # system.query_views_log {#system_tables-query_views_log}
 
 包含有关运行查询时执行的从属视图的信息，例如视图类型或执行时间.

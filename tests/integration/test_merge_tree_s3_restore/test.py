@@ -5,28 +5,22 @@ import string
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-NOT_RESTORABLE_CONFIG_PATH = os.path.join(
-    SCRIPT_DIR,
-    "./{}/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml".format(
-        get_instances_dir()
-    ),
-)
 COMMON_CONFIGS = [
     "configs/config.d/bg_processing_pool_conf.xml",
     "configs/config.d/clusters.xml",
 ]
 
 
-def replace_config(old, new):
-    config = open(NOT_RESTORABLE_CONFIG_PATH, "r")
+def replace_config(path, old, new):
+    config = open(path, "r")
     config_lines = config.readlines()
     config.close()
     config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(NOT_RESTORABLE_CONFIG_PATH, "w")
+    config = open(path, "w")
     config.writelines(config_lines)
     config.close()
 
@@ -507,6 +501,12 @@ def test_restore_mutations(cluster, db_atomic):
 def test_migrate_to_restorable_schema(cluster):
     db_atomic = True
     node = cluster.instances["node_not_restorable"]
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./{}/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml".format(
+            cluster.instances_dir_name
+        ),
+    )
 
     create_table(node, "test", db_atomic=db_atomic)
     uuid = get_table_uuid(node, db_atomic, "test")
@@ -525,7 +525,9 @@ def test_migrate_to_restorable_schema(cluster):
     )
 
     replace_config(
-        "<send_metadata>false</send_metadata>", "<send_metadata>true</send_metadata>"
+        config_path,
+        "<send_metadata>false</send_metadata>",
+        "<send_metadata>true</send_metadata>",
     )
     node.restart_clickhouse()
 

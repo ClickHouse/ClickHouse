@@ -1,10 +1,10 @@
 #include <Parsers/ParserCreateIndexQuery.h>
 
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDataType.h>
@@ -86,15 +86,15 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     if (!s_on.ignore(pos, expected))
         return false;
 
-     if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
         return false;
 
     /// [ON cluster_name]
-     if (s_on.ignore(pos, expected))
-     {
+    if (s_on.ignore(pos, expected))
+    {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
-     }
+    }
 
     if (!parser_create_idx_decl.parse(pos, index_decl, expected))
         return false;

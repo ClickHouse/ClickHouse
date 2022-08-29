@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/cell-towers
 sidebar_label: Cell Towers
 ---
 

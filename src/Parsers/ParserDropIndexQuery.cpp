@@ -38,17 +38,17 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
     if (!s_on.ignore(pos, expected))
         return false;
 
-     if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
         return false;
 
     /// [ON cluster_name]
-     if (s_on.ignore(pos, expected))
-     {
+    if (s_on.ignore(pos, expected))
+    {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
 
         query->cluster = std::move(cluster_str);
-     }
+    }
 
     if (query->index_name)
         query->children.push_back(query->index_name);

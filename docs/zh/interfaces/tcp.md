@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/tcp
 sidebar_position: 18
 sidebar_label: 原生接口(TCP)
 ---

@@ -1,3 +1,6 @@
+---
+slug: /en/operations/utilities/clickhouse-format
+---
 # clickhouse-format 
 
 Allows formatting input queries.

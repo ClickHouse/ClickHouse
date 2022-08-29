@@ -115,9 +115,10 @@ void MergePlainMergeTreeTask::prepare()
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
+    auto builder = merge_task->getBuilder();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
+    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction, builder);
     transaction.commit();
 
     write_part_log({});

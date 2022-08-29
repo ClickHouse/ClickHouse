@@ -29,7 +29,7 @@ public:
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override { return backup_allowed; }
-    void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;

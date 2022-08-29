@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/other-functions
 sidebar_position: 67
 sidebar_label: Other
 ---
@@ -679,6 +680,47 @@ SELECT
 │      12345 │ 205 minutes and 45 seconds                                      │
 │  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
+## parseTimeDelta
+
+Parse a sequence of numbers followed by something resembling a time unit.
+
+**Syntax**
+
+```sql
+parseTimeDelta(timestr)
+```
+
+**Arguments**
+
+-   `timestr` — A sequence of numbers followed by something resembling a time unit.
+
+
+**Returned value**
+
+-   A floating-point number with the number of seconds.
+
+**Example**
+
+```sql
+SELECT parseTimeDelta('11s+22min')
+```
+
+```text
+┌─parseTimeDelta('11s+22min')─┐
+│                        1331 │
+└─────────────────────────────┘
+```
+
+```sql
+SELECT parseTimeDelta('1yr2mo')
+```
+
+```text
+┌─parseTimeDelta('1yr2mo')─┐
+│                 36806400 │
+└──────────────────────────┘
 ```
 
 ## least(a, b)
@@ -1781,10 +1823,13 @@ Result:
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x\[, custom_message\])
+## throwIf(x\[, message\[, error_code\]\])
 
 Throw an exception if the argument is non zero.
-custom_message - is an optional parameter: a constant string, provides an error message
+`message` - is an optional parameter: a constant string providing a custom error message
+`error_code` - is an optional parameter: a constant integer providing a custom error code
+
+To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throwif` must be enabled.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);

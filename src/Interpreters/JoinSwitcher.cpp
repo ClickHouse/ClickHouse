@@ -2,7 +2,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 namespace DB
 {

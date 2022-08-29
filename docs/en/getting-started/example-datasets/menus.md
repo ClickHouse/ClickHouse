@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/menus
 sidebar_label: New York Public Library "What's on the Menu?" Dataset
 ---
 

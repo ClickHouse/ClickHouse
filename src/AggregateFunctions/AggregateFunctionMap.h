@@ -132,7 +132,7 @@ public:
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
 #ifdef __cpp_lib_generic_unordered_lookup
-                key = static_cast<std::string_view>(key_ref);
+                key = key_ref.toView();
 #else
                 key = key_ref.toString();
 #endif
@@ -169,12 +169,21 @@ public:
         {
             const auto & it = merged_maps.find(elem.first);
 
-            if (it != merged_maps.end())
+            AggregateDataPtr nested_place;
+            if (it == merged_maps.end())
             {
-                nested_func->merge(it->second, elem.second, arena);
+                // elem.second cannot be copied since this it will be destroyed after merging,
+                // and lead to use-after-free.
+                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                nested_func->create(nested_place);
+                merged_maps.emplace(elem.first, nested_place);
             }
             else
-                merged_maps[elem.first] = elem.second;
+            {
+                nested_place = it->second;
+            }
+
+            nested_func->merge(nested_place, elem.second, arena);
         }
     }
 

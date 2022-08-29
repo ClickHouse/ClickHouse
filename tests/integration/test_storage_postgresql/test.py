@@ -10,7 +10,10 @@ node1 = cluster.add_instance(
     "node1", main_configs=["configs/named_collections.xml"], with_postgres=True
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/named_collections.xml"], with_postgres_cluster=True
+    "node2",
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/settings.xml"],
+    with_postgres_cluster=True,
 )
 
 
@@ -19,6 +22,7 @@ def started_cluster():
     try:
         cluster.start()
         node1.query("CREATE DATABASE test")
+        node2.query("CREATE DATABASE test")
         yield cluster
 
     finally:
@@ -638,6 +642,55 @@ def test_uuid(started_cluster):
         "select toTypeName(u) from postgresql(postgres1, table='test')"
     )
     assert result.strip() == "Nullable(UUID)"
+
+
+def test_auto_close_connection(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=False
+    )
+    cursor = conn.cursor()
+    database_name = "auto_close_connection_test"
+
+    cursor.execute(f"DROP DATABASE IF EXISTS {database_name}")
+    cursor.execute(f"CREATE DATABASE {database_name}")
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip,
+        started_cluster.postgres_port,
+        database=True,
+        database_name=database_name,
+    )
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE test_table (key integer, value integer)")
+
+    node2.query(
+        f"""
+        CREATE TABLE test.test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='test_table')
+    """
+    )
+
+    result = node2.query(
+        "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
+        user="default",
+    )
+
+    result = node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
+
+    node2.query(
+        f"""
+        CREATE TABLE test.stat (numbackends UInt32, datname String)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='pg_stat_database')
+    """
+    )
+
+    count = int(
+        node2.query(
+            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
+        )
+    )
+
+    # Connection from python + pg_stat table also has a connection at the moment of current query
+    assert count == 2
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
--- Tags: long, no-backward-compatibility-check:22.3.2.1
+-- Tags: long
 DROP TABLE IF EXISTS t_json_parallel;
 
 SET allow_experimental_object_type = 1, max_insert_threads = 20, max_threads = 20, min_insert_block_size_rows = 65536;

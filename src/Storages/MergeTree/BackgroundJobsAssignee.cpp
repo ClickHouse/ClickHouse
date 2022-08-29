@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
+#include <Interpreters/Context.h>
 #include <pcg_random.hpp>
 #include <random>
 

@@ -280,7 +280,6 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
 
 void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    // auto num_distinct_union = optimizeUnionList();
     size_t num_plans = nested_interpreters.size();
     const Settings & settings = context->getSettingsRef();
 
@@ -329,8 +328,13 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             /// Add distinct transform
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-            auto distinct_step
-                = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+            auto distinct_step = std::make_unique<DistinctStep>(
+                query_plan.getCurrentDataStream(),
+                limits,
+                0,
+                result_header.getNames(),
+                false,
+                settings.optimize_distinct_in_order);
 
             query_plan.addStep(std::move(distinct_step));
         }
@@ -340,7 +344,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     {
         if (settings.limit > 0)
         {
-            auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), settings.limit, settings.offset);
+            auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), settings.limit, settings.offset, settings.exact_rows_before_limit);
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }
@@ -352,6 +356,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
     }
 
+    addAdditionalPostFilter(query_plan);
     query_plan.addInterpreterContext(context);
 }
 
