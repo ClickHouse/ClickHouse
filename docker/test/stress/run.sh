@@ -153,6 +153,8 @@ handle SIGTERM nostop noprint pass
 handle SIGUSR1 nostop noprint pass
 handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
+handle SIGABRT print stop pass
+handle SIGTRAP print stop pass
 info signals
 continue
 gcore
