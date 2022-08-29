@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 ---

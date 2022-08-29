@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/lowcardinality
 sidebar_position: 51
 sidebar_label: LowCardinality
 ---

@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/current-roles
+---
 # system.current_roles {#system_tables-current_roles}
 
 Содержит активные роли текущего пользователя. `SET ROLE` изменяет содержимое этой таблицы.

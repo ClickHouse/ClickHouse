@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/geo/geohash
 sidebar_label: Geohash
 ---
 
