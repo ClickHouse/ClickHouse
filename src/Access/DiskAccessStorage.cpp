@@ -398,7 +398,7 @@ void DiskAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr
     std::vector<UUID> conflicting_ids;
 
     /// Get the list of currently used IDs. Later we will remove those of them which are not used anymore.
-    for (const auto & id : entries_by_id | boost::adaptors::map_keys)
+    for (const auto & [id, _] : entries_by_id)
         not_used_ids.emplace(id);
 
     /// Get the list of conflicting IDs and update the list of currently used ones.
@@ -409,7 +409,7 @@ void DiskAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr
         {
             not_used_ids.erase(id); /// ID is used.
 
-            Entry & entry = it->second;
+            const Entry & entry = it->second;
             if (entry.entity->getType() != entity->getType())
                 conflicting_ids.emplace_back(id); /// Conflict: same ID, different type.
         }
@@ -418,7 +418,7 @@ void DiskAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr
         auto it2 = entries_by_name.find(entity->getName());
         if (it2 != entries_by_name.end())
         {
-            Entry & entry = *(it2->second);
+            const Entry & entry = *(it2->second);
             if (entry.id != id)
                 conflicting_ids.emplace_back(entry.id); /// Conflict: same name and type, different ID.
         }
