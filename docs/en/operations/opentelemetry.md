@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/opentelemetry
 sidebar_position: 62
 sidebar_label: OpenTelemetry Support
 ---

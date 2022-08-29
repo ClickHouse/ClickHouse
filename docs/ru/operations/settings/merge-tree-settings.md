@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/settings/merge-tree-settings
+---
 # Настройки MergeTree таблиц {#merge-tree-settings}
 
 Значения настроек всех MergeTree таблиц собраны в таблице `system.merge_tree_settings`. Их можно переопределить в разделе `merge_tree` файла `config.xml` или задать в секции `SETTINGS` каждой таблицы.

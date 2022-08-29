@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/update
 sidebar_position: 40
 sidebar_label: UPDATE
 ---

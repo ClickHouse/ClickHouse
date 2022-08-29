@@ -88,13 +88,15 @@ sleep 5
 function run_tests()
 {
     set -x
-    # We can have several additional options so we path them as array because it's
-    # more idiologically correct.
+    # We can have several additional options so we pass them as array because it is more ideologically correct.
     read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
+
+    HIGH_LEVEL_COVERAGE=YES
 
     # Use random order in flaky check
     if [ "$NUM_TRIES" -gt "1" ]; then
         ADDITIONAL_OPTIONS+=('--order=random')
+        HIGH_LEVEL_COVERAGE=NO
     fi
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
@@ -117,10 +119,15 @@ function run_tests()
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
         ADDITIONAL_OPTIONS+=('--run-by-hash-total')
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
+        HIGH_LEVEL_COVERAGE=NO
     fi
 
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
+    fi
+
+    if [[ "${HIGH_LEVEL_COVERAGE}" = "YES" ]]; then
+        ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
     set +e

@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/alter/user
 sidebar_position: 45
 sidebar_label: USER
 ---

@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/general/why-clickhouse-is-so-fast
 title: Почему ClickHouse так быстро работает?
 sidebar_position: 8
 ---
