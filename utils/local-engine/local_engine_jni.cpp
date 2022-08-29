@@ -920,6 +920,49 @@ void Java_io_glutenproject_vectorized_BlockOutputStream_nativeFlush(JNIEnv * /*e
     writer->flush();
 }
 
+// SimpleExpressionEval
+
+jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_createNativeInstance(JNIEnv * env, jclass , jobject input, jbyteArray plan)
+{
+    try
+    {
+        auto context = Context::createCopy(local_engine::SerializedPlanParser::global_context);
+        local_engine::SerializedPlanParser parser(context);
+        jobject iter = env->NewGlobalRef(input);
+        parser.addInputIter(iter);
+        jsize plan_size = env->GetArrayLength(plan);
+        jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
+        std::string plan_string;
+        plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
+        auto query_plan = parser.parse(plan_string);
+        local_engine::LocalExecutor * executor = new local_engine::LocalExecutor(parser.query_context);
+        executor->execute(std::move(query_plan));
+        env->ReleaseByteArrayElements(plan, plan_address, JNI_ABORT);
+        return reinterpret_cast<jlong>(executor);
+    }
+    catch (DB::Exception & e)
+    {
+        local_engine::ExceptionUtils::handleException(e);
+    }
+}
+
+void Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeClose(JNIEnv * env, jclass , jlong instance)
+{
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(instance);
+    delete executor;
+}
+
+jboolean Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeHasNext(JNIEnv * env, jclass , jlong instance)
+{
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(instance);
+    return executor->hasNext();
+}
+
+jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeNext(JNIEnv * env, jclass , jlong instance)
+{
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(instance);
+    return reinterpret_cast<jlong>(executor->nextColumnar());
+}
 #ifdef __cplusplus
 }
 #endif

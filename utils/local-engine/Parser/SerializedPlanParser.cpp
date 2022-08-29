@@ -7,7 +7,6 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
@@ -1118,6 +1117,48 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
 
                     auto arg = ColumnSet::create(set->getTotalRowCount(), set);
                     return &action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name));
+                }
+                case substrait::Expression_Literal::kNull: {
+                    DataTypePtr nested_type;
+                    if (literal.null().has_i8())
+                    {
+                        nested_type = std::make_shared<DataTypeInt8>();
+                    }
+                    else if (literal.null().has_i16())
+                    {
+                        nested_type = std::make_shared<DataTypeInt16>();
+                    }
+                    else if (literal.null().has_i32())
+                    {
+                        nested_type = std::make_shared<DataTypeInt32>();
+                    }
+                    else if (literal.null().has_i64())
+                    {
+                        nested_type = std::make_shared<DataTypeInt64>();
+                    }
+                    else if (literal.null().has_bool_())
+                    {
+                        nested_type = std::make_shared<DataTypeUInt8>();
+                    }
+                    else if (literal.null().has_fp32())
+                    {
+                        nested_type = std::make_shared<DataTypeFloat32>();
+                    }
+                    else if (literal.null().has_fp64())
+                    {
+                        nested_type = std::make_shared<DataTypeFloat64>();
+                    }
+                    else if (literal.null().has_date())
+                    {
+                        nested_type = std::make_shared<DataTypeDate32>();
+                    }
+                    else if (literal.null().has_string())
+                    {
+                        nested_type = std::make_shared<DataTypeString>();
+                    }
+                    auto type = std::make_shared<DataTypeNullable>(nested_type);
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, Field()), type, getUniqueName("null")));
                 }
                 default: {
                     throw Exception(
