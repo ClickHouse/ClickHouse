@@ -5,12 +5,17 @@
 #include "PocoHTTPClient.h"
 
 #include <utility>
+#include <algorithm>
+#include <functional>
+#include <base/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/Stopwatch.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
+#include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
 #include "Poco/StreamCopier.h"
@@ -21,6 +26,8 @@
 
 #include <boost/algorithm/string.hpp>
 
+static const int SUCCESS_RESPONSE_MIN = 200;
+static const int SUCCESS_RESPONSE_MAX = 299;
 
 namespace ProfileEvents
 {
@@ -109,6 +116,37 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     makeRequestInternal(*request, response, readLimiter, writeLimiter);
     return response;
 }
+
+namespace
+{
+    /// No comments:
+    /// 1) https://aws.amazon.com/premiumsupport/knowledge-center/s3-resolve-200-internalerror/
+    /// 2) https://github.com/aws/aws-sdk-cpp/issues/658
+    bool checkRequestCanReturn2xxAndErrorInBody(Aws::Http::HttpRequest & request)
+    {
+        auto query_params = request.GetQueryStringParameters();
+        if (request.HasHeader("z-amz-copy-source"))
+        {
+            /// CopyObject https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
+            if (query_params.empty())
+                return true;
+
+            /// UploadPartCopy https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
+            if (query_params.contains("partNumber") && query_params.contains("uploadId"))
+                return true;
+
+        }
+        else
+        {
+            /// CompleteMultipartUpload https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
+            if (query_params.size() == 1 && query_params.contains("uploadId"))
+                return true;
+        }
+
+        return false;
+    }
+}
+
 
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
@@ -269,6 +307,7 @@ void PocoHTTPClient::makeRequestInternal(
             ProfileEvents::increment(select_metric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
+
             LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
@@ -294,18 +333,44 @@ void PocoHTTPClient::makeRequestInternal(
             }
             LOG_TEST(log, "Received headers: {}", headers_ss.str());
 
-            if (status_code == 429 || status_code == 503)
-            { // API throttling
-                ProfileEvents::increment(select_metric(S3MetricType::Throttling));
-            }
-            else if (status_code >= 300)
+            /// Request is successful but for some special requests we can have actual error message in body
+            if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
-                ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                if (status_code >= 500 && error_report)
-                    error_report(request_configuration);
-            }
+                std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
+                               std::istreambuf_iterator<char>());
 
-            response->SetResponseBody(response_body_stream, session);
+                /// Just trim string so it will not be so long
+                LOG_TRACE(log, "Got dangerous response with successful code {}, checking its body: '{}'", status_code, response_string.substr(0, 300));
+                const static std::string_view needle = "<Error>";
+                if (auto it = std::search(response_string.begin(), response_string.end(), std::default_searcher(needle.begin(), needle.end())); it != response_string.end())
+                {
+                    LOG_WARNING(log, "Response for request contain <Error> tag in body, settings internal server error (500 code)");
+                    response->SetResponseCode(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
+
+                    ProfileEvents::increment(select_metric(S3MetricType::Errors));
+                    if (error_report)
+                        error_report(request_configuration);
+
+                }
+
+                /// Set response from string
+                response->SetResponseBody(response_string);
+            }
+            else
+            {
+
+                if (status_code == 429 || status_code == 503)
+                { // API throttling
+                    ProfileEvents::increment(select_metric(S3MetricType::Throttling));
+                }
+                else if (status_code >= 300)
+                {
+                    ProfileEvents::increment(select_metric(S3MetricType::Errors));
+                    if (status_code >= 500 && error_report)
+                        error_report(request_configuration);
+                }
+                response->SetResponseBody(response_body_stream, session);
+            }
 
             return;
         }
