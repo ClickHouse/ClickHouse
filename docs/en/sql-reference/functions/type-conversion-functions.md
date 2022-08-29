@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/type-conversion-functions
 sidebar_position: 38
 sidebar_label: Type Conversion
 ---

@@ -1,4 +1,5 @@
 ---
+slug: /en/development/browse-code
 sidebar_label: Source Code Browser
 sidebar_position: 72
 description: Various ways to browse and edit the source code

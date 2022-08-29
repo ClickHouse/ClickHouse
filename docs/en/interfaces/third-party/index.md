@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/third-party/
 toc_folder_title: Third-Party
 sidebar_position: 24
 ---
