@@ -28,6 +28,8 @@ public:
 
     void setSkipSanityChecks(bool skip_sanity_checks_);
 
+    static void checkHasReplicaMetadataInZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path);
+
 private:
     StorageReplicatedMergeTree & storage;
     BackgroundSchedulePool::TaskHolder task;
