@@ -207,6 +207,8 @@ void MergeTreeReaderCompact::readData(
 {
     const auto & [name, type] = name_and_type;
 
+    marks_loader.load();
+
     adjustUpperBound(current_task_last_mark); /// Must go before seek.
 
     if (!isContinuousReading(from_mark, column_position))

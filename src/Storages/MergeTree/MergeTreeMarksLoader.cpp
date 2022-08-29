@@ -4,6 +4,8 @@
 #include <IO/ReadBufferFromFile.h>
 
 #include <utility>
+#include <cassert>
+
 
 namespace DB
 {
@@ -37,8 +39,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
 
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
-    if (!marks)
-        loadMarks();
+    assert(marks);
 
 #ifndef NDEBUG
     if (column_index >= columns_in_mark)
@@ -48,7 +49,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
     return (*marks)[row_index * columns_in_mark + column_index];
 }
 
-MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
+MarkCache::MappedPtr MergeTreeMarksLoader::loadImpl()
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
@@ -95,25 +96,28 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     return res;
 }
 
-void MergeTreeMarksLoader::loadMarks()
+void MergeTreeMarksLoader::load()
 {
+    if (marks)
+        return;
+
     if (mark_cache)
     {
         auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
         if (save_marks_in_cache)
         {
-            auto callback = [this]{ return loadMarksImpl(); };
+            auto callback = [this]{ return loadImpl(); };
             marks = mark_cache->getOrSet(key, callback);
         }
         else
         {
             marks = mark_cache->get(key);
             if (!marks)
-                marks = loadMarksImpl();
+                marks = loadImpl();
         }
     }
     else
-        marks = loadMarksImpl();
+        marks = loadImpl();
 
     if (!marks)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to load marks: {}", String(fs::path(data_part_storage->getFullPath()) / mrk_path));

@@ -1,7 +1,9 @@
 #pragma once
+
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MarkCache.h>
 #include <IO/ReadSettings.h>
+
 
 namespace DB
 {
@@ -23,6 +25,9 @@ public:
         const ReadSettings & read_settings_,
         size_t columns_in_mark_ = 1);
 
+    /// Must be called before calling to getMark.
+    void load();
+
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
 private:
@@ -36,8 +41,7 @@ private:
     MarkCache::MappedPtr marks;
     ReadSettings read_settings;
 
-    void loadMarks();
-    MarkCache::MappedPtr loadMarksImpl();
+    MarkCache::MappedPtr loadImpl();
 };
 
 }

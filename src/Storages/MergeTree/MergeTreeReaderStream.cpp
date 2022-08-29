@@ -54,6 +54,9 @@ void MergeTreeReaderStream::init()
     if (initialized)
         return;
     initialized = true;
+
+    marks_loader.load();
+
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
     size_t sum_mark_range_bytes = 0;
