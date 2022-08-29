@@ -114,7 +114,7 @@ KeeperServer::KeeperServer(
     , keeper_context{std::make_shared<KeeperContext>()}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
-    if (coordination_settings->quorum_reads)
+    if (coordination_settings->quorum_reads || coordination_settings->read_mode.toString() == "quorum")
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
     keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
@@ -287,7 +287,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
             params.leadership_expiry_ = params.election_timeout_lower_bound_;
         else if (params.leadership_expiry_ > params.election_timeout_lower_bound_)
         {
-            LOG_WARNING(log, "To use fast linearizable reads, leadership_expiry should be set to a value thath is less or equal to the election_timeout_upper_bound_ms. "
+            LOG_WARNING(log, "To use fast linearizable reads, leadership_expiry should be set to a value that is less or equal to the election_timeout_upper_bound_ms. "
                     "Based on current settings, there are no guarantees for linearizability of reads.");
         }
     }

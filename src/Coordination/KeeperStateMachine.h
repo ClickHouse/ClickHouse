@@ -40,7 +40,7 @@ public:
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
-    nuraft::ptr<nuraft::buffer> commit_ext(const ext_op_params& params) override; /// NOLINT
+    nuraft::ptr<nuraft::buffer> commit_ext(const ext_op_params & params) override; /// NOLINT
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
@@ -148,6 +148,7 @@ private:
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
+    // call when a request is committed
     const CommitCallback commit_callback;
 
     KeeperContextPtr keeper_context;

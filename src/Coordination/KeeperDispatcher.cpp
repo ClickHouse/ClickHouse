@@ -40,6 +40,33 @@ KeeperDispatcher::KeeperDispatcher()
 }
 
 
+/// ZooKeepers has 2 requirements:
+/// - writes need to be linearizable
+/// - all requests from single session need to be processed in the order of their arrival
+///
+/// Because of that, we cannot process read and write requests from SAME session at the same time.
+/// To be able to process read and write reqeusts in parallel we need to make sure that only 1 type
+/// of request is being processed from a single session.
+/// Multiple types from different sessions can be processed at the same time.
+///
+/// We do some in-session housekeeping to make sure that the multithreaded request processing is correct.
+/// When a request is received from a client, we check if there are requests being processed from that same
+/// session, and if yes, of what type. If the types are the same, and there are no requests of different
+/// type inbetetween, we can instanly add it to active request queue. Otherwise, we need to wait until
+/// all requests of the other tpye are processed.
+///
+/// There are multiple threads used for processing the request, each of them communicating with a queue.
+/// Assumption: only one type of request is being processed from a same session at any point in time (read or write).
+///
+/// requestThread -> requests currently being processed
+/// readRequestThread -> thread for processing read requests
+/// finalizeRequestThread -> thread for finalizing requests:
+///                          - in-session housekeeping, add requests to the active request queue if there are any
+///
+/// If reads are linearizable without quorum, a request can possibly wait for a certain log to be committed.
+/// In that case we add it to the waiting queue for that log.
+/// When that log is committed, the committing thread will send that read request to readRequestThread so it can be processed.
+///
 void KeeperDispatcher::requestThread()
 {
     setThreadName("KeeperReqT");
@@ -78,7 +105,7 @@ void KeeperDispatcher::requestThread()
                     }
                     else if (exception)
                     {
-                        LOG_INFO(&Poco::Logger::get("KeeperDispatcher"), "Got exception while waiting for read results {}", exception->what());
+                        LOG_INFO(log, "Got exception while waiting for read results {}", exception->what());
                         addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
                         return;
                     }
@@ -97,14 +124,14 @@ void KeeperDispatcher::requestThread()
                     std::lock_guard lock(leader_waiter_mutex);
                     auto node_info = server->getNodeInfo();
 
-                    // we're behind, we need to wait
+                    /// we're behind, we need to wait
                     if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
                     {
                         auto & leader_waiter = leader_waiters[leader_info];
                         leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
                         LOG_TRACE(log, "waiting for term {}, idx {}", leader_info.term, leader_info.last_committed_index);
                     }
-                    // process it in background thread
+                    /// process it in background thread
                     else if (!read_requests_queue.push(std::move(requests_for_sessions)))
                         throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
                 });
@@ -142,10 +169,10 @@ void KeeperDispatcher::requestThread()
         quorum_requests.clear();
     };
 
-    // ZooKeeper requires that the requests inside a single session are processed in a strict order
-    // (we cannot process later requests before all the previous once are processed)
-    // By making sure that at this point we can either have just read requests or just write requests
-    // from a single session, we can process them independently
+    /// ZooKeeper requires that the requests inside a single session are processed in a strict order
+    /// (we cannot process later requests before all the previous once are processed)
+    /// By making sure that at this point we can either have just read requests or just write requests
+    /// from a single session, we can process them independently
     while (!shutdown_called)
     {
         KeeperStorage::RequestForSession request;
@@ -156,7 +183,7 @@ void KeeperDispatcher::requestThread()
 
         try
         {
-            if (requests_queue->tryPop(request, max_wait))
+            if (active_requests_queue->tryPop(request, max_wait))
             {
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                 if (shutdown_called)
@@ -184,7 +211,7 @@ void KeeperDispatcher::requestThread()
                     }
 
                     /// Trying to get batch requests as fast as possible
-                    if (requests_queue->tryPop(request, 1))
+                    if (active_requests_queue->tryPop(request, 1))
                     {
                         CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                         if (needs_quorum(coordination_settings, request))
@@ -194,13 +221,13 @@ void KeeperDispatcher::requestThread()
                     }
                     else
                     {
-                        // batch of read requests can send at most one request
-                        // so we don't care if the previous batch hasn't received response
+                        /// batch of read requests can send at most one request
+                        /// so we don't care if the previous batch hasn't received response
                         if (!read_requests.empty())
                             process_read_requests(coordination_settings);
 
-                        // if we still didn't process previous batch we can
-                        // increase are current batch even more
+                        /// if we still didn't process previous batch we can
+                        /// increase are current batch even more
                         if (previous_quorum_done())
                             break;
                     }
@@ -273,7 +300,7 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-// Background thread for processing read requests
+/// Background thread for processing read requests
 void KeeperDispatcher::readRequestThread()
 {
     setThreadName("KeeperReadT");
@@ -306,9 +333,9 @@ void KeeperDispatcher::readRequestThread()
     }
 }
 
-// We finalize requests every time we commit a single log with request
-// or process a batch of read requests.
-// Because it can get heavy, we do it in background thread.
+/// We finalize requests every time we commit a single log with request
+/// or process a batch of read requests.
+/// Because it can get heavy, we do it in background thread.
 void KeeperDispatcher::finalizeRequestsThread()
 {
     setThreadName("KeeperFinalT");
@@ -400,7 +427,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         {
             auto & unprocessed_requests = unprocessed_requests_it->second;
 
-            // queue is not empty, or the request types don't match, put it in the waiting queue
+            /// queue is not empty, or the request types don't match, put it in the waiting queue
             if (!unprocessed_requests.request_queue.empty() || unprocessed_requests.is_read != request->isReadRequest())
             {
                 unprocessed_requests.request_queue.push_back(std::move(request_info));
@@ -419,10 +446,10 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
-        if (!requests_queue->push(std::move(request_info)))
+        if (!active_requests_queue->push(std::move(request_info)))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
-    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    else if (!active_requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
@@ -435,13 +462,13 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size);
+    active_requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
     read_request_thread = ThreadFromGlobalPool([this] { readRequestThread(); });
-    finalize_requests_thread= ThreadFromGlobalPool([this] { finalizeRequestsThread(); });
+    finalize_requests_thread = ThreadFromGlobalPool([this] { finalizeRequestsThread(); });
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, [this](const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx) { onRequestCommit(request_for_session, log_term, log_idx); });
 
@@ -491,9 +518,9 @@ void KeeperDispatcher::shutdown()
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
 
-            if (requests_queue)
+            if (active_requests_queue)
             {
-                requests_queue->finish();
+                active_requests_queue->finish();
 
                 if (request_thread.joinable())
                     request_thread.join();
@@ -526,7 +553,7 @@ void KeeperDispatcher::shutdown()
         KeeperStorage::RequestForSession request_for_session;
 
         /// Set session expired for all pending requests
-        while (requests_queue && requests_queue->tryPop(request_for_session))
+        while (active_requests_queue && active_requests_queue->tryPop(request_for_session))
         {
             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
             auto response = request_for_session.request->makeResponse();
@@ -593,7 +620,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
-                        if (!requests_queue->push(std::move(request_info)))
+                        if (!active_requests_queue->push(std::move(request_info)))
                             LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
                         CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
                     }
@@ -696,7 +723,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     /// Push new session request to queue
     {
         std::lock_guard lock(push_request_mutex);
-        if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
+        if (!active_requests_queue->tryPush(std::move(request_info), session_timeout_ms))
             throw Exception("Cannot push session id request to queue within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
         CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
     }
@@ -769,6 +796,10 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
+// Used to update the state for a session based on the requests
+// - update the number of current unprocessed requests for the session
+// - if the number of unprocessed requests is 0, we can start adding next type of requests
+//   from unprocessed requests queue to the active queue
 void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     std::unordered_map<int64_t, size_t> counts_for_session;
@@ -792,26 +823,26 @@ void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestsForSessions
         {
             if (!unprocessed_requests.request_queue.empty())
             {
-                auto & request_queue = unprocessed_requests.request_queue;
+                auto & unprocessed_requests_queue = unprocessed_requests.request_queue;
                 unprocessed_requests.is_read = !unprocessed_requests.is_read;
                 // start adding next type of requests
-                while (!request_queue.empty() && request_queue.front().request->isReadRequest() == unprocessed_requests.is_read)
+                while (!unprocessed_requests_queue.empty() && unprocessed_requests_queue.front().request->isReadRequest() == unprocessed_requests.is_read)
                 {
-                    auto & front_request = request_queue.front();
+                    auto & front_request = unprocessed_requests_queue.front();
 
                     /// Put close requests without timeouts
                     if (front_request.request->getOpNum() == Coordination::OpNum::Close)
                     {
-                        if (!requests_queue->push(std::move(front_request)))
+                        if (!active_requests_queue->push(std::move(front_request)))
                             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
                     }
-                    else if (!requests_queue->tryPush(std::move(front_request), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+                    else if (!active_requests_queue->tryPush(std::move(front_request), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
                     {
                         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
                     }
 
                     ++unprocessed_requests.unprocessed_num;
-                    request_queue.pop_front();
+                    unprocessed_requests_queue.pop_front();
                 }
             }
             else
@@ -822,6 +853,8 @@ void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestsForSessions
     }
 }
 
+// Finalize request
+// Process read requests that were waiting for this commit
 void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx)
 {
     if (!finalize_requests_queue.push({request_for_session}))
@@ -837,6 +870,10 @@ void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & 
             leader_waiters.erase(request_queue_it);
         }
     }
+
+    if (requests.empty())
+        return;
+
     if (!read_requests_queue.push(std::move(requests)))
         throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
 }
@@ -905,7 +942,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
     Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
     {
         std::lock_guard lock(push_request_mutex);
-        result.outstanding_requests_count = requests_queue->size();
+        result.outstanding_requests_count = active_requests_queue->size();
     }
     {
         std::lock_guard lock(session_to_response_callback_mutex);

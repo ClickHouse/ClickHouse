@@ -219,7 +219,7 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const ext_op_params& params)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const ext_op_params & params)
 {
     auto request_for_session = parseRequest(*params.data);
     if (!request_for_session.zxid)
