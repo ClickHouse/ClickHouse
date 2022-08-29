@@ -1,8 +1,8 @@
 ---
+slug: /en/getting-started/example-datasets/cell-towers
 sidebar_label: Cell Towers
+title: "Cell Towers"
 ---
-
-# Cell Towers 
 
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
