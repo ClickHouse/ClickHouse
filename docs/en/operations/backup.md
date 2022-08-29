@@ -47,180 +47,101 @@ Backups can be either full or incremental, and can include tables and databases.
 
 The BACKUP statement takes a list of DATABASE and TABLE names, a destination, and options.  Options are:
 - ASYNC
-- user
 - SETTINGS compression_method='lzma', compression_level=3, password='qwerty' id='first'
-- BACKUP TABLE test.table2 TO {incremental_backup_name} \                          
-  SETTINGS base_backup = Disk('backups', '1.zip') 
+base_backup = Disk('backups', '1.zip') 
 
-## BACKUP DATABASE
+## Usage
 
-Backup the `default` database and several of the `system` tables asynchronously:
-```sql
-BACKUP DATABASE default, TABLE system.users, \
-  TABLE system.roles, TABLE system.settings_profiles, \
-  TABLE system.row_policies, TABLE system.quotas \
-  TO Disk('backups', '1.zip') ASYNC
+```
+BACKUP TABLE test.table TO {backup_name}
 ```
 
-Backup the `test` database with a new name (`test2`):
-```sql
-BACKUP DATABASE test AS test2 TO Disk('backups', '1.zip')
+Corresponding restore:
+```
+RESTORE TABLE test.table FROM {backup_name}
 ```
 
-Backup the database `test`:
-```sql
-BACKUP DATABASE test TO Disk('backups', '1.zip')
+:::note
+The above RESTORE would fail if the table `test.table` contains data, you would have to drop the table in order to test the RESTORE, or use the setting `allow_non_empty_tables=true`:
+```
+RESTORE TABLE test.table FROM {backup_name} 
+SETTINGS allow_non_empty_tables=true
+```
+:::
 
-## BACKUP TABLE
-
-Backup the table `mv_1`:
-```sql
-BACKUP TABLE mv_1 TO Disk('backups', '1.zip')
+Tables can be restored, or backed up, with new names:
+```
+RESTORE TABLE test.table AS test.table2 FROM {backup_name}
 ```
 
-Backup several of the `system` tables:
-```sql
-BACKUP TABLE system.users, TABLE system.roles, \
-  TABLE system.settings_profiles, TABLE system.row_policies, \
-  TABLE system.quotas TO Disk('backups', '1.zip')
+```
+BACKUP TABLE test.table3 AS test.table4 TO {backup_name}
 ```
 
-Backup with a specific username:
-```sql
-BACKUP TABLE system.users, TABLE system.roles \
-  TO Disk('backups', '1.zip'), user="u2"
+## Incremental backups
+
+Incremental backups can be taken by specifying the `base_backup`.
+
+Store the initial backup:
+```
+BACKUP TABLE tbl TO Disk('backups', 'a.zip');
 ```
 
-Backup a table with a new name:
-```sql
-BACKUP TABLE test.table AS test.table2 TO Disk('backups', '1.zip')
+```
+BACKUP TABLE tbl TO Disk('backups', 'c.zip')
+  SETTINGS base_backup=Disk('backups', 'a.zip');
 ```
 
-Backup a table asynchronously:
-```sql
-BACKUP TABLE test.table TO Disk('backups', '1.zip') ASYNC
+```
+BACKUP TABLE test.table TO Disk('backups', 'd.zip');
 ```
 
-### Compress and password protect a backup
-
-Use `lzma` compression, and password protect the backup:
-```sql
-BACKUP TABLE test.table TO Disk('backups', '1.zip') \
-  SETTINGS compression_method='lzma', compression_level=3, password='qwerty'
+Incrementally store new data. The setting `base_backup` causes data since the backup to `Disk('backups', 'd.zip')` to be stored to `Disk('backups', 'incremental-a.zip')`:
+```
+BACKUP TABLE test.table TO Disk('backups', 'incremental-a.zip')
+  SETTINGS base_backup = Disk('backups', 'd.zip')
 ```
 
-Add an `id` to the backup (the id is used during `RESTORE`):
-```sql
-BACKUP TABLE test.table TO Disk('backups', '1.zip') \
-  SETTINGS id='first' ASYNC
+Restore all data from the incremental backup and the base_backup into a new table `test.table2`:
+```
+RESTORE TABLE test.table AS test.table2 
+  FROM Disk('backups', 'incremental-a.zip');
 ```
 
-### Incremental table backup and restore
-
-Incrementally backup a table:
-DAN: Where was the initial backup done?  Add that here.
-
-```sql
-BACKUP TABLE test.table2 TO Disk('backups', 'TestIncrement-1.zip') \
-  SETTINGS base_backup = Disk('backups', '1.zip')
+## Assign a password to the backup
+Backups written to disk can have a password applied to the file:
 ```
-And restore:
-```sql
-RESTORE TABLE test.table2 FROM Disk('backups', 'TestIncrement-1.zip')
+BACKUP TABLE test.table
+  TO Disk('backups', 'password-protected.zip')
+  SETTINGS password='qwerty'
 ```
 
-
-## Restore
-
-Restore specific partitions:
-```sql
-RESTORE TABLE test.table PARTITIONS '2', '3' FROM Disk('backups', '1.zip')
+Restore:
+```
+RESTORE TABLE test.table
+  FROM Disk('backups', 'password-protected.zip')
+  SETTINGS password='qwerty'
 ```
 
-Restore all databases and tables from a specific backup:
-```sql
-RESTORE ALL FROM Disk('backups', '1.zip')
+## Compression settings
+
+If you would like to specify the compression method or level:
+```
+BACKUP TABLE test.table
+  TO Disk('backups', 'lzma-level3.zip')
+  SETTINGS compression_method='lzma', compression_level=3
 ```
 
-Restore based on a username:
-```sql
-RESTORE ALL FROM Disk('backups', '1.zip'), user="u1"
-
-Restore specific databases and tables asynchronously:
-```sql
-RESTORE DATABASE default, TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM Disk('backups', '1.zip') ASYNC
+## Restore specific partitions
+If specific partitions associated with a table need to be restored these can be specified.  To restore partitions 1 and 4 from backup:
+```
+RESTORE TABLE test.table PARTITIONS '2', '3'
+  FROM Disk('backups', 'lzma-level3.zip')
 ```
 
-Restore and rename a table:
-```sql
-RESTORE DATABASE test2 AS test3 FROM Disk('backups', '1.zip')
+## Check the status of backups
+
+```
+SELECT status, error FROM system.backups FORMAT Vertical;
 ```
 
-Restore specific tables:
-```sql
-RESTORE TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM Disk('backups', '1.zip')
-```
-
-Restore and rename while specifying a username:
-```sql
-RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip'), user="u1"
-```
-
-Restore and rename from an incremental backup:
-```sql
-RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip')
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip') ASYNC
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS allow_non_empty_tables=true
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS id='first'
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS id='second' ASYNC
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS password='qwerty'
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip') SETTINGS structure_only=true
-```
-
-```sql
-RESTORE TABLE test.table FROM Disk('backups', '1.zip'), user="u1"
-```
-
-```sql
-RESTORE TEMPORARY TABLE temp_tbl FROM Disk('backups', '1.zip'),
-```
-
-## Get backup status
-
-```sql
-SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'
-```
-
-```sql
-SELECT status FROM system.backups WHERE id='{id2}'
-```
-
-```sql
-SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'
-```
-
-```sql
-SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'
-```
