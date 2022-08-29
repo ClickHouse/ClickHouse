@@ -5,6 +5,7 @@
 
 #include <Interpreters/Set.h>
 #include <Common/Stopwatch.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -40,17 +41,6 @@ ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chu
     return block.getColumnsWithTypeAndName();
 }
 
-std::string formatBytesHumanReadable(size_t bytes)
-{
-    if (bytes >= 1_GiB)
-        return fmt::format("{:.2f} GB", static_cast<double>(bytes) / 1_GiB);
-    if (bytes >= 1_MiB)
-        return fmt::format("{:.2f} MB", static_cast<double>(bytes) / 1_MiB);
-    if (bytes >= 1_KiB)
-        return fmt::format("{:.2f} KB", static_cast<double>(bytes) / 1_KiB);
-    return fmt::format("{:.2f} B", static_cast<double>(bytes));
-}
-
 }
 
 CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
@@ -60,7 +50,6 @@ CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
     , num_streams(num_streams_)
     , set(set_)
-    , log(&Poco::Logger::get(getName()))
 {
 }
 
@@ -69,7 +58,7 @@ IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
     IProcessor::Status status = ISimpleTransform::prepare();
 
     if (!set || status != Status::Finished)
-        /// Nothing to handle with set
+        /// Nothing to do with set
         return status;
 
     /// Finalize set
@@ -85,7 +74,8 @@ IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
             set->finishInsert();
             set->state = SetWithState::State::Finished;
             LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
-                getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
+                getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(),
+                formatReadableSizeWithBinarySuffix(set->getTotalByteCount()));
             set.reset();
         }
         else
@@ -123,7 +113,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
             if (prev_state == SetWithState::State::Creating)
             {
                 LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after reading {} rows and using {}",
-                    getDescription(), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
+                    getDescription(), set->getTotalRowCount(), formatReadableSizeWithBinarySuffix(set->getTotalByteCount()));
             }
             /// Probaply we need to clear set here, because it's unneeded anymore
             /// But now `Set` doesn't have such method, so reset pointer in all processors and then it should be freed
@@ -137,7 +127,6 @@ FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
     , set(set_)
-    , log(&Poco::Logger::get(getName()))
 {
     const auto & header = inputs.front().getHeader();
     for (size_t idx : key_column_indices)
@@ -193,7 +182,7 @@ void FilterBySetOnTheFlyTransform::transform(Chunk & chunk)
         size_t result_num_rows = 0;
         for (auto & col : columns)
         {
-            col = col->filter(mask, 0);
+            col = col->filter(mask, /* negative */ false);
             result_num_rows = col->size();
         }
         stat.result_rows += result_num_rows;

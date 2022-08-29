@@ -71,7 +71,7 @@ bool PingPongProcessor::processPair(PortsPair & pair)
     if (pair.input_port->hasData())
     {
         Chunk chunk = pair.input_port->pull(true);
-        ready_to_send = isReady(chunk) || ready_to_send;
+        ready_to_send |= consume(chunk);
         pair.output_port->push(std::move(chunk));
     }
 
