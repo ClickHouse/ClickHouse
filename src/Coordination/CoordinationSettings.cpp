@@ -190,7 +190,7 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
     ret->coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
 
     if (ret->coordination_settings->quorum_reads)
-        LOG_WARNING(&Poco::Logger::get("KeeperConfigurationAndSettings"), "Setting 'quorum_reads' is depricated. Please use 'read_mode'");
+        LOG_WARNING(&Poco::Logger::get("KeeperConfigurationAndSettings"), "Setting 'quorum_reads' is deprecated. Please use 'read_mode'");
 
     return ret;
 }
