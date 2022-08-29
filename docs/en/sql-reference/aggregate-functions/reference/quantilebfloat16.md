@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/quantilebfloat16
 sidebar_position: 209
 ---
 
