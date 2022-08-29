@@ -22,81 +22,75 @@ Often data that is ingested into ClickHouse is delivered through some sort of pe
 
 ## Configure a backup destination
 
-In the examples below you will see the backup destination specified like `Disk('backups', '1.zip')`.  To prepare the destination add a file to `/etc/clickhouse-server/config.d/backup_disk.xml`.  For example:
+In the examples below you will see the backup destination specified like `Disk('backups', '1.zip')`.  To prepare the destination add a file to `/etc/clickhouse-server/config.d/backup_disk.xml` specifying the backup destination.  For example, this file defines disk named `backups` and then adds that disk to the **backups > allowed_disk** list:
 
 ```xml
 <clickhouse>
     <storage_configuration>
         <disks>
+<!--highlight-next-line -->
             <backups>
                 <type>local</type>
                 <path>/backups/</path>
             </backups>
         </disks>
     </storage_configuration>
+<!--highlight-start -->
     <backups>
         <allowed_disk>backups</allowed_disk>
         <allowed_path>/backups/</allowed_path>
     </backups>
+<!--highlight-end -->
 </clickhouse>
 ```
 
 ## Use
 
-Backups can be either full or incremental, and can include tables and databases.  Bakups can be synchronous (default) or asynchronous.  They can be compressed.  Bakups can be password protected.
+Backups can be either full or incremental, and can include tables (including materialized views, projections, and dictionaries), and databases.  Backups can be synchronous (default) or asynchronous.  They can be compressed.  Backups can be password protected.
 
-The BACKUP statement takes a list of DATABASE and TABLE names, a destination, and options.  Options are:
-- ASYNC
-- SETTINGS compression_method='lzma', compression_level=3, password='qwerty' id='first'
-base_backup = Disk('backups', '1.zip') 
+The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a destination (or source), options and settings:
+- The destination for the backup, or the source for the restore.  This is based on the disk defined earlier.  For example `Disk('backups', 'filename.zip')`
+- ASYNC: backup or restore asynchronously
+- PARTITIONS: a list of partitions to restore
+- SETTINGS:
+    - [`compression_method`](en/sql-reference/statements/create/table/#column-compression-codecs) and compression_level
+    - `password` for the file on disk
+    - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')` 
 
-## Usage
+## Usage examples
 
+Backup and then restore a table:
 ```
-BACKUP TABLE test.table TO {backup_name}
+BACKUP TABLE test.table TO Disk('backups', '1.zip')
 ```
 
 Corresponding restore:
 ```
-RESTORE TABLE test.table FROM {backup_name}
+RESTORE TABLE test.table FROM Disk('backups', '1.zip')
 ```
 
 :::note
 The above RESTORE would fail if the table `test.table` contains data, you would have to drop the table in order to test the RESTORE, or use the setting `allow_non_empty_tables=true`:
 ```
-RESTORE TABLE test.table FROM {backup_name} 
+RESTORE TABLE test.table FROM Disk('backups', '1.zip') 
 SETTINGS allow_non_empty_tables=true
 ```
 :::
 
 Tables can be restored, or backed up, with new names:
 ```
-RESTORE TABLE test.table AS test.table2 FROM {backup_name}
+RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip')
 ```
 
 ```
-BACKUP TABLE test.table3 AS test.table4 TO {backup_name}
+BACKUP TABLE test.table3 AS test.table4 TO Disk('backups', '2.zip')
 ```
 
 ## Incremental backups
 
 Incremental backups can be taken by specifying the `base_backup`.
 
-Store the initial backup:
-```
-BACKUP TABLE tbl TO Disk('backups', 'a.zip');
-```
-
-```
-BACKUP TABLE tbl TO Disk('backups', 'c.zip')
-  SETTINGS base_backup=Disk('backups', 'a.zip');
-```
-
-```
-BACKUP TABLE test.table TO Disk('backups', 'd.zip');
-```
-
-Incrementally store new data. The setting `base_backup` causes data since the backup to `Disk('backups', 'd.zip')` to be stored to `Disk('backups', 'incremental-a.zip')`:
+Incrementally store new data. The setting `base_backup` causes data since a previous backup to `Disk('backups', 'd.zip')` to be stored to `Disk('backups', 'incremental-a.zip')`:
 ```
 BACKUP TABLE test.table TO Disk('backups', 'incremental-a.zip')
   SETTINGS base_backup = Disk('backups', 'd.zip')
@@ -109,6 +103,7 @@ RESTORE TABLE test.table AS test.table2
 ```
 
 ## Assign a password to the backup
+
 Backups written to disk can have a password applied to the file:
 ```
 BACKUP TABLE test.table
@@ -128,7 +123,7 @@ RESTORE TABLE test.table
 If you would like to specify the compression method or level:
 ```
 BACKUP TABLE test.table
-  TO Disk('backups', 'lzma-level3.zip')
+  TO Disk('backups', 'filename.zip')
   SETTINGS compression_method='lzma', compression_level=3
 ```
 
@@ -136,7 +131,7 @@ BACKUP TABLE test.table
 If specific partitions associated with a table need to be restored these can be specified.  To restore partitions 1 and 4 from backup:
 ```
 RESTORE TABLE test.table PARTITIONS '2', '3'
-  FROM Disk('backups', 'lzma-level3.zip')
+  FROM Disk('backups', 'filename.zip')
 ```
 
 ## Check the status of backups
