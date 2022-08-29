@@ -43,3 +43,7 @@ SELECT formatDateTime(toDate('2018-01-01'), '%F %T');
 SELECT
     formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'UTC'),
     formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'Asia/Istanbul')
+
+SELECT formatDateTime(toDateTime('2020-01-01 01:00:00', 'UTC'), '%z')
+SELECT formatDateTime(toDateTime('2020-01-01 01:00:00', 'US/Samoa'), '%z')
+SELECT formatDateTime(toDateTime('2020-01-01 01:00:00', 'Europe/Moscow'), '%z')
