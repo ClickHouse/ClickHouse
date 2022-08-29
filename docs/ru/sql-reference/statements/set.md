@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/set
 sidebar_position: 49
 sidebar_label: SET
 ---

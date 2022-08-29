@@ -1714,6 +1714,75 @@ def removesuffix(text, *suffixes):
     return text
 
 
+def reportCoverageFor(args, what, query, permissive = False):
+    value = clickhouse_execute(args, query).decode()
+
+    if value != "":
+        print(f"\nThe following {what} were not covered by tests:\n")
+        print(value)
+        print("\n")
+        return permissive
+
+    return True
+
+
+def reportCoverage(args):
+    return reportCoverageFor(
+        args,
+        "functions",
+        """
+            SELECT name
+            FROM system.functions
+            WHERE NOT is_aggregate AND origin = 'System' AND alias_to = ''
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_functions) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """,
+        True
+    ) and reportCoverageFor(
+        args,
+        "aggregate functions",
+        """
+            SELECT name
+            FROM system.functions
+            WHERE is_aggregate AND origin = 'System' AND alias_to = ''
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_aggregate_functions) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """
+    ) and reportCoverageFor(
+        args,
+        "aggregate function combinators",
+        """
+            SELECT name
+            FROM system.aggregate_function_combinators
+            WHERE NOT is_internal
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_aggregate_function_combinators) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """
+    ) and reportCoverageFor(
+        args,
+        "data type families",
+        """
+            SELECT name
+            FROM system.data_type_families
+            WHERE alias_to = '' AND name NOT LIKE 'Interval%'
+                AND name NOT IN
+                (
+                    SELECT arrayJoin(used_data_type_families) FROM system.query_log WHERE event_date >= yesterday()
+                )
+            ORDER BY name
+        """
+    )
+
+
 def main(args):
     global server_died
     global stop_time
@@ -1844,6 +1913,9 @@ def main(args):
         sys.exit(1)
     else:
         print("All tests have finished.")
+
+    if args.report_coverage and not reportCoverage(args):
+        exit_code.value = 1
 
     sys.exit(exit_code.value)
 
@@ -2124,6 +2196,12 @@ if __name__ == "__main__":
         default=20,
         type=int,
         help="Max number of failed tests in a row (stop tests if higher)",
+    )
+    parser.add_argument(
+        "--report-coverage",
+        action="store_true",
+        default=False,
+        help="Check what high-level server components were covered by tests",
     )
     args = parser.parse_args()
 

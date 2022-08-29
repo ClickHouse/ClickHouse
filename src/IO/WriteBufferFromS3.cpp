@@ -15,6 +15,7 @@
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
+#include <aws/s3/model/HeadObjectRequest.h>
 
 #include <utility>
 
@@ -84,10 +85,6 @@ void WriteBufferFromS3::nextImpl()
 
     size_t size = offset();
     temporary_buffer->write(working_buffer.begin(), size);
-
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
     last_part_size += offset();
@@ -164,6 +161,20 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
+
+    if (s3_settings.check_objects_after_upload)
+    {
+        LOG_TRACE(log, "Checking object {} exists after upload", key);
+
+        Aws::S3::Model::HeadObjectRequest request;
+        request.SetBucket(bucket);
+        request.SetKey(key);
+
+        auto response = client_ptr->HeadObject(request);
+
+        if (!response.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket);
+    }
 }
 
 void WriteBufferFromS3::createMultipartUpload()
