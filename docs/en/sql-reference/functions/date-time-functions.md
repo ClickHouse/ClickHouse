@@ -1105,6 +1105,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
+| %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
 
 **Example**
