@@ -310,6 +310,14 @@ protected:
     mutable std::mutex mutex;
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
+    struct LockAndBlocker
+    {
+        std::lock_guard<std::mutex> guard;
+        OvercommitTrackerBlockerInThread blocker;
+    };
+
+    LockAndBlocker safeLock() const noexcept { return { std::lock_guard{mutex}, {} }; }
+
     /// List of queries
     Container processes;
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.

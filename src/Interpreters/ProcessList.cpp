@@ -270,8 +270,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
 ProcessListEntry::~ProcessListEntry()
 {
-    OvercommitTrackerBlockerInThread overcommit_tracker_blocker;
-    std::lock_guard lock(parent.mutex);
+    auto lock = parent.safeLock();
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;
@@ -432,7 +431,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
 
@@ -445,7 +444,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 
 void ProcessList::killAllQueries()
 {
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     for (auto & process : processes)
         process.cancelQuery(true);
@@ -497,8 +496,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 {
     Info per_query_infos;
 
-    std::lock_guard lock(mutex);
-    OvercommitTrackerBlockerInThread overcommit_tracker_blocker;
+    auto lock = safeLock();
 
     per_query_infos.reserve(processes.size());
     for (const auto & process : processes)
@@ -533,8 +531,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 {
     UserInfo per_user_infos;
 
-    std::lock_guard lock(mutex);
-    OvercommitTrackerBlockerInThread overcommit_tracker_blocker;
+    auto lock = safeLock();
 
     per_user_infos.reserve(user_to_queries.size());
 
