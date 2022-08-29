@@ -103,7 +103,7 @@
         current-nemesis (get custom-nemesis/custom-nemesises (:nemesis opts))]
     (merge tests/noop-test
            opts
-           {:name (str "clickhouse-keeper-quorum=" quorum "-"  (name (:workload opts)) "-" (name (:nemesis opts)))
+           {:name (str "clickhouse-keeper-" (name (:workload opts)) "-" (name (:nemesis opts)))
             :os ubuntu/os
             :db (get-db opts)
             :pure-generators true
