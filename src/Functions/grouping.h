@@ -3,7 +3,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -54,7 +53,7 @@ public:
 
             UInt64 value = 0;
             for (auto index : arguments_indexes)
-                value = (value << 1) + (checker(set_index, index) ? 1 : 0);
+                value = (value << 1) + (checker(set_index, index) ? 0 : 1);
 
             result_data.push_back(value);
         }
@@ -73,8 +72,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        UInt64 value = (ONE << arguments_indexes.size()) - 1;
-        return ColumnUInt64::create(input_rows_count, value);
+        return ColumnUInt64::create(input_rows_count, 0);
     }
 };
 
