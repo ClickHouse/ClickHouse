@@ -1,4 +1,5 @@
 ---
+slug: /zh/introduction/history
 sidebar_position: 4
 sidebar_label: ClickHouse历史
 ---

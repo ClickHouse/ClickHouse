@@ -94,6 +94,8 @@ private:
 
     void syncTables();
 
+    void updateLsn();
+
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     void processReplicationMessage(const char * replication_message, size_t size);
@@ -135,6 +137,8 @@ private:
     Poco::Logger * log;
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
+
+    bool committed = false;
 
     std::shared_ptr<postgres::Connection> connection;
 

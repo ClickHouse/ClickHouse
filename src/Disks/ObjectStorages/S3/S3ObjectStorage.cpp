@@ -2,6 +2,8 @@
 
 #if USE_AWS_S3
 
+#include <IO/S3Common.h>
+
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
@@ -25,6 +27,7 @@
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 #include <Common/getRandomASCIIString.h>
+
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 
@@ -528,7 +531,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         getClient(config, config_prefix, context),
         getSettings(config, config_prefix, context),
-        version_id, s3_capabilities, new_namespace);
+        version_id, s3_capabilities, new_namespace,
+        S3::URI(Poco::URI(config.getString(config_prefix + ".endpoint"))).endpoint);
 }
 
 }

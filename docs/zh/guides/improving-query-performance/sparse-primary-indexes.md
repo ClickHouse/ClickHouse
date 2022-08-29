@@ -1,4 +1,5 @@
 ---
+slug: /zh/guides/improving-query-performance/sparse-primary-indexes
 sidebar_label: Sparse Primary Indexes
 sidebar_position: 20
 ---

@@ -1,9 +1,9 @@
 ---
+slug: /en/operations/performance-test
 sidebar_position: 54
 sidebar_label: Testing Hardware
+title: "How to Test Your Hardware with ClickHouse"
 ---
-
-# How to Test Your Hardware with ClickHouse
 
 You can run a basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
