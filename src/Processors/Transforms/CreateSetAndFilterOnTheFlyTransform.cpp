@@ -81,11 +81,7 @@ IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
         else
         {
             /// Should not happen because processor inserted before join that reads all the data
-            /// But let's handle this case just for safety.
-            set->state = SetWithState::State::Suspended;
-            LOG_DEBUG(log, "{}: Processor finished, but not all input was read, cancelling building set after using {}",
-                getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
-            set.reset();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor finished, but not all input was read");
         }
     }
 
