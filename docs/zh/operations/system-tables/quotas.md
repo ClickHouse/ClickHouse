@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/quotas
+---
 # system.quotas {#system_tables-quotas}
 
 包含 [quotas](../../operations/system-tables/quotas.md) 信息.

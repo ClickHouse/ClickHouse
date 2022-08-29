@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/replication_queue
+---
 # system.replication_queue {#system_tables-replication_queue}
 
 包含用于 `ReplicatedMergeTree` 系列表的复制队列中存储在ZooKeeper中的任务的信息.

@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/operators/
 sidebar_position: 38
 sidebar_label: Operators
 ---

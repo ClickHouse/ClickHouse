@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/ext-dict-functions
+---
 # 字典函数 {#zi-dian-han-shu}
 
 有关连接和配置外部词典的信息，请参阅[外部词典](../../sql-reference/functions/ext-dict-functions.md)。

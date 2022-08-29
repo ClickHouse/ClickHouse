@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/detached_parts
+---
 # system.detached_parts {#system_tables-detached_parts}
 
 Содержит информацию об отсоединённых кусках таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
