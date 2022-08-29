@@ -1,4 +1,4 @@
--- 40014
+-- #40014
 CREATE TABLE m0 (id UInt64) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO m0 SELECT number FROM numbers(10);
 CREATE TABLE m1 (id UInt64, s String) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity = 1;
