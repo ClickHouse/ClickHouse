@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- https://github.com/ClickHouse/ClickHouse/issues/21557
 
 EXPLAIN SYNTAX
