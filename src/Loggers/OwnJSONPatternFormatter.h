@@ -39,6 +39,6 @@ private:
     std::string query_id;
     std::string logger_name;
     std::string message;
-    std::string source_file_;
+    std::string source_file;
     std::string source_line;
 };

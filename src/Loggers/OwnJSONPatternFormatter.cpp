@@ -32,13 +32,13 @@ OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfigurati
         message = config.getString("logger.formatting.names.message", "");
 
     if (config.has("logger.formatting.names.source_file"))
-        source_file_ = config.getString("logger.formatting.names.source_file", "");
+        source_file = config.getString("logger.formatting.names.source_file", "");
 
     if (config.has("logger.formatting.names.source_line"))
         source_line = config.getString("logger.formatting.names.source_line", "");
 
     if (date_time.empty() && thread_name.empty() && thread_id.empty() && level.empty() && query_id.empty()
-        && logger_name.empty() && message.empty() && source_file_.empty() && source_line.empty())
+        && logger_name.empty() && message.empty() && source_file.empty() && source_line.empty())
     {
         date_time = "date_time";
         thread_name = "thread_name";
@@ -47,7 +47,7 @@ OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfigurati
         query_id = "query_id";
         logger_name = "logger_name";
         message = "message";
-        source_file_ = "source_file";
+        source_file = "source_file";
         source_line = "source_line";
     }
 }
@@ -161,18 +161,18 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
         writeJSONString(msg.getText(), wb, settings);
     }
 
-    if (!source_file_.empty())
+    if (!source_file.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
         else
             print_comma = true;
 
-        writeJSONString(source_file_, wb, settings);
+        writeJSONString(source_file, wb, settings);
         DB::writeChar(':', wb);
-        const char * source_file = msg.getSourceFile();
-        if (source_file != nullptr)
-            writeJSONString(source_file, wb, settings);
+        const char * source_file_name = msg.getSourceFile();
+        if (source_file_name != nullptr)
+            writeJSONString(source_file_name, wb, settings);
         else
             writeJSONString("", wb, settings);
     }
