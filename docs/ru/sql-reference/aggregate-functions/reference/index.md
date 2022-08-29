@@ -9,8 +9,8 @@ sidebar_position: 36
 Стандартные агрегатные функции:
 
 -   [count](../../../sql-reference/aggregate-functions/reference/count.md)
--   [min](../../../sql-reference/aggregate-functions/reference/min.md)
--   [max](../../../sql-reference/aggregate-functions/reference/max.md)
+-   [min](../../../sql-reference/aggregate-functions/reference/min.mdx)
+-   [max](../../../sql-reference/aggregate-functions/reference/max.mdx)
 -   [sum](../../../sql-reference/aggregate-functions/reference/sum.md)
 -   [avg](../../../sql-reference/aggregate-functions/reference/avg.md)
 -   [any](../../../sql-reference/aggregate-functions/reference/any.md)
