@@ -42,8 +42,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
 
 #ifndef NDEBUG
     if (column_index >= columns_in_mark)
-        throw Exception("Column index: " + toString(column_index)
-            + " is out of range [0, " + toString(columns_in_mark) + ")", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column index: {} is out of range [0, {})", column_index, columns_in_mark);
 #endif
 
     return (*marks)[row_index * columns_in_mark + column_index];
@@ -74,8 +73,9 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
 
         if (!buffer->eof())
-            throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof())
-            + ", buffer size: " + std::to_string(buffer->buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all marks from file {}, is eof: {}, buffer size: {}, file size: {}",
+                mrk_path, buffer->eof(), buffer->buffer().size(), file_size);
     }
     else
     {
@@ -89,7 +89,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         }
 
         if (i * mark_size != file_size)
-            throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}", mrk_path);
     }
     res->protect();
     return res;
@@ -116,7 +116,7 @@ void MergeTreeMarksLoader::loadMarks()
         marks = loadMarksImpl();
 
     if (!marks)
-        throw Exception("Failed to load marks: " + std::string(fs::path(data_part_storage->getFullPath()) / mrk_path), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to load marks: {}", String(fs::path(data_part_storage->getFullPath()) / mrk_path));
 }
 
 }

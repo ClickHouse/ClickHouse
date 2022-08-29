@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/functions/
 sidebar_label: 函数
 sidebar_position: 32
 ---

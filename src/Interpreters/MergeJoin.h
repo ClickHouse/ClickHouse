@@ -45,6 +45,7 @@ private:
     struct NotProcessed : public ExtraBlock
     {
         size_t left_position;
+        size_t left_key_tail;
         size_t right_position;
         size_t right_block;
     };
@@ -123,7 +124,8 @@ private:
 
     template <bool is_all>
     ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
-                             size_t left_position, size_t right_position, size_t right_block_number);
+                             size_t left_position, size_t left_key_tail, size_t right_position,
+                             size_t right_block_number);
 
     void mergeRightBlocks();
 

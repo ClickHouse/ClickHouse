@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/general/who-is-using-clickhouse
 title: 谁在使用 ClickHouse?
 toc_hidden: true
 sidebar_position: 9

@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/merge_tree_settings
+---
 # system.merge_tree_settings {#system-merge_tree_settings}
 
 包含 `MergeTree` 表的设置 (Setting) 信息。

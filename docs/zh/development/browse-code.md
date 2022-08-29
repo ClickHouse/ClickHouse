@@ -1,4 +1,5 @@
 ---
+slug: /zh/development/browse-code
 sidebar_position: 63
 sidebar_label: "\u6D4F\u89C8\u6E90\u4EE3\u7801"
 ---
