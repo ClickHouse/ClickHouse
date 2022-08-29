@@ -90,10 +90,6 @@ void WriteBufferFromS3::nextImpl()
     size_t size = offset();
     temporary_buffer->write(working_buffer.begin(), size);
 
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
-
     if (cacheEnabled())
     {
         auto cache_key = cache->hash(key);
