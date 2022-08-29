@@ -56,6 +56,17 @@ bool ToInt::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
+bool ToLong::convertImpl(String & out, IParser::Pos & pos)
+{
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto param = getArgument(function_name, pos);
+    out = std::format("toInt64OrNull(toString({0}))", param);
+    return true;
+}
+
 bool ToString::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);

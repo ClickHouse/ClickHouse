@@ -112,6 +112,7 @@ namespace DB
         tobool,
         todouble,
         toint,
+        tolong,
         tostring,
 
         arg_max,

@@ -25,6 +25,10 @@ INSTANTIATE_TEST_SUITE_P(
             "SELECT toInt32OrNull(toString(A))"
         },
         {
+            "print tolong(A)",
+            "SELECT toInt64OrNull(toString(A))"
+        },
+        {
             "print toreal(A)",
             "SELECT toFloat64OrNull(toString(A))"
         },
