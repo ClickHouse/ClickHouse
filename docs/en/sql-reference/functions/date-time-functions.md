@@ -1069,7 +1069,7 @@ Formats a Time according to the given Format string. Format is a constant expres
 **Syntax**
 
 ``` sql
-formatDateTime(Time, Format\[, Timezone\])
+formatDateTime(Time, Format[, Timezone])
 ```
 
 **Returned value(s)**
