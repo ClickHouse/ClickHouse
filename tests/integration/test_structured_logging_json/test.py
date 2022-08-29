@@ -95,5 +95,7 @@ def test_structured_logging_json_format(start_cluster):
     )
 
     assert valiade_everything(config_all_keys, node_all_keys, "config_all_keys") == True
-    assert valiade_everything(config_some_keys, node_some_keys, "config_some_keys") == True
+    assert (
+        valiade_everything(config_some_keys, node_some_keys, "config_some_keys") == True
+    )
     assert valiade_everything(config_no_keys, node_no_keys, "config_no_keys") == True
