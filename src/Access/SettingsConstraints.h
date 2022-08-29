@@ -140,7 +140,7 @@ private:
 
     Range getRange(const Settings & current_settings, std::string_view setting_name) const;
 
-    // Special containter for heterogenous lookups: to avoid `String` construction during `find(std::string_view)`
+    // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
     using RangeMap = std::unordered_map<String, Range, StringHash, std::equal_to<>>;
     RangeMap constraints;
     RangeMap allowances;
