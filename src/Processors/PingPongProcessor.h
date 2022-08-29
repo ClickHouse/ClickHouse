@@ -20,8 +20,8 @@ namespace DB
  *     ╰─┬───┬───┬───┬───┬─╯       ╰─┬───┬───┬───┬───┬─╯
  *
  * One of the processors starts processing data, and another waits for notification.
- * When `isReady` returns true, the first stops processing, sends a ping to another and waits for notification.
- * After that, the second one also processes data until `isReady`, then send a notification back to the first one.
+ * When `consume` returns true, the first stops processing, sends a ping to another and waits for notification.
+ * After that, the second one also processes data until `consume`, then send a notification back to the first one.
  * After this roundtrip, processors bypass data from regular inputs to outputs.
  */
 class PingPongProcessor : public IProcessor
@@ -43,7 +43,8 @@ public:
 
     std::pair<InputPort *, OutputPort *> getAuxPorts();
 
-    virtual bool isReady(const Chunk & chunk) = 0;
+    /// Returns `true` when enough data consumed
+    virtual bool consume(const Chunk & chunk) = 0;
 
 protected:
     struct PortsPair
@@ -90,7 +91,7 @@ public:
 
     String getName() const override { return "ReadHeadBalancedProcessor"; }
 
-    bool isReady(const Chunk & chunk) override
+    bool consume(const Chunk & chunk) override
     {
         data_consumed += chunk.getNumRows();
         return data_consumed > size_to_wait;

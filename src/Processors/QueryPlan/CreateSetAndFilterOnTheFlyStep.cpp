@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static InputPorts::iterator connectAllInputs(OutputPortRawPtrs ports, InputPorts & inputs, size_t num_ports)
+static void connectAllInputs(OutputPortRawPtrs ports, InputPorts & inputs, size_t num_ports)
 {
     auto input_it = inputs.begin();
     for (size_t i = 0; i < num_ports; ++i)
@@ -25,7 +25,14 @@ static InputPorts::iterator connectAllInputs(OutputPortRawPtrs ports, InputPorts
         connect(*ports[i], *input_it);
         input_it++;
     }
-    return input_it;
+}
+
+static ColumnsWithTypeAndName getColumnSubset(const Block & block, const Names & column_names)
+{
+    ColumnsWithTypeAndName result;
+    for (const auto & name : column_names)
+        result.emplace_back(block.getByName(name));
+    return result;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -44,7 +51,6 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-
 class CreateSetAndFilterOnTheFlyStep::CrosswiseConnection : public boost::noncopyable
 {
 public:
@@ -52,8 +58,10 @@ public:
 
     /// Remember ports passed on the first call and connect with ones from second call.
     /// Thread-safe.
-    bool tryConnectPorts(PortPair rhs_ports, IProcessor * proc)
+    void connectPorts(PortPair rhs_ports, IProcessor * proc)
     {
+        assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
+
         std::lock_guard<std::mutex> lock(mux);
         if (input_port || output_port)
         {
@@ -61,15 +69,16 @@ public:
             assert(!input_port->isConnected());
             connect(*rhs_ports.second, *input_port);
             connect(*output_port, *rhs_ports.first, /* reconnect= */ true);
-            return true;
         }
-        std::tie(input_port, output_port) = rhs_ports;
-        assert(input_port && output_port);
-        assert(!input_port->isConnected() && !output_port->isConnected());
+        else
+        {
+            std::tie(input_port, output_port) = rhs_ports;
+            assert(input_port && output_port);
+            assert(!input_port->isConnected() && !output_port->isConnected());
 
-        dummy_input_port = std::make_unique<InputPort>(output_port->getHeader(), proc);
-        connect(*output_port, *dummy_input_port);
-        return false;
+            dummy_input_port = std::make_unique<InputPort>(output_port->getHeader(), proc);
+            connect(*output_port, *dummy_input_port);
+        }
     }
 
 private:
@@ -107,10 +116,7 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     if (input_streams.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Step requires exactly one input stream, got {}", input_streams.size());
 
-    ColumnsWithTypeAndName header;
-    for (const auto & name : column_names)
-        header.emplace_back(input_streams[0].header.getByName(name));
-    own_set->setHeader(header);
+    own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 }
 
 void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -138,13 +144,10 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         stream_balancer->setDescription(getStepDescription());
 
         /// Regular inputs just bypass data for respective ports
-        auto input_it = connectAllInputs(ports, stream_balancer->getInputs(), num_ports);
-        assert(&*input_it == stream_balancer->getAuxPorts().first);
-        input_it++;
-        assert(input_it == stream_balancer->getInputs().end());
+        connectAllInputs(ports, stream_balancer->getInputs(), num_ports);
 
         /// Connect auxiliary ports
-        crosswise_connection->tryConnectPorts(stream_balancer->getAuxPorts(), stream_balancer.get());
+        crosswise_connection->connectPorts(stream_balancer->getAuxPorts(), stream_balancer.get());
 
         if (!filtering_set)
         {
@@ -164,8 +167,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
             connect(port, transform->getInputPort());
             result_transforms.emplace_back(std::move(transform));
         }
-        output_it++;
-        assert(output_it == outputs.end());
+        assert(output_it == std::prev(outputs.end()));
         result_transforms.emplace_back(std::move(stream_balancer));
 
         return result_transforms;
@@ -193,6 +195,8 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
 {
     if (input_streams.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_streams.size());
+
+    own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 
     output_stream = input_streams[0];
 }
