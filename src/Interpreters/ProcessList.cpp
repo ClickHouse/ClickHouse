@@ -270,6 +270,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
 ProcessListEntry::~ProcessListEntry()
 {
+    OvercommitTrackerBlockerInThread overcommit_tracker_blocker;
     std::lock_guard lock(parent.mutex);
 
     String user = it->getClientInfo().current_user;
@@ -497,6 +498,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     Info per_query_infos;
 
     std::lock_guard lock(mutex);
+    OvercommitTrackerBlockerInThread overcommit_tracker_blocker;
 
     per_query_infos.reserve(processes.size());
     for (const auto & process : processes)
@@ -532,6 +534,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
     UserInfo per_user_infos;
 
     std::lock_guard lock(mutex);
+    OvercommitTrackerBlockerInThread overcommit_tracker_blocker;
 
     per_user_infos.reserve(user_to_queries.size());
 
