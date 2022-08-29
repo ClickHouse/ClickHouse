@@ -49,7 +49,8 @@ FilterTransform::FilterTransform(
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
-    bool on_totals_)
+    bool on_totals_,
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -58,6 +59,7 @@ FilterTransform::FilterTransform(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
+    , rows_filtered(rows_filtered_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -100,6 +102,14 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 }
 
 void FilterTransform::transform(Chunk & chunk)
+{
+    auto chunk_rows_before = chunk.getNumRows();
+    doTransform(chunk);
+    if (rows_filtered)
+        *rows_filtered += chunk_rows_before - chunk.getNumRows();
+}
+
+void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();

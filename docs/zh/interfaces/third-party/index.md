@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/third-party/
 sidebar_label: 第三方工具
 sidebar_position: 24
 ---

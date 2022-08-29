@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/backup
 sidebar_position: 49
 sidebar_label: "Резервное копирование данных"
 ---
