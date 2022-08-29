@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/brown-benchmark
 sidebar_label: Brown University Benchmark
 description: A new analytical benchmark for machine-generated log data
 ---

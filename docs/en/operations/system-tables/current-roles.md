@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/current-roles
+---
 # current_roles
 
 Contains active roles of a current user. `SET ROLE` changes the contents of this table.

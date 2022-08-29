@@ -12,8 +12,8 @@ slug: /ru/sql-reference/data-types/simpleaggregatefunction
 
 -   [`any`](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)
 -   [`anyLast`](../../sql-reference/aggregate-functions/reference/anylast.md#anylastx)
--   [`min`](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min)
--   [`max`](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max)
+-   [`min`](../../sql-reference/aggregate-functions/reference/min.mdx#agg_function-min)
+-   [`max`](../../sql-reference/aggregate-functions/reference/max.mdx#agg_function-max)
 -   [`sum`](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum)
 -   [`sumWithOverflow`](../../sql-reference/aggregate-functions/reference/sumwithoverflow.md#sumwithoverflowx)
 -   [`groupBitAnd`](../../sql-reference/aggregate-functions/reference/groupbitand.md#groupbitand)

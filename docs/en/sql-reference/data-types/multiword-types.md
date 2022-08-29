@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/multiword-types
 sidebar_position: 61
 sidebar_label: Multiword Type Names
 ---
