@@ -222,9 +222,6 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
 {
     auto range = file_segment->range();
 
-    size_t wait_download_max_tries = settings.filesystem_cache_max_wait_sec;
-    size_t wait_download_tries = 0;
-
     auto download_state = file_segment->state();
     LOG_TEST(log, "getReadBufferForFileSegment: {}", file_segment->getInfoForLog());
 
@@ -274,16 +271,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                     return getCacheReadBuffer(range.left);
                 }
 
-                if (wait_download_tries++ < wait_download_max_tries)
-                {
-                    download_state = file_segment->wait();
-                }
-                else
-                {
-                    LOG_DEBUG(log, "Retries to wait for file segment download exceeded ({})", wait_download_tries);
-                    download_state = FileSegment::State::SKIP_CACHE;
-                }
-
+                download_state = file_segment->wait();
                 continue;
             }
             case FileSegment::State::DOWNLOADED:

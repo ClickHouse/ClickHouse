@@ -113,14 +113,14 @@ public:
                 const auto & null_map_column = nullable_column->getNullMapColumn();
 
                 auto nested_column_raw_data = nested_column.getRawData();
-                __msan_unpoison(nested_column_raw_data.data, nested_column_raw_data.size);
+                __msan_unpoison(nested_column_raw_data.data(), nested_column_raw_data.size());
 
                 auto null_map_column_raw_data = null_map_column.getRawData();
-                __msan_unpoison(null_map_column_raw_data.data, null_map_column_raw_data.size);
+                __msan_unpoison(null_map_column_raw_data.data(), null_map_column_raw_data.size());
             }
             else
             {
-                __msan_unpoison(result_column->getRawData().data, result_column->getRawData().size);
+                __msan_unpoison(result_column->getRawData().data(), result_column->getRawData().size());
             }
 
             #endif

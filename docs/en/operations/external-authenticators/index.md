@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/external-authenticators/
 sidebar_position: 48
 sidebar_label: External User Authenticators and Directories
 ---

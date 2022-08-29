@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/intervalLengthSum
 sidebar_position: 146
 sidebar_label: intervalLengthSum
 ---
