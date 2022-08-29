@@ -539,15 +539,11 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             DataTypePtr res_col_type = std::make_shared<DataTypeFloat64>();
             String res_col_name = "res_col";
 
-            ColumnsWithTypeAndName res_cols_with_type_and_name;
-            res_cols_with_type_and_name.push_back({res_col, res_col_type, res_col_name});
+            ColumnsWithTypeAndName res_cols_with_type_and_name = {{res_col, res_col_type, res_col_name}};
 
-            WriteBufferFromOwnString string_write_buf;
             Block block_write(res_cols_with_type_and_name);
-            NativeWriter native_writer{string_write_buf, /*client_revision*/ 0, block_write};
-            native_writer.write(block_write);
-
-            writeStringBinary(string_write_buf.str(), out);
+            NativeWriter serializer{out, /*client_revision*/ 0, block_write};
+            serializer.write(block_write);
         }
         else
         {
