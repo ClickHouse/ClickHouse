@@ -191,29 +191,27 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+            bool result_is_bool = isBool(result_type);
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if (isBool(result_type))
+                if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
                 {
-                    for (size_t i = 0; i < input_rows_count; ++i)
+                    if (result_is_bool)
                     {
                         vec_to[i] = vec_from[i] != FromFieldType(0);
+                        continue;
                     }
-                    goto done;
                 }
-            }
 
-            if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
-            {
-                throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
-            }
-            else
-            {
-                if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
-                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                    throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+                }
+                else
+                {
+                    if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                     {
-                        for (size_t i = 0; i < input_rows_count; ++i)
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                         {
                             ToFieldType result;
                             bool convert_result = false;
@@ -233,10 +231,7 @@ struct ConvertImpl
                                 (*vec_null_map_to)[i] = true;
                             }
                         }
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < input_rows_count; ++i)
+                        else
                         {
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
@@ -248,13 +243,10 @@ struct ConvertImpl
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                         }
                     }
-                }
-                else
-                {
-                    /// If From Data is Nan or Inf and we convert to integer type, throw exception
-                    if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
+                    else
                     {
-                        for (size_t i = 0; i < input_rows_count; ++i)
+                        /// If From Data is Nan or Inf and we convert to integer type, throw exception
+                        if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
                         {
                             if (!isFinite(vec_from[i]))
                             {
@@ -262,46 +254,15 @@ struct ConvertImpl
                                 {
                                     vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
+                                    continue;
                                 }
                                 else
                                     throw Exception("Unexpected inf or nan to integer conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                             }
-                            else
-                            {
-                                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                                        || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-                                {
-                                    bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
-
-                                    if (!convert_result)
-                                    {
-                                        if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                                        {
-                                            vec_to[i] = 0;
-                                            (*vec_null_map_to)[i] = true;
-                                        }
-                                        else
-                                        {
-                                            throw Exception(
-                                                "Value in column " + named_from.column->getName() + " cannot be safely converted into type "
-                                                    + result_type->getName(),
-                                                ErrorCodes::CANNOT_CONVERT_TYPE);
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-                                }
-                            }
                         }
-                        goto done;
-                    }
 
-                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                            || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-                    {
-                        for (size_t i = 0; i < input_rows_count; ++i)
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                                || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                         {
                             bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
 
@@ -321,37 +282,13 @@ struct ConvertImpl
                                 }
                             }
                         }
-                    }
-                    else
-                    {
-                        if constexpr (std::is_same_v<FromDataType, DataTypeUInt64> && std::is_same_v<ToDataType, DataTypeFloat32>)
-                        {
-                            /// Turns out that when ClickHouse is compiled with AVX1 or AVX2 instructions, Clang's autovectorizer produces
-                            /// code for UInt64-to-Float23 conversion which is only ~50% as fast as scalar code. Interestingly, scalar code
-                            /// is equally fast than code compiled for SSE4.2, so we might as well disable vectorization. This situation
-                            /// may change with AVX512 which has a dediated instruction for that usecase (_mm512_cvtepi64_ps).
-#if defined(__x86_64__)
-#  ifdef __clang__
-#    pragma clang loop vectorize(disable) interleave(disable)
-#  endif
-#endif
-                            for (size_t i = 0; i < input_rows_count; ++i)
-                            {
-                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-                            }
-                        }
                         else
                         {
-                            for (size_t i = 0; i < input_rows_count; ++i)
-                            {
-                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-                            }
+                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
                     }
                 }
             }
-
-done:
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
@@ -599,8 +536,9 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, N
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32>> {};
 
-const time_t LUT_MIN_TIME = -1420070400l;       // 1925-01-01 UTC
-const time_t LUT_MAX_TIME = 9877248000l;        // 2282-12-31 UTC
+const time_t LUT_MIN_TIME = -2208988800l;           //  1900-01-01 UTC
+
+const time_t LUT_MAX_TIME = 10413791999l;           // 2299-12-31 UTC
 
 /** Conversion of numeric to DateTime64
   */
@@ -1079,9 +1017,7 @@ inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuff
 {
     ExtendedDayNum tmp(0);
     if (!tryReadDateText(tmp, rb))
-    {
         return false;
-    }
     x = tmp;
     return true;
 }
@@ -1164,9 +1100,27 @@ struct ConvertThroughParsing
         if (in.eof())
             return true;
 
-        /// Special case, that allows to parse string with DateTime as Date.
-        if (std::is_same_v<ToDataType, DataTypeDate> && (in.buffer().size()) == strlen("YYYY-MM-DD hh:mm:ss"))
-            return true;
+        /// Special case, that allows to parse string with DateTime or DateTime64 as Date or Date32.
+        if constexpr (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            if (!in.eof() && (*in.position() == ' ' || *in.position() == 'T'))
+            {
+                if (in.buffer().size() == strlen("YYYY-MM-DD hh:mm:ss"))
+                    return true;
+
+                if (in.buffer().size() >= strlen("YYYY-MM-DD hh:mm:ss.x")
+                    && in.buffer().begin()[19] == '.')
+                {
+                    in.position() = in.buffer().begin() + 20;
+
+                    while (!in.eof() && isNumericASCII(*in.position()))
+                        ++in.position();
+
+                    if (in.eof())
+                        return true;
+                }
+            }
+        }
 
         return false;
     }
@@ -1188,9 +1142,7 @@ struct ConvertThroughParsing
             if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
             else
-            {
                 local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
-            }
 
             if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort || parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 utc_time_zone = &DateLUT::instance("UTC");
@@ -1304,8 +1256,10 @@ struct ConvertThroughParsing
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
+                    {
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
+                    }
                     else
                     {
                         parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
@@ -1336,9 +1290,18 @@ struct ConvertThroughParsing
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
-                    time_t res;
-                    parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                    convertFromTime<ToDataType>(vec_to[i],res);
+                    if constexpr (to_datetime64)
+                    {
+                        DateTime64 res = 0;
+                        parsed = tryParseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else
+                    {
+                        time_t res;
+                        parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
+                    }
                 }
                 else
                 {
@@ -1349,8 +1312,10 @@ struct ConvertThroughParsing
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
+                    {
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
+                    }
                     else
                         parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                 }
@@ -2525,6 +2490,9 @@ struct NameParseDateTime32BestEffortOrNull { static constexpr auto name = "parse
 struct NameParseDateTime64BestEffort { static constexpr auto name = "parseDateTime64BestEffort"; };
 struct NameParseDateTime64BestEffortOrZero { static constexpr auto name = "parseDateTime64BestEffortOrZero"; };
 struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parseDateTime64BestEffortOrNull"; };
+struct NameParseDateTime64BestEffortUS { static constexpr auto name = "parseDateTime64BestEffortUS"; };
+struct NameParseDateTime64BestEffortUSOrZero { static constexpr auto name = "parseDateTime64BestEffortUSOrZero"; };
+struct NameParseDateTime64BestEffortUSOrNull { static constexpr auto name = "parseDateTime64BestEffortUSOrNull"; };
 
 
 using FunctionParseDateTimeBestEffort = FunctionConvertFromString<
@@ -2554,6 +2522,14 @@ using FunctionParseDateTime64BestEffortOrZero = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
 using FunctionParseDateTime64BestEffortOrNull = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
+
+using FunctionParseDateTime64BestEffortUS = FunctionConvertFromString<
+    DataTypeDateTime64, NameParseDateTime64BestEffortUS, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffortUS>;
+using FunctionParseDateTime64BestEffortUSOrZero = FunctionConvertFromString<
+    DataTypeDateTime64, NameParseDateTime64BestEffortUSOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffortUS>;
+using FunctionParseDateTime64BestEffortUSOrNull = FunctionConvertFromString<
+    DataTypeDateTime64, NameParseDateTime64BestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
+
 
 class ExecutableFunctionCast : public IExecutableFunction
 {

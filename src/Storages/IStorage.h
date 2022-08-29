@@ -282,7 +282,7 @@ public:
       *
       * SelectQueryInfo is required since the stage can depends on the query
       * (see Distributed() engine and optimize_skip_unused_shards,
-      *  see also MergeTree engine and allow_experimental_projection_optimization).
+      *  see also MergeTree engine and projection optimization).
       * And to store optimized cluster (after optimize_skip_unused_shards).
       * It will also store needed stuff for projection query pipeline.
       *

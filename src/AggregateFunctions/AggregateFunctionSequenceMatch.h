@@ -163,7 +163,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }

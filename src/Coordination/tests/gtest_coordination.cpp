@@ -137,7 +137,7 @@ struct SimpliestRaftServer
         if (!raft_instance)
         {
             std::cerr << "Failed to initialize launcher" << std::endl;
-            exit(-1);
+            _exit(1);
         }
 
         std::cout << "init Raft instance " << server_id;

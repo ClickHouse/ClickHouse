@@ -54,7 +54,7 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMut
 BlockIO InterpreterDropQuery::execute()
 {
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    if (!drop.cluster.empty())
+    if (!drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();

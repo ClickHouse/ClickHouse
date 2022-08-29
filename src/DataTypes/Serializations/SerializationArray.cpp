@@ -535,7 +535,7 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
 
-    if (settings.csv.input_format_arrays_as_nested_csv)
+    if (settings.csv.arrays_as_nested_csv)
     {
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)

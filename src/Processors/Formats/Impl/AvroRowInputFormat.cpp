@@ -6,7 +6,7 @@
 
 #include <Core/Field.h>
 
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -572,6 +573,39 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
     }
 }
 
+void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
+{
+    /// We should deserialize all nested columns together, because
+    /// in avro we have single row Array(Record) and we can
+    /// deserialize it once.
+
+    std::vector<ColumnArray::Offsets *> arrays_offsets;
+    arrays_offsets.reserve(nested_column_indexes.size());
+    std::vector<IColumn *> nested_columns;
+    nested_columns.reserve(nested_column_indexes.size());
+    for (size_t index : nested_column_indexes)
+    {
+        ColumnArray & column_array = assert_cast<ColumnArray &>(*columns[index]);
+        arrays_offsets.push_back(&column_array.getOffsets());
+        nested_columns.push_back(&column_array.getData());
+        ext.read_columns[index] = true;
+    }
+
+    size_t total = 0;
+    for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
+    {
+        total += n;
+        for (size_t i = 0; i < n; ++i)
+        {
+            for (size_t j = 0; j != nested_deserializers.size(); ++j)
+                nested_deserializers[j](*nested_columns[j], decoder);
+        }
+    }
+
+    for (auto & offsets : arrays_offsets)
+        offsets->push_back(offsets->back() + total);
+}
+
 static inline std::string concatPath(const std::string & a, const std::string & b)
 {
     return a.empty() ? b : a + "." + b;
@@ -630,6 +664,42 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             branch_actions[i] = createAction(header, branch_node, concatPath(current_path, branch_name));
         }
         return AvroDeserializer::Action::unionAction(branch_actions);
+    }
+    else if (node->type() == avro::AVRO_ARRAY)
+    {
+        /// If header doesn't have column with current_path name and node is Array(Record),
+        /// check if we have a flattened Nested table with such name.
+        Names nested_names = Nested::getAllNestedColumnsForTable(header, current_path);
+        auto nested_avro_node = node->leafAt(0);
+        if (nested_names.empty() || nested_avro_node->type() != avro::AVRO_RECORD)
+            return AvroDeserializer::Action(createSkipFn(node));
+
+        /// Check that all nested columns are Arrays.
+        std::unordered_map<String, DataTypePtr> nested_types;
+        for (const auto & name : nested_names)
+        {
+            auto type = header.getByName(name).type;
+            if (!isArray(type))
+                return AvroDeserializer::Action(createSkipFn(node));
+            nested_types[Nested::splitName(name).second] = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
+        }
+
+        /// Create nested deserializer for each nested column.
+        std::vector<DeserializeFn> nested_deserializers;
+        std::vector<size_t> nested_indexes;
+        for (size_t i = 0; i != nested_avro_node->leaves(); ++i)
+        {
+            const auto & name = nested_avro_node->nameAt(i);
+            if (!nested_types.contains(name))
+                return AvroDeserializer::Action(createSkipFn(node));
+            size_t nested_column_index = header.getPositionByName(Nested::concatenateName(current_path, name));
+            column_found[nested_column_index] = true;
+            auto nested_deserializer = createDeserializeFn(nested_avro_node->leafAt(i), nested_types[name]);
+            nested_deserializers.emplace_back(nested_deserializer);
+            nested_indexes.push_back(nested_column_index);
+        }
+
+        return AvroDeserializer::Action(nested_indexes, nested_deserializers);
     }
     else
     {
@@ -777,13 +847,13 @@ private:
     }
 
     Poco::URI base_url;
-    LRUCache<uint32_t, avro::ValidSchema> schema_cache;
+    CacheBase<uint32_t, avro::ValidSchema> schema_cache;
 };
 
 using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
-static LRUCache<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+static CacheBase<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
