@@ -17,7 +17,7 @@ void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
     /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
     plain_hashing.next();
 
-    if (compress_marks)
+    if (is_compress_marks)
         marks_compressed.next();
 
     marks_hashing.next();
@@ -66,7 +66,7 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     marks_hashing(*marks_file),
     marks_compressed_buf(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
     marks_compressed(marks_compressed_buf),
-    compress_marks(isCompressedFromMrkExtension(marks_file_extension))
+    is_compress_marks(isCompressedFromMrkExtension(marks_file_extension))
 {
 }
 
@@ -80,7 +80,7 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
     checksums.files[name + data_file_extension].file_size = plain_hashing.count();
     checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
 
-    if (compress_marks)
+    if (is_compress_marks)
     {
         checksums.files[name + marks_file_extension].is_compressed = true;
         checksums.files[name + marks_file_extension].uncompressed_size = marks_compressed.count();
@@ -275,12 +275,12 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                 if (stream.compressed.offset() >= settings.min_compress_block_size)
                     stream.compressed.next();
 
-                writeIntBinary(stream.plain_hashing.count(), stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
-                writeIntBinary(stream.compressed.offset(), stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
+                writeIntBinary(stream.plain_hashing.count(), stream.is_compress_marks ? stream.marks_compressed : stream.marks_hashing);
+                writeIntBinary(stream.compressed.offset(), stream.is_compress_marks ? stream.marks_compressed : stream.marks_hashing);
                 /// Actually this numbers is redundant, but we have to store them
                 /// to be compatible with normal .mrk2 file format
                 if (settings.can_use_adaptive_granularity)
-                    writeIntBinary(1UL, stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
+                    writeIntBinary(1UL, stream.is_compress_marks ? stream.marks_compressed : stream.marks_hashing);
             }
 
             size_t pos = granule.start_row;
