@@ -233,7 +233,15 @@ public:
             {
                 for (const auto & auth : auth_ids)
                 {
-                    if (predicate(auth))
+                    using TAuth = std::remove_reference_t<decltype(auth)>;
+
+                    const AuthID * auth_ptr = nullptr;
+                    if constexpr (std::is_pointer_v<TAuth>)
+                        auth_ptr = auth;
+                    else
+                        auth_ptr = &auth;
+
+                    if (predicate(*auth_ptr))
                         return true;
                 }
                 return false;
@@ -250,18 +258,12 @@ public:
             if (auth_it == session_and_auth.end())
                 return false;
 
-            return check_auth(auth_it->second.auth);
+            return check_auth(auth_it->second);
         }
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
-        struct UncommittedAuth
-        {
-            std::deque<AuthID> auth;
-            int64_t zxid{0};
-        };
-
-        std::unordered_map<int64_t, UncommittedAuth> session_and_auth;
+        std::unordered_map<int64_t, std::list<const AuthID * >> session_and_auth;
 
         struct UncommittedNode
         {

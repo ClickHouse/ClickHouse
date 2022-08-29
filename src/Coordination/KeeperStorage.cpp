@@ -358,12 +358,6 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
                 acls = operation.acls;
                 last_applied_zxid = delta.zxid;
             }
-            else if constexpr (std::same_as<DeltaType, AddAuthDelta>)
-            {
-                auto & uncommitted_auth = session_and_auth[operation.session_id];
-                uncommitted_auth.auth.emplace_back(operation.auth_id);
-                uncommitted_auth.zxid = delta.zxid;
-            }
         },
         delta.operation);
 }
@@ -379,6 +373,11 @@ void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
             deltas_for_path[added_delta.path].push_back(&added_delta);
             applyDelta(added_delta);
         }
+        else if (const auto * auth_delta = std::get_if<AddAuthDelta>(&added_delta.operation))
+        {
+            auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
+            uncommitted_auth.emplace_back(&auth_delta->auth_id);
+        }
     }
 }
 
@@ -393,6 +392,7 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
             deltas.pop_front();
             break;
         }
+
         auto & front_delta = deltas.front();
 
         if (!front_delta.path.empty())
@@ -405,8 +405,8 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
         }
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&front_delta.operation))
         {
-            auto & uncommitted_auth = session_and_auth[add_auth->session_id].auth;
-            assert(uncommitted_auth.front() == add_auth->auth_id);
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id];
+            assert(!uncommitted_auth.empty() && uncommitted_auth.front() == &add_auth->auth_id);
             uncommitted_auth.pop_front();
             if (uncommitted_auth.empty())
                 session_and_auth.erase(add_auth->session_id);
@@ -470,8 +470,8 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
         }
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta_it->operation))
         {
-            auto & uncommitted_auth = session_and_auth[add_auth->session_id].auth;
-            assert(uncommitted_auth.back() == add_auth->auth_id);
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id];
+            assert(uncommitted_auth.back() == &add_auth->auth_id);
             uncommitted_auth.pop_back();
             if (uncommitted_auth.empty())
                 session_and_auth.erase(add_auth->session_id);
