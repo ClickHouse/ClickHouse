@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/external-authenticators/ldap
+---
 # LDAP {#external-authenticators-ldap}
 
 Для аутентификации пользователей ClickHouse можно использовать сервер LDAP. Существуют два подхода:

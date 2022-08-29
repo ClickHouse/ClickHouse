@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/parts
+---
 # system.parts {#system_tables-parts}
 
 此系统表包含 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 表分区的相关信息。

@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/settings_profile_elements
+---
 # system.settings_profile_elements {#system_tables-settings_profile_elements}
 
 描述settings配置文件的内容:
