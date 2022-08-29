@@ -128,6 +128,7 @@ namespace DB
         {"toboolean", KQLFunctionValue::tobool},
         {"todouble", KQLFunctionValue::todouble},
         {"toint", KQLFunctionValue::toint},
+        {"tolong", KQLFunctionValue::tolong},
         {"toreal", KQLFunctionValue::todouble},
         {"tostring", KQLFunctionValue::tostring},
         {"totimespan", KQLFunctionValue::totimespan},
@@ -541,6 +542,9 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
 
         case KQLFunctionValue::toint:
             return std::make_unique<ToInt>();
+
+        case KQLFunctionValue::tolong:
+            return std::make_unique<ToLong>();
 
         case KQLFunctionValue::tostring:
             return std::make_unique<ToString>();
