@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/information_schema
+---
 # INFORMATION_SCHEMA
 
 `INFORMATION_SCHEMA` (`information_schema`) is a system database that contains views. Using these views, you can get information about the metadata of database objects. These views read data from the columns of the [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md) system tables.

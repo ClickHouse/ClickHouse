@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/row_policies
+---
 # system.row_policies {#system_tables-row_policies}
 
 包含一个特定表的过滤器, 以及应该使用此行策略的角色和/或用户列表.

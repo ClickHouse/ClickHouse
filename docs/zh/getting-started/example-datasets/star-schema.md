@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/example-datasets/star-schema
 sidebar_position: 16
 sidebar_label: Star Schema Benchmark
 ---

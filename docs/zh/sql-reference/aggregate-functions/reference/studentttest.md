@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/reference/studentttest
 sidebar_position: 300
 sidebar_label: studentTTest
 ---

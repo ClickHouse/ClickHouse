@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/users
+---
 # system.users {#system_tables-users}
 
 包含服务器上配置的[用户账号](../../operations/access-rights.md#user-account-management)的列表.

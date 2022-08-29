@@ -1,3 +1,6 @@
+---
+slug: /ru/sql-reference/operators/in
+---
 # Операторы IN {#select-in-operators}
 
 Операторы `IN`, `NOT IN`, `GLOBAL IN`, `GLOBAL NOT IN` рассматриваются отдельно, так как их функциональность достаточно богатая.
