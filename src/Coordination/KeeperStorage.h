@@ -211,7 +211,6 @@ public:
 
         String path;
         int64_t zxid;
-        int64_t session_id;
         Operation operation;
     };
 
@@ -262,7 +261,7 @@ public:
             int64_t zxid{0};
         };
 
-        mutable std::unordered_map<int64_t, UncommittedAuth> session_and_auth;
+        std::unordered_map<int64_t, UncommittedAuth> session_and_auth;
 
         struct UncommittedNode
         {
@@ -295,7 +294,7 @@ public:
         };
 
         mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
-        mutable std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
+        std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
         std::list<Delta> deltas;
         KeeperStorage & storage;
