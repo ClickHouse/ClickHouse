@@ -818,37 +818,30 @@ void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
     if (file_segment.isDetached())
         return;
 
-    if (file_segment.getDownloadedSize() > 0)
+    /// file_segment->complete(DOWNLOADED) is not enough, because file segment capacity
+    /// was initially set with a margin as `max_file_segment_size`. => We need to always
+    /// resize to actual size after download finished.
+    if (file_segment.downloaded_size != file_segment.range().size())
     {
-        file_segment.getOrSetDownloader();
+        /// Current file segment is downloaded as a part of write-through cache
+        /// and therefore cannot be concurrently accessed. Nevertheless, it can be
+        /// accessed by cache system tables if someone read from them,
+        /// therefore we need a mutex.
+        std::lock_guard segment_lock(file_segment.mutex);
 
-        {
-            /// file_segment->complete(DOWNLOADED) is not enough, because file segment capacity
-            /// was initially set with a margin as `max_file_segment_size`. => We need to always
-            /// resize to actual size after download finished.
-
-            /// Current file segment is downloaded as a part of write-through cache
-            /// and therefore cannot be concurrently accessed. Nevertheless, it can be
-            /// accessed by cache system tables if someone read from them,
-            /// therefore we need a mutex.
-            std::lock_guard segment_lock(file_segment.mutex);
-
-            assert(file_segment.downloaded_size <= file_segment.range().size());
-            file_segment.segment_range = FileSegment::Range(
-                file_segment.segment_range.left,
-                file_segment.segment_range.left + file_segment.downloaded_size - 1);
-            file_segment.reserved_size = file_segment.downloaded_size;
-        }
-
-        file_segment.completeWithState(FileSegment::State::DOWNLOADED);
-
-        on_complete_file_segment_func(file_segment);
+        assert(file_segment.downloaded_size <= file_segment.range().size());
+        file_segment.segment_range = FileSegment::Range(
+            file_segment.segment_range.left,
+            file_segment.segment_range.left + file_segment.downloaded_size - 1);
+        file_segment.reserved_size = file_segment.downloaded_size;
     }
-    else
+
     {
         std::lock_guard cache_lock(cache->mutex);
         file_segment.completeWithoutState(cache_lock);
     }
+
+    on_complete_file_segment_func(file_segment);
 }
 
 bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, bool is_persistent)
@@ -877,22 +870,27 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
                 offset, current_file_segment_write_offset);
         }
 
-        if ((*current_file_segment_it)->getRemainingSizeToDownload() == 0)
+        auto current_file_segment = *current_file_segment_it;
+        if (current_file_segment->getRemainingSizeToDownload() == 0)
         {
-            completeFileSegment(**current_file_segment_it);
+            completeFileSegment(*current_file_segment);
             current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
         }
-        else if ((*current_file_segment_it)->getDownloadOffset() != offset)
+        else if (current_file_segment->getDownloadOffset() != offset)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot file segment download offset {} does not match current write offset {}",
-                (*current_file_segment_it)->getDownloadOffset(), offset);
+                current_file_segment->getDownloadOffset(), offset);
         }
     }
 
     auto & file_segment = *current_file_segment_it;
-    file_segment->getOrSetDownloader();
+
+    auto downloader = file_segment->getOrSetDownloader();
+    if (downloader != FileSegment::getCallerId())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set a downloader. ({})", file_segment->getInfoForLog());
+
     SCOPE_EXIT({
         file_segment->resetDownloader();
     });
