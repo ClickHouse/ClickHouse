@@ -1,4 +1,5 @@
 ---
+sidebar_position: 98
 slug: /ru/development/integrating_rust_libraries
 ---
 # Интеграция библиотек на языке Rust в ClickHouse.

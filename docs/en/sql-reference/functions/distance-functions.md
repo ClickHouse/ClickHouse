@@ -1,3 +1,6 @@
+---
+slug: /en/sql-reference/functions/distance-functions
+---
 # Distance functions
 
 ## L1Norm
