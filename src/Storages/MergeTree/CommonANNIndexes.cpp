@@ -521,7 +521,9 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & en
         ++iter;
     }
 
-    if (iter->function == RPNElement::FUNCTION_CAST)
+    /// further conditions are possible if there is no tuple or array, or no identifier is found
+    /// the tuple or array can be inside a cast function. For other cases, see the loop after this condition
+    if (iter != end && iter->function == RPNElement::FUNCTION_CAST)
     {
         ++iter;
         /// Cast should be made to array or tuple
