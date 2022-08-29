@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/server-configuration-parameters/
+---
 # 服务器配置参数 {#server-settings}
 
 本节包含无法在会话或查询级别更改的服务器设置的说明。
