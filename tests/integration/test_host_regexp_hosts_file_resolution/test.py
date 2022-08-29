@@ -35,9 +35,10 @@ def started_cluster():
 
 def test_host_regexp_multiple_ptr_hosts_file_v4(started_cluster):
     server_ip = cluster.get_instance_ip("clickhouse-server")
+    client_ip = cluster.get_instance_ip("clickhouse-client")
 
     ch_server.exec_in_container(
-        (["bash", "-c", f"echo '{server_ip} test1.example.com' > /etc/hosts"])
+        (["bash", "-c", f"echo '{client_ip} test1.example.com' > /etc/hosts"])
     )
 
     endpoint = build_endpoint_v4(server_ip)
