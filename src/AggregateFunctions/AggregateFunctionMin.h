@@ -68,9 +68,11 @@ struct AggregateFunctionStandaloneMinData
     void ALWAYS_INLINE inline addManyDefaults(T value, size_t /*length*/) { add(value); }
 
     MULTITARGET_FUNCTION_AVX2_SSE42(
-        MULTITARGET_FUNCTION_HEADER(template <bool add_all_elements, bool add_if_cond_zero> void),
-        addManyImpl,
-        MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
+        MULTITARGET_FUNCTION_HEADER(
+        template <bool add_all_elements, bool add_if_cond_zero>
+        void NO_INLINE
+        ), addManyImpl, MULTITARGET_FUNCTION_BODY(
+        (const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
         {
               size_t count = row_end - row_begin;
               ptr += row_begin;
@@ -80,7 +82,7 @@ struct AggregateFunctionStandaloneMinData
               size_t i = 0;
               if constexpr (!can_use_numeric_max)
               {
-                  /// If we are not using integers we need to ensure min and has_value are initialized to any value from the input
+                  /// If we are not using integers we need to ensure min and has_value are initialized to any valid value from the input
                   if constexpr (add_all_elements)
                   {
                       chassert(row_end - row_begin);
@@ -109,7 +111,7 @@ struct AggregateFunctionStandaloneMinData
               T aux{min};  /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
               if constexpr (std::is_floating_point<T>::value)
               {
-                  constexpr size_t unroll_block = 64 / sizeof(T);
+                  constexpr size_t unroll_block = 256 / sizeof(T);
                   size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
 
                   if (i < unrolled_end)
@@ -157,7 +159,7 @@ struct AggregateFunctionStandaloneMinData
 
     /// Vectorized version
     template <typename Value>
-    void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
+    void addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX2))
@@ -175,7 +177,7 @@ struct AggregateFunctionStandaloneMinData
     }
 
     template <typename Value>
-    void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t start, size_t end)
+    void addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX2))
@@ -193,7 +195,7 @@ struct AggregateFunctionStandaloneMinData
     }
 
     template <typename Value>
-    void NO_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+    void addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX2))
