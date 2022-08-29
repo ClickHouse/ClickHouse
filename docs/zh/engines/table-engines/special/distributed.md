@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/table-engines/special/distributed
 sidebar_position: 33
 sidebar_label: 分布式引擎
 ---

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/table-functions/input
 sidebar_position: 46
 sidebar_label: input
 ---

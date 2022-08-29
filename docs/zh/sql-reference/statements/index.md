@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/
 sidebar_label: SQL 语句
 sidebar_position: 31
 ---
