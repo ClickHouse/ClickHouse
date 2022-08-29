@@ -38,7 +38,7 @@ struct Settings;
     M(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     M(UInt64, max_requests_batch_size, 100, "Max size of batch in requests count before it will be sent to RAFT", 0) \
-    M(Bool, quorum_reads, false, "Depricated - use read_mode. Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
+    M(Bool, quorum_reads, false, "Deprecated - use read_mode. Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
     M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0) \
     M(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \

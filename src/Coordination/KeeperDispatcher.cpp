@@ -45,7 +45,7 @@ KeeperDispatcher::KeeperDispatcher()
 /// - all requests from single session need to be processed in the order of their arrival
 ///
 /// Because of that, we cannot process read and write requests from SAME session at the same time.
-/// To be able to process read and write reqeusts in parallel we need to make sure that only 1 type
+/// To be able to process read and write requests in parallel we need to make sure that only 1 type
 /// of request is being processed from a single session.
 /// Multiple types from different sessions can be processed at the same time.
 ///

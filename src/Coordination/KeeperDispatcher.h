@@ -104,7 +104,7 @@ private:
         std::list<KeeperStorage::RequestForSession> request_queue;
     };
 
-    // Called every time a batch of reqeusts are processed.
+    // Called every time a batch of requests are processed.
     void finalizeRequests(const KeeperStorage::RequestsForSessions & requests_for_sessions);
 
     std::unordered_map<int64_t, UnprocessedRequests> unprocessed_requests_for_session;
