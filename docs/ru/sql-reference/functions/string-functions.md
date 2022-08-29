@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/string-functions
 sidebar_position: 40
 sidebar_label: "Функции для работы со строками"
 ---

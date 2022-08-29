@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/caches
 sidebar_position: 65
 sidebar_label: Кеши
 ---

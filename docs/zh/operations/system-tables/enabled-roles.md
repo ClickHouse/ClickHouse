@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/enabled-roles
+---
 # system.enabled_roles {#system_tables-enabled_roles}
 
 包含当前所有活动角色, 包括当前用户的当前角色和当前角色的已授予角色.
