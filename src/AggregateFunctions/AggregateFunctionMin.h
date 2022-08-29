@@ -68,119 +68,92 @@ struct AggregateFunctionStandaloneMinData
     void ALWAYS_INLINE inline addManyDefaults(T value, size_t /*length*/) { add(value); }
 
     MULTITARGET_FUNCTION_AVX2_SSE42(
-        MULTITARGET_FUNCTION_HEADER(void),
+        MULTITARGET_FUNCTION_HEADER(template <bool add_all_elements, bool add_if_cond_zero> void),
         addManyImpl,
-        MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, size_t row_begin, size_t row_end)
+        MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
         {
-            const auto * last_element = ptr + row_end;
-            ptr += row_begin;
+              size_t count = row_end - row_begin;
+              ptr += row_begin;
+              if constexpr (!add_all_elements)
+                  condition_map += row_begin;
 
-            if constexpr (!can_use_numeric_max)
-            {
-                /// Force initialization to an existing value
-                chassert(row_end - row_begin);
-                if (!has_value)
-                    min = *ptr;
-            }
+              size_t i = 0;
+              if constexpr (!can_use_numeric_max)
+              {
+                  /// If we are not using integers we need to ensure min and has_value are initialized to any value from the input
+                  if constexpr (add_all_elements)
+                  {
+                      chassert(row_end - row_begin);
+                      if (!has_value)
+                      {
+                          has_value = true;
+                          min = *ptr;
+                      }
+                  }
+                  else
+                  {
+                      for (; i < count; i++)
+                      {
+                          if (!condition_map[i] == add_if_cond_zero)
+                          {
+                              has_value = true;
+                              min = ptr[i];
+                              break;
+                          }
+                      }
+                      if (i == count)
+                          return;
+                  }
+              }
 
-            if constexpr (std::is_floating_point_v<T>)
-            {
-                constexpr size_t unroll_block = 64 / sizeof(T);
-                const auto * unrolled_end = ptr + ((row_end - row_begin) / unroll_block * unroll_block);
+              T aux{min};  /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
+              if constexpr (std::is_floating_point<T>::value)
+              {
+                  constexpr size_t unroll_block = 64 / sizeof(T);
+                  size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
 
-                if (ptr != unrolled_end)
-                {
-                    std::vector<T> partial_min(ptr, ptr + unroll_block);
-                    ptr += unroll_block;
+                  if (i < unrolled_end)
+                  {
+                      std::vector<T> partial_min(unroll_block, aux);
 
-                    while (ptr < unrolled_end)
-                    {
-                        for (size_t i = 0; i < unroll_block; i++)
-                        {
-                            partial_min[i] = std::min(partial_min[i], ptr[i]);
-                        }
-                        ptr += unroll_block;
-                    }
-                    min = std::min(min, *std::min_element(partial_min.begin(), partial_min.end()));
-                }
-            }
-            while (ptr < last_element)
-            {
-                min = std::min(min, *ptr);
-                ptr++;
-            }
+                      while (i < unrolled_end)
+                      {
+                          for (size_t j = 0; i < unroll_block; i++)
+                          {
+                              if constexpr (add_all_elements)
+                              {
+                                  partial_min[j] = std::min(partial_min[j], ptr[i+j]);
+                              }
+                              else
+                              {
+                                  if (!condition_map[i+j] == add_if_cond_zero)
+                                      partial_min[j] = std::min(partial_min[j], ptr[i+j]);
+                              }
+                          }
+                          i += unroll_block;
+                      }
+                      for (size_t j = 0; i < unroll_block; i++)
+                          aux = std::min(aux, partial_min[j]);
+                  }
+              }
 
-            has_value = true;
+              for (; i < count; i++)
+              {
+                  if constexpr (add_all_elements)
+                  {
+                      aux = std::min(aux, ptr[i]);
+                  }
+                  else
+                  {
+                      if (!condition_map[i] == add_if_cond_zero)
+                          aux = std::min(aux, ptr[i]);
+                  }
+              }
+
+              min = aux;
+              has_value = true;
         })
     )
-
-    void addManyNotNullImpl(const T * __restrict ptr, const UInt8 * __restrict null_map, size_t row_begin, size_t row_end)
-    {
-        size_t count = row_end - row_begin;
-        ptr += row_begin;
-        null_map += row_begin;
-
-        size_t i = 0;
-        if constexpr (!can_use_numeric_max)
-        {
-            if (!has_value)
-            {
-                for (; i < count; i++)
-                {
-                    if (!null_map[i])
-                    {
-                        add(ptr[i]);
-                        break;
-                    }
-                }
-            }
-        }
-
-        T aux{min}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
-        for (; i < count; i++)
-            if (!null_map[i])
-                aux = std::min(aux, ptr[i]);
-
-        if (!has_value)
-            min = aux;
-        else
-            min = std::min(min, aux);
-        has_value = true;
-    }
-
-    void addManyConditionalImpl(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
-    {
-        size_t count = row_end - row_begin;
-        ptr += row_begin;
-        condition_map += row_begin;
-
-        size_t i = 0;
-        if constexpr (!can_use_numeric_max)
-        {
-            if (!has_value)
-            {
-                for (; i < count; i++)
-                {
-                    if (condition_map[i])
-                    {
-                        add(ptr[i]);
-                        break;
-                    }
-                }
-            }
-        }
-
-        T aux{min}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
-        for (; i < count; i++)
-            if (condition_map[i])
-                aux = std::min(aux, ptr[i]);
-
-        if (!has_value)
-            min = aux;
-        else
-            min = std::min(min, aux);
-        has_value = true;
-    }
 
     /// Vectorized version
     template <typename Value>
@@ -189,42 +162,52 @@ struct AggregateFunctionStandaloneMinData
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX2))
         {
-            addManyImplAVX2(ptr, start, end);
+            addManyImplAVX2<true, false>(ptr, nullptr, start, end);
             return;
         }
         else if (isArchSupported(TargetArch::SSE42))
         {
-            addManyImplSSE42(ptr, start, end);
+            addManyImplSSE42<true, false>(ptr, nullptr, start, end);
             return;
         }
 #endif
-        addManyImpl(ptr, start, end);
+        addManyImpl<true, false>(ptr, nullptr, start, end);
     }
 
     template <typename Value>
     void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t start, size_t end)
     {
-        size_t null_count = countBytesInFilter(null_map, start, end);
-        if (null_count == (end - start))
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            addManyImplAVX2<false, true>(ptr, null_map, start, end);
             return;
-
-        if (null_count != 0)
-            addManyNotNullImpl(ptr, null_map, start, end);
-        else
-            addMany(ptr, start, end);
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            addManyImplSSE42<false, true>(ptr, null_map, start, end);
+            return;
+        }
+#endif
+        addManyImpl<false, true>(ptr, null_map, start, end);
     }
 
     template <typename Value>
     void NO_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
-        size_t included_count = countBytesInFilter(condition_map, start, end);
-        if (!included_count)
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            addManyImplAVX2<false, false>(ptr, condition_map, start, end);
             return;
-
-        if (included_count != (end - start))
-            addManyConditionalImpl(ptr, condition_map, start, end);
-        else
-            addMany(ptr, start, end);
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            addManyImplSSE42<false, false>(ptr, condition_map, start, end);
+            return;
+        }
+#endif
+        addManyImpl<false, false>(ptr, condition_map, start, end);
     }
 
     void merge(const AggregateFunctionStandaloneMinData & rhs)
