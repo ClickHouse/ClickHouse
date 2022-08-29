@@ -103,7 +103,7 @@ TEST(Common, SensitiveDataMasker)
 
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule>
             <name>hide SSN</name><!-- by default: it will use xml path, like query_masking_rules.rule[1] -->
@@ -153,7 +153,7 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule>
             <name>test</name>
@@ -182,7 +182,7 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name></rule>
     </query_masking_rules>
@@ -204,7 +204,7 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
     </query_masking_rules>
