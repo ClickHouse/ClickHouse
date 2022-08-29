@@ -96,8 +96,8 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
 
     WriteBufferFromOwnString string_write_buf;
     Block block(columns);
-    NativeWriter native_writer(string_write_buf, /*client_revision*/ 0, block);
-    native_writer.write(block);
+    NativeWriter serializer(string_write_buf, /*client_revision*/ 0, block);
+    serializer.write(block);
 
     ReadWriteBufferFromHTTP buf(
         createRequestURI(CATBOOST_LIB_EVALUATE_METHOD),
@@ -109,11 +109,8 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
         },
         http_timeouts, credentials);
 
-    String res;
-    readStringBinary(res, buf);
-    ReadBufferFromString string_read_buf(res);
-    NativeReader native_reader(string_read_buf, /*server_revision*/ 0);
-    Block block_read = native_reader.read();
+    NativeReader deserializer(buf, /*server_revision*/ 0);
+    Block block_read = deserializer.read();
 
     return block_read.getColumns()[0];
 }
