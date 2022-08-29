@@ -42,14 +42,17 @@ namespace ErrorCodes
 template <typename T>
 struct AggregateFunctionStandaloneMinData
 {
+    /// We use the max value as the initial value allows us to avoid checking if any value has been set before (has_value).
+    /// This is safe with integers, but not with floats (NaN is a problem) or Decimal (not a straightforward max), etc.
+    static constexpr bool can_use_numeric_max = is_integer<T> && !is_big_int_v<T>;
+
     bool has_value = false;
-    /// Using max as the initial value allows us to avoid checking if any value has been set before (has_value). Note that this doesn't
-    /// work with floating point since NaN will compare incorrectly, so we deal with those manually
+
     T min{ std::numeric_limits<T>::max() };
 
     void ALWAYS_INLINE inline add(T value)
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (!can_use_numeric_max)
         {
             if (!has_value)
             {
@@ -72,15 +75,18 @@ struct AggregateFunctionStandaloneMinData
             const auto * last_element = ptr + row_end;
             ptr += row_begin;
 
-            if constexpr (std::is_floating_point_v<T>)
+            if constexpr (!can_use_numeric_max)
             {
-                constexpr size_t unroll_block = 64 / sizeof(T);
-                const auto * unrolled_end = ptr + ((row_end - row_begin) / unroll_block * unroll_block);
-
                 /// Force initialization to an existing value
                 chassert(row_end - row_begin);
                 if (!has_value)
                     min = *ptr;
+            }
+
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                constexpr size_t unroll_block = 64 / sizeof(T);
+                const auto * unrolled_end = ptr + ((row_end - row_begin) / unroll_block * unroll_block);
 
                 if (ptr != unrolled_end)
                 {
@@ -110,12 +116,28 @@ struct AggregateFunctionStandaloneMinData
 
     void addManyNotNullImpl(const T * __restrict ptr, const UInt8 * __restrict null_map, size_t row_begin, size_t row_end)
     {
-        T aux{min}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
         size_t count = row_end - row_begin;
         ptr += row_begin;
         null_map += row_begin;
 
-        for (size_t i = 0; i < count; i++)
+        size_t i = 0;
+        if constexpr (!can_use_numeric_max)
+        {
+            if (!has_value)
+            {
+                for (; i < count; i++)
+                {
+                    if (!null_map[i])
+                    {
+                        add(ptr[i]);
+                        break;
+                    }
+                }
+            }
+        }
+
+        T aux{min}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
+        for (; i < count; i++)
             if (!null_map[i])
                 aux = std::min(aux, ptr[i]);
 
@@ -128,12 +150,28 @@ struct AggregateFunctionStandaloneMinData
 
     void addManyConditionalImpl(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-        T aux{min};
         size_t count = row_end - row_begin;
         ptr += row_begin;
         condition_map += row_begin;
 
-        for (size_t i = 0; i < count; i++)
+        size_t i = 0;
+        if constexpr (!can_use_numeric_max)
+        {
+            if (!has_value)
+            {
+                for (; i < count; i++)
+                {
+                    if (condition_map[i])
+                    {
+                        add(ptr[i]);
+                        break;
+                    }
+                }
+            }
+        }
+
+        T aux{min}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
+        for (; i < count; i++)
             if (condition_map[i])
                 aux = std::min(aux, ptr[i]);
 
