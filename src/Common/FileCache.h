@@ -170,7 +170,7 @@ private:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock);
 
-    void assertInitialized() const;
+    void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 
     struct FileSegmentCell : private boost::noncopyable
     {
@@ -226,7 +226,7 @@ private:
         bool is_persistent,
         std::lock_guard<std::mutex> & cache_lock);
 
-    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
+    static void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserveForMainList(
         const Key & key,
