@@ -42,9 +42,9 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
+    ThreadGroupStatusPtr running_group;
+    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
+        running_group = CurrentThread::get().getThreadGroup();
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())

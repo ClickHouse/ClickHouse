@@ -201,9 +201,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
+    ThreadGroupStatusPtr running_group;
+    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
+        running_group = CurrentThread::get().getThreadGroup();
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
