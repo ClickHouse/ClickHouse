@@ -58,6 +58,8 @@ public:
             size_t max_compress_block_size_,
             const WriteSettings & query_write_settings);
 
+        ~Stream();
+
         String escaped_column_name;
         std::string data_file_extension;
         std::string marks_file_extension;

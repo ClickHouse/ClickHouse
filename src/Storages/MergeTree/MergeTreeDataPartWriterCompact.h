@@ -89,6 +89,8 @@ private:
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
     HashingWriteBuffer marks;
+
+    bool finalized = false;
 };
 
 }

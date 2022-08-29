@@ -149,8 +149,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             };
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+            WriteBufferFinalizer finalizer(out);
             obfuscateQueries(query, out, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
-            out.finalize();
+            finalizer.finalize();
         }
         else
         {

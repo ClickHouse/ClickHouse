@@ -28,8 +28,6 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    ~MergeTreeDataPartWriterWide() override;
-
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
     void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;

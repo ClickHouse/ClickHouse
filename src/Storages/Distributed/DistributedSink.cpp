@@ -724,7 +724,9 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             auto tmp_dir_sync_guard = make_directory_sync_guard(*it + "/tmp/");
 
             WriteBufferFromFile out{first_file_tmp_path};
+            WriteBufferFinalizer out_finalizer(out);
             CompressedWriteBuffer compress{out, compression_codec};
+            WriteBufferFinalizer compress_finalizer(compress);
             NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
@@ -771,8 +773,8 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
 
             stream.write(block);
 
-            compress.finalize();
-            out.finalize();
+            compress_finalizer.finalize();
+            out_finalizer.finalize();
             if (fsync)
                 out.sync();
         }

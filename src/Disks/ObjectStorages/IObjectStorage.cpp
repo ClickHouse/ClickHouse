@@ -40,8 +40,9 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 
     auto in = readObject(object_from);
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite);
+    WriteBufferFinalizer out_finalizer(*out);
     copyData(*in, *out);
-    out->finalize();
+    out_finalizer.finalize();
 }
 
 const std::string & IObjectStorage::getCacheBasePath() const

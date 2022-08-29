@@ -1502,10 +1502,11 @@ namespace
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
         buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        WriteBufferFinalizer finalizer(*buf);
         auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
-        buf->finalize();
+        finalizer.finalize();
 
         result.mutable_totals()->assign(memory.data(), memory.size());
     }
@@ -1520,10 +1521,11 @@ namespace
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
         buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        WriteBufferFinalizer finalizer(*buf);
         auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();
-        buf->finalize();
+        finalizer.finalize();
 
         result.mutable_extremes()->assign(memory.data(), memory.size());
     }

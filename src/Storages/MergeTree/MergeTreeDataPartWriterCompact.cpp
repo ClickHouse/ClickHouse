@@ -40,16 +40,21 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 MergeTreeDataPartWriterCompact::~MergeTreeDataPartWriterCompact()
 {
+    if (finalized)
+        return;
+
+    auto * log = &Poco::Logger::get("MergeTreeDataPartWriterCompact");
+
     for (auto & [_, stream] : compressed_streams)
     {
-        stream->hashing_buf.finalize();
-        stream->compressed_buf.finalize();
+        tryFinalizeAndLogException(stream->hashing_buf, log);
+        tryFinalizeAndLogException(stream->compressed_buf, log);
     }
 
-    plain_hashing.finalize();
-    plain_file->finalize();
-    marks.finalize();
-    marks_file->finalize();
+    tryFinalizeAndLogException(plain_hashing, log);
+    tryFinalizeAndLogException(*plain_file, log);
+    tryFinalizeAndLogException(marks, log);
+    tryFinalizeAndLogException(*marks_file, log);
 }
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
@@ -284,6 +289,7 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
     plain_file->finalize();
     marks.finalize();
     marks_file->finalize();
+    finalized = true;
     if (sync)
     {
         plain_file->sync();

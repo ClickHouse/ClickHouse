@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -136,9 +137,11 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
+        WriteBufferFinalizer finalizer(out_buffer);
         auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
-        out_buffer.finalize();
+        output_format->finalize();
+        finalizer.finalize();
     };
 
     Poco::URI uri(configuration.url);
@@ -167,9 +170,11 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
+        WriteBufferFinalizer finalizer(out_buffer);
         auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
-        out_buffer.finalize();
+        output_format->finalize();
+        finalizer.finalize();
     };
 
     Poco::URI uri(configuration.url);

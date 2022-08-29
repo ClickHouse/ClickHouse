@@ -108,11 +108,11 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
-    bool is_compresesed = false;
+    bool is_compressed = false;
 
     void reset()
     {
-        if (maybe_compressed_out && is_compresesed)
+        if (maybe_compressed_out && is_compressed)
             maybe_compressed_out->finalize();
         *this = QueryState();
     }

@@ -1311,7 +1311,7 @@ try
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
-    SCOPE_EXIT(file_out.finalize());
+    WriteBufferFinalizer out_finalizer(file_out);
 
     if (load_from_file.empty())
     {
@@ -1457,6 +1457,8 @@ try
         obfuscator.updateSeed();
         rewind_needed = true;
     }
+
+    out_finalizer.finalize();
 
     return 0;
 }

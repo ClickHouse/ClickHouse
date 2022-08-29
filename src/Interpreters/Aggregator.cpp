@@ -1499,7 +1499,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     auto file = createTemporaryFile(tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
+    WriteBufferFinalizer file_buf_finalizer(file_buf);
     CompressedWriteBuffer compressed_buf(file_buf);
+    WriteBufferFinalizer compressed_buf_finalizer(compressed_buf);
     NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}.", path);
@@ -1529,8 +1531,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     }
 
     block_out.flush();
-    compressed_buf.finalize();
-    file_buf.finalize();
+    compressed_buf_finalizer.finalize();
+    file_buf_finalizer.finalize();
 
     double elapsed_seconds = watch.elapsedSeconds();
     double compressed_bytes = file_buf.count();

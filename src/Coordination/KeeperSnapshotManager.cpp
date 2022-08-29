@@ -699,12 +699,11 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
 
     auto writer = std::make_unique<WriteBufferFromFile>(tmp_snapshot_path, O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC | O_APPEND);
-    bool need_finalize_writer = true;
     std::unique_ptr<WriteBuffer> compressed_writer;
     if (compress_snapshots_zstd)
     {
         compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
-        need_finalize_writer = false;
+        writer = nullptr;
     }
     else
     {
@@ -714,7 +713,7 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     compressed_writer->sync();
-    if (need_finalize_writer)
+    if (writer)
         writer->finalize();
 
     std::error_code ec;

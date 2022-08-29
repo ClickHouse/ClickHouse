@@ -82,8 +82,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
 
     ~Impl()
     {
-        for (auto & file : written_files)
-            file->finalize();
+        finalizeWriteBuffers(written_files);
     }
 
     void finish();
@@ -91,9 +90,9 @@ struct MergedBlockOutputStream::Finalizer::Impl
 
 void MergedBlockOutputStream::Finalizer::finish()
 {
-    if (impl)
-        impl->finish();
     std::unique_ptr<Impl> to_finish = std::move(impl);
+    if (to_finish)
+        to_finish->finish();
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::finish()
@@ -103,10 +102,10 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
     for (const auto & file_name : files_to_remove_after_finish)
         data_part_storage_builder->removeFile(file_name);
 
-    for (auto & file : written_files)
+    finalizeWriteBuffers(written_files);
+    if (sync)
     {
-        file->finalize();
-        if (sync)
+        for (auto & file : written_files)
             file->sync();
     }
 }
@@ -312,8 +311,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
     catch (...)
     {
-        for (auto & file : written_files)
-            file->finalize();
+        finalizeWriteBuffers(written_files);
         throw;
     }
 }

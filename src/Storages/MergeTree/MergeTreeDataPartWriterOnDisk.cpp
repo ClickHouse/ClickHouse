@@ -64,6 +64,17 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
 {
 }
 
+MergeTreeDataPartWriterOnDisk::Stream::~Stream()
+{
+    auto * log = &Poco::Logger::get("MergeTreeDataPartWriterOnDisk::Stream");
+    tryFinalizeAndLogException(compressed, log);
+    tryFinalizeAndLogException(compressed_buf, log);
+    tryFinalizeAndLogException(plain_hashing, log);
+    tryFinalizeAndLogException(*plain_file, log);
+    tryFinalizeAndLogException(marks, log);
+    tryFinalizeAndLogException(*marks_file, log);
+}
+
 void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     String name = escaped_column_name;

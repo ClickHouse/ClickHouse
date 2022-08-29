@@ -754,8 +754,9 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         out = writer->writeFile(info.data_file_name);
     }
 
+    WriteBufferFinalizer out_finalizer(*out);
     copyData(*read_buffer, *out);
-    out->finalize();
+    out_finalizer.finalize();
     ++num_files_written;
 }
 

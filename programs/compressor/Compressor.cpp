@@ -159,6 +159,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else
             wb = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
 
+        WriteBufferFinalizer finalizer(*wb);
         if (stat_mode)
         {
             /// Output statistic for compressed file.
@@ -187,11 +188,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         {
             /// Compression
             CompressedWriteBuffer to(*wb, codec, block_size);
+            WriteBufferFinalizer to_finalizer(to);
             copyData(*rb, to);
-            to.finalize();
+            to_finalizer.finalize();
         }
 
-        wb->finalize();
+        finalizer.finalize();
     }
     catch (...)
     {

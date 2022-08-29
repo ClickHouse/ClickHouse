@@ -38,8 +38,6 @@ public:
 
     void run() final;
 
-    ~PostgreSQLHandler() override;
-
 private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 

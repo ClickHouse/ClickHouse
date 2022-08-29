@@ -1619,7 +1619,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
                 state.maybe_compressed_out = std::make_unique<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
-                state.is_compresesed = true;
+                state.is_compressed = true;
             }
             else
                 state.maybe_compressed_out = out;

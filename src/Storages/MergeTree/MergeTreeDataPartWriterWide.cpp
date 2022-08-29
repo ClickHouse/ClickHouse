@@ -88,20 +88,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
         addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
 }
 
-MergeTreeDataPartWriterWide::~MergeTreeDataPartWriterWide()
-{
-    for (auto & stream : column_streams)
-    {
-        try
-        {
-            stream.second->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(&Poco::Logger::get("MergeTreeDataPartWriterWide"));
-        }
-    }
-}
 
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & column,

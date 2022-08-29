@@ -1149,9 +1149,10 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
+        WriteBufferFinalizer out_finalizer(out);
         LimitReadBuffer limit(istr, max_query_size + 1, false);
         copyData(limit, out);
-        out.finalize();
+        out_finalizer.finalize();
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();
@@ -1164,10 +1165,8 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
-    SCOPE_EXIT({
-        if (compressed_buffer)
-            compressed_buffer->finalize();
-    });
+    std::unique_ptr<WriteBufferFinalizer> compressed_buffer_finalizer;
+
     try
     {
         if (pipeline.pushing())
@@ -1199,6 +1198,7 @@ void executeQuery(
                     chooseCompressionMethod(out_file, compression_method),
                     /* compression level = */ 3
                 );
+                compressed_buffer_finalizer = std::make_unique<WriteBufferFinalizer>(*compressed_buffer);
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
@@ -1261,6 +1261,9 @@ void executeQuery(
         streams.onException();
         throw;
     }
+
+    if (compressed_buffer_finalizer)
+        compressed_buffer_finalizer->finalize();
 
     streams.onFinish();
 }

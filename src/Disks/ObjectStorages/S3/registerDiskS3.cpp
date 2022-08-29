@@ -72,8 +72,9 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_wit
     try
     {
         auto file = storage.writeObject(object, WriteMode::Rewrite);
+        WriteBufferFinalizer file_finalizer(*file);
         file->write("test", 4);
-        file->finalize();
+        file_finalizer.finalize();
     }
     catch (...)
     {

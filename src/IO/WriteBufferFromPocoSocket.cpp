@@ -9,6 +9,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -33,6 +34,17 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_SOCKET;
 }
 
+WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&Poco::Logger::get("WriteBufferFromPocoSocket"));
+    }
+}
 
 void WriteBufferFromPocoSocket::nextImpl()
 {

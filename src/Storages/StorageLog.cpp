@@ -436,8 +436,7 @@ void LogSink::onCancel()
 
 void LogSink::finalize()
 {
-    for (auto & stream : streams | boost::adaptors::map_values)
-        stream.finalize();
+    finalizeMapValues(streams);
 }
 
 
@@ -1062,8 +1061,9 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             auto backup_entry = backup->readFile(file_path_in_backup);
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
+            WriteBufferFinalizer out_finalizer(*out);
             copyData(*in, *out);
-            out->finalize();
+            out_finalizer.finalize();
         }
 
         if (use_marks_file)

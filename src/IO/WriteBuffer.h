@@ -8,6 +8,7 @@
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/logger_useful.h>
 #include <IO/BufferBase.h>
 
 
@@ -60,13 +61,19 @@ public:
         pos = working_buffer.begin();
     }
 
-    /** it is desirable in the derived classes to place the finalize() call in the destructor,
-      * so that the last data is written (if finalize() wasn't called explicitly)
+    /** It's expected that finalize was called manually before object destruction. If not,
+      * it may indicate that an exception happened (so most likely the data in buffer
+      * is not needed anymore and no need to finalize) or that we forgot to finalize it.
       */
     virtual ~WriteBuffer()
     {
+#ifndef NDEBUG
         if (count() && is_finalize_required && !finalized)
+        {
+            LOG_ERROR(&Poco::Logger::get("WriteBuffer"), "WriteBuffer is not finalized in destructor, it may indicate a bug");
             std::terminate();
+        }
+#endif
     }
 
     inline void nextIfAtEnd()
@@ -164,6 +171,85 @@ private:
 
     friend class WriteBufferWithoutFinalize;
 };
+
+template <typename Object>
+void tryFinalizeAndLogException(Object & obj, Poco::Logger * logger)
+{
+    try
+    {
+        obj.finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger);
+    }
+}
+
+class WriteBufferFinalizer
+{
+public:
+    explicit WriteBufferFinalizer(WriteBuffer & buf_) : buf(buf_) {}
+
+    void finalize()
+    {
+        finalized = true;
+        buf.finalize();
+    }
+
+    ~WriteBufferFinalizer()
+    {
+        if (!finalized)
+            tryFinalizeAndLogException(buf, &Poco::Logger::get("WriteBufferFinalizer"));
+    }
+
+private:
+    WriteBuffer & buf;
+    bool finalized = false;
+};
+
+
+template <typename WriteBufferPtr>
+void finalizeWriteBuffers(std::vector<WriteBufferPtr> & buffers)
+{
+    std::exception_ptr e;
+    for (auto & buf : buffers)
+    {
+        try
+        {
+            if (buf)
+                buf->finalize();
+        }
+        catch (...)
+        {
+            if (!e)
+                e = std::current_exception();
+        }
+    }
+    if (e)
+        std::rethrow_exception(e);
+}
+
+
+template <typename Map>
+void finalizeMapValues(Map & map)
+{
+    std::exception_ptr e;
+    for (auto & value : map | boost::adaptors::map_values)
+    {
+        try
+        {
+            value.finalize();
+        }
+        catch (...)
+        {
+            if (!e)
+                e = std::current_exception();
+        }
+    }
+    if (e)
+        std::rethrow_exception(e);
+}
+
 
 class WriteBufferWithoutFinalize : public WriteBuffer
 {

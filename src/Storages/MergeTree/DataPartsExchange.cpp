@@ -304,10 +304,9 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         auto file_in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
         HashingWriteBuffer hashing_out(out);
-        {
-            SCOPE_EXIT(hashing_out.finalize());
-            copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
-        }
+        WriteBufferFinalizer hashing_finalizer(hashing_out);
+        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
+        hashing_finalizer.finalize();
 
         if (blocker.isCancelled())
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
@@ -379,8 +378,9 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
         writeBinary(file_size, out);
 
         HashingWriteBuffer hashing_out(out);
+        WriteBufferFinalizer hashing_finalizer(hashing_out);
         copyDataWithThrottler(buf, hashing_out, blocker.getCounter(), data.getSendsThrottler());
-        hashing_out.finalize();
+        hashing_finalizer.finalize();
         if (blocker.isCancelled())
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
@@ -734,16 +734,12 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
 
         auto file_out = data_part_storage_builder->writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
+        WriteBufferFinalizer file_finalizer(*file_out);
         HashingWriteBuffer hashing_out(*file_out);
-        {
-            SCOPE_EXIT(
-            {
-                hashing_out.finalize();
-                file_out->finalize();
-            });
-
-            copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
-        }
+        WriteBufferFinalizer hashing_finalizer(hashing_out);
+        copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
+        hashing_finalizer.finalize();
+        file_finalizer.finalize();
 
         if (blocker.isCancelled())
         {
@@ -914,12 +910,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
 
         {
             auto file_out = std::make_unique<WriteBufferFromFile>(metadata_file, DBMS_DEFAULT_BUFFER_SIZE, -1, 0666, nullptr, 0);
+            WriteBufferFinalizer file_finalizer(*file_out);
 
             HashingWriteBuffer hashing_out(*file_out);
+            WriteBufferFinalizer hashing_finalizer(hashing_out);
 
             copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
-            hashing_out.finalize();
-            file_out->finalize();
+            hashing_finalizer.finalize();
+            file_finalizer.finalize();
 
             if (blocker.isCancelled())
             {

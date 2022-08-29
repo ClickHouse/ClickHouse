@@ -45,15 +45,7 @@ void ForkWriteBuffer::nextImpl()
 
 void ForkWriteBuffer::finalizeImpl()
 {
-    for (const WriteBufferPtr & buffer : sources)
-    {
-        buffer->finalize();
-    }
-}
-
-ForkWriteBuffer::~ForkWriteBuffer()
-{
-    finalize();
+    finalizeWriteBuffers(sources);
 }
 
 

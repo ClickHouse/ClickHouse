@@ -69,14 +69,13 @@ void RabbitMQSink::onCancel()
 
 void RabbitMQSink::finalize()
 {
-    if (format)
-        format->finalize();
+    if (!format || !buffer)
+        return;
 
-    if (buffer)
-    {
-        buffer->updateMaxWait();
-        buffer->finalize();
-    }
+    WriteBufferFinalizer buffer_finalizer(*buffer);
+    format->finalize();
+    buffer->updateMaxWait();
+    buffer_finalizer.finalize();
 }
 
 }

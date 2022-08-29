@@ -21,7 +21,6 @@ public:
     using WriteBufferPtrs = std::vector<WriteBufferPtr>;
 
     explicit ForkWriteBuffer(WriteBufferPtrs && sources_);
-    ~ForkWriteBuffer() override;
 
 protected:
     void nextImpl() override;

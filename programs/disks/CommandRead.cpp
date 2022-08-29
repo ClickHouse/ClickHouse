@@ -60,16 +60,18 @@ public:
 
             auto in = disk->readFile(full_path);
             auto out = disk->writeFile(full_path_output);
+            WriteBufferFinalizer finalizer(*out);
             copyData(*in, *out);
-            out->finalize();
+            finalizer.finalize();
             return;
         }
         else
         {
             auto in = disk->readFile(full_path);
             std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            WriteBufferFinalizer finalizer(*out);
             copyData(*in, *out);
-            out->finalize();
+            finalizer.finalize();
         }
     }
 };

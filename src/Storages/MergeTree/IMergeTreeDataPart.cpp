@@ -147,9 +147,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     }
     catch (...)
     {
-        for (auto & file : written_files)
-            file->finalize();
-
+        finalizeWriteBuffers(written_files);
         throw;
     }
 }

@@ -63,14 +63,13 @@ void KafkaSink::onCancel()
 
 void KafkaSink::finalize()
 {
-    if (format)
-        format->finalize();
+    if (!buffer || !format)
+        return;
 
-    if (buffer)
-    {
-        buffer->flush();
-        buffer->finalize();
-    }
+    WriteBufferFinalizer buffer_finalizer(*buffer);
+    format->finalize();
+    buffer->flush();
+    buffer_finalizer.finalize();
 }
 
 

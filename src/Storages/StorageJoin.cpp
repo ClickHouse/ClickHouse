@@ -115,7 +115,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
+    WriteBufferFinalizer backup_buf_finalizer(*backup_buf);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
+    WriteBufferFinalizer compressed_buf_finalizer(compressed_backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
 
     auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
@@ -145,8 +147,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.finalize();
-        backup_buf->finalize();
+        compressed_buf_finalizer.finalize();
+        backup_buf_finalizer.finalize();
 
         std::vector<std::string> files;
         disk->listFiles(path, files);
