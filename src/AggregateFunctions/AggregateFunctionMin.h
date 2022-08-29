@@ -44,7 +44,7 @@ struct AggregateFunctionStandaloneMinData
 {
     /// We use the max value as the initial value allows us to avoid checking if any value has been set before (has_value).
     /// This is safe with integers, but not with floats (NaN is a problem) or Decimal (not a straightforward max), etc.
-    static constexpr bool can_use_numeric_max = is_integer<T> && !is_big_int_v<T>;
+    static constexpr bool is_native_integer = std::is_integral_v<T>;
 
     bool has_value = false;
 
@@ -52,7 +52,7 @@ struct AggregateFunctionStandaloneMinData
 
     void ALWAYS_INLINE inline add(T value)
     {
-        if constexpr (!can_use_numeric_max)
+        if constexpr (!is_native_integer)
         {
             if (!has_value)
             {
@@ -80,7 +80,7 @@ struct AggregateFunctionStandaloneMinData
                   condition_map += row_begin;
 
               size_t i = 0;
-              if constexpr (!can_use_numeric_max)
+              if constexpr (!is_native_integer)
               {
                   /// If we are not using integers we need to ensure min and has_value are initialized to any valid value from the input
                   if constexpr (add_all_elements)
@@ -109,14 +109,16 @@ struct AggregateFunctionStandaloneMinData
               }
 
               T aux{min};  /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
-              if constexpr (std::is_floating_point<T>::value)
+              if constexpr (std::is_floating_point_v<T>)
               {
                   constexpr size_t unroll_block = 256 / sizeof(T);
                   size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
 
                   if (i < unrolled_end)
                   {
-                      std::vector<T> partial_min(unroll_block, aux);
+                      T partial_min[unroll_block];
+                      for (size_t j = 0; i < unroll_block; i++)
+                          partial_min[j] = aux;
 
                       while (i < unrolled_end)
                       {
@@ -162,15 +164,18 @@ struct AggregateFunctionStandaloneMinData
     void addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
+        if constexpr (is_native_integer)
         {
-            addManyImplAVX2<true, false>(ptr, nullptr, start, end);
-            return;
-        }
-        else if (isArchSupported(TargetArch::SSE42))
-        {
-            addManyImplSSE42<true, false>(ptr, nullptr, start, end);
-            return;
+            if (isArchSupported(TargetArch::AVX2))
+            {
+                addManyImplAVX2<true, false>(ptr, nullptr, start, end);
+                return;
+            }
+            else if (isArchSupported(TargetArch::SSE42))
+            {
+                addManyImplSSE42<true, false>(ptr, nullptr, start, end);
+                return;
+            }
         }
 #endif
         addManyImpl<true, false>(ptr, nullptr, start, end);
@@ -180,15 +185,18 @@ struct AggregateFunctionStandaloneMinData
     void addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
+        if constexpr (is_native_integer)
         {
-            addManyImplAVX2<false, true>(ptr, null_map, start, end);
-            return;
-        }
-        else if (isArchSupported(TargetArch::SSE42))
-        {
-            addManyImplSSE42<false, true>(ptr, null_map, start, end);
-            return;
+            if (isArchSupported(TargetArch::AVX2))
+            {
+                addManyImplAVX2<false, true>(ptr, null_map, start, end);
+                return;
+            }
+            else if (isArchSupported(TargetArch::SSE42))
+            {
+                addManyImplSSE42<false, true>(ptr, null_map, start, end);
+                return;
+            }
         }
 #endif
         addManyImpl<false, true>(ptr, null_map, start, end);
@@ -198,15 +206,18 @@ struct AggregateFunctionStandaloneMinData
     void addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
+        if constexpr (is_native_integer)
         {
-            addManyImplAVX2<false, false>(ptr, condition_map, start, end);
-            return;
-        }
-        else if (isArchSupported(TargetArch::SSE42))
-        {
-            addManyImplSSE42<false, false>(ptr, condition_map, start, end);
-            return;
+            if (isArchSupported(TargetArch::AVX2))
+            {
+                addManyImplAVX2<false, false>(ptr, condition_map, start, end);
+                return;
+            }
+            else if (isArchSupported(TargetArch::SSE42))
+            {
+                addManyImplSSE42<false, false>(ptr, condition_map, start, end);
+                return;
+            }
         }
 #endif
         addManyImpl<false, false>(ptr, condition_map, start, end);
