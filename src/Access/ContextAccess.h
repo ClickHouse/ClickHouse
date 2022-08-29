@@ -163,24 +163,28 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
-    template<typename ...Args>
-    static std::shared_ptr<ContextAccess> make(Args&& ...args) {
+    template <typename... Args>
+    static std::shared_ptr<ContextAccess> make(Args &&... args)
+    {
         return std::make_shared<MakeSharedHelper<ContextAccess>>(std::forward<Args>(args)...);
     }
 
     ~ContextAccess();
 
 protected:
-    ContextAccess() {} /// NOLINT
+    ContextAccess() { } /// NOLINT
     ContextAccess(const AccessControl & access_control_, const Params & params_);
 
 private:
     friend class AccessControl;
 
-    template<typename T>
-    struct MakeSharedHelper : public T {
-        template<typename ...Args>
-        explicit MakeSharedHelper(Args&& ...args) : T(std::forward<Args>(args)...) {}
+    template <typename T>
+    struct MakeSharedHelper : public T
+    {
+        template <typename... Args>
+        explicit MakeSharedHelper(Args &&... args) : T(std::forward<Args>(args)...)
+        {
+        }
     };
 
     void initialize();
