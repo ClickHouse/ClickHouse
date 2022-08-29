@@ -213,11 +213,16 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     {
         ThreadStatus thread_status;
 
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
+        SCOPE_EXIT({
+            if (running_group)
+                thread_status.detachQuery();
+        });
 
         if (running_group)
             thread_status.attachQuery(running_group);
+
+        if (query_context)
+            thread_status.attachQueryContext(query_context);
 
         setThreadName("ThreadPoolRead");
 
@@ -252,9 +257,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
-
-        if (running_group)
-            thread_status.detachQuery();
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     });

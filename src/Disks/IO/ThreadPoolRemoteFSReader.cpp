@@ -54,6 +54,15 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     {
         ThreadStatus thread_status;
 
+        SCOPE_EXIT({
+            if (running_group)
+                thread_status.detachQuery();
+        });
+
+        /// To be able to pass ProfileEvents.
+        if (running_group)
+            thread_status.attachQuery(running_group);
+
         /// Save query context if any, because cache implementation needs it.
         if (query_context)
             thread_status.attachQueryContext(query_context);
@@ -73,9 +82,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
-
-        if (running_group)
-            thread_status.detachQuery();
 
         return Result{ .size = bytes_read, .offset = offset };
     });
