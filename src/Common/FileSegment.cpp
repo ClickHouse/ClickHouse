@@ -78,19 +78,19 @@ FileSegment::State FileSegment::state() const
 size_t FileSegment::getDownloadOffset() const
 {
     std::lock_guard segment_lock(mutex);
-    return range().left + getDownloadedSize(segment_lock);
+    return range().left + getDownloadedSizeUnlocked(segment_lock);
 }
 
 size_t FileSegment::getDownloadedSize() const
 {
     std::lock_guard segment_lock(mutex);
-    return getDownloadedSize(segment_lock);
+    return getDownloadedSizeUnlocked(segment_lock);
 }
 
 size_t FileSegment::getRemainingSizeToDownload() const
 {
     std::lock_guard segment_lock(mutex);
-    return range().size() - getDownloadedSize(segment_lock);
+    return range().size() - getDownloadedSizeUnlocked(segment_lock);
 }
 
 bool FileSegment::isDetached() const
@@ -99,7 +99,7 @@ bool FileSegment::isDetached() const
     return is_detached;
 }
 
-size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_lock */) const
+size_t FileSegment::getDownloadedSizeUnlocked(std::lock_guard<std::mutex> & /* segment_lock */) const
 {
     if (download_state == State::DOWNLOADED)
         return downloaded_size;
@@ -159,7 +159,7 @@ void FileSegment::resetDownloader()
 
 void FileSegment::resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock)
 {
-    if (getDownloadedSize(segment_lock) == range().size())
+    if (getDownloadedSizeUnlocked(segment_lock) == range().size())
         setDownloaded(segment_lock);
     else
         download_state = State::PARTIALLY_DOWNLOADED;
@@ -333,9 +333,9 @@ FileSegment::State FileSegment::wait()
     return download_state;
 }
 
-bool FileSegment::reserve(size_t size)
+bool FileSegment::reserve(size_t size_to_reserve)
 {
-    if (!size)
+    if (!size_to_reserve)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
     {
@@ -352,13 +352,13 @@ bool FileSegment::reserve(size_t size)
                 caller_id, downloader_id);
         }
 
-        size_t current_downloaded_size = getDownloadedSize(segment_lock);
-        if (current_downloaded_size + size > range().size())
+        size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
+        if (current_downloaded_size + size_to_reserve > range().size())
         {
             throw Exception(
                 ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                 "Attempt to reserve space too much space: {} ({})",
-                size, getInfoForLogImpl(segment_lock));
+                size_to_reserve, getInfoForLogImpl(segment_lock));
         }
 
         assert(reserved_size >= current_downloaded_size);
@@ -372,14 +372,14 @@ bool FileSegment::reserve(size_t size)
 
     size_t current_downloaded_size = getDownloadedSize();
     assert(reserved_size >= current_downloaded_size);
-    size_t free_space = reserved_size - current_downloaded_size;
+    size_t already_reserved_size = reserved_size - current_downloaded_size;
 
-    bool reserved = free_space >= size;
+    bool reserved = already_reserved_size >= size_to_reserve;
     if (!reserved)
     {
         std::lock_guard cache_lock(cache->mutex);
 
-        size_t size_to_reserve = size - free_space;
+        size_to_reserve = size_to_reserve - already_reserved_size;
         reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
         if (reserved)
@@ -420,7 +420,7 @@ void FileSegment::setDownloaded([[maybe_unused]] std::lock_guard<std::mutex> & s
     download_state = State::DOWNLOADED;
     is_downloaded = true;
 
-    assert(getDownloadedSize(segment_lock) > 0);
+    assert(getDownloadedSizeUnlocked(segment_lock) > 0);
     assert(std::filesystem::file_size(getPathInLocalCache()) > 0);
 }
 
@@ -454,7 +454,7 @@ void FileSegment::completeBatchAndResetDownloader()
 
     resetDownloaderImpl(segment_lock);
 
-    LOG_TEST(log, "Complete batch. Current downloaded size: {}", getDownloadedSize(segment_lock));
+    LOG_TEST(log, "Complete batch. Current downloaded size: {}", getDownloadedSizeUnlocked(segment_lock));
 
     cv.notify_all();
 }
@@ -503,7 +503,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
     bool is_downloader = isDownloaderImpl(segment_lock);
     bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
     bool can_update_segment_state = is_downloader || is_last_holder;
-    size_t current_downloaded_size = getDownloadedSize(segment_lock);
+    size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
     SCOPE_EXIT({
         if (is_downloader)
@@ -535,7 +535,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         }
         case State::DOWNLOADED:
         {
-            assert(getDownloadedSize(segment_lock) == range().size());
+            assert(getDownloadedSizeUnlocked(segment_lock) == range().size());
             assert(isDownloadedUnlocked(segment_lock));
             break;
         }
@@ -598,7 +598,7 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
     info << "File segment: " << range().toString() << ", ";
     info << "key: " << key().toString() << ", ";
     info << "state: " << download_state << ", ";
-    info << "downloaded size: " << getDownloadedSize(segment_lock) << ", ";
+    info << "downloaded size: " << getDownloadedSizeUnlocked(segment_lock) << ", ";
     info << "reserved size: " << reserved_size << ", ";
     info << "downloader id: " << (downloader_id.empty() ? "None" : downloader_id) << ", ";
     info << "caller id: " << getCallerId() << ", ";
@@ -694,7 +694,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
 
     snapshot->hits_count = file_segment->getHitsCount();
     snapshot->ref_count = file_segment.use_count();
-    snapshot->downloaded_size = file_segment->getDownloadedSize(segment_lock);
+    snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(segment_lock);
     snapshot->download_state = file_segment->download_state;
     snapshot->is_persistent = file_segment->isPersistent();
 

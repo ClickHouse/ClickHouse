@@ -171,7 +171,7 @@ public:
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
-    size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
+    size_t getDownloadedSizeUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;

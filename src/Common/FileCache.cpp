@@ -71,7 +71,7 @@ bool FileCache::isReadOnly()
     return !isQueryInitialized();
 }
 
-void FileCache::assertInitialized() const
+void FileCache::assertInitialized(std::lock_guard<std::mutex> & /* cache_lock */) const
 {
     if (!is_initialized)
     {
@@ -118,7 +118,6 @@ void FileCache::useCell(
         fs::path path = file_segment->getPathInLocalCache();
         if (!fs::exists(path))
         {
-            remove(file_segment, cache_lock);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "File path does not exist, but file has DOWNLOADED state. {}",
@@ -127,7 +126,6 @@ void FileCache::useCell(
 
         if (fs::file_size(path) == 0)
         {
-            remove(file_segment, cache_lock);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot have zero size downloaded file segments. {}",
@@ -373,15 +371,15 @@ void FileCache::fillHolesWithEmptyFileSegments(
 
 FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent)
 {
-    assertInitialized();
-
-    FileSegment::Range range(offset, offset + size - 1);
-
     std::lock_guard cache_lock(mutex);
+
+    assertInitialized(cache_lock);
 
 #ifndef NDEBUG
     assertCacheCorrectness(key, cache_lock);
 #endif
+
+    FileSegment::Range range(offset, offset + size - 1);
 
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
@@ -401,15 +399,15 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
 
 FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
 {
-    assertInitialized();
-
-    FileSegment::Range range(offset, offset + size - 1);
-
     std::lock_guard cache_lock(mutex);
+
+    assertInitialized(cache_lock);
 
 #ifndef NDEBUG
     assertCacheCorrectness(key, cache_lock);
 #endif
+
+    FileSegment::Range range(offset, offset + size - 1);
 
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
@@ -791,9 +789,9 @@ bool FileCache::tryReserveForMainList(
 
 void FileCache::removeIfExists(const Key & key)
 {
-    assertInitialized();
-
     std::lock_guard cache_lock(mutex);
+
+    assertInitialized(cache_lock);
 
     auto it = files.find(key);
     if (it == files.end())
@@ -900,15 +898,19 @@ void FileCache::remove(
 {
     LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", key.toString(), offset);
 
-    auto * cell = getCell(key, offset, cache_lock);
-    if (!cell)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", key.toString(), offset);
+    String cache_file_path;
 
-    auto cache_file_path = cell->file_segment->getPathInLocalCache();
-
-    if (cell->queue_iterator)
     {
-        cell->queue_iterator->removeAndGetNext(cache_lock);
+        auto * cell = getCell(key, offset, cache_lock);
+        if (!cell)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", key.toString(), offset);
+
+        if (cell->queue_iterator)
+        {
+            cell->queue_iterator->removeAndGetNext(cache_lock);
+        }
+
+        cache_file_path = cell->file_segment->getPathInLocalCache();
     }
 
     auto & offsets = files[key];
