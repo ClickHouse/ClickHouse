@@ -1361,11 +1361,13 @@ class PlainByteArrayDecoder : public PlainDecoder<ByteArrayType>,
   int DecodeCH(int num_values, int null_count, const uint8_t* valid_bits,
                   int64_t valid_bits_offset,
                PaddedPODArray<UInt8>* column_chars_t_p,
-               PaddedPODArray<UInt64>* column_offsets_p) {
+               PaddedPODArray<UInt64>* column_offsets_p,
+               ::arrow::internal::BitmapWriter& bitmap_writer
+               ) {
       int result = 0;
       PARQUET_THROW_NOT_OK(DecodeCHDense(num_values, null_count, valid_bits,
                                             valid_bits_offset, column_chars_t_p,
-                                            column_offsets_p, &result));
+                                            column_offsets_p, bitmap_writer,  &result));
       return result;
   }
 
@@ -1376,6 +1378,7 @@ class PlainByteArrayDecoder : public PlainDecoder<ByteArrayType>,
                              int64_t valid_bits_offset,
                           PaddedPODArray<UInt8>* column_chars_t_p,
                           PaddedPODArray<UInt64>* column_offsets_p,
+                          ::arrow::internal::BitmapWriter& bitmap_writer,
                              int* out_values_decoded) {
          //ArrowBinaryHelper helper(out);
          int values_decoded = 0;
@@ -1406,6 +1409,9 @@ class PlainByteArrayDecoder : public PlainDecoder<ByteArrayType>,
                  column_chars_t_p->insert_assume_reserved(data_ + 4, data_ + 4 + value_len);
                  column_chars_t_p->emplace_back('\0');
                  column_offsets_p->emplace_back(column_chars_t_p->size());
+
+                 bitmap_writer.Set();
+                 bitmap_writer.Next();
 
                  data_ += increment;
                  len_ -= increment;
@@ -1438,6 +1444,9 @@ class PlainByteArrayDecoder : public PlainDecoder<ByteArrayType>,
                      column_chars_t_p->emplace_back('\0');
                      column_offsets_p->emplace_back(column_chars_t_p->size());
 
+                     bitmap_writer.Set();
+                     bitmap_writer.Next();
+
                      data_ += increment;
                      len_ -= increment;
                      ++values_decoded;
@@ -1448,6 +1457,10 @@ class PlainByteArrayDecoder : public PlainDecoder<ByteArrayType>,
                      //helper.UnsafeAppendNull();
                      column_chars_t_p->emplace_back('\0');
                      column_offsets_p->emplace_back(column_chars_t_p->size());
+
+                     bitmap_writer.Clear();
+                     bitmap_writer.Next();
+
                      return Status::OK();
                  }));
          }
@@ -1978,13 +1991,15 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
   int DecodeCH(int num_values, int null_count, const uint8_t* valid_bits,
                int64_t valid_bits_offset,
                PaddedPODArray<UInt8>* column_chars_t_p,
-               PaddedPODArray<UInt64>* column_offsets_p) override {
+               PaddedPODArray<UInt64>* column_offsets_p,
+               ::arrow::internal::BitmapWriter& bitmap_writer
+               ) override {
       int result = 0;
       if (null_count == 0) {
-          PARQUET_THROW_NOT_OK(DecodeCHDenseNonNull(num_values, column_chars_t_p, column_offsets_p, &result));
+          PARQUET_THROW_NOT_OK(DecodeCHDenseNonNull(num_values, column_chars_t_p, column_offsets_p, bitmap_writer,  &result));
       } else {
           PARQUET_THROW_NOT_OK(DecodeCHDense(num_values, null_count, valid_bits,
-                                                valid_bits_offset, column_chars_t_p, column_offsets_p, &result));
+                                                valid_bits_offset, column_chars_t_p, column_offsets_p, bitmap_writer, &result));
       }
       return result;
   }
@@ -1994,6 +2009,7 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
                              int64_t valid_bits_offset,
                              PaddedPODArray<UInt8>* column_chars_t_p,
                              PaddedPODArray<UInt64>* column_offsets_p,
+                             ::arrow::internal::BitmapWriter& bitmap_writer,
                              int* out_num_values) {
          constexpr int32_t kBufferSize = 1024;
          int32_t indices[kBufferSize];
@@ -2031,10 +2047,16 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
                          column_offsets_p -> emplace_back(column_chars_t_p -> size());
                          ++i;
                          ++values_decoded;
+
+                         bitmap_writer.Set();
+                         bitmap_writer.Next();
                      } else {
                          column_chars_t_p -> emplace_back('\0');
                          column_offsets_p -> emplace_back(column_chars_t_p -> size());
                          --null_count;
+
+                         bitmap_writer.Clear();
+                         bitmap_writer.Next();
                      }
                      ++num_appended;
                      if (i == num_indices) {
@@ -2050,6 +2072,9 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
                  column_offsets_p -> emplace_back(column_chars_t_p -> size());
                  --null_count;
                  ++num_appended;
+
+                 bitmap_writer.Clear();
+                 bitmap_writer.Next();
              }
          }
          *out_num_values = values_decoded;
@@ -2059,6 +2084,7 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
      Status DecodeCHDenseNonNull(int num_values,
                                  PaddedPODArray<UInt8>* column_chars_t_p,
                                  PaddedPODArray<UInt64>* column_offsets_p,
+                                 ::arrow::internal::BitmapWriter& bitmap_writer,
                                     int* out_num_values) {
          constexpr int32_t kBufferSize = 2048;
          int32_t indices[kBufferSize];
@@ -2077,6 +2103,9 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
                  column_chars_t_p -> insert(val.ptr, val.ptr + static_cast<int32_t>(val.len));
                  column_chars_t_p -> emplace_back('\0');
                  column_offsets_p -> emplace_back(column_chars_t_p -> size());
+
+                 bitmap_writer.Set();
+                 bitmap_writer.Next();
              }
              values_decoded += num_indices;
          }

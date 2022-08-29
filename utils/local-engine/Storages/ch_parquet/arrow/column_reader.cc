@@ -28,6 +28,8 @@
 #include <utility>
 #include <vector>
 
+#include "arrow/buffer.h"
+#include "arrow/buffer_builder.h"
 #include "arrow/array.h"
 #include "arrow/array/builder_binary.h"
 #include "arrow/array/builder_dict.h"
@@ -36,6 +38,7 @@
 #include "arrow/type.h"
 #include "arrow/util/bit_stream_utils.h"
 #include "arrow/util/bit_util.h"
+#include "arrow/util/bitmap_writer.h"
 #include "arrow/util/checked_cast.h"
 #include "arrow/util/compression.h"
 #include "arrow/util/int_util_internal.h"
@@ -1734,11 +1737,13 @@ namespace internal {
             ::arrow::MemoryPool * pool;
 
             std::shared_ptr<::arrow::Array> fake_array;
+            int64_t null_counter = 0;
+            int64_t value_counter = 0;
 
             void initialize() {
-                accumulator_.builder.reset(new ::arrow::BinaryBuilder(pool));
+                accumulator_.builder = std::make_unique<::arrow::BinaryBuilder>(pool);
                 if (!fake_array) {
-                    accumulator_.builder->AppendEmptyValues(8192);
+                    accumulator_.builder->AppendNulls(8192);
                     accumulator_.builder->Finish(&fake_array);
                 }
                 inited = true;
@@ -1766,8 +1771,12 @@ namespace internal {
                     MutableColumnPtr temp = std::move(*internal_column);
                     internal_column.reset();
                     fake_array->data()->length = temp->size();//the last batch's size may < 8192
+
+                    fake_array->data()->SetNullCount(null_counter);
+                    null_counter = 0;
+                    value_counter = 0;
                     return {std::make_shared<CHStringArray>(
-                        ColumnWithTypeAndName(std::move(temp), std::move(std::make_shared<DataTypeString>()), ""),fake_array)};
+                        ColumnWithTypeAndName(std::move(temp), std::make_shared<DataTypeString>(), ""),fake_array)};
                 }
             }
 
@@ -1775,16 +1784,27 @@ namespace internal {
             {
                 if (unlikely(!inited)) {initialize();}
 
+                ::arrow::internal::BitmapWriter bitmap_writer(
+                    const_cast<uint8_t*>(fake_array->data()->buffers[0]->data()),
+                    value_counter, values_to_read);
+
                 createColumnIfNeeded();
                 int64_t num_decoded
-                    = this->current_decoder_->DecodeCHNonNull(static_cast<int>(values_to_read), column_chars_t_p, column_offsets_p);
+                    = this->current_decoder_->DecodeCHNonNull(static_cast<int>(values_to_read), column_chars_t_p, column_offsets_p, bitmap_writer);
                 DCHECK_EQ(num_decoded, values_to_read);
                 ResetValues();
+
+                value_counter += values_to_read;
+                bitmap_writer.Finish();
             }
 
             void ReadValuesSpaced(int64_t values_to_read, int64_t null_count) override
             {
                 if (unlikely(!inited)) {initialize();}
+
+                ::arrow::internal::BitmapWriter bitmap_writer(
+                    const_cast<uint8_t*>(fake_array->data()->buffers[0]->data()),
+                    value_counter, values_to_read);
 
                 createColumnIfNeeded();
                 int64_t num_decoded = this->current_decoder_->DecodeCH(
@@ -1793,9 +1813,15 @@ namespace internal {
                     valid_bits_->mutable_data(),
                     values_written_,
                     column_chars_t_p,
-                    column_offsets_p);
+                    column_offsets_p,
+                    bitmap_writer);
+
+                null_counter += null_count;
+                value_counter += values_to_read;
                 DCHECK_EQ(num_decoded, values_to_read - null_count);
                 ResetValues();
+
+                bitmap_writer.Finish();
             }
 
         private:

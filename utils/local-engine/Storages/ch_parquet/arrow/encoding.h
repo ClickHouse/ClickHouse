@@ -23,6 +23,8 @@
 #include <vector>
 
 #include "arrow/util/spaced.h"
+#include "arrow/util/bitmap_writer.h"
+
 
 #include "parquet/exception.h"
 #include "parquet/platform.h"
@@ -316,12 +318,15 @@ class TypedDecoder : virtual public Decoder {
   virtual int DecodeCH(int num_values, int null_count, const uint8_t* valid_bits,
                           int64_t valid_bits_offset,
                        PaddedPODArray<UInt8>* column_chars_t_p,
-                       PaddedPODArray<UInt64>* column_offsets_p) {}
+                       PaddedPODArray<UInt64>* column_offsets_p,
+                       ::arrow::internal::BitmapWriter& bitmap_writer
+                       ) {}
 
   int DecodeCHNonNull(int num_values,
                       PaddedPODArray<UInt8>* column_chars_t_p,
-                      PaddedPODArray<UInt64>* column_offsets_p) {
-      return DecodeCH(num_values, 0, /*valid_bits=*/NULLPTR, 0, column_chars_t_p, column_offsets_p);
+                      PaddedPODArray<UInt64>* column_offsets_p,
+                      ::arrow::internal::BitmapWriter& bitmap_writer) {
+      return DecodeCH(num_values, 0, /*valid_bits=*/NULLPTR, 0, column_chars_t_p, column_offsets_p, bitmap_writer);
   }
 
   /// \brief Decode into an ArrayBuilder or other accumulator

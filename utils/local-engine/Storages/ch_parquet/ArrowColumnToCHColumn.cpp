@@ -336,13 +336,6 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     std::unordered_map<String, std::shared_ptr<ColumnWithTypeAndName>> & dictionary_values,
     bool read_ints_as_dates)
 {
-    auto ch_chunk_array_p = dynamic_cast<ch_parquet::internal::CHStringArray*>(arrow_column->chunk(0).get());
-    if (ch_chunk_array_p != nullptr) {
-        //the values are already written into CH Column, not arrow array
-        ch_chunk_array_p->column.name = column_name;
-        return ch_chunk_array_p->column;
-    }
-
     if (!is_nullable && arrow_column->null_count() && arrow_column->type()->id() != arrow::Type::LIST
         && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT)
     {
@@ -351,6 +344,13 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
         return {std::move(nullable_column), std::move(nullable_type), column_name};
+    }
+
+    auto ch_chunk_array_p = dynamic_cast<ch_parquet::internal::CHStringArray*>(arrow_column->chunk(0).get());
+    if (ch_chunk_array_p != nullptr) {
+        //the values are already written into CH Column, not arrow array
+        ch_chunk_array_p->column.name = column_name;
+        return ch_chunk_array_p->column;
     }
 
     switch (arrow_column->type()->id())
