@@ -407,7 +407,7 @@ RANGE(MIN StartDate MAX EndDate);
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
-Поддерживаются [источники](external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+Поддерживаются все виды источников.
 
 Пример настройки:
 
