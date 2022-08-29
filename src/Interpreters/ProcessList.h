@@ -297,7 +297,7 @@ protected:
         OvercommitTrackerBlockerInThread blocker;
     };
 
-    // It is forbiden to do allocations/deallocations with acqiured mutex and
+    // It is forbidden to do allocations/deallocations with acquired mutex and
     // enabled OvercommitTracker. This leads to deadlock in the case of OOM.
     LockAndBlocker safeLock() const noexcept { return { std::unique_lock{mutex}, {} }; }
     Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
