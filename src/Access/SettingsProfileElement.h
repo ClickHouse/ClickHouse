@@ -21,7 +21,8 @@ struct SettingsProfileElement
 {
     std::optional<UUID> parent_profile;
 
-    enum class RangeKind {
+    enum class RangeKind
+    {
         Constrain = 0,
         Allow
     };
