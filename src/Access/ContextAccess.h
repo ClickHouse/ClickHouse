@@ -69,6 +69,9 @@ public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
+    ContextAccess() { } /// NOLINT
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
+
     /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
     /// Same as above, but can return nullptr.
@@ -166,26 +169,13 @@ public:
     template <typename... Args>
     static std::shared_ptr<ContextAccess> make(Args &&... args)
     {
-        return std::make_shared<MakeSharedHelper<ContextAccess>>(std::forward<Args>(args)...);
+        return std::make_shared<ContextAccess>(std::forward<Args>(args)...);
     }
 
     ~ContextAccess();
 
-protected:
-    ContextAccess() { } /// NOLINT
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
-
 private:
     friend class AccessControl;
-
-    template <typename T>
-    struct MakeSharedHelper : public T
-    {
-        template <typename... Args>
-        explicit MakeSharedHelper(Args &&... args) : T(std::forward<Args>(args)...)
-        {
-        }
-    };
 
     void initialize();
     void setUser(const UserPtr & user_) const;
