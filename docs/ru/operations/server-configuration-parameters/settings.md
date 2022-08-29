@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: "Конфигурационные параметры сервера"
 ---

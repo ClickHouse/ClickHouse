@@ -1239,9 +1239,9 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
     assert(!txn || data_part_storage->exists(TXN_VERSION_METADATA_FILE_NAME));
 }
 
-void IMergeTreeDataPart::storeVersionMetadata() const
+void IMergeTreeDataPart::storeVersionMetadata(bool force) const
 {
-    if (!wasInvolvedInTransaction())
+    if (!wasInvolvedInTransaction() && !force)
         return;
 
     LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
@@ -1293,8 +1293,6 @@ void IMergeTreeDataPart::loadVersionMetadata() const
 try
 {
     data_part_storage->loadVersionMetadata(version, storage.log);
-
-
 }
 catch (Exception & e)
 {

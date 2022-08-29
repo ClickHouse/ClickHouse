@@ -345,7 +345,7 @@ private:
 
 REGISTER_FUNCTION(DateName)
 {
-    factory.registerFunction<FunctionDateNameImpl>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

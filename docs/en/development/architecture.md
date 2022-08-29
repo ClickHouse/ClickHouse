@@ -1,4 +1,5 @@
 ---
+slug: /en/development/architecture
 sidebar_label: Architecture Overview
 sidebar_position: 62
 ---

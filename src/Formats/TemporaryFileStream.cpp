@@ -25,7 +25,7 @@ TemporaryFileStream::TemporaryFileStream(const std::string & path, const Block &
 {}
 
 /// Flush data from input stream into file for future reading
-void TemporaryFileStream::write(const std::string & path, const Block & header, QueryPipelineBuilder builder, const std::string & codec)
+TemporaryFileStream::Stat TemporaryFileStream::write(const std::string & path, const Block & header, QueryPipelineBuilder builder, const std::string & codec)
 {
     WriteBufferFromFile file_buf(path);
     WriteBufferFinalizer file_buf_finalizer(file_buf);
@@ -42,6 +42,7 @@ void TemporaryFileStream::write(const std::string & path, const Block & header, 
 
     compressed_buf_finalizer.finalize();
     file_buf_finalizer.finalize();
+    return Stat{compressed_buf.getCompressedBytes(), compressed_buf.getUncompressedBytes()};
 }
 
 }
