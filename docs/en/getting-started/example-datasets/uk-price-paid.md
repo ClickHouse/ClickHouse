@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/uk-price-paid
 sidebar_label: UK Property Price Paid
 sidebar_position: 1
 ---

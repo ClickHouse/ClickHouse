@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/rounding-functions
 sidebar_position: 45
 sidebar_label: Rounding
 ---
