@@ -167,7 +167,7 @@ private:
       */
     virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); }
 
-    bool is_finalize_required = true;
+    bool is_finalize_required = true; // maybe unused
 
     friend class WriteBufferWithoutFinalize;
 };
