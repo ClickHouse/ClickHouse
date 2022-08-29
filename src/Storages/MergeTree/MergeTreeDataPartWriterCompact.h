@@ -84,9 +84,12 @@ private:
     /// Stream for each column's substreams path (look at addStreams).
     std::unordered_map<String, CompressedStreamPtr> compressed_streams;
 
-    /// marks -> marks_file
+    /// marks -> marks_file -> marks_compressed_buf -> marks_compressed
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
-    HashingWriteBuffer marks;
+    HashingWriteBuffer marks_hashing;
+    CompressedWriteBuffer marks_compressed_buf;
+    HashingWriteBuffer marks_compressed;
+    bool is_compress_marks;
 };
 
 }

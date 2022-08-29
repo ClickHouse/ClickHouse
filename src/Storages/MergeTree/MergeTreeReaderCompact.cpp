@@ -37,7 +37,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     , marks_loader(
           data_part->data_part_storage,
           mark_cache,
-          data_part->index_granularity_info.getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
+          data_part->index_granularity_info.getMarksFilePath(data_part_->data_part_storage, MergeTreeDataPartCompact::DATA_FILE_NAME),
           data_part->getMarksCount(),
           data_part->index_granularity_info,
           settings.save_marks_in_cache,

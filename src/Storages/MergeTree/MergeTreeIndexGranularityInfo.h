@@ -39,6 +39,11 @@ public:
         return path_prefix + marks_file_extension;
     }
 
+    String getMarksFilePath(const DataPartStoragePtr & data_part_storage, const String & path_prefix) const
+    {
+        return path_prefix + getMarksExtensionFromFilesystem(data_part_storage).value();
+    }
+
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
     static std::optional<std::string> getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
