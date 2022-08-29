@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/data-types/float
+---
 # Float32,Float64 {#float32-float64}
 
 [浮点数](https://en.wikipedia.org/wiki/IEEE_754)。

@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/database-engines/replicated
+---
 # [experimental] Replicated {#replicated}
 
 该引擎基于[Atomic](../../engines/database-engines/atomic.md)引擎。它支持通过将DDL日志写入ZooKeeper并在给定数据库的所有副本上执行的元数据复制。

@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/mergetree
+---
 # MergeTree {#table_engines-mergetree}
 
 Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该系列（`*MergeTree`）中的其他引擎。
