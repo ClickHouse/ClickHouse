@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/alter/constraint
 sidebar_position: 43
 sidebar_label: 约束
 ---
