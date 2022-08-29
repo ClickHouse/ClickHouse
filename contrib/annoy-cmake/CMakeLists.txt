@@ -1,6 +1,6 @@
 option(ENABLE_ANNOY "Enable Annoy index support" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_ANNOY)
+if ((NOT ENABLE_ANNOY) OR (SANITIZE STREQUAL "undefined"))
     message (STATUS "Not using annoy")
     return()
 endif()
