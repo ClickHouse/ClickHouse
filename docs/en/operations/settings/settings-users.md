@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: User Settings
 ---
@@ -29,7 +30,7 @@ Structure of the `users` section:
         <profile>profile_name</profile>
 
         <quota>default</quota>
-        <default_database>default<default_database>
+        <default_database>default</default_database>
         <databases>
             <database_name>
                 <table_name>

@@ -343,7 +343,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    NOEXCEPT_SCOPE;
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
@@ -384,8 +384,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.finish_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-        span.attribute_names.push_back("clickhouse.thread_id");
-        span.attribute_values.push_back(thread_id);
+        span.attributes.push_back(Tuple{"clickhouse.thread_id", toString(thread_id)});
 
         opentelemetry_span_log->add(span);
     }
@@ -417,7 +416,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         LOG_TRACE(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
-            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString());
 
         os_thread_priority = 0;
     }

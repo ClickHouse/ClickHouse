@@ -96,7 +96,7 @@ private:
     FuturePartsSet future_parts;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
-    bool currently_executing_drop_or_replace_range = false;
+    std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
 
     /** What will be the set of active parts after executing all log entries up to log_pointer.
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)
@@ -519,7 +519,11 @@ public:
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
 
+    /// Returns true if there's a drop range covering new_drop_range_info
     bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
+
+    /// Returns virtual part covering part_name (if any) or empty string
+    String getCoveringVirtualPart(const String & part_name) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

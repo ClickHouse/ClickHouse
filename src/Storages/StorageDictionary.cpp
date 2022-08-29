@@ -12,6 +12,7 @@
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -339,7 +340,7 @@ void registerStorageDictionary(StorageFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+            String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
 
             if (!args.attach)
             {

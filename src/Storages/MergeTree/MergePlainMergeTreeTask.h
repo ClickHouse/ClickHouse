@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 
 namespace DB
 {
@@ -13,7 +14,6 @@ class StorageMergeTree;
 class MergePlainMergeTreeTask : public IExecutableTask
 {
 public:
-    template <class Callback>
     MergePlainMergeTreeTask(
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
@@ -21,14 +21,14 @@ public:
         Names deduplicate_by_columns_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
-        Callback && task_result_callback_)
+        IExecutableTask::TaskResultCallback & task_result_callback_)
         : storage(storage_)
         , metadata_snapshot(std::move(metadata_snapshot_))
         , deduplicate(deduplicate_)
         , deduplicate_by_columns(std::move(deduplicate_by_columns_))
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
-        , task_result_callback(std::forward<Callback>(task_result_callback_))
+        , task_result_callback(task_result_callback_)
     {
         for (auto & item : merge_mutate_entry->future_part->parts)
             priority += item->getBytesOnDisk();

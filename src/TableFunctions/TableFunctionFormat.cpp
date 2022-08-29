@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/StorageValues.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <TableFunctions/TableFunctionFormat.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -43,13 +44,13 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    format = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    data = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    format = checkAndGetLiteralArgument<String>(args[0], "format");
+    data = checkAndGetLiteralArgument<String>(args[1], "data");
 }
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
-    ReadBufferIterator read_buffer_iterator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
     {
         return std::make_unique<ReadBufferFromString>(data);
     };
@@ -90,7 +91,7 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>(TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionFormat>({}, TableFunctionFactory::CaseInsensitive);
 }
 
 }

@@ -29,6 +29,7 @@ public:
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
         DROP_FILESYSTEM_CACHE,
+        DROP_SCHEMA_CACHE,
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
@@ -94,7 +95,10 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_path;
+
     String backup_name;
+
+    String schema_cache_storage;
 
     String getID(char) const override { return "SYSTEM query"; }
 
@@ -114,7 +118,7 @@ public:
         return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::System; }
+    QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
 

@@ -55,6 +55,7 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
 
     return magic_enum::enum_cast<AttributeUnderlyingType>(static_cast<TypeIndexUnderlying>(index));
 }
+
 }
 
 
@@ -165,6 +166,12 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
             expected_type->getName(),
             actual_type->getName());
     }
+}
+
+bool DictionaryStructure::hasAttribute(const std::string & attribute_name) const
+{
+    auto it = attribute_name_to_index.find(attribute_name);
+    return it != attribute_name_to_index.end();
 }
 
 const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name) const

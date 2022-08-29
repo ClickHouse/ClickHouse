@@ -54,7 +54,7 @@ std::pair<std::string, std::string> splitName(const std::string & name, bool rev
     return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
-std::pair<std::string_view, std::string_view> splitName(const std::string_view & name, bool reverse)
+std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse)
 {
     auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
     if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
@@ -265,6 +265,18 @@ std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_c
     }
     return nested_table_names;
 }
+
+Names getAllNestedColumnsForTable(const Block & block, const std::string & table_name)
+{
+    Names names;
+    for (const auto & name: block.getNames())
+    {
+        if (extractTableName(name) == table_name)
+            names.push_back(name);
+    }
+    return names;
+}
+
 }
 
 NestedColumnExtractHelper::NestedColumnExtractHelper(const Block & block_, bool case_insentive_)

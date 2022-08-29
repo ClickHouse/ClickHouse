@@ -57,7 +57,7 @@ public:
 
 }
 
-void registerFunctionLowCardinalityIndices(FunctionFactory & factory)
+REGISTER_FUNCTION(LowCardinalityIndices)
 {
     factory.registerFunction<FunctionLowCardinalityIndices>();
 }

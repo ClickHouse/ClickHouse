@@ -16,6 +16,7 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
+#include <Common/filesystemHelpers.h>
 
 #include "config_core.h"
 
@@ -60,8 +61,43 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
+{
+    const String & engine_name = create.storage->engine->name;
+    const String & database_name = create.getDatabase();
+
+    if (engine_name != "Ordinary")
+        return;
+
+    if (!FS::isSymlink(metadata_path))
+        return;
+
+    String target_path = FS::readSymlink(metadata_path).string();
+    fs::path path_to_remove = metadata_path;
+    if (path_to_remove.filename().empty())
+        path_to_remove = path_to_remove.parent_path();
+
+    /// Before 20.7 metadata/db_name.sql file might absent and Ordinary database was attached if there's metadata/db_name/ dir.
+    /// Between 20.7 and 22.7 metadata/db_name.sql was created in this case as well.
+    /// Since 20.7 `default` database is created with Atomic engine on the very first server run.
+    /// The problem is that if server crashed during the very first run and metadata/db_name/ -> store/whatever symlink was created
+    /// then it's considered as Ordinary database. And it even works somehow
+    /// until background task tries to remove unused dir from store/...
+    throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE,
+                    "Metadata directory {} for Ordinary database {} is a symbolic link to {}. "
+                    "It may be a result of manual intervention, crash on very first server start or a bug. "
+                    "Database cannot be attached (it's kind of protection from potential data loss). "
+                    "Metadata directory must not be a symlink and must contain tables metadata files itself. "
+                    "You have to resolve this manually. It can be done like this: rm {}; sudo -u clickhouse mv {} {};",
+                    metadata_path, database_name, target_path,
+                    quoteString(path_to_remove.string()), quoteString(target_path), quoteString(path_to_remove.string()));
+
+}
+
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
+    cckMetadataPathForOrdinary(create, metadata_path);
+
     /// Creates store/xxx/ for Atomic
     fs::create_directories(fs::path(metadata_path).parent_path());
 
@@ -126,6 +162,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!create.attach && !context->getSettingsRef().allow_deprecated_database_ordinary)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                             "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
+
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     }
 
@@ -344,9 +381,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
         }
 
-        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            context->getSettingsRef().postgresql_connection_pool_size,
-            context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+        const auto & settings = context->getSettingsRef();
+        auto pool = std::make_shared<postgres::PoolWithFailover>(
+            configuration,
+            settings.postgresql_connection_pool_size,
+            settings.postgresql_connection_pool_wait_timeout,
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, configuration, pool, use_table_cache);

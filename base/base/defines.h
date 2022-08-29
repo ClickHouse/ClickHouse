@@ -100,6 +100,13 @@
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
 
+#if defined(__clang__) && defined(__clang_major__) && __clang_major__ >= 14
+#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
+#else
+#    define DISABLE_SANITIZER_INSTRUMENTATION
+#endif
+
+
 #if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
 #   define ASAN_POISON_MEMORY_REGION(a, b)

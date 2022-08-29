@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/
 sidebar_position: 35
 sidebar_label: ALTER
 ---
@@ -25,7 +26,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
-    :::note 
+    :::note
     Запрос `ALTER TABLE` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
     :::
 Следующие запросы `ALTER` управляют представлениями:
@@ -77,5 +78,6 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 :::info "Примечание"
     Для всех запросов `ALTER` при `replication_alter_partitions_sync = 2` и неактивности некоторых реплик больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
+:::
 
 Для запросов `ALTER TABLE ... UPDATE|DELETE` синхронность выполнения определяется настройкой [mutations_sync](../../../operations/settings/settings.md#mutations_sync).

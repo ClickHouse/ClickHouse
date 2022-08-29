@@ -10,6 +10,7 @@
 #include <IO/Operators.h>
 #include <base/find_symbols.h>
 #include <cstdlib>
+#include <bit>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -698,7 +699,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     uint16_t bit_mask = _mm_movemask_epi8(eq);
                     if (bit_mask)
                     {
-                        next_pos += __builtin_ctz(bit_mask);
+                        next_pos += std::countr_zero(bit_mask);
                         return;
                     }
                 }
@@ -716,7 +717,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     uint64_t bit_mask = get_nibble_mask(eq);
                     if (bit_mask)
                     {
-                        next_pos += __builtin_ctzll(bit_mask) >> 2;
+                        next_pos += std::countr_zero(bit_mask) >> 2;
                         return;
                     }
                 }
@@ -968,10 +969,12 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// YYYY-MM-DD hh:mm:ss
-    static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
+    /// hh:mm:ss
+    static constexpr auto time_broken_down_length = 8;
+    /// YYYY-MM-DD hh:mm:ss
+    static constexpr auto date_time_broken_down_length = date_broken_down_length + 1 + time_broken_down_length;
 
     char s[date_time_broken_down_length];
     char * s_pos = s;
@@ -994,16 +997,15 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
-        const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
 
-        size_t size = buf.read(s_pos, remaining_date_time_size);
-        if (size != remaining_date_time_size && size != remaining_date_size)
+        size_t size = buf.read(s_pos, remaining_date_size);
+        if (size != remaining_date_size)
         {
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -1016,11 +1018,24 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         UInt8 minute = 0;
         UInt8 second = 0;
 
-        if (size == remaining_date_time_size)
+        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
         {
-            hour = (s[11] - '0') * 10 + (s[12] - '0');
-            minute = (s[14] - '0') * 10 + (s[15] - '0');
-            second = (s[17] - '0') * 10 + (s[18] - '0');
+            ++buf.position();
+            size = buf.read(s, time_broken_down_length);
+
+            if (size != time_broken_down_length)
+            {
+                s_pos[size] = 0;
+
+                if constexpr (throw_exception)
+                    throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                else
+                    return false;
+            }
+
+            hour = (s[0] - '0') * 10 + (s[1] - '0');
+            minute = (s[3] - '0') * 10 + (s[4] - '0');
+            second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
         if (unlikely(year == 0))
@@ -1053,7 +1068,7 @@ template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateL
 template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 {
     if (buf.eof())
         throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);

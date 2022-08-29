@@ -65,14 +65,20 @@ class ClickHouseVersion:
         return method()
 
     def major_update(self) -> "ClickHouseVersion":
+        if self._git is not None:
+            self._git.update()
         return ClickHouseVersion(self.major + 1, 1, 1, self.revision + 1, self._git)
 
     def minor_update(self) -> "ClickHouseVersion":
+        if self._git is not None:
+            self._git.update()
         return ClickHouseVersion(
             self.major, self.minor + 1, 1, self.revision + 1, self._git
         )
 
     def patch_update(self) -> "ClickHouseVersion":
+        if self._git is not None:
+            self._git.update()
         return ClickHouseVersion(
             self.major, self.minor, self.patch + 1, self.revision, self._git
         )

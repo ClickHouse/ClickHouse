@@ -12,7 +12,7 @@
 #if defined(__clang__)
 #include <experimental/coroutine>
 
-namespace std
+namespace std // NOLINT(cert-dcl58-cpp)
 {
     using namespace experimental::coroutines_v1;
 }
@@ -97,14 +97,14 @@ struct Task
     static bool resumeImpl(Task *r)
     {
         if (r->value)
-        return false;
+            return false;
 
         auto & next = r->my.promise().next;
 
         if (next)
         {
             if (resumeImpl(next.promise().r))
-            return true;
+                return true;
             next = {};
         }
 
@@ -183,7 +183,7 @@ int main()
         auto t = foo("foo");
         std::cout << ".. started" << std::endl;
         while (t.resume())
-        std::cout << ".. yielded" << std::endl;
+            std::cout << ".. yielded" << std::endl;
         std::cout << ".. done: " << t.res() << std::endl;
     }
     catch (DB::Exception & e)

@@ -214,7 +214,7 @@ public:
 
 }
 
-void registerFunctionConvertCharset(FunctionFactory & factory)
+REGISTER_FUNCTION(ConvertCharset)
 {
     factory.registerFunction<FunctionConvertCharset>();
 }

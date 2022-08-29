@@ -89,7 +89,7 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 {
     /// Nothing to do if we already at required position
     if (!owned_cell && file_pos == offset_in_compressed_file
-        && (offset() == offset_in_decompressed_block ||
+        && ((!buffer().empty() && offset() == offset_in_decompressed_block) ||
             nextimpl_working_buffer_offset == offset_in_decompressed_block))
         return;
 
