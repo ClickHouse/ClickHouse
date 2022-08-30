@@ -276,10 +276,13 @@ private:
         {
             auto offset = TimezoneOffsetImpl::execute(source, timezone);
             if (offset < 0)
+            {
                 *target = '-';
+                offset = -offset;
+            }
 
-            writeNumber2(target + 1, ToHourImpl::execute(offset, timezone));
-            writeNumber2(target + 3, ToSecondImpl::execute(offset, timezone));
+            writeNumber2(target + 1, offset / 3600);
+            writeNumber2(target + 3, offset % 3600 / 60);
         }
 
         static void quarter(char * target, Time source, const DateLUTImpl & timezone)
