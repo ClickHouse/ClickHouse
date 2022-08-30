@@ -495,7 +495,7 @@ If the ‘s’ string is non-empty and does not contain the ‘c’ character at
 
 Returns the string ‘s’ that was converted from the encoding in ‘from’ to the encoding in ‘to’.
 
-## Base58Encode(plaintext), Base58Decode(encoded_text)
+## base58Encode(plaintext), base58Decode(encoded_text)
 
 Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
 
@@ -523,7 +523,7 @@ Query:
 
 ``` sql
 SELECT base58Encode('Encoded');
-SELECT base58Encode('3dc8KtHrwM');
+SELECT base58Decode('3dc8KtHrwM');
 ```
 
 Result:
