@@ -2020,7 +2020,6 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-
         for (const auto & [alias, command] : backslash_aliases)
         {
             auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
@@ -2045,7 +2044,6 @@ void ClientBase::runInteractive()
             {
                 input  = last_input;
                 break;
-
             }
         }
 
