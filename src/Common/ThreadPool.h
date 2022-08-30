@@ -56,7 +56,7 @@ public:
     bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
+    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0, bool enable_tracing_context_propagation = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -113,7 +113,7 @@ private:
     std::exception_ptr first_exception;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
+    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool enable_tracing_context_propagation = true);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -235,7 +235,7 @@ public:
         return true;
     }
 
-private:
+protected:
     struct State
     {
         /// Should be atomic() because of possible concurrent access between
@@ -256,6 +256,72 @@ private:
     }
 };
 
+/// This class is used by ThreadPool only to allocate threads in GlobalThreadPool.
+/// Any user code should use ThreadFromGlobalPool instead of this class to schedule a job in a thread.
+///
+/// The difference between this class and ThreadFromGlobalPool is that this class disables the tracing context propagation to underlying thread.
+/// If the context is propagated, not only the underlying worker will restore context but also the worker of ThreadPool.
+///
+/// Since workers of ThreadPool won't exit until the ThreadPool is destroyed, the context restored by underlying worker won't be deleted for a very long time 
+/// which would cause wrong contexts for jobs for ThreadPool
+///
+class Thread4ThreadPool : public ThreadFromGlobalPool
+{
+public:
+    Thread4ThreadPool() = default;
+
+    template <typename Function, typename... Args>
+    explicit Thread4ThreadPool(Function && func, Args &&... args)
+    {
+        state = std::make_shared<State>();
+
+        /// NOTE:
+        /// - If this will throw an exception, the destructor won't be called
+        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
+        GlobalThreadPool::instance().scheduleOrThrow([
+            state = state,
+            func = std::forward<Function>(func),
+            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+        {
+            SCOPE_EXIT(state->event.set());
+
+            state->thread_id = std::this_thread::get_id();
+
+            /// This moves are needed to destroy function and arguments before exit.
+            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
+            auto function = std::move(func);
+            auto arguments = std::move(args);
+
+            /// Thread status holds raw pointer on query context, thus it always must be destroyed
+            /// before sending signal that permits to join this thread.
+            DB::ThreadStatus thread_status;
+            std::apply(function, arguments);
+        },
+
+        // default priority
+        0,
+
+        // default wait_microseconds
+        0,
+
+        /// Disable tracing context propagation on underlying thread pool because ThreadPool already has kept the context in its jobs.
+        false
+        );
+    }
+
+    Thread4ThreadPool(Thread4ThreadPool && rhs) noexcept
+    {
+        *this = std::move(rhs);
+    }
+
+    Thread4ThreadPool & operator=(Thread4ThreadPool && rhs) noexcept
+    {
+        if (initialized())
+            abort();
+        state = std::move(rhs.state);
+        return *this;
+    }
+};
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
+using ThreadPool = ThreadPoolImpl<Thread4ThreadPool>;
