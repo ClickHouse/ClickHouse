@@ -109,7 +109,7 @@ std::string typeName(const substrait::Type & type)
     }
     else if (type.has_date())
     {
-        return "Date32";
+        return "Date";
     }
 
     throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", magic_enum::enum_name(type.kind_case()));
