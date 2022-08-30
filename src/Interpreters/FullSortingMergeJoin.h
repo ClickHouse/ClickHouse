@@ -25,7 +25,7 @@ public:
     /// Helper methods to build proper plan for this type of join
 
     /// Returns left_sort_descr and right_sort_descr
-    static void getSortDescriptions(
+    static void deduceSortDescriptions(
         const DataStream & left_data_stream, const Names & left_key_names,
         const DataStream & right_data_stream, const Names & right_key_names,
         SortDescription & left_sort_descr, SortDescription & right_sort_descr);

@@ -1467,8 +1467,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         SortDescription sort_descr;
                         {
                             /// Join keys may contain duplicates, remove them
-                            /// Example: JOIN ON t1.x = t2.a AND t1.x = t2.b AND t1.y = t2.c
-                            /// We need to sort t1 by [x, y] (not [x, x, y]).
+                            /// Example: JOIN ON t1.x = t2.a AND t1.x = t2.b AND t1.y = t2.c AND t1.x = t2.d
+                            /// We need to sort t1 by [x, y] (not [x, x, y, x]).
                             NameSet existing;
                             for (const auto & desc : join_sort_descr)
                             {
@@ -1543,7 +1543,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         SortDescription left_sort_descr;
                         SortDescription right_sort_descr;
-                        FullSortingMergeJoin::getSortDescriptions(
+                        FullSortingMergeJoin::deduceSortDescriptions(
                             query_plan.getCurrentDataStream(), join_clause.key_names_left,
                             joined_plan->getCurrentDataStream(), join_clause.key_names_right,
                             left_sort_descr, right_sort_descr);

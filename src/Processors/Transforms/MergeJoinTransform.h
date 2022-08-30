@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <memory>
@@ -24,6 +25,11 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
@@ -197,6 +203,9 @@ public:
         : sample_block(sample_block_.cloneEmpty())
         , desc(description_)
     {
+        bool is_default_sort_direction = std::all_of(desc.begin(), desc.end(), [](const auto & col_desc) { return col_desc.isDefaultDirection(); });
+        if (!is_default_sort_direction)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected nulls last ascending sorting");
     }
 
     bool fullyCompleted() const;

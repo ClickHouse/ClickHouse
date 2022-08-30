@@ -89,6 +89,11 @@ struct SortColumnDescription
         return !(*this == other);
     }
 
+    bool isDefaultDirection() const
+    {
+        return direction == 1 && nulls_direction == 1;
+    }
+
     std::string dump() const { return fmt::format("{}:dir {}nulls {}", column_name, direction, nulls_direction); }
 
     void explain(JSONBuilder::JSONMap & map) const;

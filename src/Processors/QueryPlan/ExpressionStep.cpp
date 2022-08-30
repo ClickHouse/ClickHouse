@@ -44,6 +44,16 @@ static NameSet getMapValues(const NameToNameMap & map)
     return keys;
 }
 
+static void mapSortDescriptionNames(SortDescription & sort_desc, const NameToNameMap & name_mapping)
+{
+    for (auto & desc : sort_desc)
+    {
+        auto it = name_mapping.find(desc.column_name);
+        if (it != name_mapping.end())
+            desc.column_name = it->second;
+    }
+}
+
 ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_, const NameToNameMap & perserve_sort_hint_)
     : ITransformingStep(
         input_stream_,
@@ -54,7 +64,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
 {
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
-    updateOutputStream();
+    mapSortDescriptionNames(output_stream->sort_description, perserve_sort_hint);
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -112,12 +122,7 @@ void ExpressionStep::updateOutputStream()
     const auto & output_header = ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag);
     output_stream = createOutputStream(input_streams.front(), output_header, getDataStreamTraits());
 
-    for (auto & desc : output_stream->sort_description)
-    {
-        auto rename_it = perserve_sort_hint.find(desc.column_name);
-        if (rename_it != perserve_sort_hint.end())
-            desc.column_name = rename_it->second;
-    }
+    mapSortDescriptionNames(output_stream->sort_description, perserve_sort_hint);
 }
 
 }

@@ -244,7 +244,7 @@ public:
 
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
-    void sortKeys();
+    void normalizeKeys();
 
     /* Conditions for left/right table from JOIN ON section.
      *

@@ -690,34 +690,39 @@ void TableJoin::addKey(const String & left_name, const String & right_name, cons
     key_asts_right.emplace_back(right_ast ? right_ast : left_ast);
 }
 
-static void sortPairwise(std::vector<String> & lhs, std::vector<String> & rhs, bool keep_last)
+/// Remove pair duplicates
+static void removeDupsPairwise(std::vector<String> & lhs, std::vector<String> & rhs, bool keep_last)
 {
+    if (lhs.empty() || rhs.empty())
+        return;
     assert(lhs.size() == rhs.size());
-    size_t size = lhs.size();
 
-    std::vector<size_t> permutation(size);
-    std::iota(permutation.begin(), permutation.end(), 0);
-    auto cmp = [&lhs, &rhs](size_t i, size_t j) { return lhs[i] == lhs[j] ? rhs[i] < rhs[j] : lhs[i] < lhs[j]; };
-
-    auto end_it = keep_last ? std::prev(permutation.end()) : permutation.end();
-    std::stable_sort(permutation.begin(), end_it, cmp);
-
-    std::vector<String> lhs_sorted(size);
-    std::vector<String> rhs_sorted(size);
-    for (size_t i = 0; i < size; ++i)
+    size_t size = keep_last ? lhs.size() - 1 : lhs.size();
+    size_t i = 0;
+    for (size_t j = 1; j < size; ++j)
     {
-        lhs_sorted[i] = lhs[permutation[i]];
-        rhs_sorted[i] = rhs[permutation[i]];
+        if (lhs[i] == lhs[j] && rhs[i] == rhs[j])
+            continue;
+        ++i;
+        lhs[i] = lhs[j];
+        rhs[i] = rhs[j];
     }
-    lhs = std::move(lhs_sorted);
-    rhs = std::move(rhs_sorted);
+
+    if (keep_last && i + 1 < lhs.size())
+    {
+        ++i;
+        lhs[i] = lhs.back();
+        rhs[i] = rhs.back();
+    }
+    lhs.resize(i + 1);
+    rhs.resize(i + 1);
 }
 
-void TableJoin::sortKeys()
+void TableJoin::normalizeKeys()
 {
-    /// Sort, but keep correspondence between left and right keys.
+    /// If query contains `JOIN ON x = y AND y = x` or `USING (a, b, a)`, remove duplicating pairs.
     for (auto & clause : clauses)
-        sortPairwise(clause.key_names_left, clause.key_names_right, strictness() == JoinStrictness::Asof);
+        removeDupsPairwise(clause.key_names_left, clause.key_names_right, strictness() == JoinStrictness::Asof);
 }
 
 static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_cond)
