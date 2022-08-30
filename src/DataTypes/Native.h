@@ -83,7 +83,7 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
 }
 
 template <typename Type>
-static inline bool canBeNativeType()
+constexpr inline bool canBeNativeType()
 {
     if constexpr (std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt8>)
         return true;
