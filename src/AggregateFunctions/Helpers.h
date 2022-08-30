@@ -123,6 +123,34 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     return nullptr;
 }
 
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
+static IAggregateFunction * createWithNumericBasedAndDecimalType(const IDataType & argument_type, TArgs &&... args)
+{
+    IAggregateFunction * f = createWithNumericType<AggregateFunctionTemplate, Data>(argument_type, std::forward<TArgs>(args)...);
+    if (f)
+        return f;
+
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE, NUMERIC_TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return new AggregateFunctionTemplate<NUMERIC_TYPE, Data<NUMERIC_TYPE>>(std::forward<TArgs>(args)...);
+
+    DISPATCH(Date, UInt16)
+    DISPATCH(Date32, Int32)
+    DISPATCH(DateTime, UInt32)
+    DISPATCH(UUID, UUID)
+
+    DISPATCH(Decimal32, Decimal32)
+    DISPATCH(Decimal64, Decimal64)
+    DISPATCH(Decimal128, Decimal128)
+    DISPATCH(Decimal256, Decimal256)
+    if constexpr (AggregateFunctionTemplate<DateTime64, Data<DateTime64>>::DateTime64Supported)
+        DISPATCH(DateTime64, DateTime64)
+#undef DISPATCH
+
+    return nullptr;
+}
+
 template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithDecimalType(const IDataType & argument_type, TArgs && ... args)
 {

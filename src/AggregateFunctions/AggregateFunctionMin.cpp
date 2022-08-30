@@ -3,6 +3,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/HelpersMinMaxAny.h>
+#include <Columns/ColumnFixedString.h>
 
 
 namespace DB
@@ -20,17 +21,20 @@ AggregateFunctionPtr createAggregateFunctionMin(
 
     const DataTypePtr & argument_type = argument_types[0];
 
-    AggregateFunctionPtr f = AggregateFunctionPtr(createWithNumericBasedType<AggregateFunctionMin>(*argument_type, argument_type));
-    if (f)
-        return f;
-    f.reset(createWithDecimalType<AggregateFunctionMin>(*argument_type, argument_type));
+    /// TODO: Since some types have changed from generic to other agg types, and that means serialization changes
+    /// we might need to add the version or revert those changes to match the old status
+    AggregateFunctionPtr f = AggregateFunctionPtr(
+        createWithNumericBasedAndDecimalType<AggregateFunctionMin, AggregateFunctionMinDataNumeric>(*argument_type, argument_type));
     if (f)
         return f;
 
-    // TODO: Add String and generic type support to AggregateFunctionMin
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
-        return AggregateFunctionPtr(new AggregateFunctionsSingleValue<AggregateFunctionMinData<SingleValueDataString>>(argument_type));
+        return AggregateFunctionPtr(new AggregateFunctionMin<String, AggregateFunctionMinDataString<ColumnString>>(argument_type));
+
+    // TODO: Add FixedString? and generic type support to AggregateFunctionMin
+    //    if (which.idx == TypeIndex::FixedString)
+    //        return AggregateFunctionPtr(new AggregateFunctionMin<String, AggregateFunctionMinDataString<ColumnFixedString>>(argument_type));
     return AggregateFunctionPtr(new AggregateFunctionsSingleValue<AggregateFunctionMinData<SingleValueDataGeneric>>(argument_type));
 }
 

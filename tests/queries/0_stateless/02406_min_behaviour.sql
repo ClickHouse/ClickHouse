@@ -13,6 +13,9 @@ SELECT
 
 SELECT minIf(number, rand() % 2 == 3) from numbers(10);
 SELECT minIf(number::Float64, rand() % 2 == 3) from numbers(10);
+SELECT minIf(number::String, number < 10) as number from numbers(10, 1000);
+SELECT minIf(number::Nullable(String), number < 10) as number from numbers(10, 1000);
+SELECT min(n::Nullable(String)) from (Select if(number < 15 and number % 2 == 1, number * 2, NULL) as n from numbers(10, 20));
 
 -- { echoOn }
 SET compile_aggregate_expressions=1;
@@ -34,3 +37,6 @@ SELECT
 
 SELECT minIf(number, rand() % 2 == 3) from numbers(10);
 SELECT minIf(number::Float64, rand() % 2 == 3) from numbers(10);
+SELECT minIf(number::String, number < 10) as number from numbers(10, 1000);
+SELECT minIf(number::Nullable(String), number < 10) as number from numbers(10, 1000);
+SELECT min(n::Nullable(String)) from (Select if(number < 15 and number % 2 == 1, number * 2, NULL) as n from numbers(10, 20));

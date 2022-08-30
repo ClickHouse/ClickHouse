@@ -41,8 +41,9 @@ namespace ErrorCodes
 }
 
 template <typename T>
-struct AggregateFunctionStandaloneMinData
+struct AggregateFunctionMinDataNumeric
 {
+    using ColVecType = ColumnVectorOrDecimal<T>;
     static constexpr bool is_native_integer = std::is_integral_v<T>;
     bool has_value = false;
     T min{};
@@ -56,7 +57,21 @@ struct AggregateFunctionStandaloneMinData
         has_value = true;
     }
 
-    void ALWAYS_INLINE inline addManyDefaults(T value, size_t /*length*/) { add(value); }
+    void ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
+    {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        add(col.getData()[row_num]);
+    }
+
+    void ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { add(column, 0, arena); }
+
+    void insertResultInto(IColumn & to) const
+    {
+        if (has_value)
+            assert_cast<ColVecType &>(to).getData().push_back(min);
+        else
+            assert_cast<ColVecType &>(to).insertDefault();
+    }
 
     MULTITARGET_FUNCTION_AVX2_SSE42(
         MULTITARGET_FUNCTION_HEADER(
@@ -150,9 +165,10 @@ struct AggregateFunctionStandaloneMinData
     )
 
     /// Vectorized version
-    template <typename Value>
-    void addMany(const Value * __restrict ptr, size_t start, size_t end)
+    void addMany(const IColumn & column, size_t start, size_t end, Arena *)
     {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
         if constexpr (is_native_integer)
         {
@@ -171,9 +187,10 @@ struct AggregateFunctionStandaloneMinData
         addManyImpl<true, false>(ptr, nullptr, start, end);
     }
 
-    template <typename Value>
-    void addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t start, size_t end)
+    void addManyNotNull(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena *)
     {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
         if constexpr (is_native_integer)
         {
@@ -192,9 +209,10 @@ struct AggregateFunctionStandaloneMinData
         addManyImpl<false, true>(ptr, null_map, start, end);
     }
 
-    template <typename Value>
-    void addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+    void addManyConditional(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena *)
     {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
         if constexpr (is_native_integer)
         {
@@ -213,7 +231,7 @@ struct AggregateFunctionStandaloneMinData
         addManyImpl<false, false>(ptr, condition_map, start, end);
     }
 
-    void merge(const AggregateFunctionStandaloneMinData & rhs)
+    void merge(const AggregateFunctionMinDataNumeric & rhs, Arena *)
     {
         if (rhs.has_value)
             add(rhs.min);
@@ -226,16 +244,11 @@ struct AggregateFunctionStandaloneMinData
             writeBinary(min, buf);
     }
 
-    void read(ReadBuffer & buf)
+    void read(ReadBuffer & buf, Arena *)
     {
         readBinary(has_value, buf);
         if (has_value)
             readBinary(min, buf);
-    }
-
-    T get() const
-    {
-        return min;
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -245,7 +258,7 @@ struct AggregateFunctionStandaloneMinData
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        static constexpr size_t value_offset_from_structure = offsetof(AggregateFunctionStandaloneMinData<T>, min);
+        static constexpr size_t value_offset_from_structure = offsetof(AggregateFunctionMinDataNumeric<T>, min);
 
         auto * type = toNativeType<T>(builder);
         auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
@@ -382,15 +395,179 @@ struct AggregateFunctionStandaloneMinData
 #endif
 };
 
-
-template <typename T>
-class AggregateFunctionMin final : public IAggregateFunctionDataHelper<AggregateFunctionStandaloneMinData<T>, AggregateFunctionMin<T>>
+template <typename ColumnType>
+struct AggregateFunctionMinDataString
 {
-    using ColVecType = ColumnVectorOrDecimal<T>;
-    using Data = AggregateFunctionStandaloneMinData<T>;
+    Int32 size = -1; /// -1 indicates that there is no value.
+    Int32 capacity = 0; /// power of two or zero
+    char * large_data;
 
+    static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
+    static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
+    char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
+
+    bool ALWAYS_INLINE has() const { return size >= 0; }
+
+    const char * ALWAYS_INLINE getData() const { return size <= MAX_SMALL_STRING_SIZE ? small_data : large_data; }
+
+    StringRef ALWAYS_INLINE getStringRef() const { return StringRef(getData(), size); }
+
+    void setImpl(StringRef value, Arena * arena)
+    {
+        Int32 value_size = value.size;
+        if (value_size <= MAX_SMALL_STRING_SIZE)
+        {
+            /// Don't free large_data here.
+            size = value_size;
+
+            if (size > 0)
+                memcpy(small_data, value.data, size);
+        }
+        else
+        {
+            if (capacity < value_size)
+            {
+                /// Don't free large_data here.
+                capacity = roundUpToPowerOfTwoOrZero(value_size);
+                large_data = arena->alloc(capacity);
+            }
+
+            size = value_size;
+            memcpy(large_data, value.data, size);
+        }
+    }
+
+    void set(const IColumn & column, size_t row_num, Arena * arena)
+    {
+        setImpl(assert_cast<const ColumnType &>(column).getDataAtWithTerminatingZero(row_num), arena);
+    }
+
+    void ALWAYS_INLINE inline add(const StringRef & s, Arena * arena)
+    {
+        if (!has() || s < getStringRef())
+            setImpl(s, arena);
+    }
+
+    void ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena * arena)
+    {
+        StringRef s = assert_cast<const ColumnType &>(column).getDataAtWithTerminatingZero(row_num);
+        add(s, arena);
+    }
+
+    void ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { add(column, 0, arena); }
+
+    void insertResultInto(IColumn & to) const
+    {
+        if (has())
+            assert_cast<ColumnType &>(to).insertDataWithTerminatingZero(getData(), size);
+        else
+            assert_cast<ColumnType &>(to).insertDefault();
+    }
+
+    template <bool add_all_elements, bool add_if_cond_zero>
+    void NO_INLINE
+    addManyImpl(const IColumn & column, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end, Arena * arena)
+    {
+        const auto & col = assert_cast<const ColumnType &>(column);
+        if constexpr (!add_all_elements)
+        {
+            while (!condition_map[start] != add_if_cond_zero && start < end)
+                start++;
+            if (start >= end)
+                return;
+        }
+
+        StringRef lowest = col.getDataAtWithTerminatingZero(start);
+        for (size_t i = start + 1; i < end; i++)
+        {
+            if (!add_all_elements && !condition_map[i] != add_if_cond_zero)
+                continue;
+            StringRef idx_ref = col.getDataAtWithTerminatingZero(i);
+            if (idx_ref < lowest)
+                lowest = idx_ref;
+        }
+
+        add(lowest, arena);
+    }
+
+    void addMany(const IColumn & column, size_t start, size_t end, Arena * arena)
+    {
+        addManyImpl<true, false>(column, nullptr, start, end, arena);
+    }
+
+    void addManyNotNull(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena)
+    {
+        addManyImpl<false, true>(column, null_map, start, end, arena);
+    }
+
+    void addManyConditional(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena)
+    {
+        addManyImpl<false, false>(column, condition_map, start, end, arena);
+    }
+
+    void merge(const AggregateFunctionMinDataString & rhs, Arena * arena)
+    {
+        if (rhs.has())
+            add(rhs.getStringRef(), arena);
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writeBinary(size, buf);
+        if (has())
+            buf.write(getData(), size);
+    }
+
+    void read(ReadBuffer & buf, Arena * arena)
+    {
+        Int32 rhs_size;
+        readBinary(rhs_size, buf);
+
+        if (rhs_size >= 0)
+        {
+            if (rhs_size <= MAX_SMALL_STRING_SIZE)
+            {
+                /// Don't free large_data here.
+
+                size = rhs_size;
+
+                if (size > 0)
+                    buf.read(small_data, size);
+            }
+            else
+            {
+                if (capacity < rhs_size)
+                {
+                    capacity = static_cast<UInt32>(roundUpToPowerOfTwoOrZero(rhs_size));
+                    /// Don't free large_data here.
+                    large_data = arena->alloc(capacity);
+                }
+
+                size = rhs_size;
+                buf.read(large_data, size);
+            }
+        }
+        else
+        {
+            /// Don't free large_data here.
+            size = rhs_size;
+        }
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool is_compilable = false;
+#endif
+};
+
+static_assert(
+    sizeof(AggregateFunctionMinDataString<ColumnString>) == AggregateFunctionMinDataString<ColumnString>::AUTOMATIC_STORAGE_SIZE,
+    "Incorrect size of SingleValueDataString struct");
+
+template <typename T, typename Data>
+class AggregateFunctionMin final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T, Data>>
+{
 public:
-    explicit AggregateFunctionMin(const DataTypePtr & type) : IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T>>({type}, {})
+    explicit AggregateFunctionMin(const DataTypePtr & type) : IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T, Data>>({type}, {})
     {
         if (!type->isComparable())
             throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
@@ -401,29 +578,23 @@ public:
 
     DataTypePtr getReturnType() const override { return this->argument_types.at(0); }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        this->data(place).add(assert_cast<const T &>(column.getData()[row_num]));
+        this->data(place).add(*columns[0], row_num, arena);
     }
 
     void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        Arena *,
-        ssize_t if_argument_pos) const override
+        size_t row_begin, size_t row_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos)
+        const override
     {
-        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            this->data(place).addManyConditional(column.getData().data(), flags.data(), row_begin, row_end);
+            this->data(place).addManyConditional(*columns[0], flags.data(), row_begin, row_end, arena);
         }
         else
         {
-            this->data(place).addMany(column.getData().data(), row_begin, row_end);
+            this->data(place).addMany(*columns[0], row_begin, row_end, arena);
         }
     }
 
@@ -433,11 +604,9 @@ public:
         AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
-        Arena *,
+        Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-
         if (if_argument_pos >= 0)
         {
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
@@ -445,23 +614,22 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 final_null_flags[i] = null_map[i] & !if_flags[i];
 
-            this->data(place).addManyNotNull(column.getData().data(), final_null_flags.get(), row_begin, row_end);
+            this->data(place).addManyNotNull(*columns[0], final_null_flags.get(), row_begin, row_end, arena);
         }
         else
         {
-            this->data(place).addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
+            this->data(place).addManyNotNull(*columns[0], null_map, row_begin, row_end, arena);
         }
     }
 
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena *) const override
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
-        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        this->data(place).addManyDefaults(assert_cast<const T &>(column.getData()[0]), length);
+        this->data(place).addManyDefaults(*columns[0], length, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).merge(this->data(rhs));
+        this->data(place).merge(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -469,9 +637,9 @@ public:
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf);
+        this->data(place).read(buf, arena);
     }
 
     bool allocatesMemoryInArena() const override
@@ -481,7 +649,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColVecType &>(to).getData().push_back(this->data(place).get());
+        this->data(place).insertResultInto(to);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -498,9 +666,12 @@ public:
     {
         if constexpr (!Data::is_compilable)
             throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-        b.CreateMemSet(
-            aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
+        else
+        {
+            llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+            b.CreateMemSet(
+                aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
+        }
     }
 
     void compileAdd(
@@ -511,7 +682,8 @@ public:
     {
         if constexpr (!Data::is_compilable)
             throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
-        Data::compileAdd(builder, aggregate_data_ptr, datatypes, argument_values);
+        else
+            Data::compileAdd(builder, aggregate_data_ptr, datatypes, argument_values);
     }
 
     void
@@ -519,16 +691,17 @@ public:
     {
         if constexpr (!Data::is_compilable)
             throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
-        Data::compileMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        else
+            Data::compileMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
     }
 
     llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
     {
         if constexpr (!Data::is_compilable)
             throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
-        return Data::compileGetResult(builder, aggregate_data_ptr);
+        else
+            return Data::compileGetResult(builder, aggregate_data_ptr);
     }
 #endif
 };
-
 }
