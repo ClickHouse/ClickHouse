@@ -19,6 +19,7 @@ bool ParserKQLDateTypeTimespan :: parseImpl(Pos & pos,  [[maybe_unused]] ASTPtr 
 
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral )
         token = String(pos->begin + 1, pos->end -1);
+
     else
         token = String(pos->begin, pos->end);
 
@@ -95,6 +96,7 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
     double nanoseconds = 00.00;
 
     const char * ptr = text.c_str();
+    bool sign = false;
 
     auto scanDigit = [&](const char *start)
     {
@@ -103,10 +105,14 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
             ++index;
         return index > start ? index - start : -1;
     };
-
+    if(*ptr == '-')
+    {
+        sign = true;
+        ++ptr;
+    }
     int number_len = scanDigit(ptr);
     if (number_len <= 0)
-        return false;
+      return false;
 
     days = std::stoi(String(ptr, ptr + number_len));
 
@@ -177,7 +183,11 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
     auto exponent = 9 - sec_scale_len; // max supported length of fraction of seconds is 9 
     nanoseconds = nanoseconds * pow(10, exponent );
 
-    time_span = days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds /1000000000 );
+    if(sign)
+        time_span = -(days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds /1000000000 ));
+    else
+        time_span = days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds /1000000000 );
+    
     time_span_unit = KQLTimespanUint::second;
 
     return true;

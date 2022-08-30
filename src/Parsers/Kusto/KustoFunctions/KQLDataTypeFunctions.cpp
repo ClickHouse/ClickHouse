@@ -139,15 +139,23 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
     ParserKQLDateTypeTimespan time_span;
     ASTPtr node;
     Expected expected;
+    bool sign = false;
 
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
     ++pos;
-
-    if (time_span.parse(pos, node, expected))
+    if(pos->type == TokenType::Minus)
     {
-        out = std::to_string(time_span.toSeconds());
+        sign = true;
+        ++pos;
+    }
+    if (time_span.parse(pos, node, expected))
+    {   
+        if(sign)
+            out = std::format("-{}" , std::to_string(time_span.toSeconds()));
+        else
+            out = std::to_string(time_span.toSeconds());
         ++pos;
     }
     else
