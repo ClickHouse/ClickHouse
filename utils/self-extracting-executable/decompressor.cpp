@@ -361,7 +361,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #endif
 
-uint32_t get_inode(const char * self)
+uint32_t getInode(const char * self)
 {
     std::ifstream maps("/proc/self/maps");
     if (maps.fail())
@@ -370,6 +370,10 @@ uint32_t get_inode(const char * self)
         return 0;
     }
 
+    /// Record example for /proc/self/maps:
+    /// address                   perms offset  device inode                     pathname
+    /// 561a247de000-561a247e0000 r--p 00000000 103:01 1564                      /usr/bin/cat
+    /// see "man 5 proc"
     for (std::string line; std::getline(maps, line);)
     {
         std::stringstream ss(line); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -405,7 +409,8 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path;
 
-    uint32_t inode = get_inode(self);
+    /// get inode of this executable
+    uint32_t inode = getInode(self);
     if (inode == 0)
     {
         std::cerr << "Unable to obtain inode." << std::endl;
@@ -421,6 +426,9 @@ int main(int/* argc*/, char* argv[])
         return 1;
     }
 
+    /// lock file should be closed on exec call
+    fcntl(lock, F_SETFD, FD_CLOEXEC);
+
     if (lockf(lock, F_LOCK, 0))
     {
         perror("lockf");
@@ -434,7 +442,8 @@ int main(int/* argc*/, char* argv[])
         return 1;
     }
 
-    /// if decompression was performed by another process
+    /// if decompression was performed by another process since this copy was started
+    /// then file refered by path "self" is already pointing to different inode
     if (input_info.st_ino != inode)
     {
         struct stat lock_info;
@@ -444,6 +453,7 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
+        /// size 1 of lock file indicates that another decompressor has found active executable
         if (lock_info.st_size == 1)
             execv(self, argv);
 
@@ -512,6 +522,8 @@ int main(int/* argc*/, char* argv[])
 
         if (has_exec)
         {
+            /// write one byte to the lock in case other copies of compressed are running to indicate that
+            /// execution should be performed
             write(lock, "1", 1);
 
             execv(self, argv);
@@ -521,6 +533,7 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
+        /// since inodes can be reused - it's a precaution if lock file already exists and have size of 1
         ftruncate(lock, 0);
 
         printf("No target executable - decompression only was performed.\n");
