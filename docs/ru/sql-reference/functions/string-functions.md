@@ -518,18 +518,18 @@ base58Decode(encoded)
 Запрос:
 
 ``` sql
-SELECT base58Encode('encode');
-SELECT base58Decode('izCFiDUY');
+SELECT base58Encode('Encoded');
+SELECT base58Decode('3dc8KtHrwM');
 ```
 
 Результат:
 ```text
-┌─base58Encode('encode', 'flickr')─┐
-│ SvyTHb1D                         │
-└──────────────────────────────────┘
-┌─base58Decode('izCFiDUY', 'ripple')─┐
-│ decode                             │
-└────────────────────────────────────┘
+┌─base58Encode('Encoded')─┐
+│ 3dc8KtHrwM              │
+└─────────────────────────┘
+┌─base58Decode('3dc8KtHrwM')─┐
+│ Encoded                    │
+└────────────────────────────┘
 ```
 
 ## base64Encode(s) {#base64encode}
