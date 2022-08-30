@@ -730,12 +730,19 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Policy '{} is used temporary files, such policy should have exactly one volume", policy_name);
+                "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
     if (shared->tmp_volume->getDisks().empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    for (const auto & disk : shared->tmp_volume->getDisks())
+    {
+        if (std::dynamic_pointer_cast<DiskLocal>(disk) == nullptr)
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                "Disk '{}' is not local and can't be used for temporary files", disk->getName());
+    }
 
     return shared->tmp_volume;
 }
