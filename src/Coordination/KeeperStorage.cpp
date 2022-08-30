@@ -463,18 +463,22 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                 delta_it->operation);
 
             auto & path_deltas = deltas_for_path.at(delta_it->path);
-            assert(path_deltas.back() == &*delta_it);
-            path_deltas.pop_back();
-            if (path_deltas.empty())
-                deltas_for_path.erase(delta_it->path);
+            if (path_deltas.back() == &*delta_it)
+            {
+                path_deltas.pop_back();
+                if (path_deltas.empty())
+                    deltas_for_path.erase(delta_it->path);
+            }
         }
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta_it->operation))
         {
             auto & uncommitted_auth = session_and_auth[add_auth->session_id];
-            assert(uncommitted_auth.back() == &add_auth->auth_id);
-            uncommitted_auth.pop_back();
-            if (uncommitted_auth.empty())
-                session_and_auth.erase(add_auth->session_id);
+            if (uncommitted_auth.back() == &add_auth->auth_id)
+            {
+                uncommitted_auth.pop_back();
+                if (uncommitted_auth.empty())
+                    session_and_auth.erase(add_auth->session_id);
+            }
         }
     }
 

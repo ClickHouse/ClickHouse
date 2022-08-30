@@ -263,7 +263,7 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
-        std::unordered_map<int64_t, std::list<const AuthID * >> session_and_auth;
+        std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
 
         struct UncommittedNode
         {
