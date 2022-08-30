@@ -132,8 +132,41 @@ RESTORE TABLE test.table PARTITIONS '2', '3'
 
 ## Check the status of backups
 
+The backup command returns an `id` and `status`, and that `id` can be used to get the status of the backup.  This is very useful to check the progress of long ASYNC backups.  The example below shows a failure that happened when trying to overwrite an existing backup file:
+```sql
+BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
 ```
-SELECT status, error FROM system.backups FORMAT Vertical;
+```response
+┌─id───────────────────────────────────┬─status──────────┐
+│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
+└──────────────────────────────────────┴─────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```
+SELECT
+    *
+FROM system.backups
+where id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+```response
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+#highlight-next-line
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+#highlight-next-line
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
 ```
 
 ## Alternatives
