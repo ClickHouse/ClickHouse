@@ -8,7 +8,7 @@ title: "UK Property Price Paid"
 The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
 The size of the dataset in uncompressed form is about 4 GiB and it will take about 270 MiB in ClickHouse.
 
-Source: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+Source: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads <br/>
 Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
 
 Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
@@ -40,9 +40,7 @@ CREATE TABLE uk_price_paid
 
 ## Preprocess and Import Data {#preprocess-import-data}
 
-We will use `clickhouse-client` to preprocess and insert the data.
-
-In this example, we define the structure of source data from the CSV file and specify a query to preprocess the data with `clickhouse-client`.
+In this example, we define the structure of source data from the CSV file and specify a query to preprocess the data with either `clickhouse-client` or the web based Play UI.
 
 The preprocessing is:
 - splitting the postcode to two different columns `postcode1` and `postcode2` that are better for storage and queries;
