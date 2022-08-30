@@ -682,8 +682,6 @@ ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(BackupEntryPtr entry, si
 
 void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 {
-
-    std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
 
@@ -802,7 +800,12 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     /// or have only prefix of it in previous backup. Let's go long path.
 
     info.data_file_name = info.file_name;
-    info.archive_suffix = current_archive_suffix;
+
+    if (use_archives)
+    {
+        std::lock_guard lock{mutex};
+        info.archive_suffix = current_archive_suffix;
+    }
 
     bool is_data_file_required;
     coordination->addFileInfo(info, is_data_file_required);
@@ -838,6 +841,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         if (use_archives)
         {
             LOG_TRACE(log, "Adding file {} to archive", adjusted_path);
+            std::lock_guard lock{mutex};
             String archive_suffix = current_archive_suffix;
             bool next_suffix = false;
             if (current_archive_suffix.empty() && is_internal_backup)
