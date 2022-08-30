@@ -33,6 +33,7 @@ StorageHudi::StorageHudi(
     : IStorage(table_id_)
     , base_configuration({uri_, access_key_, secret_access_key_, {}, {}, {}})
     , log(&Poco::Logger::get("StorageHudi (" + table_id_.table_name + ")"))
+    , table_path(uri_.key)
 {
     StorageInMemoryMetadata storage_metadata;
     updateS3Configuration(context_, base_configuration);
@@ -42,7 +43,7 @@ StorageHudi::StorageHudi(
     auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys));
 
     LOG_DEBUG(log, "New uri: {}", new_uri);
-
+    LOG_DEBUG(log, "Table path: {}", table_path);
     auto s3_uri = S3::URI(Poco::URI(new_uri));
 
     if (columns_.empty())
@@ -143,9 +144,9 @@ std::vector<std::string> StorageHudi::getKeysFromS3()
 
     bool is_finished{false};
     const auto bucket{base_configuration.uri.bucket};
-    const std::string key = "";
 
     request.SetBucket(bucket);
+    request.SetPrefix(table_path);
 
     while (!is_finished)
     {
@@ -155,16 +156,16 @@ std::vector<std::string> StorageHudi::getKeysFromS3()
                 ErrorCodes::S3_ERROR,
                 "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
                 quoteString(bucket),
-                quoteString(key),
+                quoteString(table_path),
                 backQuote(outcome.GetError().GetExceptionName()),
                 quoteString(outcome.GetError().GetMessage()));
 
         const auto & result_batch = outcome.GetResult().GetContents();
         for (const auto & obj : result_batch)
         {
-            const auto & filename = obj.GetKey();
+            const auto & filename = obj.GetKey().substr(table_path.size()); // object name without tablepath prefix
             keys.push_back(filename);
-            //LOG_DEBUG(log, "Found file: {}", filename);
+            LOG_DEBUG(log, "Found file: {}", filename);
         }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());

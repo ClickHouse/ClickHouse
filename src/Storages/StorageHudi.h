@@ -53,6 +53,7 @@ private:
     StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
+    String table_path;
 };
 
 }
