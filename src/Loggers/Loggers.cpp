@@ -100,7 +100,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
         if (config.getString("logger.formatting.type", "") == "json")
-           pf = new OwnJSONPatternFormatter(config);
+            pf = new OwnJSONPatternFormatter(config);
         else
             pf = new OwnPatternFormatter;
 
