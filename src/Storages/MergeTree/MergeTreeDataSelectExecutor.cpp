@@ -1739,7 +1739,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (!gin_filter_condition)
                 result = condition->mayBeTrueOnGranule(granule);
             else
-                result = gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store);
+                result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
 
             if (!result)
             {

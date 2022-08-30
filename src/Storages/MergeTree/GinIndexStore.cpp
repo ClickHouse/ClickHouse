@@ -403,7 +403,7 @@ GinIndexStorePtr GinIndexStoreFactory::get(const String& name, DataPartStoragePt
         GinIndexStorePtr store = std::make_shared<GinIndexStore>(name);
         store->SetStorage(storage_);
         if (!store->exists())
-            throw Exception("Index '" + name + "' does not exist", ErrorCodes::LOGICAL_ERROR);
+            return nullptr; //gin index was not generated for the part due to no data or the length of column data is less than ngramsize
 
         GinIndexStoreReader reader(store);
         reader.readSegments();
