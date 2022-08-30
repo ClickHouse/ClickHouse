@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/data-types/special-data-types/nothing
+---
 # 没什么 {#nothing}
 
 此数据类型的唯一目的是表示不是期望值的情况。 所以不能创建一个 `Nothing` 类型的值。

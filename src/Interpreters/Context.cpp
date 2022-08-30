@@ -93,6 +93,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <filesystem>
+#include <re2/re2.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -664,8 +665,8 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                "Policy '{} is used temporary files, such policy should have exactly one volume", policy_name);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
@@ -708,7 +709,10 @@ void Context::setUserDefinedPath(const String & path)
 void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
-    shared->addWarningMessage(msg);
+    auto suppress_re = getConfigRef().getString("warning_supress_regexp", "");
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -3436,6 +3440,13 @@ ReadSettings Context::getReadSettings() const
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
+
+    /// Zero read buffer will not make progress.
+    if (!settings.max_read_buffer_size)
+    {
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value '{}' for max_read_buffer_size", settings.max_read_buffer_size);
+    }
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.remote_fs_buffer_size = settings.max_read_buffer_size;

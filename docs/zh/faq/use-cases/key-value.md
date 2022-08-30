@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/use-cases/key-value
 title: 我能把 ClickHouse 当做Key-value 键值存储来使用吗？
 toc_hidden: true
 sidebar_position: 101

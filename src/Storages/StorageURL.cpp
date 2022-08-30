@@ -71,7 +71,7 @@ IStorageURLBase::IStorageURLBase(
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , uri(uri_)
-    , compression_method(compression_method_)
+    , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
     , format_name(format_name_)
     , format_settings(format_settings_)
     , headers(headers_)
@@ -163,7 +163,7 @@ namespace
             const ColumnsDescription & columns,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
-            const String & compression_method,
+            CompressionMethod compression_method,
             size_t download_threads,
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
             const URIParams & params = {},
@@ -244,7 +244,7 @@ namespace
             const String & http_method,
             std::function<void(std::ostream &)> callback,
             const ConnectionTimeouts & timeouts,
-            const String & compression_method,
+            CompressionMethod compression_method,
             Poco::Net::HTTPBasicCredentials & credentials,
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
             bool glob_url,
@@ -353,7 +353,7 @@ namespace
                                         std::move(read_buffer_factory),
                                         threadPoolCallbackRunner(IOThreadPool::get()),
                                         download_threads),
-                                    chooseCompressionMethod(request_uri.getPath(), compression_method),
+                                    compression_method,
                                     settings.zstd_window_log_max);
                             }
                         }
@@ -385,7 +385,7 @@ namespace
                             delay_initialization,
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error),
-                        chooseCompressionMethod(request_uri.getPath(), compression_method),
+                            compression_method,
                         settings.zstd_window_log_max);
                 }
                 catch (...)
@@ -565,7 +565,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const String & format,
     const String & uri,
-    const String & compression_method,
+    CompressionMethod compression_method,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
@@ -790,7 +790,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             metadata_snapshot->getSampleBlock(),
             context,
             ConnectionTimeouts::getHTTPTimeouts(context),
-            chooseCompressionMethod(uri, compression_method),
+            compression_method,
             http_method);
     }
     else
@@ -802,7 +802,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             metadata_snapshot->getSampleBlock(),
             context,
             ConnectionTimeouts::getHTTPTimeouts(context),
-            chooseCompressionMethod(uri, compression_method),
+            compression_method,
             http_method);
     }
 }
@@ -1077,7 +1077,7 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
     }
 
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
+        configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(configuration.url).getPath(), true);
 
     return configuration;
 }
