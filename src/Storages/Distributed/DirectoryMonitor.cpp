@@ -596,7 +596,7 @@ void StorageDistributedDirectoryMonitor::getFilesRetry(const std::string & file_
         if (files_retry.contains(file_path))
             files_retry[file_path] += 1;
         else
-            files_retry[file_path] = 1;
+            files_retry[file_path] = 0;
     }
 }
 
