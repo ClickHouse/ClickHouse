@@ -2,6 +2,32 @@
 
 # August 29, 2022
 
+## **mv-expand operator**
+https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/mvexpandoperator
+Note: **expand on array columns only**
+- test cases 
+   ```
+   CREATE TABLE T
+   (    
+      a UInt8,
+      b Array(String),
+      c Array(Int8),
+      d Array(Int8)
+   ) ENGINE = Memory;
+
+   INSERT INTO T VALUES (1, ['Salmon', 'Steak','Chicken'],[1,2,3,4],[5,6,7,8])
+   
+   T | mv-expand c  
+   T | mv-expand c, d  
+   T | mv-expand b | mv-expand c  
+   T | mv-expand c to typeof(bool)  
+   T | mv-expand with_itemindex=index b, c, d  
+   T | mv-expand array_concat(c,d)   
+   T | mv-expand x = c, y = d   
+   T | mv-expand xy = array_concat(c, d)  
+   T | mv-expand with_itemindex=index c,d to typeof(bool)  
+   ```
+
 ## **make-series operator**  
 https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoperator
 
