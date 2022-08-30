@@ -103,11 +103,10 @@ public:
 private:
     bool removeMetadataNodes(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
 
-    std::string root_path;
+    const std::string root_path;
     std::string primary_key;
 
     std::string metadata_path;
-    std::string lock_path;
 
     std::string tables_path;
     std::string table_path;

@@ -24,6 +24,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include "Common/Exception.h"
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -80,66 +81,6 @@ std::string_view getBaseName(const std::string_view path)
 
     return path.substr(last_slash + 1);
 }
-
-struct ZooKeeperLock
-{
-    explicit ZooKeeperLock(std::string lock_path_, zkutil::ZooKeeperPtr client_, bool defer_lock = false)
-        : lock_path(std::move(lock_path_)), client(std::move(client_))
-    {
-        if (!defer_lock)
-            lock();
-    }
-
-    ~ZooKeeperLock()
-    {
-        if (locked)
-            unlock();
-    }
-
-    void lock()
-    {
-        assert(!locked);
-        sequence_path = client->create(std::filesystem::path(lock_path) / "lock-", "", zkutil::CreateMode::EphemeralSequential);
-        auto node_name = getBaseName(sequence_path);
-
-        while (true)
-        {
-            auto children = client->getChildren(lock_path);
-            assert(!children.empty());
-            ::sort(children.begin(), children.end());
-
-            auto node_it = std::find(children.begin(), children.end(), node_name);
-            if (node_it == children.begin())
-            {
-                locked = true;
-                return;
-            }
-
-            client->waitForDisappear(*(node_it - 1));
-        }
-    }
-
-    void unlock()
-    {
-        assert(locked);
-        client->tryRemove(sequence_path);
-    }
-
-    // release the ownership and return the path
-    // for the lock
-    std::string release()
-    {
-        assert(locked);
-        locked = false;
-        return std::move(sequence_path);
-    }
-
-private:
-    std::string lock_path;
-    std::string sequence_path;
-    zkutil::ZooKeeperPtr client;
-    bool locked{false};
-};
 
 }
 
@@ -289,7 +230,6 @@ StorageKeeperMap::StorageKeeperMap(
     std::filesystem::path root_path_fs{root_path};
     auto metadata_path_fs = root_path_fs / "ch_metadata";
     metadata_path = metadata_path_fs;
-    lock_path = metadata_path_fs / "lock";
     tables_path = metadata_path_fs / "tables";
     table_path = fs::path(tables_path) / toString(table_id.uuid);
     dropped_path = metadata_path_fs / "dropped";
@@ -425,9 +365,7 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 {
     checkTable<true>();
     auto client = getClient();
-
-    ZooKeeperLock keeper_lock(lock_path, client);
-    client->removeChildrenRecursive(root_path, getBaseName(metadata_path));
+    client->tryRemoveChildrenRecursive(root_path, true, getBaseName(metadata_path));
 }
 
 bool StorageKeeperMap::removeMetadataNodes(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
@@ -457,6 +395,7 @@ bool StorageKeeperMap::removeMetadataNodes(zkutil::ZooKeeperPtr zookeeper, const
             break;
         default:
             zkutil::KeeperMultiException::check(code, ops, responses);
+            break;
     }
     return completely_removed;
 }
@@ -465,33 +404,38 @@ void StorageKeeperMap::drop()
 {
     checkTable<true>();
     auto client = getClient();
-    ZooKeeperLock lock(lock_path, client);
 
-    auto tables_num_str = client->get(tables_path);
-    auto tables_num = parse<uint64_t>(tables_num_str);
-    --tables_num;
+    client->remove(table_path);
 
-    if (tables_num > 0)
+    if (!client->getChildren(tables_path).empty())
+        return;
+
+    Coordination::Requests ops;
+    Coordination::Responses responses;
+
+    ops.emplace_back(zkutil::makeRemoveRequest(tables_path, -1));
+    ops.emplace_back(zkutil::makeCreateRequest(dropped_path, "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(dropped_lock_path, "", zkutil::CreateMode::Ephemeral));
+
+    auto code = client->tryMulti(ops, responses);
+
+    if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
     {
-        client->set(tables_path, toString(tables_num));
+        LOG_INFO(log, "Metadata is being removed by another table");
         return;
     }
-
-    client->create(dropped_path, "", zkutil::CreateMode::Persistent);
+    else if (code == Coordination::Error::ZNOTEMPTY)
+    {
+        LOG_WARNING(log, "Another table is using the same path, metadata will not be deleted");
+        return;
+    }
+    else if (code != Coordination::Error::ZOK)
+        zkutil::KeeperMultiException::check(code, ops, responses);
 
     client->removeChildrenRecursive(root_path, getBaseName(metadata_path));
 
-    Coordination::Requests requests;
-    // we need to release lock and delete everything at the same time
-    // so create doesn't take a lock while delete is being run
-    auto current_lock_path = lock.release();
-    requests.push_back(zkutil::makeRemoveRequest(current_lock_path, -1));
-    requests.push_back(zkutil::makeRemoveRequest(lock_path, -1));
-    requests.push_back(zkutil::makeRemoveRequest(tables_path, -1));
-    requests.push_back(zkutil::makeRemoveRequest(dropped_path, -1));
-    requests.push_back(zkutil::makeRemoveRequest(metadata_path, -1));
-
-    client->multi(requests);
+    auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(dropped_lock_path, *client);
+    removeMetadataNodes(client, metadata_drop_lock);
 }
 
 zkutil::ZooKeeperPtr & StorageKeeperMap::getClient() const
@@ -519,11 +463,6 @@ std::string StorageKeeperMap::fullPathForKey(const std::string_view key) const
     return fmt::format("{}/{}", root_path, key);
 }
 
-const std::string & StorageKeeperMap::lockPath() const
-{
-    return lock_path;
-}
-
 std::optional<bool> StorageKeeperMap::isTableValid() const
 {
     std::lock_guard lock{init_mutex};
@@ -534,11 +473,7 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
     {
         // validate all metadata nodes are present
         Coordination::Requests requests;
-
-        requests.push_back(zkutil::makeCheckRequest(root_path, -1));
-        requests.push_back(zkutil::makeCheckRequest(metadata_path, -1));
-        requests.push_back(zkutil::makeCheckRequest(lock_path, -1));
-        requests.push_back(zkutil::makeCheckRequest(tables_path, -1));
+        requests.push_back(zkutil::makeCheckRequest(table_path, -1));
 
         Coordination::Responses responses;
         auto client = getClient();
@@ -549,11 +484,7 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
     {
         tryLogCurrentException(log);
 
-        std::array retriable_errors{
-            Coordination::Error::ZCONNECTIONLOSS, Coordination::Error::ZSESSIONEXPIRED, Coordination::Error::ZOPERATIONTIMEOUT};
-        bool retriable_error
-            = std::any_of(retriable_errors.begin(), retriable_errors.end(), [&](const auto error) { return error == e.code; });
-        if (!retriable_error)
+        if (!Coordination::isHardwareError(e.code))
             table_is_valid = false;
     }
     catch (const Exception &)
