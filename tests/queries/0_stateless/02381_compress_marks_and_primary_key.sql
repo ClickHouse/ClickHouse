@@ -8,13 +8,14 @@ create table test_02381_compress(a UInt64, b UInt64) ENGINE = MergeTree order by
 insert into test_02381_compress select number, number * 10 from system.numbers limit 1000000;
 
 select * from test_02381_compress where a = 1000 limit 1;
-OPTIMIZE TABLE test_02381_compress FINAL;
+optimize table test_02381_compress final;
 select * from test_02381_compress where a = 1000 limit 1;
 
 -- Compare the size of marks on disk
 select table, sum(rows), sum(bytes_on_disk) sum_bytes, sum(marks_bytes) sum_marks_bytes, (sum_bytes - sum_marks_bytes) exclude_marks from system.parts_columns where active and database = currentDatabase() and table like 'test_02381%' group by table order by table;
 
--- switch to compressed and uncompressed
+-- Switch to compressed and uncompressed
+-- Test wide part
 alter table test_02381 modify setting compress_marks=true, compress_primary_key=true;
 insert into test_02381 select number, number * 10 from system.numbers limit 1000000;
 
@@ -22,27 +23,28 @@ alter table test_02381_compress modify setting compress_marks=false, compress_pr
 insert into test_02381_compress select number, number * 10 from system.numbers limit 1000000;
 
 select * from test_02381_compress where a = 10000 limit 1;
-OPTIMIZE TABLE test_02381_compress FINAL;
+optimize table test_02381_compress final;
 select * from test_02381_compress where a = 10000 limit 1;
 
 select * from test_02381 where a = 10000 limit 1;
-OPTIMIZE TABLE test_02381 FINAL;
+optimize table test_02381 final;
 select * from test_02381 where a = 10000 limit 1;
 
 select table, sum(rows), sum(bytes_on_disk) sum_bytes, sum(marks_bytes) sum_marks_bytes, (sum_bytes - sum_marks_bytes) exclude_marks  from system.parts_columns where active and  database = currentDatabase() and table like 'test_02381%' group by table order by table;
 
-DROP TABLE IF EXISTS test;
-CREATE TABLE test (a UInt64, b String) ENGINE = MergeTree order by (a, b);
-
-INSERT INTO test VALUES (1, 'Hello');
-ALTER TABLE test MODIFY SETTING compress_marks = true, compress_primary_key = true;
-INSERT INTO test VALUES (2, 'World');
-
-SELECT * FROM test ORDER BY a;
-OPTIMIZE TABLE test FINAL;
-SELECT * FROM test ORDER BY a;
-
-DROP TABLE test;
-
 drop table if exists test_02381;
 drop table if exists test_02381_compress;
+
+-- Test compact part
+drop table if exists test_02381_compact;
+create table test_02381_compact (a UInt64, b String) ENGINE = MergeTree order by (a, b);
+
+insert into test_02381_compact values (1, 'Hello');
+alter table test_02381_compact modify setting compress_marks = true, compress_primary_key = true;
+insert into test_02381_compact values (2, 'World');
+
+select * from test_02381_compact order by a;
+optimize table test_02381_compact final;
+select * from test_02381_compact order by a;
+
+drop table if exists test_02381_compact;
