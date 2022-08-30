@@ -6,28 +6,19 @@ title: "UK Property Price Paid"
 ---
 
 The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
-The size of the dataset in uncompressed form is about 4 GiB and it will take about 278 MiB in ClickHouse.
+The size of the dataset in uncompressed form is about 4 GiB and it will take about 270 MiB in ClickHouse.
 
 Source: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
 Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
 
 Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
 
-## Download the Dataset {#download-dataset}
-
-Run the command:
-
-```bash
-wget http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv
-```
-
-Download will take about 2 minutes with good internet connection.
-
 ## Create the Table {#create-table}
 
 ```sql
 CREATE TABLE uk_price_paid
 (
+	uuid UUID,
     price UInt32,
     date Date,
     postcode1 LowCardinality(String),
@@ -42,65 +33,70 @@ CREATE TABLE uk_price_paid
     town LowCardinality(String),
     district LowCardinality(String),
     county LowCardinality(String),
-    category UInt8
-) ENGINE = MergeTree ORDER BY (postcode1, postcode2, addr1, addr2);
+    category UInt8,
+    category2 UInt8
+) ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
 ## Preprocess and Import Data {#preprocess-import-data}
 
-We will use `clickhouse-local` tool for data preprocessing and `clickhouse-client` to upload it.
+We will use `clickhouse-client` to preprocess and insert the data.
 
-In this example, we define the structure of source data from the CSV file and specify a query to preprocess the data with `clickhouse-local`.
+In this example, we define the structure of source data from the CSV file and specify a query to preprocess the data with `clickhouse-client`.
 
 The preprocessing is:
-- splitting the postcode to two different columns `postcode1` and `postcode2` that is better for storage and queries;
+- splitting the postcode to two different columns `postcode1` and `postcode2` that are better for storage and queries;
 - coverting the `time` field to date as it only contains 00:00 time;
 - ignoring the [UUid](../../sql-reference/data-types/uuid.md) field because we don't need it for analysis;
 - transforming `type` and `duration` to more readable Enum fields with function [transform](../../sql-reference/functions/other-functions.md#transform);
 - transforming `is_new` and `category` fields from single-character string (`Y`/`N` and `A`/`B`) to [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64-int128-int256) field with 0 and 1.
 
-Preprocessed data is piped directly to `clickhouse-client` to be inserted into ClickHouse table in streaming fashion.
-
 ```bash
-clickhouse-local --input-format CSV --structure '
-    uuid String,
-    price UInt32,
-    time DateTime,
-    postcode String,
-    a String,
-    b String,
-    c String,
-    addr1 String,
-    addr2 String,
-    street String,
-    locality String,
-    town String,
-    district String,
-    county String,
-    d String,
-    e String
-' --query "
-    WITH splitByChar(' ', postcode) AS p
-    SELECT
-        price,
-        toDate(time) AS date,
-        p[1] AS postcode1,
-        p[2] AS postcode2,
-        transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
-        b = 'Y' AS is_new,
-        transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
-        addr1,
-        addr2,
-        street,
-        locality,
-        town,
-        district,
-        county,
-        d = 'B' AS category
-    FROM table" --date_time_input_format best_effort < pp-complete.csv | clickhouse-client --query "INSERT INTO uk_price_paid FORMAT TSV"
+INSERT INTO uk_price_paid
+WITH 
+    splitByChar(' ', postcode) AS p
+SELECT
+    replaceRegexpAll(uuid_string, '{|}','') AS uuid,
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    p[1] AS postcode1,
+    p[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county,
+    d = 'B' AS category,
+    e = 'B' AS category2
+FROM url(
+	'http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv', 
+    'CSV',
+    'uuid_string String,
+     price_string String,
+     time String,
+     postcode String,
+     a String,
+     b String,
+     c String,
+     addr1 String,
+     addr2 String,
+     street String,
+     locality String,
+     town String,
+     district String,
+     county String,
+     d String,
+     e String'
+) 
+SETTINGS max_http_get_redirects=1;
 ```
 
-It will take about 40 seconds.
+It will take about 2 minutes depending on where you are in the world, and where your ClickHouse servers are. Almost all of the time is the download time of the CSV file from the UK government server.
 
 ## Validate the Data {#validate-data}
 
@@ -112,13 +108,13 @@ SELECT count() FROM uk_price_paid;
 
 Result:
 
-```text
+```response
 ┌──count()─┐
-│ 26321785 │
+│ 27450499 │
 └──────────┘
 ```
 
-The size of dataset in ClickHouse is just 278 MiB, check it.
+The size of dataset in ClickHouse is just 540 MiB, check it.
 
 Query:
 
@@ -130,9 +126,13 @@ Result:
 
 ```text
 ┌─formatReadableSize(total_bytes)─┐
-│ 278.80 MiB                      │
+│ 545.04 MiB                      │
 └─────────────────────────────────┘
 ```
+
+:::note
+The above size is for a replicated table, if you are using this dataset with a single instance the size will be half.
+:::
 
 ## Run Some Queries {#run-queries}
 
@@ -146,7 +146,7 @@ SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 1000000, 
 
 Result:
 
-```text
+```response
 ┌─year─┬──price─┬─bar(round(avg(price)), 0, 1000000, 80)─┐
 │ 1995 │  67932 │ █████▍                                 │
 │ 1996 │  71505 │ █████▋                                 │
