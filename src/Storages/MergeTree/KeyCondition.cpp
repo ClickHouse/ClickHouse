@@ -2699,7 +2699,7 @@ bool KeyCondition::alwaysFalse() const
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::unknownOrAlwaysTrue", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::alwaysFalse", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0] == 0;
 }
