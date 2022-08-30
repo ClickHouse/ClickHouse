@@ -565,7 +565,7 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 #endif
 
 
-void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_time)
+void AsynchronousMetrics::update(TimePoint update_time)
 {
     Stopwatch watch;
 
@@ -1586,7 +1586,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
 
-    update_heavy_metrics(current_time, update_time, new_values);
+    updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
 
     /// Add more metrics as you wish.
 
@@ -1605,7 +1605,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     values = new_values;
 }
 
-void AsynchronousMetrics::update_detached_parts_stats()
+void AsynchronousMetrics::updateDetachedPartsStats()
 {
     DetachedPartsStats current_values{};
 
@@ -1639,7 +1639,7 @@ void AsynchronousMetrics::update_detached_parts_stats()
     detached_parts_stats = current_values;
 }
 
-void AsynchronousMetrics::update_heavy_metrics(std::chrono::system_clock::time_point current_time, std::chrono::system_clock::time_point update_time, AsynchronousMetricValues & new_values)
+void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values)
 {
     const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
     const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
@@ -1650,12 +1650,12 @@ void AsynchronousMetrics::update_heavy_metrics(std::chrono::system_clock::time_p
 
         Stopwatch watch;
 
-        // test shows that listing 100000 entries consuming around 0.15 sec.
-        update_detached_parts_stats();
+        // Test shows that listing 100000 entries consuming around 0.15 sec.
+        updateDetachedPartsStats();
 
         watch.stop();
 
-        // normally heavy metrics don't delay the rest of the metrics calculation
+        // Normally heavy metrics don't delay the rest of the metrics calculation
         // otherwise log the warning message
         auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
         if (watch.elapsedSeconds() > (update_period.count() / 2.))
@@ -1674,7 +1674,7 @@ void AsynchronousMetrics::update_heavy_metrics(std::chrono::system_clock::time_p
     }
 
     new_values["NumberOfDetachedParts"] = detached_parts_stats.count;
-    new_values["NumberOfDetachedPartsByUser"] = detached_parts_stats.detached_by_user;
+    new_values["NumberOfDetachedByUserParts"] = detached_parts_stats.detached_by_user;
 }
 
 }
