@@ -521,13 +521,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         {
-            SelectIntersectExceptQueryVisitor::Data data;
+            SelectIntersectExceptQueryVisitor::Data data{settings.intersect_default_mode, settings.except_default_mode};
             SelectIntersectExceptQueryVisitor{data}.visit(ast);
         }
 
         {
             /// Normalize SelectWithUnionQuery
-            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
+            NormalizeSelectWithUnionQueryVisitor::Data data{settings.union_default_mode};
             NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
         }
 
