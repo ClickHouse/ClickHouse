@@ -703,22 +703,6 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         size_t download_offset = file_segment->getDownloadOffset();
         bool cached_part_is_finished = download_offset == file_offset_of_buffer_end;
 
-#ifndef NDEBUG
-        size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
-        size_t cache_file_read_offset = implementation_buffer->getFileOffsetOfBufferEnd();
-        size_t implementation_buffer_finished = cache_file_size == cache_file_read_offset;
-
-        if (cached_part_is_finished != implementation_buffer_finished)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Incorrect state of buffers. Current download offset: {}, file offset of buffer end: {}, "
-                "cache file size: {}, cache file offset: {}, file segment info: {}",
-                download_offset, file_offset_of_buffer_end, cache_file_size, cache_file_read_offset,
-                file_segment->getInfoForLog());
-        }
-#endif
-
         if (cached_part_is_finished)
         {
             /// TODO: makes sense to reuse local file reader if we return here with CACHED read type again?
