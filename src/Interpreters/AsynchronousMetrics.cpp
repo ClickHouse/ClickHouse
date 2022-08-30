@@ -1650,7 +1650,7 @@ void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, Tim
 
         Stopwatch watch;
 
-        // Test shows that listing 100000 entries consuming around 0.15 sec.
+        /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateDetachedPartsStats();
 
         watch.stop();
