@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/special/buffer
+---
 # 缓冲区 {#buffer}
 
 缓冲数据写入 RAM 中，周期性地将数据刷新到另一个表。在读取操作时，同时从缓冲区和另一个表读取数据。

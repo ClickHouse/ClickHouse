@@ -43,6 +43,8 @@
 
 #include <IO/WriteBufferFromOStream.h>
 
+#include <Storages/MergeTree/CommonANNIndexes.h>
+
 namespace DB
 {
 
@@ -1669,6 +1671,31 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
+            // Cast to Ann condition
+            auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
+            if (ann_condition != nullptr)
+            {
+                // vector of indexes of useful ranges
+                auto result = ann_condition->getUsefulRanges(granule);
+                if (result.empty())
+                {
+                    ++granules_dropped;
+                }
+
+                for (auto range : result)
+                {
+                    // range for corresponding index
+                    MarkRange data_range(
+                        std::max(ranges[i].begin, index_mark * index_granularity + range),
+                        std::min(ranges[i].end, index_mark * index_granularity + range + 1));
+
+                    if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                        res.push_back(data_range);
+                    else
+                        res.back().end = data_range.end;
+                }
+                continue;
+            }
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
