@@ -82,6 +82,8 @@ void FileCache::initialize()
     std::lock_guard cache_lock(mutex);
     if (!is_initialized)
     {
+        status_file = make_unique<StatusFile>(fs::path(cache_base_path) / "status", StatusFile::write_full_info);
+
         if (fs::exists(cache_base_path))
         {
             try
@@ -933,12 +935,19 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
     fs::directory_iterator key_prefix_it{cache_base_path};
     for (; key_prefix_it != fs::directory_iterator(); ++key_prefix_it)
     {
+        if (!key_prefix_it->is_directory())
+        {
+            if (key_prefix_it->path().filename() != "status")
+                LOG_DEBUG(log, "Unexpected file {} (not a directory), will skip it", key_prefix_it->path().string());
+            continue;
+        }
+
         fs::directory_iterator key_it{key_prefix_it->path()};
         for (; key_it != fs::directory_iterator(); ++key_it)
         {
             if (!key_it->is_directory())
             {
-                LOG_WARNING(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
+                LOG_DEBUG(log, "Unexpected file {} (not a directory), will skip it", key_it->path().string());
                 continue;
             }
 

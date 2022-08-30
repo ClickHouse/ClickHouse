@@ -18,6 +18,8 @@
 #include <Common/IFileCachePriority.h>
 #include <Common/logger_useful.h>
 #include <Common/FileCacheType.h>
+#include <Common/StatusFile.h>
+
 
 namespace DB
 {
@@ -141,6 +143,7 @@ private:
 
     Poco::Logger * log;
     bool is_initialized = false;
+    std::unique_ptr<StatusFile> status_file;
 
     mutable std::mutex mutex;
 
