@@ -523,7 +523,7 @@ Query:
 
 ``` sql
 SELECT base58Encode('Encoded');
-SELECT base58Encode('3dc8KtHrwM');
+SELECT base58Decode('3dc8KtHrwM');
 ```
 
 Result:
