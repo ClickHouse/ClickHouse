@@ -443,7 +443,7 @@ int main(int/* argc*/, char* argv[])
     }
 
     /// if decompression was performed by another process since this copy was started
-    /// then file refered by path "self" is already pointing to different inode
+    /// then file referred by path "self" is already pointing to different inode
     if (input_info.st_ino != inode)
     {
         struct stat lock_info;
