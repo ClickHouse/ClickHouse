@@ -283,6 +283,17 @@ TracingContextHolder::TracingContextHolder(
     this->root_span.start_time_us
         = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
+    /// This object is created to initialize tracing context on a new thread,
+    /// it's helpful to record the thread_id so that we know the thread switching from the span log
+    try
+    {
+        this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
+    }
+    catch (...)
+    {
+        /// It's acceptable that this attribute is not recorded if any exception is raised
+    }
+
     /// set up trace context on current thread
     current_thread_trace_context = _parent_trace_context;
     current_thread_trace_context.span_id = this->root_span.span_id;
@@ -292,39 +303,32 @@ TracingContextHolder::TracingContextHolder(
 
 TracingContextHolder::~TracingContextHolder()
 {
-    if (this->root_span.isTraceEnabled())
+    if (!this->root_span.isTraceEnabled())
     {
-        try
-        {
-            auto shared_span_log = current_thread_trace_context.span_log.lock();
-            if (shared_span_log)
-            {
-                try
-                {
-                    this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
-                }
-                catch (...)
-                {
-                    /// Ignore any exceptions
-                }
-
-                this->root_span.finish_time_us
-                    = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-                shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__FUNCTION__);
-        }
-
-        this->root_span.trace_id = UUID();
+        return;
     }
+
+    try
+    {
+        auto shared_span_log = current_thread_trace_context.span_log.lock();
+        if (shared_span_log)
+        {    
+            this->root_span.finish_time_us
+                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+            shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__FUNCTION__);
+    }
+
+    this->root_span.trace_id = UUID();
 
     if (this->is_context_owner)
     {
-        // clear the context on current thread
+        /// Clear the context on current thread
         current_thread_trace_context.reset();
     }
     else

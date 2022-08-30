@@ -87,7 +87,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool enable_tracing_context_propagation)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -150,10 +150,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             }
         }
 
-        // this scheduleImpl is called in the parent thread,
-        // the tracing context on this thread is used as parent context for the sub-thread that runs the job
-        const auto &current_thread_context = DB::OpenTelemetry::CurrentContext();
-        jobs.emplace(std::move(job), priority, current_thread_context);
+        if (enable_tracing_context_propagation)
+        {
+            /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+            const auto &current_thread_context = DB::OpenTelemetry::CurrentContext();
+            jobs.emplace(std::move(job), priority, current_thread_context);
+        }
+        else
+        {
+            DB::OpenTelemetry::TracingContextOnThread empty;
+            jobs.emplace(std::move(job), priority, empty);
+        }
+
         ++scheduled_jobs;
         new_job_or_shutdown.notify_one();
     }
@@ -174,9 +182,9 @@ bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_mi
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds, bool enable_tracing_context_propagation)
 {
-    scheduleImpl<void>(std::move(job), priority, wait_microseconds);
+    scheduleImpl<void>(std::move(job), priority, wait_microseconds, enable_tracing_context_propagation);
 }
 
 template <typename Thread>
@@ -348,7 +356,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 
 template class ThreadPoolImpl<std::thread>;
-template class ThreadPoolImpl<ThreadFromGlobalPool>;
+template class ThreadPoolImpl<Thread4ThreadPool>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
