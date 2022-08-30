@@ -143,7 +143,7 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
     {
         const auto & data = column_array->getData();
         const auto & array = typeid_cast<const ColumnFloat32&>(data).getData();
-        if (array.size() == 0)
+        if (array.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Array have 0 rows, but {} expected", rows_read);
         const auto & offsets = column_array->getOffsets();
         size_t num_rows = offsets.size();
@@ -159,7 +159,7 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
         }
         index = std::make_shared<AnnoyIndex>(size);
 
-        index->add_item(index->get_n_items(), &array[0]);
+        index->add_item(index->get_n_items(), array.data());
         /// add all rows from 1 to num_rows - 1 (this is the same as the beginning of the last element)
         for (size_t current_row = 0; current_row < num_rows; ++current_row)
         {
