@@ -1405,6 +1405,6 @@
          Regardless of this configuration, the addresses are visible in the system.stack_trace and system.trace_log tables
          if the user has access to these tables.
          I don't recommend to change this setting.
-    -->
     <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
+    -->
 </clickhouse>
