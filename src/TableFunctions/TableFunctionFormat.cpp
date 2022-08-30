@@ -50,7 +50,7 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
-    ReadBufferIterator read_buffer_iterator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
     {
         return std::make_unique<ReadBufferFromString>(data);
     };
@@ -91,7 +91,7 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>(TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionFormat>({}, TableFunctionFactory::CaseInsensitive);
 }
 
 }

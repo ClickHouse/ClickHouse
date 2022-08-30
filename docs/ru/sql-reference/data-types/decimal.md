@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/decimal
 sidebar_position: 42
 sidebar_label: Decimal
 ---

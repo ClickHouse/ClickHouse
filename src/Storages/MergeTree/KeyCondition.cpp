@@ -279,56 +279,47 @@ public:
     }
 
     ConstSetPtr tryGetPreparedSet(
-        const PreparedSets & sets,
+        const PreparedSetsPtr & sets,
         const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
         const DataTypes & data_types) const
     {
-        if (ast)
+        if (sets && ast)
         {
             if (ast->as<ASTSubquery>() || ast->as<ASTTableIdentifier>())
-            {
-                auto set_it = sets.find(PreparedSetKey::forSubquery(*ast));
-                if (set_it != sets.end())
-                    return set_it->second;
-            }
-            else
-            {
-                /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-                /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-                /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-                /// that the types it was prepared with are compatible with the types of the primary key.
-                auto set_ast_hash = ast->getTreeHash();
-                auto set_it = std::find_if(
-                    sets.begin(), sets.end(),
-                    [&](const auto & candidate_entry)
-                    {
-                        if (candidate_entry.first.ast_hash != set_ast_hash)
-                            return false;
+                return sets->get(PreparedSetKey::forSubquery(*ast));
 
-                        for (size_t i = 0; i < indexes_mapping.size(); ++i)
-                            if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
-                                return false;
+            /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
+            /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
+            /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
+            /// that the types it was prepared with are compatible with the types of the primary key.
+            auto types_match = [&indexes_mapping, &data_types](const SetPtr & candidate_set)
+            {
+                assert(indexes_mapping.size() == data_types.size());
 
-                        return true;
-                });
-                if (set_it != sets.end())
-                    return set_it->second;
+                for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                    if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
+                        return false;
+
+                return true;
+            };
+
+            for (const auto & set : sets->getByTreeHash(ast->getTreeHash()))
+            {
+                if (types_match(set))
+                    return set;
             }
         }
-        else
+        else if (dag->column)
         {
-            if (dag->column)
-            {
-                const IColumn * col = dag->column.get();
-                if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
-                    col = &col_const->getDataColumn();
+            const IColumn * col = dag->column.get();
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
+                col = &col_const->getDataColumn();
 
-                if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
-                {
-                    auto set = col_set->getData();
-                    if (set->isCreated())
-                        return set;
-                }
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
+            {
+                auto set = col_set->getData();
+                if (set->isCreated())
+                    return set;
             }
         }
 
@@ -863,8 +854,9 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 
 KeyCondition::KeyCondition(
     const ASTPtr & query,
+    const ASTs & additional_filter_asts,
     TreeRewriterResultPtr syntax_analyzer_result,
-    PreparedSets prepared_sets_,
+    PreparedSetsPtr prepared_sets_,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -872,7 +864,7 @@ KeyCondition::KeyCondition(
     bool strict_)
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , prepared_sets(std::move(prepared_sets_))
+    , prepared_sets(prepared_sets_)
     , single_point(single_point_)
     , strict(strict_)
 {
@@ -892,13 +884,35 @@ KeyCondition::KeyCondition(
         array_joined_columns.insert(name);
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
-    if (select.where() || select.prewhere())
+
+    ASTs filters;
+    if (select.where())
+        filters.push_back(select.where());
+
+    if (select.prewhere())
+        filters.push_back(select.prewhere());
+
+    for (const auto & filter_ast : additional_filter_asts)
+        filters.push_back(filter_ast);
+
+    if (!filters.empty())
     {
         ASTPtr filter_query;
-        if (select.where() && select.prewhere())
-            filter_query = makeASTFunction("and", select.where(), select.prewhere());
+        if (filters.size() == 1)
+        {
+            filter_query = filters.front();
+        }
         else
-            filter_query = select.where() ? select.where() : select.prewhere();
+        {
+            auto function = std::make_shared<ASTFunction>();
+
+            function->name = "and";
+            function->arguments = std::make_shared<ASTExpressionList>();
+            function->children.push_back(function->arguments);
+            function->arguments->children = std::move(filters);
+
+            filter_query = function;
+        }
 
         /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
           * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
@@ -919,7 +933,7 @@ KeyCondition::KeyCondition(
 KeyCondition::KeyCondition(
     ActionDAGNodes dag_nodes,
     TreeRewriterResultPtr syntax_analyzer_result,
-    PreparedSets prepared_sets_,
+    PreparedSetsPtr prepared_sets_,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -927,7 +941,7 @@ KeyCondition::KeyCondition(
     bool strict_)
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , prepared_sets(std::move(prepared_sets_))
+    , prepared_sets(prepared_sets_)
     , single_point(single_point_)
     , strict(strict_)
 {

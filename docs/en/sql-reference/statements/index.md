@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/
 sidebar_position: 1
 sidebar_label: Statements
 ---

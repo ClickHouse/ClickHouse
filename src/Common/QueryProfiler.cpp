@@ -81,7 +81,6 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_CREATE_TIMER;
     extern const int CANNOT_SET_TIMER_PERIOD;
-    extern const int CANNOT_DELETE_TIMER;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -188,7 +187,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
     if (timer_id.has_value())
     {
         if (timer_delete(*timer_id))
-            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
         timer_id.reset();
     }
 
