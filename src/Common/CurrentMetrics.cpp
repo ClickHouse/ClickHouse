@@ -98,6 +98,7 @@
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(BackgroundLoadingMarksTasks, "Number of currently executing background marks load tasks") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
