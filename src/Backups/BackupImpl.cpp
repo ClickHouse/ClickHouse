@@ -821,9 +821,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     /// if source and destination are compatible
     if (!use_archives && info.base_size == 0 && writer->supportNativeCopy(reader_description))
     {
-
+        /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", adjusted_path);
-        /// Should be much faster than writing data through server
+
+        /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
+
         writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.data_file_name);
     }
     else
@@ -841,7 +843,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         if (use_archives)
         {
             LOG_TRACE(log, "Adding file {} to archive", adjusted_path);
+
+            /// An archive must be written strictly in one thread, so it's correct to lock the mutex for all the time we're writing the file
+            /// to the archive.
             std::lock_guard lock{mutex};
+
             String archive_suffix = current_archive_suffix;
             bool next_suffix = false;
             if (current_archive_suffix.empty() && is_internal_backup)
@@ -863,6 +869,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         }
         else
         {
+            /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
             writer->copyFileThroughBuffer(std::move(read_buffer), info.data_file_name);
         }
     }
