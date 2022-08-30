@@ -143,8 +143,10 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
     {
         const auto & data = column_array->getData();
         const auto & array = typeid_cast<const ColumnFloat32&>(data).getData();
+        if (array.size() == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array have 0 rows, but {} expected", rows_read);
         const auto & offsets = column_array->getOffsets();
-        size_t num_rows = offsets->size();
+        size_t num_rows = offsets.size();
 
         /// All sizes are the same
         size_t size = offsets[0];
