@@ -239,8 +239,8 @@ def create_test_html_report(
     )
 
     raw_log_name = os.path.basename(raw_log_url)
-    if raw_log_name.endswith("?check_suite_focus=true"):
-        raw_log_name = "Job (github actions)"
+    if "?" in raw_log_name:
+        raw_log_name = raw_log_name.split("?")[0]
 
     result = HTML_BASE_TEST_TEMPLATE.format(
         title=_format_header(header, branch_name),
@@ -283,7 +283,6 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Compiler</th>
 <th>Build type</th>
 <th>Sanitizer</th>
-<th>Bundled</th>
 <th>Libraries</th>
 <th>Status</th>
 <th>Build log</th>
@@ -328,7 +327,6 @@ def create_build_html_report(
         else:
             row += "<td>{}</td>".format("none")
 
-        row += "<td>{}</td>".format(build_result.bundled)
         row += "<td>{}</td>".format(build_result.libraries)
 
         if build_result.status:

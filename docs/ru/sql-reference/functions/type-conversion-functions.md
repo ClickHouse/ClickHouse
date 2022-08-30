@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/type-conversion-functions
 sidebar_position: 38
 sidebar_label: "Функции преобразования типов"
 ---
@@ -684,9 +685,10 @@ x::t
 
 -   Преобразованное значение.
 
-    :::note "Примечание"
-    Если входное значение выходит за границы нового типа, то результат переполняется. Например, `CAST(-1, 'UInt8')` возвращает `255`.
-    :::
+:::note "Примечание"
+Если входное значение выходит за границы нового типа, то результат переполняется. Например, `CAST(-1, 'UInt8')` возвращает `255`.
+:::
+
 **Примеры**
 
 Запрос:
@@ -1162,7 +1164,7 @@ FORMAT PrettyCompactMonoBlock;
 
 ## toLowCardinality {#tolowcardinality}
 
-Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+Преобразует входные данные в версию [LowCardinality](../data-types/lowcardinality.md) того же типа данных.
 
 Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
 

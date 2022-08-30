@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/create/settings-profile
 sidebar_position: 43
 sidebar_label: SETTINGS PROFILE
+title: "CREATE SETTINGS PROFILE"
 ---
-
-# CREATE SETTINGS PROFILE
 
 Creates [settings profiles](../../../operations/access-rights.md#settings-profiles-management) that can be assigned to a user or a role.
 

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/geo/geohash
 sidebar_label: "Функции для работы с системой Geohash"
 ---
 

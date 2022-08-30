@@ -48,9 +48,19 @@ public:
         , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
         , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
-    {}
+    {
+        data_source_description.type = DataSourceType::HDFS;
+        data_source_description.description = hdfs_root_path_;
+        data_source_description.is_cached = false;
+        data_source_description.is_encrypted = false;
+    }
 
     std::string getName() const override { return "HDFSObjectStorage"; }
+
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return data_source_description;
+    }
 
     bool exists(const StoredObject & object) const override;
 
@@ -121,6 +131,8 @@ private:
     HDFSFSPtr hdfs_fs;
 
     SettingsPtr settings;
+
+    DataSourceDescription data_source_description;
 };
 
 }
