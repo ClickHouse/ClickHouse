@@ -286,6 +286,7 @@ int posix_spawnp(pid_t *restrict res, const char *restrict file,
 	return posix_spawn(res, file, fa, &spawnp_attr, argv, envp);
 }
 
+#include "posix_spawn.c"
 #define FDOP_CLOSE 1
 #define FDOP_DUP2 2
 #define FDOP_OPEN 3
