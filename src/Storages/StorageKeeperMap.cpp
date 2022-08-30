@@ -289,7 +289,10 @@ StorageKeeperMap::StorageKeeperMap(
         auto code = client->tryCreate(table_path, "", zkutil::CreateMode::Persistent);
 
         if (code == Coordination::Error::ZOK)
+        {
+            table_is_valid = true;
             return;
+        }
 
         if (code == Coordination::Error::ZNONODE)
             LOG_INFO(log, "Metadata nodes were deleted in background, will retry");
