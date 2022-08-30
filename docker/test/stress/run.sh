@@ -104,12 +104,16 @@ EOL
 
 function stop()
 {
+    local pid
+    # Preserve the pid, since the server can hung after the PID will be deleted.
+    pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
+
     clickhouse stop --do-not-kill && return
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
     echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
-    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 }
 
@@ -303,7 +307,6 @@ else
     rm -rf /var/lib/clickhouse/*
 
     # Make BC check more funny by forcing Ordinary engine for system database
-    # New version will try to convert it to Atomic on startup
     mkdir /var/lib/clickhouse/metadata
     echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
 
@@ -313,15 +316,12 @@ else
     # Start server from previous release
     configure
 
-    # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
-    rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+    # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
+    rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
 
     # Remove s3 related configs to avoid "there is no disk type `cache`"
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
-
-    # Disable aggressive cleanup of tmp dirs (it worked incorrectly before 22.8)
-    rm -f /etc/clickhouse-server/config.d/merge_tree_old_dirs_cleanup.xml ||:
 
     start
 
@@ -445,6 +445,13 @@ else
     [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
 fi
 
+dmesg -T > /test_output/dmesg.log
+
+# OOM in dmesg -- those are real
+grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' /test_output/dmesg.log \
+    && echo -e 'OOM in dmesg\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'No OOM in dmesg\tOK' >> /test_output/test_results.tsv
+
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
 
@@ -466,5 +473,3 @@ for core in core.*; do
     pigz $core
     mv $core.gz /test_output/
 done
-
-dmesg -T > /test_output/dmesg.log

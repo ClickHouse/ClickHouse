@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/database-engines/materialized-postgresql
 sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
 ---

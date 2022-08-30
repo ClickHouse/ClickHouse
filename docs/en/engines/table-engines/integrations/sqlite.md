@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/integrations/sqlite
 sidebar_position: 7
 sidebar_label: SQLite
 ---

@@ -365,7 +365,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "DATABASE()\ndefault\n"
+    assert stdout.decode() == "currentDatabase()\ndefault\n"
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
@@ -377,7 +377,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "DATABASE()\ndefault\n"
+    assert stdout.decode() == "currentDatabase()\ndefault\n"
 
 
 def test_mysql_select_user(started_cluster):
