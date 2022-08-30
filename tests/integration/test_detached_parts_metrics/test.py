@@ -1,6 +1,7 @@
 import time
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
@@ -17,24 +18,6 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
-def wait_until(call_back, time_to_sleep=0.5, timeout=60):
-    assert callable(call_back)
-    start_time = time.time()
-    deadline = time.time() + timeout
-    while not call_back() and time.time() < deadline:
-        time.sleep(time_to_sleep)
-    assert call_back(), "Elapsed {}".format(time.time() - start_time)
-
-
-def is_different(a, b):
-    def wrap():
-        res_a = a() if callable(a) else a
-        res_b = b() if callable(b) else b
-        return res_a != res_b
-
-    return wrap
 
 
 def test_event_time_microseconds_field(started_cluster):
@@ -64,7 +47,7 @@ def test_event_time_microseconds_field(started_cluster):
     query_number_detached_by_user_parts_in_async_metric = """
     SELECT value
     FROM system.asynchronous_metrics
-    WHERE metric LIKE 'NumberOfDetachedPartsByUser';
+    WHERE metric LIKE 'NumberOfDetachedByUserParts';
     """
     query_count_active_parts = """
     SELECT count(*) FROM system.parts WHERE table = 't' AND active
@@ -89,12 +72,11 @@ def test_event_time_microseconds_field(started_cluster):
     assert 2 == int(node1.query(query_count_detached_parts))
     assert 1 == int(node1.query(query_count_active_parts))
 
-    wait_until(
-        is_different(
-            0, lambda: int(node1.query(query_number_detached_parts_in_async_metric))
-        )
+    assert_eq_with_retry(
+        node1,
+        query_number_detached_parts_in_async_metric,
+        "2\n",
     )
-    assert 2 == int(node1.query(query_number_detached_parts_in_async_metric))
     assert 2 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # detach the rest parts and wait until asynchronous metrics notice it
@@ -103,12 +85,11 @@ def test_event_time_microseconds_field(started_cluster):
     assert 3 == int(node1.query(query_count_detached_parts))
     assert 0 == int(node1.query(query_count_active_parts))
 
-    wait_until(
-        is_different(
-            2, lambda: int(node1.query(query_number_detached_parts_in_async_metric))
-        )
+    assert_eq_with_retry(
+        node1,
+        query_number_detached_parts_in_async_metric,
+        "3\n",
     )
-    assert 3 == int(node1.query(query_number_detached_parts_in_async_metric))
     assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # inject some data directly and wait until asynchronous metrics notice it
@@ -117,19 +98,17 @@ def test_event_time_microseconds_field(started_cluster):
             "bash",
             "-c",
             "mkdir /var/lib/clickhouse/data/default/t/detached/unexpected_all_0_0_0",
-        ],
-        privileged=True,
+        ]
     )
 
     assert 4 == int(node1.query(query_count_detached_parts))
     assert 0 == int(node1.query(query_count_active_parts))
 
-    wait_until(
-        is_different(
-            3, lambda: int(node1.query(query_number_detached_parts_in_async_metric))
-        )
+    assert_eq_with_retry(
+        node1,
+        query_number_detached_parts_in_async_metric,
+        "4\n",
     )
-    assert 4 == int(node1.query(query_number_detached_parts_in_async_metric))
     assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # drop some data directly and wait asynchronous metrics notice it
@@ -140,17 +119,15 @@ def test_event_time_microseconds_field(started_cluster):
             "rm -rf /var/lib/clickhouse/data/default/t/detached/{}".format(
                 partition_name
             ),
-        ],
-        privileged=True,
+        ]
     )
 
     assert 3 == int(node1.query(query_count_detached_parts))
     assert 0 == int(node1.query(query_count_active_parts))
 
-    wait_until(
-        is_different(
-            4, lambda: int(node1.query(query_number_detached_parts_in_async_metric))
-        )
+    assert_eq_with_retry(
+        node1,
+        query_number_detached_parts_in_async_metric,
+        "3\n",
     )
-    assert 3 == int(node1.query(query_number_detached_parts_in_async_metric))
     assert 2 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
