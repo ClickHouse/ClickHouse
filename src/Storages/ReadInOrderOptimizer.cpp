@@ -206,7 +206,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
         if (i == 0)
             read_direction = current_direction;
 
-        order_key_prefix_descr.push_back(required_sort_description[i]);
+        order_key_prefix_descr.push_back(description[i]);
     }
 
     if (order_key_prefix_descr.empty())
