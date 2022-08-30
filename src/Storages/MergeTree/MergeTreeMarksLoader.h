@@ -25,8 +25,6 @@ public:
 
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
-    bool initialized() const { return marks != nullptr; }
-
 private:
     DataPartStoragePtr data_part_storage;
     MarkCache * mark_cache = nullptr;

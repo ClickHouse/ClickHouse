@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/special/dictionary
+---
 # 字典 {#dictionary}
 
 `Dictionary` 引擎将字典数据展示为一个ClickHouse的表。
