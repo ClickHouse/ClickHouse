@@ -215,6 +215,8 @@ clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
 
 clickhouse-client --query "SHOW TABLES FROM test"
 
+clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+
 stop
 
 # Let's enable S3 storage by default
