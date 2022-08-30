@@ -262,7 +262,7 @@ protected:
 /// The difference between this class and ThreadFromGlobalPool is that this class disables the tracing context propagation to underlying thread.
 /// If the context is propagated, not only the underlying worker will restore context but also the worker of ThreadPool.
 ///
-/// Since workers of ThreadPool won't exit until the ThreadPool is destroyed, the context restored by underlying worker won't be deleted for a very long time 
+/// Since workers of ThreadPool won't exit until the ThreadPool is destroyed, the context restored by underlying worker won't be deleted for a very long time
 /// which would cause wrong contexts for jobs for ThreadPool
 ///
 class Thread4ThreadPool : public ThreadFromGlobalPool

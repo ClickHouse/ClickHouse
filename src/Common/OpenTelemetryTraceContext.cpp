@@ -312,7 +312,7 @@ TracingContextHolder::~TracingContextHolder()
     {
         auto shared_span_log = current_thread_trace_context.span_log.lock();
         if (shared_span_log)
-        {    
+        {
             this->root_span.finish_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
