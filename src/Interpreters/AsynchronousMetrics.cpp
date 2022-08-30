@@ -1655,8 +1655,8 @@ void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, Tim
 
         watch.stop();
 
-        // Normally heavy metrics don't delay the rest of the metrics calculation
-        // otherwise log the warning message
+        /// Normally heavy metrics don't delay the rest of the metrics calculation
+        /// otherwise log the warning message
         auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
         if (watch.elapsedSeconds() > (update_period.count() / 2.))
             log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
