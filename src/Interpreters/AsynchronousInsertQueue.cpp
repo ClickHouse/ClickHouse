@@ -295,7 +295,7 @@ void AsynchronousInsertQueue::busyCheck()
             if (shutdown)
                 return true;
 
-            if (!deadline_queue.empty() && deadline_queue.begin()->first >= std::chrono::steady_clock::now())
+            if (!deadline_queue.empty() && deadline_queue.begin()->first < std::chrono::steady_clock::now())
                 return true;
 
             return false;
@@ -308,12 +308,11 @@ void AsynchronousInsertQueue::busyCheck()
 
         while (true)
         {
-            if (deadline_queue.empty() || deadline_queue.begin()->first < now)
+            if (deadline_queue.empty() || deadline_queue.begin()->first > now)
                 break;
 
 
             std::shared_lock read_lock(rwlock);
-            std::unique_lock deadline_lock(deadline_mutex);
             auto main_queue_it = deadline_queue.begin()->second;
             auto & [key, elem] = *main_queue_it;
 
