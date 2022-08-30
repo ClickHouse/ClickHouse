@@ -296,11 +296,11 @@ StorageKeeperMap::StorageKeeperMap(
 
         if (code == Coordination::Error::ZNONODE)
             LOG_INFO(log, "Metadata nodes were deleted in background, will retry");
-        else 
+        else
             throw Coordination::Exception(code, table_path);
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create metadata for table, becuase it is removed concurrently or because of wrong root_path ({})", root_path);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create metadata for table, because it is removed concurrently or because of wrong root_path ({})", root_path);
 }
 
 
@@ -589,14 +589,12 @@ namespace
     StoragePtr create(const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
-        if (engine_args.empty() || engine_args.size() > 4)
+        if (engine_args.empty() || engine_args.size() > 2)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage KeeperMap requires 1-5 arguments:\n"
+                "Storage KeeperMap requires 1-2 arguments:\n"
                 "root_path: path in the Keeper where the values will be stored (required)\n"
-                "hosts: comma separated Keeper hosts, set to '{0}' to use the same Keeper as ClickHouse (default: '{0}')\n"
                 "create_missing_root_path: 1 if the root path should be created if it's missing, otherwise throw exception (default: 1)\n",
-                "remove_existing_data: true if children inside 'root_path' should be deleted, otherwise throw exception (default: 0)",
                 default_host);
 
         auto root_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "root_path");
