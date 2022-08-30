@@ -638,7 +638,7 @@ void DiskObjectStorageTransaction::commit()
         {
             tryLogCurrentException(
                 &Poco::Logger::get("DiskObjectStorageTransaction"),
-                fmt::format("An error occured while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
+                fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
             {
@@ -650,7 +650,7 @@ void DiskObjectStorageTransaction::commit()
                 {
                     tryLogCurrentException(
                         &Poco::Logger::get("DiskObjectStorageTransaction"),
-                        fmt::format("An error occured while undoing transaction's operation #{}", i));
+                        fmt::format("An error occurred while undoing transaction's operation #{}", i));
 
                     throw;
                 }
