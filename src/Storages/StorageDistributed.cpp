@@ -1489,6 +1489,8 @@ void registerStorageDistributed(StorageFactory & factory)
             distributed_settings.monitor_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_sleep_time_ms);
         if (!distributed_settings.monitor_max_sleep_time_ms.changed)
             distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
+        if (!distributed_settings.monitor_max_retries.changed)
+            distributed_settings.monitor_max_retries = context->getSettingsRef().distributed_directory_monitor_file_send_max_retries;
 
         return std::make_shared<StorageDistributed>(
             args.table_id,

@@ -79,7 +79,7 @@ private:
     void run();
 
     std::map<std::string, int> files_retry {{"0", 0}};
-    void getFilesRetry(const std::map<UInt64, std::string> & files);
+    void getFilesRetry(const std::string & file_path);
     std::map<UInt64, std::string> getFiles();
     bool processFiles(const std::map<UInt64, std::string> & files);
     void processFile(const std::string & file_path);
