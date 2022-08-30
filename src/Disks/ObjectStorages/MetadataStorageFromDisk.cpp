@@ -384,7 +384,7 @@ void MetadataStorageFromDiskTransaction::createMetadataFileFromContent(const std
     DiskObjectStorageMetadataPtr metadata = std::make_unique<DiskObjectStorageMetadata>(
         metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
 
-    for (auto object : objects)
+    for (const auto & object : objects)
         metadata->addObject(object.relative_path, object.bytes_size);
 
     auto index_path = metadata->getIndexPath();
