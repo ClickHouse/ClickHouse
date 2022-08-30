@@ -1999,7 +1999,11 @@ void ClientBase::runInteractive()
             { "\\c", "USE" },
         };
 
-    static const std::initializer_list<String> repeat_last_input_aliases = { ".", "/" };
+    static const std::initializer_list<String> repeat_last_input_aliases =
+        {
+            ".",  /// Vim shortcut
+            "/"   /// Oracle SQL Plus shortcut
+        };
 
     String last_input;
 
