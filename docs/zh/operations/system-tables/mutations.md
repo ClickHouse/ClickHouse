@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/mutations
+---
 # system.mutations {#system_tables-mutations}
 
 该表包含关于MergeTree表的[mutation](../../sql-reference/statements/alter.md#alter-mutations)及其进度信息 。每条mutation命令都用一行来表示。

@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/cpp
 sidebar_position: 24
 sidebar_label: C++客户端库
 ---

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/check-table
 sidebar_position: 41
 sidebar_label: CHECK
 ---
