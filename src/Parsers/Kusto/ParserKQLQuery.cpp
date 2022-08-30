@@ -13,6 +13,7 @@
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLPrint.h>
 #include <Parsers/Kusto/ParserKQLMakeSeries.h>
+#include <Parsers/Kusto/ParserKQLMVExpand.h>
 #include <Parsers/CommonParsers.h>
 
 namespace DB
@@ -82,7 +83,7 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
     }
 
     for (auto token:tokens) 
-        res = res + token +" ";
+        res = res.empty() ? token : res +" " + token;
     return res;
 }
 
@@ -98,6 +99,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKQLSummarize kql_summarize_p;
     ParserKQLTable kql_table_p;
     ParserKQLMakeSeries kql_make_series_p;
+    ParserKQLMVExpand kql_mv_expand_p;
 
     ASTPtr select_expression_list;
     ASTPtr tables;
@@ -105,6 +107,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr group_expression_list;
     ASTPtr order_expression_list;
     ASTPtr limit_length;
+    ASTPtr settings;
 
     std::unordered_map<std::string, ParserKQLBase * > kql_parser = {
         { "filter",&kql_filter_p},
@@ -116,7 +119,8 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         { "order",&kql_sort_p},
         { "summarize",&kql_summarize_p},
         { "table",&kql_table_p},
-        { "make-series",&kql_make_series_p}
+        { "make-series",&kql_make_series_p},
+        { "mv-expand",&kql_mv_expand_p}
     };
 
     std::vector<std::pair<String, Pos>> operation_pos;
@@ -156,6 +160,21 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     }
                 }
             }
+            else if (kql_operator == "mv")
+            {
+                ++pos;
+                ParserKeyword s_series("expand");
+                ParserToken s_dash(TokenType::Minus);
+                if (s_dash.ignore(pos,expected))
+                {
+                    if (s_series.ignore(pos,expected))
+                    {
+                        kql_operator = "mv-expand";
+                        --pos;
+                    }
+                }
+            }
+
             if (pos->type != TokenType::BareWord || kql_parser.find(kql_operator) == kql_parser.end())
                 return false;
             ++pos;
@@ -182,6 +201,12 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!kql_project_p.parse(pos, select_expression_list, expected))
         return false;
+
+   kql_mv_expand_p.setTableName(table_name);
+    if (!kql_mv_expand_p.parse(pos, tables, expected))
+        return false;
+    else
+        settings = kql_mv_expand_p.settings;
 
     if (!kql_limit_p.parse(pos, limit_length, expected))
         return false;
@@ -225,6 +250,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
 
     return true;
 }

@@ -168,6 +168,26 @@ void ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, const ui
     if (!kql_make_series.from_to_step.to_str.empty())
         end_str = getExprFromToken(from_to_step.to_str, max_depth);
 
+    auto date_type_cast = [&] (String &src)
+    {
+        Tokens tokens(src.c_str(), src.c_str() + src.size());
+        IParser::Pos pos(tokens, max_depth);
+        String res;
+        while (!pos->isEnd())
+        {
+            String tmp = String(pos->begin, pos->end);
+            if (tmp == "parseDateTime64BestEffortOrNull")
+                tmp ="toDateTime64";
+
+            res = res.empty() ? tmp : res + " " + tmp;
+            ++pos;
+        }
+        return res;
+    };
+
+    start_str = date_type_cast(start_str);
+    end_str = date_type_cast(end_str);
+
     String bin_str, start, end;
 
     uint64_t diff = 0;
