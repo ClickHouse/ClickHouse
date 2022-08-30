@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 
 import helpers.client
 import pytest
@@ -50,17 +51,19 @@ def prepare_s3_bucket(started_cluster):
 def upload_test_table(started_cluster):
     bucket = started_cluster.minio_bucket
 
-    for address, dirs, files in os.walk(f"{SCRIPT_DIR}/test_table"):
+    for address, dirs, files in os.walk(SCRIPT_DIR + "/test_table"):
+        address_without_prefix = address[len(SCRIPT_DIR):]
+
         for name in files:
-            started_cluster.minio_client.fput_object(bucket, os.path.join(SCRIPT_DIR, address, name), os.path.join(address, name))
+            started_cluster.minio_client.fput_object(bucket, os.path.join(address_without_prefix, name), os.path.join(address, name))
 
     for obj in list(
-        minio.list_objects(
+        started_cluster.minio_client.list_objects(
             bucket,
             recursive=True,
         )
     ):
-        logging.info(obj.name)
+        logging.info(obj.object_name)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -68,6 +71,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "dummy",
+            main_configs=["configs/conf.xml"],
             with_minio=True
         )
 
@@ -99,7 +103,7 @@ def test_create_query(started_cluster):
     instance = started_cluster.instances["dummy"]
     bucket = started_cluster.minio_bucket
 
-    create_query = f"""CREATE TABLE hudi ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/hudi', 'minio', 'minio123')"""
+    create_query = f"""CREATE TABLE hudi ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"""
 
     run_query(instance, create_query)
 
