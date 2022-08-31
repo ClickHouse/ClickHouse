@@ -3,7 +3,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/HelpersMinMaxAny.h>
-#include <Columns/ColumnFixedString.h>
 
 
 namespace DB
@@ -21,17 +20,25 @@ AggregateFunctionPtr createAggregateFunctionMin(
 
     const DataTypePtr & argument_type = argument_types[0];
 
-    /// TODO: Since some types have changed from generic to other agg types, and that means serialization changes
-    /// we might need to add the version or revert those changes to match the old status
-    AggregateFunctionPtr f = AggregateFunctionPtr(
-        createWithNumericBasedAndDecimalType<AggregateFunctionMin, AggregateFunctionMinDataNumeric>(*argument_type, argument_type));
-    if (f)
-        return f;
-
     WhichDataType which(argument_type);
+#define NUMERIC_DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<TYPE>>(argument_type));
+    FOR_NUMERIC_TYPES(NUMERIC_DISPATCH)
+
+    NUMERIC_DISPATCH(DateTime64)
+    NUMERIC_DISPATCH(Decimal32)
+    NUMERIC_DISPATCH(Decimal64)
+    NUMERIC_DISPATCH(Decimal128)
+#undef DISPATCH
+
+    if (which.idx == TypeIndex::Date)
+        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<DataTypeDate::FieldType>>(argument_type));
+    if (which.idx == TypeIndex::DateTime)
+        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<DataTypeDateTime::FieldType>>(argument_type));
     if (which.idx == TypeIndex::String)
-        return AggregateFunctionPtr(new AggregateFunctionMin<String, AggregateFunctionMinDataString<ColumnString>>(argument_type));
-    return AggregateFunctionPtr(new AggregateFunctionMin<String, AggregateFunctionMinDataGeneric>(argument_type));
+        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataString>(argument_type));
+    return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataGeneric>(argument_type));
 }
 
 AggregateFunctionPtr createAggregateFunctionArgMin(

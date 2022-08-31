@@ -395,7 +395,6 @@ struct AggregateFunctionMinDataNumeric
 #endif
 };
 
-template <typename ColumnType>
 struct AggregateFunctionMinDataString
 {
     Int32 size = -1; /// -1 indicates that there is no value.
@@ -439,7 +438,7 @@ struct AggregateFunctionMinDataString
 
     void set(const IColumn & column, size_t row_num, Arena * arena)
     {
-        setImpl(assert_cast<const ColumnType &>(column).getDataAtWithTerminatingZero(row_num), arena);
+        setImpl(assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
     }
 
     void ALWAYS_INLINE inline add(const StringRef & s, Arena * arena)
@@ -450,7 +449,7 @@ struct AggregateFunctionMinDataString
 
     void ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena * arena)
     {
-        StringRef s = assert_cast<const ColumnType &>(column).getDataAtWithTerminatingZero(row_num);
+        StringRef s = assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num);
         add(s, arena);
     }
 
@@ -459,16 +458,16 @@ struct AggregateFunctionMinDataString
     void insertResultInto(IColumn & to) const
     {
         if (has())
-            assert_cast<ColumnType &>(to).insertDataWithTerminatingZero(getData(), size);
+            assert_cast<ColumnString &>(to).insertDataWithTerminatingZero(getData(), size);
         else
-            assert_cast<ColumnType &>(to).insertDefault();
+            assert_cast<ColumnString &>(to).insertDefault();
     }
 
     template <bool add_all_elements, bool add_if_cond_zero>
     void NO_INLINE
     addManyImpl(const IColumn & column, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end, Arena * arena)
     {
-        const auto & col = assert_cast<const ColumnType &>(column);
+        const auto & col = assert_cast<const ColumnString &>(column);
         if constexpr (!add_all_elements)
         {
             while (!condition_map[start] != add_if_cond_zero && start < end)
@@ -560,7 +559,7 @@ struct AggregateFunctionMinDataString
 };
 
 static_assert(
-    sizeof(AggregateFunctionMinDataString<ColumnString>) == AggregateFunctionMinDataString<ColumnString>::AUTOMATIC_STORAGE_SIZE,
+    sizeof(AggregateFunctionMinDataString) == AggregateFunctionMinDataString::AUTOMATIC_STORAGE_SIZE,
     "Incorrect size of SingleValueDataString struct");
 
 
@@ -670,14 +669,14 @@ public:
 #endif
 };
 
-template <typename T, typename Data>
-class AggregateFunctionMin final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T, Data>>
+template <typename Data>
+class AggregateFunctionMin final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMin<Data>>
 {
     SerializationPtr serialization;
 
 public:
     explicit AggregateFunctionMin(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T, Data>>({type}, {}), serialization(type->getDefaultSerialization())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMin<Data>>({type}, {}), serialization(type->getDefaultSerialization())
     {
         if (!type->isComparable())
             throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
