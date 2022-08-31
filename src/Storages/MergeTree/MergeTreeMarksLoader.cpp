@@ -55,6 +55,14 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     }
 }
 
+MergeTreeMarksLoader::~MergeTreeMarksLoader()
+{
+    if (future.valid())
+    {
+        future.wait();
+    }
+}
+
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
     if (!marks)

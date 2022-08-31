@@ -26,6 +26,8 @@ public:
         ThreadPool * load_marks_threadpool_,
         size_t columns_in_mark_ = 1);
 
+    ~MergeTreeMarksLoader();
+
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
 private:
