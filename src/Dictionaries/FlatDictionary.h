@@ -1,19 +1,19 @@
 #pragma once
 
 #include <atomic>
+#include <optional>
 #include <variant>
 #include <vector>
-#include <optional>
 
-#include <Common/HashTable/HashSet.h>
-#include <Common/Arena.h>
-#include <DataTypes/IDataType.h>
 #include <Core/Block.h>
+#include <DataTypes/IDataType.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashSet.h>
 
+#include "DictionaryHelpers.h"
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -58,7 +58,8 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
+        return std::make_shared<FlatDictionary>(
+            getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -67,15 +68,12 @@ public:
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
-    bool isInjective(const std::string & attribute_name) const override
-    {
-        return dict_struct.getAttribute(attribute_name).injective;
-    }
+    bool isInjective(const std::string & attribute_name) const override { return dict_struct.getAttribute(attribute_name).injective; }
 
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
+        const std::string & attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
@@ -87,10 +85,7 @@ public:
 
     ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const override;
 
-    ColumnUInt8::Ptr isInHierarchy(
-        ColumnPtr key_column,
-        ColumnPtr in_key_column,
-        const DataTypePtr & key_type) const override;
+    ColumnUInt8::Ptr isInHierarchy(ColumnPtr key_column, ColumnPtr in_key_column, const DataTypePtr & key_type) const override;
 
     DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const override;
 

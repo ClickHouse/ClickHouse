@@ -1,0 +1,43 @@
+attributes:
+    name:
+        type: String
+    version:
+        type: String
+    code:
+        type: String
+    lucky:
+        type: UInt
+
+configuration:
+    # direct match
+    - match:
+        regexp: "InspectBrowser"
+        set:
+            name: "Inspect Browser"
+
+    # nested matches
+    - match:
+        regexp: "Google Chrome (.*) (.*)"
+        set:
+            name: "{0} {1}"
+            version: "{1} amd64"
+        match:
+            regexp: "(.*)"
+            set:
+                code: "{0}"
+
+    # collecting attributes
+    - match:
+        regexp: "Mozilla(?:/(\\d+[\\.\\d]+))"
+        set:
+            name: "Mozilla"
+        match:
+            regexp: ".*ozilla(?:/(\\d+[\\.\\d]+))"
+            set:
+                name: "Mozilla Wrong"
+                version: "{0}"
+            match:
+                regexp: ".*zilla(?:/(\\d+[\\.\\d]+))"
+                set:
+                    name: "Mozilla Correct"
+                    code: "{0}"
