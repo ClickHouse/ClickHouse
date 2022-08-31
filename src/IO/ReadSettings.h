@@ -82,7 +82,8 @@ struct ReadSettings
     bool enable_filesystem_cache = true;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
-    bool filesystem_cache_asynchronous_write = false;
+    bool enable_filesystem_cache_asynchronous_write = false;
+    size_t filesystem_cache_asynchronous_write_max_wait_background_task_sec = 8;
 
     bool is_file_cache_persistent = false; /// Some files can be made non-evictable.
     /// Some buffers which read via thread pool can also do caching in threadpool

@@ -351,7 +351,7 @@ bool FileSegment::isBackgroundDownloadFailedOrCancelled() const
     return state.exception || state.is_cancelled;
 }
 
-void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
+void FileSegment::waitBackgroundDownloadIfExists(size_t offset, size_t max_wait_seconds) const
 {
     std::optional<std::shared_future<void>> shared_future;
 
@@ -478,7 +478,7 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
 
     LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded", offset);
 
-    shared_future->wait();
+    shared_future->wait_for(std::chrono::seconds(max_wait_seconds));
 
     LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded is finished", offset);
 }
@@ -1001,7 +1001,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
     return reserved;
 }
 
-void FileSegment::setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock)
+void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::mutex> & segment_lock)
 {
     if (is_downloaded)
         return;

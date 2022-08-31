@@ -120,7 +120,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     {
         CreateFileSegmentSettings create_settings{
             .is_persistent = is_persistent,
-            .is_async_download = settings.filesystem_cache_asynchronous_write
+            .is_async_download = settings.enable_filesystem_cache_asynchronous_write
         };
         file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
     }
@@ -223,9 +223,9 @@ CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegment & file_segment
 
 bool CachedOnDiskReadBufferFromFile::canStartFromCache(size_t current_offset, const FileSegment & file_segment) const
 {
-    if (settings.filesystem_cache_asynchronous_write)
+    if (settings.enable_filesystem_cache_asynchronous_write)
     {
-        file_segment.waitBackgroundDownloadIfExists(current_offset);
+        file_segment.waitBackgroundDownloadIfExists(current_offset, settings.filesystem_cache_asynchronous_write_max_wait_background_task_sec);
     }
 
     ///                      segment{k} state: DOWNLOADING
@@ -762,7 +762,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
             /// and not rethrown, so we need to check here if we can continue with cache or not.
             if (!canStartFromCache(file_offset_of_buffer_end, *file_segment))
             {
-                file_segment->waitBackgroundDownloadIfExists(file_offset_of_buffer_end);
+                file_segment->waitBackgroundDownloadIfExists(file_offset_of_buffer_end, settings.filesystem_cache_asynchronous_write_max_wait_background_task_sec);
 
                 if (file_segment->isBackgroundDownloadFailedOrCancelled())
                 {

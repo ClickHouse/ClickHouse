@@ -151,7 +151,7 @@ public:
 
     bool isDownloaded() const;
 
-    void waitBackgroundDownloadIfExists(size_t offset) const;
+    void waitBackgroundDownloadIfExists(size_t offset, size_t max_wait_seconds) const;
 
     size_t getHitsCount() const { return hits_count; }
 

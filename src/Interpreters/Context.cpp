@@ -3406,7 +3406,8 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
-    res.filesystem_cache_asynchronous_write = settings.filesystem_cache_asynchronous_write;
+    res.enable_filesystem_cache_asynchronous_write = settings.enable_filesystem_cache_asynchronous_write;
+    res.filesystem_cache_asynchronous_write_max_wait_background_task_sec = settings.filesystem_cache_asynchronous_write_max_wait_background_task_sec;
     res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
     res.max_query_cache_size = settings.max_query_cache_size;

@@ -182,9 +182,9 @@ FileSegments FileCache::getImpl(
     const auto & file_segments = it->second;
     if (file_segments.empty())
     {
-        auto key_path = getPathInLocalCache(key);
-
         files.erase(key);
+
+        auto key_path = getPathInLocalCache(key);
 
         /// Note: it is guaranteed that there is no concurrency with files deletion,
         /// because cache files are deleted only inside FileCache and under cache lock.
@@ -498,6 +498,7 @@ FileCache::FileSegmentCell * FileCache::addCell(
     if (offsets.empty())
     {
         auto key_path = getPathInLocalCache(key);
+
         if (!fs::exists(key_path))
             fs::create_directories(key_path);
     }
