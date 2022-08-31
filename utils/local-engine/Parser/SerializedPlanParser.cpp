@@ -345,8 +345,8 @@ DataTypePtr SerializedPlanParser::parseType(const substrait::Type & type)
     auto & factory = DataTypeFactory::instance();
     if (type.has_bool_())
     {
-        internal_type = factory.get("Int8");
-        internal_type = wrapNullableType(type.i8().nullability(), internal_type);
+        internal_type = factory.get("UInt8");
+        internal_type = wrapNullableType(type.bool_().nullability(), internal_type);
     }
     else if (type.has_i8())
     {

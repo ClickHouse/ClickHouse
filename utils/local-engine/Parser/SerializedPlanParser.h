@@ -23,6 +23,7 @@ namespace local_engine
 
 static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"is_not_null","isNotNull"},
+    {"is_null","isNull"},
     {"gte","greaterOrEquals"},
     {"gt", "greater"},
     {"lte", "lessOrEquals"},

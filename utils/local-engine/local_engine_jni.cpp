@@ -498,6 +498,10 @@ jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv *
     {
         type = "Integer";
     }
+    else if (which.isUInt8())
+    {
+        type = "Boolean";
+    }
     else if (which.isString())
     {
         type = "String";
@@ -508,7 +512,7 @@ jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv *
     }
     else
     {
-        auto type_name = std::string(block->getByPosition(position).type->getFamilyName());
+        auto type_name = std::string(block->getByPosition(position).type->getName());
         auto col_name = block->getByPosition(position).name;
         LOG_ERROR(&Poco::Logger::get("jni"), "column {}, unsupported datatype {}", col_name, type_name);
         throw std::runtime_error("unsupported datatype " + type_name);
