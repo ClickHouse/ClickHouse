@@ -99,7 +99,7 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
-    TemporaryDataOnDisk tmp_data_,
+    TemporaryDataOnDiskPtr tmp_data_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
@@ -181,7 +181,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
         size_t size = sum_bytes_in_blocks + min_free_disk_space;
-        auto & tmp_stream = tmp_data->createStream(CurrentMetrics::TemporaryFilesForSort, size)
+        auto & tmp_stream = tmp_data.createStream(CurrentMetrics::TemporaryFilesForSort, size)
 
         merge_sorter
             = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);

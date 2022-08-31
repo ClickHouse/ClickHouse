@@ -4,14 +4,16 @@
 
 #include <Interpreters/Context.h>
 #include <Disks/TemporaryFileOnDisk.h>
-
+#include <Disks/IVolume.h>
 
 namespace DB
 {
 
+class TemporaryDataOnDisk;
+using TemporaryDataOnDiskPtr = std::shared_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
-using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
+using TemporaryFileStreamHolder = std::unique_ptr<TemporaryFileStream>;
 
 
 /// Holds set of temporary files on disk and account amound of written data.
@@ -22,34 +24,40 @@ using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
 class TemporaryDataOnDisk : boost::noncopyable
 {
 public:
+    struct Stat
+    {
+        std::atomic<size_t> compressed_size;
+        std::atomic<size_t> uncompressed_size;
+    };
+
     explicit TemporaryDataOnDisk(VolumePtr volume_, size_t limit_)
         : volume(volume_), limit(limit_)
     {}
 
-    explicit TemporaryDataOnDisk(TemporaryDataOnDisk * parent_, size_t limit_)
+    explicit TemporaryDataOnDisk(const TemporaryDataOnDiskPtr & parent_, size_t limit_)
         : parent(parent_), volume(parent->volume), limit(limit_)
     {}
 
-    TemporaryFileStream & createStream();
+    TemporaryFileStream & createStream(CurrentMetrics::Value metric_scope, size_t reserve_size = 0);
+    std::vector<TemporaryFileStreamHolder> & getStreams() { return streams; }
+
+    const Stat & getStat() const { return stat; }
+
+    /// TODO: remove
+    /// Refactor all code that uses volume directly to use TemporaryDataOnDisk.
+    VolumePtr getVolume() const { return volume; }
 
 private:
-    void changeAlloc(size_t compressed_bytes, size_t uncompressed_bytes, bool is_dealloc);
+    void deltaAlloc(int compressed_size, int uncompressed_size);
 
 protected:
+    void setAlloc(size_t compressed_size, size_t uncompressed_size);
 
-    void alloc(size_t compressed_bytes, size_t uncompressed_bytes) { changeAlloc(compressed_bytes, uncompressed_bytes, false); }
-    void dealloc(size_t compressed_bytes, size_t uncompressed_bytes) { changeAlloc(compressed_bytes, uncompressed_bytes, true); }
-
-    struct Stat
-    {
-        std::atomic<size_t> compressed_bytes;
-        std::atomic<size_t> uncompressed_bytes;
-    };
-
-    TemporaryDataOnDisk * parent = nullptr;
+    TemporaryDataOnDiskPtr parent = nullptr;
     VolumePtr volume;
 
-    std::vector<TemporaryFileStreamPtr> streams;
+    std::mutex mutex; /// Protects streams
+    std::vector<TemporaryFileStreamHolder> streams;
 
     Stat stat;
     size_t limit = 0;
@@ -62,8 +70,9 @@ class TemporaryFileStream final : private TemporaryDataOnDisk
 {
 public:
     using Stat = TemporaryDataOnDisk::Stat;
+    using TemporaryDataOnDisk::getStat;
 
-    TemporaryFileStream(TemporaryFileOnDiskHolder file_, TemporaryDataOnDisk * parent_);
+    TemporaryFileStream(TemporaryFileOnDiskHolder file_, const TemporaryDataOnDiskPtr & parent_);
 
     void write(const Block & block);
     Stat finishWriting();
