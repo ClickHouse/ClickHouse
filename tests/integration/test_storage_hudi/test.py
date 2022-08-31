@@ -119,8 +119,8 @@ def test_select_query(started_cluster):
         assert(len(result) > 0)    
 
     # test if all partition paths is presented in result 
-    distinct_select_query = "SELECT DISTINCT partitionpath FROM hudi FORMAT TSV"
-    result = run_query(instance, distinct_select_query).splitlines()
-    expected = ['americas/brazil/sao_paulo', 'asia/india/chennai', 'americas/united_states/san_francisco']
-    
+    distinct_select_query = "SELECT DISTINCT partitionpath FROM hudi ORDER BY partitionpath FORMAT TSV"
+    result = run_query(instance, distinct_select_query)
+    expected = ['americas/brazil/sao_paulo', 'americas/united_states/san_francisco', 'asia/india/chennai']
+
     assert TSV(result) == TSV(expected)
