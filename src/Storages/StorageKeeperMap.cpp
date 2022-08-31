@@ -147,17 +147,23 @@ public:
             current_keys_num = root_stat.numChildren - 1;
         }
 
+        std::vector<std::pair<const std::string *, std::future<Coordination::ExistsResponse>>> exist_responses;
         for (const auto & [key, value] : new_values)
         {
             auto path = storage.fullPathForKey(key);
 
-            if (zookeeper->exists(path))
+            exist_responses.push_back({&key, zookeeper->asyncExists(path)});
+        }
+
+        for (auto & [key, response] : exist_responses)
+        {
+            if (response.get().error == Coordination::Error::ZOK)
             {
-                requests.push_back(zkutil::makeSetRequest(path, value, -1));
+                requests.push_back(zkutil::makeSetRequest(storage.fullPathForKey(*key), new_values[*key], -1));
             }
             else
             {
-                requests.push_back(zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent));
+                requests.push_back(zkutil::makeCreateRequest(storage.fullPathForKey(*key), new_values[*key], zkutil::CreateMode::Persistent));
                 ++new_keys_num;
             }
         }
