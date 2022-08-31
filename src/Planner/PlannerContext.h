@@ -132,7 +132,7 @@ public:
     using SetKeyToSubqueryNode = std::unordered_map<String, SubqueryNodeForSet>;
 
     /// Get set key for query node
-    SetKey getSetKey(const IQueryTreeNode * set_source_node) const;
+    SetKey getSetKey(const QueryTreeNodePtr & set_source_node) const;
 
     /// Register set for set key
     void registerSet(const SetKey & key, SetPtr set);
@@ -181,33 +181,23 @@ public:
         return global_planner_context;
     }
 
-    const std::unordered_map<const IQueryTreeNode *, std::string> & getTableExpressionNodeToIdentifier() const
-    {
-        return table_expression_node_to_identifier;
-    }
-
-    std::unordered_map<const IQueryTreeNode *, std::string> & getTableExpressionNodeToIdentifier()
-    {
-        return table_expression_node_to_identifier;
-    }
-
-    const std::unordered_map<const IQueryTreeNode *, TableExpressionColumns> & getTableExpressionNodeToColumns() const
+    const std::unordered_map<QueryTreeNodePtr, TableExpressionColumns> & getTableExpressionNodeToColumns() const
     {
         return table_expression_node_to_columns;
     }
 
-    std::unordered_map<const IQueryTreeNode *, TableExpressionColumns> & getTableExpressionNodeToColumns()
+    std::unordered_map<QueryTreeNodePtr, TableExpressionColumns> & getTableExpressionNodeToColumns()
     {
         return table_expression_node_to_columns;
     }
 
-    ColumnIdentifier getColumnUniqueIdentifier(const IQueryTreeNode * column_source_node, std::string column_name = {});
+    ColumnIdentifier getColumnUniqueIdentifier(const QueryTreeNodePtr & column_source_node, std::string column_name = {});
 
-    void registerColumnNode(const IQueryTreeNode * column_node, const ColumnIdentifier & column_identifier);
+    void registerColumnNode(const QueryTreeNodePtr & column_node, const ColumnIdentifier & column_identifier);
 
-    const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const IQueryTreeNode * column_node) const;
+    const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const QueryTreeNodePtr & column_node) const;
 
-    const ColumnIdentifier * getColumnNodeIdentifierOrNull(const IQueryTreeNode * column_node) const;
+    const ColumnIdentifier * getColumnNodeIdentifierOrNull(const QueryTreeNodePtr & column_node) const;
 
 private:
     /// Query context
@@ -217,13 +207,10 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     /// Column node to column identifier
-    std::unordered_map<const IQueryTreeNode *, ColumnIdentifier> column_node_to_column_identifier;
-
-    /// Table expression to identifier
-    std::unordered_map<const IQueryTreeNode *, std::string> table_expression_node_to_identifier;
+    std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
 
     /// Table expression node to columns
-    std::unordered_map<const IQueryTreeNode *, TableExpressionColumns> table_expression_node_to_columns;
+    std::unordered_map<QueryTreeNodePtr, TableExpressionColumns> table_expression_node_to_columns;
 
     size_t column_identifier_counter = 0;
 };

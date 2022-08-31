@@ -1,0 +1,258 @@
+-- { echoOn }
+
+SELECT 'Constants';
+Constants
+DESCRIBE (SELECT 1, 'Value');
+1	UInt8					
+\'Value\'	String					
+SELECT '--';
+--
+DESCRIBE (SELECT 1 + 1, concat('Value_1', 'Value_2'));
+plus(1, 1)	UInt16					
+concat(\'Value_1\', \'Value_2\')	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)'));
+CAST(tuple(1, \'Value\'), \'Tuple (id UInt64, value String)\')	Tuple(id UInt64, value String)					
+SELECT 'Columns';
+Columns
+DESCRIBE (SELECT test_table.id, test_table.id, id FROM test_table);
+id	UInt64					
+id	UInt64					
+id	UInt64					
+SELECT '--';
+--
+DESCRIBE (SELECT * FROM test_table);
+id	UInt64					
+value	String					
+SELECT '--';
+--
+DESCRIBE (SELECT * APPLY toString FROM test_table);
+toString(id)	String					
+toString(value)	String					
+SELECT '--';
+--
+DESCRIBE (SELECT * APPLY x -> toString(x) FROM test_table);
+toString(id)	String					
+toString(value)	String					
+SELECT '--';
+--
+DESCRIBE (SELECT tuple_value.* FROM test_table_compound);
+tuple_value.value_1	UInt64					
+tuple_value.value_2	String					
+SELECT '--';
+--
+DESCRIBE (SELECT tuple_value.* APPLY x -> x FROM test_table_compound);
+tuple_value.value_1	UInt64					
+tuple_value.value_2	String					
+SELECT '--';
+--
+DESCRIBE (SELECT tuple_value.* APPLY toString FROM test_table_compound);
+toString(tuple_value.value_1)	String					
+toString(tuple_value.value_2)	String					
+SELECT '--';
+--
+DESCRIBE (SELECT tuple_value.* APPLY x -> toString(x) FROM test_table_compound);
+toString(tuple_value.value_1)	String					
+toString(tuple_value.value_2)	String					
+SELECT 'Constants with aliases';
+Constants with aliases
+DESCRIBE (SELECT 1 AS a, a AS b, b, b AS c, c, 'Value' AS d, d AS e, e AS f);
+a	UInt8					
+b	UInt8					
+b	UInt8					
+c	UInt8					
+c	UInt8					
+d	String					
+e	String					
+f	String					
+SELECT '--';
+--
+DESCRIBE (SELECT plus(1 AS a, a AS b), plus(b, b), plus(b, b) AS c, concat('Value' AS d, d) AS e, e);
+plus(a, b)	UInt16					
+plus(b, b)	UInt16					
+c	UInt16					
+e	String					
+e	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.id, a.value);
+a	Tuple(id UInt64, value String)					
+a.id	UInt64					
+a.value	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.*);
+a	Tuple(id UInt64, value String)					
+a.id	UInt64					
+a.value	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT id);
+a	Tuple(id UInt64, value String)					
+a.value	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT value);
+a	Tuple(id UInt64, value String)					
+a.id	UInt64					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT value APPLY toString);
+a	Tuple(id UInt64, value String)					
+toString(a.id)	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT value APPLY x -> toString(x));
+a	Tuple(id UInt64, value String)					
+toString(a.id)	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, untuple(a));
+a	Tuple(id UInt64, value String)					
+tupleElement(a, \'id\')	UInt64					
+tupleElement(a, \'value\')	String					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, untuple(a) AS b);
+a	Tuple(id UInt64, value String)					
+b.id	UInt64					
+b.value	String					
+SELECT 'Columns with aliases';
+Columns with aliases
+DESCRIBE (SELECT test_table.id AS a, a, test_table.id AS b, b AS c, c FROM test_table);
+a	UInt64					
+a	UInt64					
+b	UInt64					
+c	UInt64					
+c	UInt64					
+SELECT '--';
+--
+DESCRIBE (SELECT plus(test_table.id AS a, test_table.id), plus(id, id AS b), plus(b, b), plus(test_table.id, test_table.id) FROM test_table);
+plus(a, id)	UInt64					
+plus(id, b)	UInt64					
+plus(b, b)	UInt64					
+plus(id, id)	UInt64					
+SELECT '--Fix';
+--Fix
+DESCRIBE (SELECT test_table.* REPLACE id + (id AS id_alias) AS id, id_alias FROM test_table);
+plus(id, id)	UInt64					
+value	String					
+id_alias	UInt64					
+SELECT 'Lambda';
+Lambda
+DESCRIBE (SELECT arrayMap(x -> x + 1, [1,2,3]));
+arrayMap(lambda(tuple(x), plus(x, 1)), [1, 2, 3])	Array(UInt16)					
+SELECT '--';
+--
+DESCRIBE (SELECT 1 AS a, arrayMap(x -> x + a, [1,2,3]));
+a	UInt8					
+arrayMap(lambda(tuple(x), plus(x, a)), [1, 2, 3])	Array(UInt16)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> x + test_table.id + test_table.id + id, [1,2,3]) FROM test_table);
+arrayMap(lambda(tuple(x), plus(plus(plus(x, id), id), id)), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> x + (test_table.id AS first) + (test_table.id AS second) + id, [1,2,3]) FROM test_table);
+arrayMap(lambda(tuple(x), plus(plus(plus(x, first), second), id)), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_table);
+arrayMap(lambda(tuple(x), id), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value APPLY x -> x, [1,2,3]) FROM test_table);
+arrayMap(lambda(tuple(x), id), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value APPLY toString, [1,2,3]) FROM test_table);
+arrayMap(lambda(tuple(x), toString(id)), [1, 2, 3])	Array(String)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value APPLY x -> toString(x), [1,2,3]) FROM test_table);
+arrayMap(lambda(tuple(x), toString(id)), [1, 2, 3])	Array(String)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.*, [1,2,3]));
+compound_value	Tuple(id UInt64)					
+arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.* APPLY x -> x, [1,2,3]));
+compound_value	Tuple(id UInt64)					
+arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.* APPLY toString, [1,2,3]));
+compound_value	Tuple(id UInt64)					
+arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.* APPLY x -> toString(x), [1,2,3]));
+compound_value	Tuple(id UInt64)					
+arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, arrayMap(x -> untuple(a), [1,2,3]) FROM test_table);
+a	Tuple(id UInt64)					
+arrayMap(lambda(tuple(x), tupleElement(a, \'id\')), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value, [1,2,3]));
+compound_value	Tuple(id UInt64, value String)					
+arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value APPLY x -> x, [1,2,3]));
+compound_value	Tuple(id UInt64, value String)					
+arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value APPLY toString, [1,2,3]));
+compound_value	Tuple(id UInt64, value String)					
+arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value APPLY x -> toString(x), [1,2,3]));
+compound_value	Tuple(id UInt64, value String)					
+arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, arrayMap(x -> untuple(a), [1,2,3]) FROM test_table);
+a	Tuple(id UInt64)					
+arrayMap(lambda(tuple(x), tupleElement(a, \'id\')), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, arrayMap(x -> untuple(a) AS untupled_value, [1,2,3]) FROM test_table);
+a	Tuple(id UInt64)					
+arrayMap(untupled_value, [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, untuple(a) AS untupled_value, arrayMap(x -> untupled_value, [1,2,3]) FROM test_table);
+a	Tuple(id UInt64)					
+untupled_value.id	UInt64					
+arrayMap(lambda(tuple(x), untupled_value), [1, 2, 3])	Array(UInt64)					
+SELECT '--';
+--
+DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, untuple(a) AS untupled_value, arrayMap(x -> untupled_value AS untupled_value_in_lambda, [1,2,3]) FROM test_table);
+a	Tuple(id UInt64)					
+untupled_value.id	UInt64					
+arrayMap(untupled_value_in_lambda, [1, 2, 3])	Array(UInt64)					
+SELECT 'Standalone lambda';
+Standalone lambda
+DESCRIBE (WITH x -> x + 1 AS test_lambda SELECT test_lambda(1));
+test_lambda(1)	UInt16					
+SELECT 'Subquery';
+Subquery
+DESCRIBE (SELECT (SELECT 1), (SELECT 2), (SELECT 3) AS a, (SELECT 4));
+_subquery_1	Nullable(UInt8)					
+_subquery_2	Nullable(UInt8)					
+a	Nullable(UInt8)					
+_subquery_4	Nullable(UInt8)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> (SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2) AS a, [1, 2, 3]),  arrayMap(x -> (SELECT 1), [1,2,3]));
+arrayMap(lambda(tuple(x), _subquery_1), [1, 2, 3])	Array(Nullable(UInt8))					
+arrayMap(a, [1, 2, 3])	Array(Nullable(UInt8))					
+arrayMap(lambda(tuple(x), _subquery_3), [1, 2, 3])	Array(Nullable(UInt8))					

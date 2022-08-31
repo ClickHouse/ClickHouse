@@ -117,7 +117,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
 
 }
 
-SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const DataTypePtr & value_type, const Field & value, const Settings & settings)
+SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, const Settings & settings)
 {
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
@@ -155,9 +155,7 @@ SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const DataTy
         if (rhs_which_type.isArray())
             result_block = createBlockFromCollection(value.get<const Array &>(), set_element_types, tranform_null_in);
         else if (rhs_which_type.isTuple())
-        {
             result_block = createBlockFromCollection(value.get<const Tuple &>(), set_element_types, tranform_null_in);
-        }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Unsupported type at the right-side of IN. Expected Array or Tuple. Actual {}",

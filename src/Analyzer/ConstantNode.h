@@ -17,6 +17,9 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
+    /// Construct constant query tree node from constant value
+    explicit ConstantNode(ConstantValuePtr constant_value_);
+
     /// Construct constant query tree node from field and data type
     explicit ConstantNode(Field value_, DataTypePtr value_data_type_);
 
@@ -24,9 +27,14 @@ public:
     explicit ConstantNode(Field value_);
 
     /// Get constant value
-    const Field & getConstantValue() const
+    const Field & getValue() const
     {
-        return value;
+        return constant_value->getValue();
+    }
+
+    ConstantValuePtr getConstantValueOrNull() const override
+    {
+        return constant_value;
     }
 
     QueryTreeNodeType getNodeType() const override
@@ -41,7 +49,7 @@ public:
 
     DataTypePtr getResultType() const override
     {
-        return type;
+        return constant_value->getType();
     }
 
 protected:
@@ -56,9 +64,8 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    Field value;
+    ConstantValuePtr constant_value;
     String value_string_dump;
-    DataTypePtr type;
 };
 
 }

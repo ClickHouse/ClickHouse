@@ -29,15 +29,10 @@ LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_)
 
 void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    auto result_type = getExpression()->getResultType();
-
     buffer << std::string(indent, ' ') << "LAMBDA id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
-
-    if (result_type)
-        buffer << ", result_type: " << result_type->getName();
 
     const auto & arguments = getArguments();
     if (!arguments.getNodes().empty())

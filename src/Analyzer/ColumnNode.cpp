@@ -101,8 +101,6 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
     auto clone_result = std::make_shared<ColumnNode>(column, column_source);
-    clone_result->display_identifier = display_identifier;
-
     return clone_result;
 }
 
@@ -118,12 +116,6 @@ void ColumnNode::getPointersToUpdateAfterClone(QueryTreePointersToUpdate & point
 
 ASTPtr ColumnNode::toASTImpl() const
 {
-    if (!display_identifier.empty())
-    {
-        std::vector<String> parts = display_identifier.getParts();
-        return std::make_shared<ASTIdentifier>(std::move(parts));
-    }
-
     return std::make_shared<ASTIdentifier>(column.name);
 }
 

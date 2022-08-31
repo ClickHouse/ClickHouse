@@ -6,8 +6,12 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/QueryNode.h>
 
 #include <DataTypes/DataTypeSet.h>
+
+#include <Common/FieldVisitorToString.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -34,6 +38,12 @@ namespace ErrorCodes
 
 namespace
 {
+
+String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
+{
+    auto constant_name = applyVisitor(FieldVisitorToString(), constant_literal);
+    return "__constant_" + constant_name + "_" + constant_type->getName();
+}
 
 class ActionsScopeNode
 {
@@ -157,6 +167,8 @@ private:
 
     NodeNameAndNodeMinLevel visitColumn(const QueryTreeNodePtr & node);
 
+    NodeNameAndNodeMinLevel visitConstantValue(const Field & constant_literal, const DataTypePtr & constant_type);
+
     NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node);
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
@@ -165,8 +177,10 @@ private:
 
     NodeNameAndNodeMinLevel visitFunction(const QueryTreeNodePtr & node);
 
+    NodeNameAndNodeMinLevel visitQueryOrUnion(const QueryTreeNodePtr & node);
+
     std::vector<ActionsScopeNode> actions_stack;
-    std::unordered_map<const IQueryTreeNode *, std::string> node_to_node_name;
+    std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     const PlannerContextPtr planner_context;
 };
 
@@ -199,12 +213,16 @@ ActionsDAG::NodeRawConstPtrs PlannerActionsVisitorImpl::visit(QueryTreeNodePtr e
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitImpl(QueryTreeNodePtr node)
 {
-    if (auto * column_node = node->as<ColumnNode>())
+    auto node_type = node->getNodeType();
+
+    if (node_type == QueryTreeNodeType::COLUMN)
         return visitColumn(node);
-    else if (auto * constant_node = node->as<ConstantNode>())
+    else if (node_type == QueryTreeNodeType::CONSTANT)
         return visitConstant(node);
-    else if (auto * function_node = node->as<FunctionNode>())
+    else if (node_type == QueryTreeNodeType::FUNCTION)
         return visitFunction(node);
+    else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return visitQueryOrUnion(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
         "Expected only column, constant or function node. Actual {}",
@@ -213,7 +231,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
 {
-    auto column_node_name = calculateActionsDAGNodeName(node.get(), *planner_context, node_to_node_name);
+    auto column_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
     const auto & column_node = node->as<ColumnNode &>();
 
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
@@ -231,16 +249,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {column_node_name, 0};
 }
 
-PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node)
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstantValue(const Field & constant_literal, const DataTypePtr & constant_type)
 {
-    auto constant_node_name = calculateActionsDAGNodeName(node.get(), *planner_context, node_to_node_name);
-    const auto & constant_node = node->as<ConstantNode &>();
-    const auto & literal = constant_node.getConstantValue();
+    auto constant_node_name = calculateConstantActionNodeName(constant_literal, constant_type);
 
     ColumnWithTypeAndName column;
     column.name = constant_node_name;
-    column.type = constant_node.getResultType();
-    column.column = column.type->createColumnConst(1, literal);
+    column.type = constant_type;
+    column.column = column.type->createColumnConst(1, constant_literal);
 
     actions_stack[0].addConstantIfNecessary(constant_node_name, column);
 
@@ -252,6 +268,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     return {constant_node_name, 0};
+}
+
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node)
+{
+    const auto & constant_node = node->as<ConstantNode &>();
+    return visitConstantValue(constant_node.getValue(), constant_node.getResultType());
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
@@ -302,7 +324,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
     }
 
-    auto lambda_node_name = calculateActionsDAGNodeName(node.get(), *planner_context);
+    auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         lambda_actions, captured_column_names, lambda_arguments_names_and_types, result_type, lambda_expression_node_name);
     actions_stack.pop_back();
@@ -329,7 +351,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
     const auto & global_planner_context = planner_context->getGlobalPlannerContext();
-    auto set_key = global_planner_context->getSetKey(in_second_argument.get());
+    auto set_key = global_planner_context->getSetKey(in_second_argument);
     auto prepared_set = global_planner_context->getSetOrThrow(set_key);
 
     auto column_set = ColumnSet::create(1, std::move(prepared_set));
@@ -349,7 +371,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         actions_stack_node.addInputConstantColumnIfNecessary(set_key, column);
     }
 
-    node_to_node_name.emplace(in_second_argument.get(), set_key);
+    node_to_node_name.emplace(in_second_argument, set_key);
 
     return {set_key, 0};
 }
@@ -357,6 +379,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
+    if (const auto constant_value_or_null = function_node.getConstantValueOrNull())
+        return visitConstantValue(constant_value_or_null->getValue(), constant_value_or_null->getType());
+
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
     if (function_node.getFunctionName() == "grouping")
@@ -410,7 +435,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         level = std::max(level, node_min_level);
     }
 
-    auto function_node_name = calculateActionsDAGNodeName(node.get(), *planner_context, node_to_node_name);
+    auto function_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
 
     if (function_node.isAggregateFunction())
     {
@@ -455,6 +480,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {function_node_name, level};
 }
 
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitQueryOrUnion(const QueryTreeNodePtr & node)
+{
+    const auto constant_value = node->getConstantValueOrNull();
+    if (!constant_value)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Scalar subqueries must be evaluated as constants");
+
+    return visitConstantValue(constant_value->getValue(), constant_value->getType());
+}
+
 }
 
 PlannerActionsVisitor::PlannerActionsVisitor(const PlannerContextPtr & planner_context_)
@@ -467,7 +502,7 @@ ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAGPtr actions_
     return actions_visitor_impl.visit(expression_node);
 }
 
-String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name)
+String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name)
 {
     auto it = node_to_name.find(node);
     if (it != node_to_name.end())
@@ -488,7 +523,7 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
         case QueryTreeNodeType::CONSTANT:
         {
             const auto & constant_node = node->as<ConstantNode &>();
-            result = "__constant_" + constant_node.getName() + "_" + constant_node.getResultType()->getName();
+            result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
             break;
         }
         case QueryTreeNodeType::FUNCTION:
@@ -508,7 +543,7 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
                 for (size_t i = 0; i < function_parameters_nodes_size; ++i)
                 {
                     const auto & function_parameter_node = function_parameters_nodes[i];
-                    calculateActionsDAGNodeName(function_parameter_node.get(), planner_context, node_to_name);
+                    buffer << calculateActionNodeName(function_parameter_node, planner_context, node_to_name);
 
                     if (i + 1 != function_parameters_nodes_size)
                         buffer << ", ";
@@ -525,7 +560,7 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
             for (size_t i = 0; i < function_arguments_nodes_size; ++i)
             {
                 const auto & function_argument_node = function_arguments_nodes[i];
-                buffer << calculateActionsDAGNodeName(function_argument_node.get(), planner_context, node_to_name);
+                buffer << calculateActionNodeName(function_argument_node, planner_context, node_to_name);
 
                 if (i + 1 != function_arguments_nodes_size)
                     buffer << ", ";
@@ -565,10 +600,10 @@ String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerCon
     return result;
 }
 
-String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context)
+String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
 {
     QueryTreeNodeToName empty_map;
-    return calculateActionsDAGNodeName(node, planner_context, empty_map);
+    return calculateActionNodeName(node, planner_context, empty_map);
 }
 
 }

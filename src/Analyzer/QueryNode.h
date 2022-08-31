@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
+#include <Core/Field.h>
+
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
@@ -232,8 +235,15 @@ public:
         return children[offset_child_index];
     }
 
-    /// Compute query node columns using projection section
-    NamesAndTypesList computeProjectionColumns() const;
+    const NamesAndTypes & getProjectionColumns() const
+    {
+        return projection_columns;
+    }
+
+    void resolveProjectionColumns(NamesAndTypes projection_columns_value)
+    {
+        projection_columns = std::move(projection_columns_value);
+    }
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -241,6 +251,25 @@ public:
     }
 
     String getName() const override;
+
+    DataTypePtr getResultType() const override
+    {
+        if (constant_value)
+            return constant_value->getType();
+
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for non scalar query node");
+    }
+
+    /// Perform constant folding for scalar subquery node
+    void performConstantFolding(ConstantValuePtr constant_folded_value)
+    {
+        constant_value = std::move(constant_folded_value);
+    }
+
+    ConstantValuePtr getConstantValueOrNull() const override
+    {
+        return constant_value;
+    }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
@@ -259,6 +288,8 @@ private:
     bool is_distinct = false;
     bool is_limit_with_ties = false;
     std::string cte_name;
+    NamesAndTypes projection_columns;
+    ConstantValuePtr constant_value;
 
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;

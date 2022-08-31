@@ -1,7 +1,7 @@
 #include <Analyzer/FunctionNode.h>
 
-#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -46,10 +46,16 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", function_name: " << function_name;
-    buffer << ", function_type: " << (function ? "ordinary_function" : "aggregate_function");
+    buffer << ", is_aggregate_function: " << isAggregateFunction();
 
     if (result_type)
         buffer << ", result_type: " + result_type->getName();
+
+    if (constant_value)
+    {
+        buffer << ", constant_value: " << constant_value->getValue().dump();
+        buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    }
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -95,14 +101,21 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
         isNonAggregateFunction() != rhs_typed.isNonAggregateFunction())
         return false;
 
-    if (!result_type && !rhs_typed.result_type)
-        return true;
+    if (result_type && rhs_typed.result_type && !result_type->equals(*rhs_typed.getResultType()))
+        return false;
     else if (result_type && !rhs_typed.result_type)
         return false;
     else if (!result_type && rhs_typed.result_type)
         return false;
 
-    return result_type->equals(*rhs_typed.result_type);
+    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
+        return false;
+    else if (constant_value && !rhs_typed.constant_value)
+        return false;
+    else if (!constant_value && rhs_typed.constant_value)
+        return false;
+
+    return true;
 }
 
 void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
@@ -116,6 +129,17 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
         auto result_type_name = result_type->getName();
         hash_state.update(result_type_name.size());
         hash_state.update(result_type_name);
+    }
+
+    if (constant_value)
+    {
+        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
+        hash_state.update(constant_dump.size());
+        hash_state.update(constant_dump);
+
+        auto constant_value_type_name = constant_value->getType()->getName();
+        hash_state.update(constant_value_type_name.size());
+        hash_state.update(constant_value_type_name);
     }
 }
 
@@ -146,6 +170,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->function = function;
     result_function->aggregate_function = aggregate_function;
     result_function->result_type = result_type;
+    result_function->constant_value = constant_value;
 
     return result_function;
 }

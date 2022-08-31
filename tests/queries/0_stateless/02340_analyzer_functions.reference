@@ -1,4 +1,4 @@
-2	UInt16					
+plus(1, 1)	UInt16					
 2
 --
 plus(dummy, dummy)	UInt16					

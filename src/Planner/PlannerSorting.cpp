@@ -24,11 +24,11 @@ namespace
 
 std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node)
 {
-    const auto & constant_node = node->as<const ConstantNode &>();
+    auto constant_value = node->getConstantValue();
 
     std::pair<Field, DataTypePtr> result;
-    result.first = constant_node.getConstantValue();
-    result.second = constant_node.getResultType();
+    result.first = constant_value.getValue();
+    result.second = constant_value.getType();
 
     if (!isColumnedAsNumber(result.second))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL expression must be constant with numeric type");
@@ -38,15 +38,16 @@ std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node
 
 std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const QueryTreeNodePtr & node)
 {
-    const auto & constant_node = node->as<const ConstantNode &>();
-    const auto & constant_node_result_type = constant_node.getResultType();
+    auto constant_value = node->getConstantValue();
+
+    const auto & constant_node_result_type = constant_value.getType();
     if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(constant_node_result_type.get()))
-        return std::make_pair(constant_node.getConstantValue(), type_interval->getKind());
+        return std::make_pair(constant_value.getValue(), type_interval->getKind());
 
     if (!isColumnedAsNumber(constant_node_result_type))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL expression must be constant with numeric type");
 
-    return {constant_node.getConstantValue(), {}};
+    return {constant_value.getValue(), {}};
 }
 
 FillColumnDescription extractWithFillDescription(const SortColumnNode & sort_column_node)
@@ -125,7 +126,7 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
     {
         auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
 
-        auto column_name = calculateActionsDAGNodeName(sort_column_node_typed.getExpression().get(), planner_context);
+        auto column_name = calculateActionNodeName(sort_column_node_typed.getExpression(), planner_context);
         std::shared_ptr<Collator> collator = sort_column_node_typed.getCollator();
         int direction = sort_column_node_typed.getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
         int nulls_direction = direction;
