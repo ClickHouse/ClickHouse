@@ -161,9 +161,9 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 
         index->add_item(index->get_n_items(), array.data());
         /// add all rows from 1 to num_rows - 1 (this is the same as the beginning of the last element)
-        for (size_t current_row = 0; current_row < num_rows; ++current_row)
+        for (size_t current_row = 1; current_row < num_rows; ++current_row)
         {
-            index->add_item(index->get_n_items(), &array[offsets[current_row]]);
+            index->add_item(index->get_n_items(), &array[offsets[current_row - 1]]);
         }
     }
     else
