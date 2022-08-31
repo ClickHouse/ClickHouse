@@ -57,6 +57,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
       with:
         author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
+        token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
         committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
         commit-message: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
         branch: auto/${{ env.GITHUB_TAG }}

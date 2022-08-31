@@ -1,4 +1,4 @@
-name: ReleaseCI
+name: ReleaseBranchCI
 
 env:
   # Force the stdout and stderr streams to be unbuffered
