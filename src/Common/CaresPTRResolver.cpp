@@ -15,13 +15,23 @@ namespace DB
 
     static void callback(void * arg, int status, int, struct hostent * host)
     {
-        auto * ptr_records = reinterpret_cast<std::vector<std::string>*>(arg);
+        auto * ptr_records = reinterpret_cast<std::unordered_set<std::string>*>(arg);
         if (status == ARES_SUCCESS && host->h_aliases)
         {
+            /*
+             * In some cases (e.g /etc/hosts), hostent::h_name is filled and hostent::h_aliases is empty.
+             * Thus, we can't rely solely on hostent::h_aliases. More info on:
+             * https://github.com/ClickHouse/ClickHouse/issues/40595#issuecomment-1230526931
+             * */
+            if (auto * ptr_record = host->h_name)
+            {
+                ptr_records->insert(ptr_record);
+            }
+
             int i = 0;
             while (auto * ptr_record = host->h_aliases[i])
             {
-                ptr_records->emplace_back(ptr_record);
+                ptr_records->insert(ptr_record);
                 i++;
             }
         }
@@ -58,9 +68,9 @@ namespace DB
          * */
     }
 
-    std::vector<std::string> CaresPTRResolver::resolve(const std::string & ip)
+    std::unordered_set<std::string> CaresPTRResolver::resolve(const std::string & ip)
     {
-        std::vector<std::string> ptr_records;
+        std::unordered_set<std::string> ptr_records;
 
         resolve(ip, ptr_records);
         wait();
@@ -68,9 +78,9 @@ namespace DB
         return ptr_records;
     }
 
-    std::vector<std::string> CaresPTRResolver::resolve_v6(const std::string & ip)
+    std::unordered_set<std::string> CaresPTRResolver::resolve_v6(const std::string & ip)
     {
-        std::vector<std::string> ptr_records;
+        std::unordered_set<std::string> ptr_records;
 
         resolve_v6(ip, ptr_records);
         wait();
@@ -78,7 +88,7 @@ namespace DB
         return ptr_records;
     }
 
-    void CaresPTRResolver::resolve(const std::string & ip, std::vector<std::string> & response)
+    void CaresPTRResolver::resolve(const std::string & ip, std::unordered_set<std::string> & response)
     {
         in_addr addr;
 
@@ -87,7 +97,7 @@ namespace DB
         ares_gethostbyaddr(channel, reinterpret_cast<const void*>(&addr), sizeof(addr), AF_INET, callback, &response);
     }
 
-    void CaresPTRResolver::resolve_v6(const std::string & ip, std::vector<std::string> & response)
+    void CaresPTRResolver::resolve_v6(const std::string & ip, std::unordered_set<std::string> & response)
     {
         in6_addr addr;
         inet_pton(AF_INET6, ip.c_str(), &addr);
