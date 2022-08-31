@@ -85,6 +85,9 @@ BACKUP TABLE test.table3 AS test.table4 TO Disk('backups', '2.zip')
 ## Incremental backups
 
 Incremental backups can be taken by specifying the `base_backup`.
+:::note
+Incremental backups depend on the base backup.  The base backup must be kept available in order to be able to restore from an incremental backup.
+:::
 
 Incrementally store new data. The setting `base_backup` causes data since a previous backup to `Disk('backups', 'd.zip')` to be stored to `Disk('backups', 'incremental-a.zip')`:
 ```

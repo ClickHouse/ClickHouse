@@ -469,7 +469,6 @@
 "subtractSeconds"
 "alphaTokens"
 "negate"
-"modelEvaluate"
 "file"
 "roundAge"
 "MACStringToOUI"

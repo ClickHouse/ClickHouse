@@ -159,6 +159,12 @@ size_t FileSegment::getRemainingSizeToDownload() const
     return range().size() - getDownloadedSizeUnlocked(segment_lock);
 }
 
+bool FileSegment::isDownloaded() const
+{
+    std::lock_guard segment_lock(mutex);
+    return is_downloaded;
+}
+
 bool FileSegment::isDownloadedSizeEqualToFileSegmentSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const
 {
     return getDownloadedSizeUnlocked(segment_lock) == range().size();
@@ -995,7 +1001,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
     return reserved;
 }
 
-void FileSegment::setDownloadedUnlocked(std::unique_lock<std::mutex> & /* segment_lock */)
+void FileSegment::setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock)
 {
     if (is_downloaded)
         return;
@@ -1138,7 +1144,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         case State::DOWNLOADED:
         {
             chassert(getDownloadedSizeUnlocked(segment_lock) == range().size());
-            assert(isDownloadedUnlocked(segment_lock));
+            assert(is_downloaded);
             break;
         }
         case State::DOWNLOADING:
@@ -1295,7 +1301,7 @@ void FileSegment::assertDetachedStatus(std::unique_lock<std::mutex> & segment_lo
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
 {
-    std::lock_guard segment_lock(file_segment->mutex);
+    std::unique_lock segment_lock(file_segment->mutex);
 
     auto snapshot = std::make_shared<FileSegment>(
         file_segment->offset(),
