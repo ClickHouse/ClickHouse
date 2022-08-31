@@ -249,7 +249,6 @@ static int fstatat_statx(int fd, const char *restrict path, struct stat *restric
 	return 0;
 }
 
-#include <unistd.h>
 #include <syscall.h>
 #include "syscall.h"
 
@@ -259,6 +258,82 @@ ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
     return syscall(SYS_getrandom, buf, buflen, flags);
 }
 
+
+
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+
+#define ALIGN (sizeof(size_t))
+#define ONES ((size_t)-1/UCHAR_MAX)
+#define HIGHS (ONES * (UCHAR_MAX/2+1))
+#define HASZERO(x) ((x)-ONES & ~(x) & HIGHS)
+
+char *__strchrnul(const char *s, int c)
+{
+	c = (unsigned char)c;
+	if (!c) return (char *)s + strlen(s);
+
+#ifdef __GNUC__
+	typedef size_t __attribute__((__may_alias__)) word;
+	const word *w;
+	for (; (uintptr_t)s % ALIGN; s++)
+		if (!*s || *(unsigned char *)s == c) return (char *)s;
+	size_t k = ONES * c;
+	for (w = (void *)s; !HASZERO(*w) && !HASZERO(*w^k); w++);
+	s = (void *)w;
+#endif
+	for (; *s && *(unsigned char *)s != c; s++);
+	return (char *)s;
+}
+
+int __execvpe(const char *file, char *const argv[], char *const envp[])
+{
+	const char *p, *z, *path = getenv("PATH");
+	size_t l, k;
+	int seen_eacces = 0;
+
+	errno = ENOENT;
+	if (!*file) return -1;
+
+	if (strchr(file, '/'))
+		return execve(file, argv, envp);
+
+	if (!path) path = "/usr/local/bin:/bin:/usr/bin";
+	k = strnlen(file, NAME_MAX+1);
+	if (k > NAME_MAX) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+	l = strnlen(path, PATH_MAX-1)+1;
+
+	for(p=path; ; p=z) {
+		char b[l+k+1];
+		z = __strchrnul(p, ':');
+		if (z-p >= l) {
+			if (!*z++) break;
+			continue;
+		}
+		memcpy(b, p, z-p);
+		b[z-p] = '/';
+		memcpy(b+(z-p)+(z>p), file, k+1);
+		execve(b, argv, envp);
+		switch (errno) {
+		case EACCES:
+			seen_eacces = 1;
+		case ENOENT:
+		case ENOTDIR:
+			break;
+		default:
+			return -1;
+		}
+		if (!*z++) break;
+	}
+	if (seen_eacces) errno = EACCES;
+	return -1;
+}
 
 typedef struct {
 	int __flags;
@@ -282,11 +357,10 @@ int posix_spawnp(pid_t *restrict res, const char *restrict file,
 {
 	posix_spawnattr_t spawnp_attr = { 0 };
 	if (attr) spawnp_attr = *attr;
-	spawnp_attr.__fn = (void *)execvpe;
+	spawnp_attr.__fn = (void *)__execvpe;
 	return posix_spawn(res, file, fa, &spawnp_attr, argv, envp);
 }
 
-#include "posix_spawn.c"
 #define FDOP_CLOSE 1
 #define FDOP_DUP2 2
 #define FDOP_OPEN 3
