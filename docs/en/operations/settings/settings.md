@@ -966,7 +966,13 @@ Default value: 5000.
 
 See also:
 
--   [Apache Kafka](https://kafka.apache.org/)
+- [Apache Kafka](https://kafka.apache.org/)
+
+## kafka_disable_num_consumers_limit {#kafka-disable-num-consumers-limit}
+
+Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
+
+Default value: false.
 
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
