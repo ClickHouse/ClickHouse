@@ -297,8 +297,13 @@ public:
                 assert(indexes_mapping.size() == data_types.size());
 
                 for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                {
+                    /// Same set expression can be construct from different column(s) with different types
+                    if (indexes_mapping[i].tuple_index >= candidate_set->getDataTypes().size())
+                        return false;
                     if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
                         return false;
+                }
 
                 return true;
             };
