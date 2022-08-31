@@ -1246,6 +1246,7 @@ const char * auto_contributors[] {
     "ritaank",
     "rnbondarenko",
     "robert",
+    "robot-ch-test-poll2",
     "robot-clickhouse",
     "robot-metrika-test",
     "rodrigargar",

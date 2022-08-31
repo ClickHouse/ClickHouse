@@ -93,7 +93,7 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
 
-    for (const auto & file_name: files_to_remove_after_finish)
+    for (const auto & file_name : files_to_remove_after_finish)
         data_part_storage_builder->removeFile(file_name);
 
     for (auto & file : written_files)
