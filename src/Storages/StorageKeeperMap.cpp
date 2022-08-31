@@ -330,7 +330,7 @@ StorageKeeperMap::StorageKeeperMap(
             else
             {
                 auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(dropped_lock_path, *client);
-                if (!removeMetadataNodes(client, metadata_drop_lock))
+                if (!dropTable(client, metadata_drop_lock))
                     continue;
             }
         }
@@ -423,8 +423,10 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     client->tryRemoveChildrenRecursive(root_path, true, getBaseName(metadata_path));
 }
 
-bool StorageKeeperMap::removeMetadataNodes(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
+bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
 {
+    zookeeper->removeChildrenRecursive(root_path, getBaseName(metadata_path));
+
     bool completely_removed = false;
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
@@ -487,10 +489,8 @@ void StorageKeeperMap::drop()
     else if (code != Coordination::Error::ZOK)
         zkutil::KeeperMultiException::check(code, ops, responses);
 
-    client->removeChildrenRecursive(root_path, getBaseName(metadata_path));
-
     auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(dropped_lock_path, *client);
-    removeMetadataNodes(client, metadata_drop_lock);
+    dropTable(client, metadata_drop_lock);
 }
 
 zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const

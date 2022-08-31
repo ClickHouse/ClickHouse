@@ -101,7 +101,7 @@ public:
     }
 
 private:
-    bool removeMetadataNodes(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
+    bool dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
 
     std::optional<bool> isTableValid() const;
 
