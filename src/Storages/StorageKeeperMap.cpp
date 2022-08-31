@@ -503,6 +503,8 @@ zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
             zookeeper_client = getContext()->getZooKeeper();
         else
             zookeeper_client = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+
+        zookeeper_client->sync(rootKeeperPath());
     }
 
     return zookeeper_client;
