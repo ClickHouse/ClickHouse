@@ -961,7 +961,13 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    datetime64 = negative_multiplier * DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    if constexpr (std::is_same_v<ReturnType, void>)
+        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    else
+        DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+
+    datetime64 *= negative_multiplier;
+
 
     return ReturnType(true);
 }

@@ -836,7 +836,7 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
             return last_mod_time;
         };
 
-        String cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
+        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
@@ -853,7 +853,7 @@ void IStorageURLBase::addColumnsToCache(
     const ContextPtr & context)
 {
     auto & schema_cache = getSchemaCache(context);
-    Strings cache_keys = getKeysForSchemaCache(urls, format_name, format_settings, context);
+    auto cache_keys = getKeysForSchemaCache(urls, format_name, format_settings, context);
     schema_cache.addMany(cache_keys, columns);
 }
 
