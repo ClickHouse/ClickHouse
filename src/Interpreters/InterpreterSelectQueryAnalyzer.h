@@ -20,6 +20,11 @@ public:
         const SelectQueryOptions & select_query_options_,
         ContextPtr context_);
 
+    /// Initialize interpreter with query tree
+    InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
+        const SelectQueryOptions & select_query_options_,
+        ContextPtr context_);
+
     Block getSampleBlock();
 
     QueryPlan && extractQueryPlan() &&;

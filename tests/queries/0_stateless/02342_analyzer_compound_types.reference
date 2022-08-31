@@ -20,26 +20,26 @@ value.value_1_level_0	String
 ('value_0_level_1','value_1_level_1')	value_1_level_0
 --
 alias_value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
-tupleElement(value, \'value_0_level_0\')	Tuple(value_0_level_1 String, value_1_level_1 String)					
-tupleElement(value, \'value_1_level_0\')	String					
+alias_value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+alias_value.value_1_level_0	String					
 (('value_0_level_1','value_1_level_1'),'value_1_level_0')	('value_0_level_1','value_1_level_1')	value_1_level_0
 --
 alias_value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
-tupleElement(value, \'value_0_level_0\')	Tuple(value_0_level_1 String, value_1_level_1 String)					
-tupleElement(value, \'value_1_level_0\')	String					
+alias_value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+alias_value.value_1_level_0	String					
 (('value_0_level_1','value_1_level_1'),'value_1_level_0')	('value_0_level_1','value_1_level_1')	value_1_level_0
 --
 alias_value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
-toString(tupleElement(value, \'value_0_level_0\'))	String					
-toString(tupleElement(value, \'value_1_level_0\'))	String					
+toString(alias_value.value_0_level_0)	String					
+toString(alias_value.value_1_level_0)	String					
 (('value_0_level_1','value_1_level_1'),'value_1_level_0')	(\'value_0_level_1\',\'value_1_level_1\')	value_1_level_0
 --
-tupleElement(value, \'value_0_level_0\')	Tuple(value_0_level_1 String, value_1_level_1 String)					
-tupleElement(value, \'value_1_level_0\')	String					
+value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+value.value_1_level_0	String					
 ('value_0_level_1','value_1_level_1')	value_1_level_0
 --
-toString(tupleElement(value, \'value_0_level_0\'))	String					
-toString(tupleElement(value, \'value_1_level_0\'))	String					
+toString(value.value_0_level_0)	String					
+toString(value.value_1_level_0)	String					
 (\'value_0_level_1\',\'value_1_level_1\')	value_1_level_0
 --
 value.value_0_level_0.value_0_level_1	String					
@@ -47,26 +47,26 @@ value.value_0_level_0.value_1_level_1	String
 value_0_level_1	value_1_level_1
 --
 alias_value	Tuple(value_0_level_1 String, value_1_level_1 String)					
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	String					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	String					
+alias_value.value_0_level_1	String					
+alias_value.value_1_level_1	String					
 ('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
 --
 alias_value	Tuple(value_0_level_1 String, value_1_level_1 String)					
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	String					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	String					
+alias_value.value_0_level_1	String					
+alias_value.value_1_level_1	String					
 ('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
 --
 alias_value	Tuple(value_0_level_1 String, value_1_level_1 String)					
-toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
-toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+toString(alias_value.value_0_level_1)	String					
+toString(alias_value.value_1_level_1)	String					
 ('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
 --
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	String					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	String					
+value.value_0_level_0.value_0_level_1	String					
+value.value_0_level_0.value_1_level_1	String					
 value_0_level_1	value_1_level_1
 --
-toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
-toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+toString(value.value_0_level_0.value_0_level_1)	String					
+toString(value.value_0_level_0.value_1_level_1)	String					
 value_0_level_1	value_1_level_1
 Array of tuples
 id	UInt64					
@@ -83,26 +83,26 @@ value.value_0_level_0.value_1_level_1	Array(String)
 ['value_0_level_1']	['value_1_level_1']
 --
 alias_value	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(String)					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(String)					
+alias_value.value_0_level_1	Array(String)					
+alias_value.value_1_level_1	Array(String)					
 [('value_0_level_1','value_1_level_1')]	['value_0_level_1']	['value_1_level_1']
 --
 alias_value	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(String)					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(String)					
+alias_value.value_0_level_1	Array(String)					
+alias_value.value_1_level_1	Array(String)					
 [('value_0_level_1','value_1_level_1')]	['value_0_level_1']	['value_1_level_1']
 --
 alias_value	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
-toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
-toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+toString(alias_value.value_0_level_1)	String					
+toString(alias_value.value_1_level_1)	String					
 [('value_0_level_1','value_1_level_1')]	[\'value_0_level_1\']	[\'value_1_level_1\']
 --
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(String)					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(String)					
+value.value_0_level_0.value_0_level_1	Array(String)					
+value.value_0_level_0.value_1_level_1	Array(String)					
 ['value_0_level_1']	['value_1_level_1']
 --
-toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
-toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+toString(value.value_0_level_0.value_0_level_1)	String					
+toString(value.value_0_level_0.value_1_level_1)	String					
 [\'value_0_level_1\']	[\'value_1_level_1\']
 Nested
 id	UInt64					
@@ -119,24 +119,24 @@ value.value_0_level_0.value_1_level_1	Array(Array(String))
 [['value_0_level_1']]	[['value_1_level_1']]
 --
 value_alias	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(Array(String))					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(Array(String))					
+value_alias.value_0_level_1	Array(Array(String))					
+value_alias.value_1_level_1	Array(Array(String))					
 [[('value_0_level_1','value_1_level_1')]]	[['value_0_level_1']]	[['value_1_level_1']]
 --
 value_alias	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(Array(String))					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(Array(String))					
+value_alias.value_0_level_1	Array(Array(String))					
+value_alias.value_1_level_1	Array(Array(String))					
 [[('value_0_level_1','value_1_level_1')]]	[['value_0_level_1']]	[['value_1_level_1']]
 --
 value_alias	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
-toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
-toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+toString(value_alias.value_0_level_1)	String					
+toString(value_alias.value_1_level_1)	String					
 [[('value_0_level_1','value_1_level_1')]]	[[\'value_0_level_1\']]	[[\'value_1_level_1\']]
 --
-tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(Array(String))					
-tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(Array(String))					
+value.value_0_level_0.value_0_level_1	Array(Array(String))					
+value.value_0_level_0.value_1_level_1	Array(Array(String))					
 [['value_0_level_1']]	[['value_1_level_1']]
 --
-toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
-toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+toString(value.value_0_level_0.value_0_level_1)	String					
+toString(value.value_0_level_0.value_1_level_1)	String					
 [[\'value_0_level_1\']]	[[\'value_1_level_1\']]

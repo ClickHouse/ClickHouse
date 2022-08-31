@@ -26,7 +26,10 @@ namespace DB
   * TODO: Scalar subqueries must be evaluated only if they are part of query tree where we must have constant. This is currently not done
   * because execution layer does not support scalar subqueries execution.
   *
-  * 8. Special functions handling:
+  * 8. For query node projection columns are calculated. Later passes cannot change type, display name of projection column, and cannot add or remove
+  * columns in projection section.
+  *
+  * 9. Special functions handling:
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
   *

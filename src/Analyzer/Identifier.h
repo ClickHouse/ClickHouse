@@ -22,14 +22,14 @@ public:
     /// Create Identifier from parts
     explicit Identifier(const std::vector<std::string> & parts_)
         : parts(parts_)
-        , full_name(boost::algorithm::join(parts_, "."))
+        , full_name(boost::algorithm::join(parts, "."))
     {
     }
 
         /// Create Identifier from parts
     explicit Identifier(std::vector<std::string> && parts_)
         : parts(std::move(parts_))
-        , full_name(boost::algorithm::join(parts_, "."))
+        , full_name(boost::algorithm::join(parts, "."))
     {
     }
 
@@ -154,9 +154,12 @@ public:
         assert(parts_to_remove_size <= parts.size());
 
         for (size_t i = 0; i < parts_to_remove_size; ++i)
+        {
+            size_t last_part_size = parts.back().size();
             parts.pop_back();
-
-        full_name = boost::algorithm::join(parts, ".");
+            bool is_not_last = !parts.empty();
+            full_name.resize(full_name.size() - (last_part_size + static_cast<size_t>(is_not_last)));
+        }
     }
 
     void popLast()
@@ -164,6 +167,32 @@ public:
         return popLast(1);
     }
 
+    void pop_back() /// NOLINT
+    {
+        popLast();
+    }
+
+    void push_back(std::string && part) /// NOLINT
+    {
+        parts.push_back(std::move(part));
+        full_name += '.';
+        full_name += parts.back();
+    }
+
+    void push_back(const std::string & part) /// NOLINT
+    {
+        parts.push_back(part);
+        full_name += '.';
+        full_name += parts.back();
+    }
+
+    template <typename ...Args>
+    void emplace_back(Args&&... args) /// NOLINT
+    {
+        parts.emplace_back(std::forward<Args>(args)...);
+        full_name += '.';
+        full_name += parts.back();
+    }
 private:
     std::vector<std::string> parts;
     std::string full_name;

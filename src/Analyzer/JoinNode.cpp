@@ -122,7 +122,7 @@ ASTPtr JoinNode::toASTImpl() const
 {
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
 
-    addTableExpressionIntoTablesInSelectQuery(tables_in_select_query_ast, children[left_table_expression_child_index]);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[left_table_expression_child_index]);
 
     size_t join_table_index = tables_in_select_query_ast->children.size();
 
@@ -141,7 +141,7 @@ ASTPtr JoinNode::toASTImpl() const
             join_ast->on_expression = std::move(join_expression_ast);
     }
 
-    addTableExpressionIntoTablesInSelectQuery(tables_in_select_query_ast, children[right_table_expression_child_index]);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[right_table_expression_child_index]);
 
     auto & table_element = tables_in_select_query_ast->children.at(join_table_index)->as<ASTTablesInSelectQueryElement &>();
     table_element.children.push_back(std::move(join_ast));

@@ -17,12 +17,6 @@ namespace DB
   *
   * During query analysis pass identifier node is resolved into column. See IdentifierNode.h.
   *
-  * It is also important for client provide display identifier for AST conversion in case of JOINS are used.
-  * Example: SELECT t1.id, t2.id FROM test_table_1 AS t1, test_table_2 AS t2.
-  * In this example t1.id will be column with name id, but during conversion to AST, to keep AST valid it is important
-  * to save column name qualification. Display identifier does not take part in implementation of tree hash,
-  * or tree equals operator. It is only used during AST conversion.
-  *
   * Examples:
   * SELECT id FROM test_table. id is identifier that must be resolved to column node during query analysis pass.
   * SELECT lambda(x -> x + 1, [1,2,3]). x is identifier inside lambda that must be resolved to column node during query analysis pass.
@@ -54,17 +48,6 @@ public:
     const String & getColumnName() const
     {
         return column.name;
-    }
-
-    /// Set display identifier that will be used during convertion to AST
-    void setDisplayIdentifier(const Identifier & display_identifier_value)
-    {
-        display_identifier = display_identifier_value;
-    }
-
-    const Identifier & getDisplayIdentifier() const
-    {
-        return display_identifier;
     }
 
     /// Get column type
@@ -149,7 +132,6 @@ protected:
 private:
     NameAndTypePair column;
     QueryTreeNodeWeakPtr column_source;
-    Identifier display_identifier;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
