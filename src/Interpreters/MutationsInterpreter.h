@@ -43,7 +43,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_);
+        bool can_execute_,
+        bool return_deleted_rows_ = false);
 
     void validate();
 
@@ -156,6 +157,9 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
+
+    // wether we should return deleted or nondeleted rows on DELETE mutation
+    bool return_deleted_rows;
 };
 
 }

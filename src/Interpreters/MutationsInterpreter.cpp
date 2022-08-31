@@ -226,7 +226,7 @@ bool isStorageTouchedByMutations(
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
     /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and and give it into ExpressionTransform
+    /// For some reason it may copy context and give it into ExpressionTransform
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(
         select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
@@ -288,13 +288,15 @@ MutationsInterpreter::MutationsInterpreter(
     const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     ContextPtr context_,
-    bool can_execute_)
+    bool can_execute_,
+    bool return_deleted_rows_)
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
+    , return_deleted_rows(return_deleted_rows_)
 {
     mutation_ast = prepare(!can_execute);
 }
@@ -478,8 +480,12 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto negated_predicate = makeASTFunction("isZeroOrNull", getPartitionAndPredicateExpressionForMutationCommand(command));
-            stages.back().filters.push_back(negated_predicate);
+            auto predicate  = getPartitionAndPredicateExpressionForMutationCommand(command);
+
+            if (!return_deleted_rows)
+                predicate = makeASTFunction("isZeroOrNull", predicate);
+
+            stages.back().filters.push_back(predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
         {

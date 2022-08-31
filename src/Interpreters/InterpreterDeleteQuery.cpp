@@ -34,11 +34,6 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight delete mutate is experimental. Set `allow_experimental_lightweight_delete` setting to enable it");
-    }
-
     FunctionNameNormalizer().visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
@@ -49,10 +44,6 @@ BlockIO InterpreterDeleteQuery::execute()
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
-    if (!merge_tree)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only MergeTree family tables are supported");
-
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
@@ -68,6 +59,31 @@ BlockIO InterpreterDeleteQuery::execute()
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
+
+    auto merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
+    if (!merge_tree)
+    {
+        /// Convert to MutationCommand
+        MutationCommands mutation_commands;
+        MutationCommand mut_command;
+
+        mut_command.type = MutationCommand::Type::DELETE;
+        mut_command.predicate = delete_query.predicate;
+
+        auto command = std::make_shared<ASTAlterCommand>();
+        command->type = ASTAlterCommand::DELETE;
+        command->predicate = delete_query.predicate;
+
+        mutation_commands.emplace_back(mut_command);
+
+        table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
+        table->mutate(mutation_commands, getContext());
+        return {};
+    }
+
+    if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight delete mutate is experimental. Set `allow_experimental_lightweight_delete` setting to enable it");
 
     /// Convert to MutationCommand
     MutationCommands mutation_commands;
