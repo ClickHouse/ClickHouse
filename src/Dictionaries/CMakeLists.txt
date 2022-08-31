@@ -1,5 +1,8 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 
+include(configure_config.cmake)
+configure_file(config_dictionaries.h.in ${ConfigIncludePath}/config_dictionaries.h)
+
 add_headers_and_sources(clickhouse_dictionaries .)
 
 add_headers_and_sources(clickhouse_dictionaries "${CMAKE_CURRENT_BINARY_DIR}/generated/")
@@ -40,6 +43,10 @@ endif()
 
 if (TARGET ch_contrib::yaml_cpp)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::yaml_cpp)
+endif()
+
+if (TARGET ch_contrib::vectorscan)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::vectorscan)
 endif()
 
 add_subdirectory(Embedded)

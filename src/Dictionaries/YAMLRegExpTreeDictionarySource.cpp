@@ -6,20 +6,25 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #if USE_YAML_CPP
 
-#include <yaml-cpp/exceptions.h>
-#include <yaml-cpp/node/node.h>
-#include <yaml-cpp/node/parse.h>
-#include <yaml-cpp/yaml.h>
+#    include <yaml-cpp/exceptions.h>
+#    include <yaml-cpp/node/node.h>
+#    include <yaml-cpp/node/parse.h>
+#    include <yaml-cpp/yaml.h>
 
 #endif
 
 #include <base/types.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -69,7 +74,7 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
                 ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
         }
 
-        const auto filepath = config.getString(config_prefix + ".file.path");
+        const auto filepath = config.getString(config_prefix + ".YAMLRegExpTree.path");
 
         const auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
@@ -90,6 +95,7 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 #if USE_CASSANDRA
 
 namespace DB
+
 {
 
 /**
@@ -108,6 +114,7 @@ namespace DB
 *           ...
 *   ```
 */
+
 inline const std::string kAttributes = "attributes";
 inline const std::string kConfiguration = "configuration";
 
@@ -118,17 +125,17 @@ inline const std::string kConfiguration = "configuration";
 *   ```
 *   attr1:
 *       type: String
-*       default: "demogorgon"   # optional field
 *   attr2:
 *       type: Float
 *   ```
 */
+
 inline const std::string kType = "type";
-inline const std::string kDefault = "default";
 
 /**
-    *   Allowed data types
-    */
+*   Allowed data types
+*/
+
 inline const std::string kUInt = "UInt";
 inline const std::string kInt = "Int";
 inline const std::string kFloat = "Float";
@@ -149,6 +156,7 @@ inline const std::string kString = "String";
 *           ...
 *   ```
 */
+
 inline const std::string kMatch = "match";
 inline const std::string kRegExp = "regexp";
 inline const std::string kSet = "set";
@@ -164,6 +172,7 @@ inline const std::string kSet = "set";
 *   attr_n DataType
 *   ```
 */
+
 inline const std::string kId = "id";
 inline const std::string kParentId = "parent_id";
 
@@ -179,97 +188,118 @@ namespace ErrorCodes
 
 //////////////////////////////////////////////////////////////////////
 
+Field toUInt(const std::string & value)
+{
+    const auto result = static_cast<UInt64>(std::strtoul(value.c_str(), nullptr, 10));
+    return Field(result);
+}
+
+Field toInt(const std::string & value)
+{
+    const auto result = static_cast<Int64>(std::strtol(value.c_str(), nullptr, 10));
+    return Field(result);
+}
+
+Field toFloat(const std::string & value)
+{
+    const auto result = static_cast<Float64>(std::strtof(value.c_str(), nullptr));
+    return Field(result);
+}
+
+Field toString(const std::string & value)
+{
+    return Field(value);
+}
+
 class Attribute
 {
 public:
-    std::string name;
-    DataTypePtr data_type;
-
-    MutableColumnPtr column;
-    std::optional<std::string> default_value;
-
-    explicit Attribute(const std::string & name_, const DataTypePtr & data_type_, const std::optional<std::string> & default_value_)
-        : name(name_), data_type(data_type_), column(data_type->createColumn()), default_value(default_value_)
+    explicit Attribute(
+        const std::string & name_, const bool is_nullable_, const DataTypePtr & data_type_, const std::string & attribute_type_)
+        : name(name_)
+        , is_nullable(is_nullable_)
+        , data_type(data_type_)
+        , attribute_type(attribute_type_)
+        , column_ptr(data_type_->createColumn())
     {
     }
 
-    Attribute(Attribute && other) noexcept
+    void insert(const std::string & value)
     {
-        column = std::move(other.column);
-        default_value = std::move(other.default_value);
-    }
-
-    virtual void insert(const std::string &) { }
-
-    virtual void insertDefault()
-    {
-        if (default_value.has_value())
+        if (attribute_type == kUInt)
         {
-            insert(default_value.value());
+            column_ptr->insert(toUInt(value));
+        }
+        else if (attribute_type == kInt)
+        {
+            column_ptr->insert(toInt(value));
+        }
+        else if (attribute_type == kFloat)
+        {
+            column_ptr->insert(toFloat(value));
+        }
+        else if (attribute_type == kString)
+        {
+            column_ptr->insert(toString(value));
         }
         else
         {
-            column->insertDefault();
+            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unkown type for attribute {}", attribute_type);
         }
     }
 
-    virtual ~Attribute() = default;
-};
-
-class UIntAttribute : public Attribute
-{
-public:
-    explicit UIntAttribute(const std::string & name_, const DataTypePtr & data_type_, const std::optional<std::string> & default_value_)
-        : Attribute(name_, data_type_, default_value_)
+    void insertNull()
     {
+        if (!is_nullable)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying insert null to not nullable column {} of type {}", name, attribute_type);
+        }
+
+        null_indices.insert(column_ptr->size());
+        column_ptr->insertDefault();
     }
 
-    void insert(const std::string & value) override { column->insert(Field(fromString(value))); }
+    std::string getName() const { return name; }
 
-private:
-    static UInt64 fromString(const std::string & value) { return static_cast<UInt64>(std::strtoul(value.c_str(), nullptr, 10)); }
-};
-
-class IntAttribute : public Attribute
-{
-public:
-    explicit IntAttribute(const std::string & name_, const DataTypePtr & data_type_, const std::optional<std::string> & default_value_)
-        : Attribute(name_, data_type_, default_value_)
+    DataTypePtr getDataType() const
     {
+        if (isNullable())
+        {
+            return makeNullable(data_type);
+        }
+        return data_type;
     }
 
-    void insert(const std::string & value) override { column->insert(Field(fromString(value))); }
-
-private:
-    static Int64 fromString(const std::string & value) { return static_cast<Int64>(std::strtol(value.c_str(), nullptr, 10)); }
-};
-
-class FloatAttribute : public Attribute
-{
-public:
-    explicit FloatAttribute(const std::string & name_, const DataTypePtr & data_type_, const std::optional<std::string> & default_value_)
-        : Attribute(name_, data_type_, default_value_)
+    ColumnPtr getColumn()
     {
+        auto result = column_ptr->convertToFullIfNeeded();
+
+        if (isNullable())
+        {
+            auto null_mask = ColumnUInt8::create(column_ptr->size(), false);
+            for (size_t i = 0; i < column_ptr->size(); ++i)
+            {
+                null_mask->getData()[i] = null_indices.contains(i);
+            }
+
+            return ColumnNullable::create(result, std::move(null_mask));
+        }
+
+        return result;
     }
 
-    void insert(const std::string & value) override { column->insert(Field(fromString(value))); }
-
 private:
-    static Float64 fromString(const std::string & value) { return static_cast<Float64>(std::strtof(value.c_str(), nullptr)); }
-};
+    std::string name;
 
-class StringAttribute : public Attribute
-{
-public:
-    explicit StringAttribute(const std::string & name_, const DataTypePtr & data_type_, const std::optional<std::string> & default_value_)
-        : Attribute(name_, data_type_, default_value_)
-    {
-    }
+    bool is_nullable;
+    std::unordered_set<UInt64> null_indices;
 
-    void insert(const std::string & value) override { column->insert(Field(fromString(value))); }
+    DataTypePtr data_type;
+    std::string attribute_type;
 
-private:
-    static String fromString(const std::string & value) { return value; }
+    MutableColumnPtr column_ptr;
+
+    bool isNullable() const { return is_nullable && !null_indices.empty(); }
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -307,26 +337,32 @@ StringToNode parseYAMLMap(const YAML::Node & node)
     return result;
 }
 
-Attribute makeAttribute(const std::string & name, const std::string & type, const std::optional<std::string> & default_value)
+Attribute makeAttribute(const std::string & name, const std::string & type)
 {
+    DataTypePtr data_type;
+
     if (type == kUInt)
     {
-        return std::move(UIntAttribute(name, std::make_shared<DataTypeUInt64>(), default_value));
+        data_type = std::make_shared<DataTypeUInt64>();
     }
-    if (type == kInt)
+    else if (type == kInt)
     {
-        return std::move(IntAttribute(name, std::make_shared<DataTypeInt64>(), default_value));
+        data_type = std::make_shared<DataTypeInt64>();
     }
-    if (type == kFloat)
+    else if (type == kFloat)
     {
-        return std::move(FloatAttribute(name, std::make_shared<DataTypeFloat64>(), default_value));
+        data_type = std::make_shared<DataTypeFloat64>();
     }
-    if (type == kString)
+    else if (type == kString)
     {
-        return std::move(StringAttribute(name, std::make_shared<DataTypeString>(), default_value));
+        data_type = std::make_shared<DataTypeString>();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unkown type for attribute {}", type);
     }
 
-    throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unsupported data type {}", type);
+    return Attribute(name, true, data_type, type);
 }
 
 Attribute makeAttribute(const std::string & name, const YAML::Node & node)
@@ -334,11 +370,7 @@ Attribute makeAttribute(const std::string & name, const YAML::Node & node)
     if (!node.IsMap())
     {
         throw Exception(
-            ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION,
-            "Invalid structure for attribute {}, expected `{}` and `{}` (optional) mapping",
-            name,
-            kType,
-            kDefault);
+            ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Invalid structure for attribute {}, expected `{}` mapping", name, kType);
     }
 
     auto attribute_params = parseYAMLMap(node);
@@ -346,19 +378,6 @@ Attribute makeAttribute(const std::string & name, const YAML::Node & node)
     if (!attribute_params.contains(kType))
     {
         throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Missing type for attribute {}", name);
-    }
-
-    std::optional<std::string> default_value;
-    if (attribute_params.contains(kDefault))
-    {
-        const auto default_value_node = attribute_params[kDefault];
-
-        if (!default_value_node.IsScalar())
-        {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Value for `default` must be scalar, attribute {}", kDefault);
-        }
-
-        default_value = default_value_node.as<std::string>();
     }
 
     const auto type_node = attribute_params[kType];
@@ -369,7 +388,7 @@ Attribute makeAttribute(const std::string & name, const YAML::Node & node)
 
     const auto type = type_node.as<std::string>();
 
-    return makeAttribute(name, type, default_value);
+    return makeAttribute(name, type);
 }
 
 StringToAttribute getAttributes(const YAML::Node & node)
@@ -389,7 +408,7 @@ void getValuesFromSet(const YAML::Node & node, StringToString & attributes_to_in
 {
     if (!node.IsMap())
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`` must be mapping", kSet);
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` must be mapping", kSet);
     }
     const auto attributes = parseYAMLMap(node);
 
@@ -414,12 +433,12 @@ void insertValues(StringToString & attributes_to_insert, StringToAttribute & nam
         }
         else
         {
-            attribute.insertDefault();
+            attribute.insertNull();
         }
     }
 }
 
-UInt64 processMatch(UInt64 parent_id, const bool is_root, const YAML::Node & node, StringToAttribute & names_to_attributes)
+UInt64 processMatch(const bool is_root, UInt64 parent_id, const YAML::Node & node, StringToAttribute & names_to_attributes)
 {
     if (!node.IsMap())
     {
@@ -430,7 +449,10 @@ UInt64 processMatch(UInt64 parent_id, const bool is_root, const YAML::Node & nod
 
     StringToString attributes_to_insert;
 
-    attributes_to_insert[kParentId] = is_root ? "0" : std::to_string(parent_id);
+    if (!is_root)
+    {
+        attributes_to_insert[kParentId] = std::to_string(parent_id);
+    }
     attributes_to_insert[kId] = std::to_string(++parent_id);
 
     if (!match.contains(kRegExp))
@@ -457,14 +479,14 @@ UInt64 processMatch(UInt64 parent_id, const bool is_root, const YAML::Node & nod
         return parent_id;
     }
 
-    return processMatch(parent_id, false, match[kMatch], names_to_attributes);
+    return processMatch(false, parent_id, match[kMatch], names_to_attributes);
 }
 
 void parseConfiguration(const YAML::Node & node, StringToAttribute & names_to_attributes)
 {
-    names_to_attributes.insert({kId, UIntAttribute(kId, std::make_shared<DataTypeUInt64>(), std::nullopt)});
-    names_to_attributes.insert({kParentId, UIntAttribute(kParentId, std::make_shared<DataTypeUInt64>(), std::nullopt)});
-    names_to_attributes.insert({kRegExp, StringAttribute(kRegExp, std::make_shared<DataTypeString>(), std::nullopt)});
+    names_to_attributes.insert({kId, Attribute(kId, false, std::make_shared<DataTypeUInt64>(), kUInt)});
+    names_to_attributes.insert({kParentId, Attribute(kParentId, true, std::make_shared<DataTypeUInt64>(), kUInt)});
+    names_to_attributes.insert({kRegExp, Attribute(kRegExp, false, std::make_shared<DataTypeString>(), kString)});
 
     if (!node.IsSequence())
     {
@@ -477,15 +499,17 @@ void parseConfiguration(const YAML::Node & node, StringToAttribute & names_to_at
     {
         if (!child_node.IsMap())
         {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Element of configuration sequence must be mapping", kMatch);
+            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Element of {} configuration sequence must be mapping", kMatch);
         }
 
-        if (child_node.first.as<std::string>() != kMatch)
+        auto match = parseYAMLMap(child_node);
+
+        if (!match.contains(kMatch))
         {
-            continue;
+            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Match mapping should contain key {}", kMatch);
         }
 
-        uid = processMatch(uid, true, child_node.second, names_to_attributes);
+        uid = processMatch(true, uid, match[kMatch], names_to_attributes);
     }
 }
 
@@ -515,8 +539,7 @@ Block parseYAMLAsRegExpTree(const YAML::Node & node)
 
     for (auto & [name, attribute] : names_to_attributes)
     {
-        auto column = ColumnWithTypeAndName(attribute.column->convertToFullIfNeeded(), attribute.data_type, name);
-
+        auto column = ColumnWithTypeAndName(attribute.getColumn(), attribute.getDataType(), attribute.getName());
         columns.push_back(std::move(column));
     }
 

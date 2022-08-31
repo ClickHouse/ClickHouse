@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <dictionary>
+        <name>ext-dict-yaml</name>
+        <source>
+            <YAMLRegExpTree>
+                <path>/etc/clickhouse-server/config.d/regexp_tree_config.yaml</path>
+            </YAMLRegExpTree>
+        </source>
+        <layout>
+            <reg-exp-tree />
+        </layout>
+        <lifetime>0</lifetime>
+        <structure>
+            <key>
+                <attribute>
+                    <name>id</name>
+                    <type>String</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>name</name>
+                <type>Nullable(String)</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>version</name>
+                <type>Nullable(String)</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>code</name>
+                <type>Nullable(String)</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</clickhouse>
