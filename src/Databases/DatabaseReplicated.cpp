@@ -57,7 +57,9 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
-    return getContext()->getZooKeeper();
+    auto current_zookeeper = getContext()->getZooKeeper();
+    current_zookeeper->sync(zookeeper_path);
+    return current_zookeeper;
 }
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
@@ -164,7 +166,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     Strings hosts;
     Strings host_ids;
 
-    auto zookeeper = getContext()->getZooKeeper();
+    auto zookeeper = getZooKeeper();
     constexpr int max_retries = 10;
     int iteration = 0;
     bool success = false;
@@ -268,7 +270,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
         }
 
-        auto current_zookeeper = getContext()->getZooKeeper();
+        auto current_zookeeper = getZooKeeper();
 
         if (!current_zookeeper->exists(zookeeper_path))
         {
@@ -369,7 +371,7 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & cu
     if (maybe_database_mark.empty())
         return false;
 
-    /// Old versions did not have REPLICATED_DATABASE_MARK. Check specific nodes exist and add mark.
+    /// Old versions (before 22.8) did not have REPLICATED_DATABASE_MARK. Check specific nodes exist and add mark.
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCheckRequest(path + "/log", -1));
     ops.emplace_back(zkutil::makeCheckRequest(path + "/replicas", -1));
@@ -416,7 +418,11 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     for (int attempts = 10; attempts > 0; --attempts)
     {
         Coordination::Stat stat;
-        String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
+        String max_log_ptr_str;
+        bool exists = current_zookeeper->tryGet(zookeeper_path + "/max_log_ptr", max_log_ptr_str, &stat);
+        if (!exists)
+            throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "The last database replica was concurrently dropped, try again.");
+
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
@@ -1192,7 +1198,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
-    auto zookeeper = getContext()->getZooKeeper();
+    auto zookeeper = getZooKeeper();
     auto escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
     for (const auto & escaped_table_name : escaped_table_names)
     {

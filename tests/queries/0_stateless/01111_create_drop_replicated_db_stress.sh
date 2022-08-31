@@ -17,7 +17,7 @@ function create_db()
         $CLICKHOUSE_CLIENT --allow_experimental_database_replicated=1 --query \
         "create database if not exists ${CLICKHOUSE_DATABASE}_repl_$SUFFIX engine=Replicated('/test/01111/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '$SHARD', '$REPLICA')" \
          2>&1| grep -Fa "Exception: " | grep -Fv "REPLICA_IS_ALREADY_EXIST" | grep -Fiv "Will not try to start it up" | \
-         grep -Fv "Coordination::Exception" | grep -Fv "already contains some data and it does not look like Replicated database path"
+         grep -Fv "The last database replica was concurrently dropped" | grep -Fv "already contains some data and it does not look like Replicated database path"
         sleep 0.$RANDOM
     done
 }
