@@ -572,7 +572,7 @@ private:
 
     void ALWAYS_INLINE inline add(const Field & new_value)
     {
-        if (new_value < value)
+        if (!has() || new_value < value)
             value = new_value;
     }
 
