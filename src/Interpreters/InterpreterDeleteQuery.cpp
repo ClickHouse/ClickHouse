@@ -70,10 +70,6 @@ BlockIO InterpreterDeleteQuery::execute()
         mut_command.type = MutationCommand::Type::DELETE;
         mut_command.predicate = delete_query.predicate;
 
-        auto command = std::make_shared<ASTAlterCommand>();
-        command->type = ASTAlterCommand::DELETE;
-        command->predicate = delete_query.predicate;
-
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());

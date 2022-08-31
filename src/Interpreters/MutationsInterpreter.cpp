@@ -289,6 +289,7 @@ MutationsInterpreter::MutationsInterpreter(
     MutationCommands commands_,
     ContextPtr context_,
     bool can_execute_,
+    bool return_all_columns_,
     bool return_deleted_rows_)
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
@@ -296,6 +297,7 @@ MutationsInterpreter::MutationsInterpreter(
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
+    , return_all_columns(return_all_columns_)
     , return_deleted_rows(return_deleted_rows_)
 {
     mutation_ast = prepare(!can_execute);
@@ -474,6 +476,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
     {
+        // we can return deleted rows only if it's the only present command
+        assert(command.type == MutationCommand::DELETE || !return_deleted_rows);
+
         if (command.type == MutationCommand::DELETE)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
@@ -795,7 +800,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
-        if (!prepared_stages[i].filters.empty())
+        if (return_all_columns || !prepared_stages[i].filters.empty())
         {
             for (const auto & column : all_columns)
                 prepared_stages[i].output_columns.insert(column.name);
