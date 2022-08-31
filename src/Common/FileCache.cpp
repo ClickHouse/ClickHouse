@@ -30,12 +30,12 @@ FileCache::FileCache(
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
+    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
+    , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
     , max_stash_element_size(cache_settings_.max_elements)
-    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
-    , log(&Poco::Logger::get("FileCache"))
 {
 }
 
@@ -71,136 +71,15 @@ bool FileCache::isReadOnly()
     return !isQueryInitialized();
 }
 
-void FileCache::assertInitialized() const
+void FileCache::assertInitialized(std::lock_guard<std::mutex> & /* cache_lock */) const
 {
     if (!is_initialized)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
-}
-
-FileCache::QueryContextPtr FileCache::getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock)
-{
-    if (!isQueryInitialized())
-        return nullptr;
-
-    return getQueryContext(std::string(CurrentThread::getQueryId()), cache_lock);
-}
-
-FileCache::QueryContextPtr FileCache::getQueryContext(const String & query_id, std::lock_guard<std::mutex> & /* cache_lock */)
-{
-    auto query_iter = query_map.find(query_id);
-    return (query_iter == query_map.end()) ? nullptr : query_iter->second;
-}
-
-void FileCache::removeQueryContext(const String & query_id)
-{
-    std::lock_guard cache_lock(mutex);
-    auto query_iter = query_map.find(query_id);
-
-    if (query_iter == query_map.end())
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Attempt to release query context that does not exist (query_id: {})",
-            query_id);
+        if (initialization_exception)
+            std::rethrow_exception(initialization_exception);
+        else
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
     }
-
-    query_map.erase(query_iter);
-}
-
-FileCache::QueryContextPtr FileCache::getOrSetQueryContext(
-    const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> & cache_lock)
-{
-    if (query_id.empty())
-        return nullptr;
-
-    auto context = getQueryContext(query_id, cache_lock);
-    if (context)
-        return context;
-
-    auto query_context = std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache);
-    auto query_iter = query_map.emplace(query_id, query_context).first;
-    return query_iter->second;
-}
-
-FileCache::QueryContextHolder FileCache::getQueryContextHolder(const String & query_id, const ReadSettings & settings)
-{
-    std::lock_guard cache_lock(mutex);
-
-    if (!enable_filesystem_query_cache_limit || settings.max_query_cache_size == 0)
-        return {};
-
-    /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
-    /// we create context query for current query.
-    auto context = getOrSetQueryContext(query_id, settings, cache_lock);
-    return QueryContextHolder(query_id, this, context);
-}
-
-void FileCache::QueryContext::remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
-{
-    if (cache_size < size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deleted cache size exceeds existing cache size");
-
-    if (!skip_download_if_exceeds_query_cache)
-    {
-        auto record = records.find({key, offset});
-        if (record != records.end())
-        {
-            record->second->removeAndGetNext(cache_lock);
-            records.erase({key, offset});
-        }
-    }
-    cache_size -= size;
-}
-
-void FileCache::QueryContext::reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
-{
-    if (cache_size + size > max_cache_size)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Reserved cache size exceeds the remaining cache size (key: {}, offset: {})",
-            key.toString(), offset);
-    }
-
-    if (!skip_download_if_exceeds_query_cache)
-    {
-        auto record = records.find({key, offset});
-        if (record == records.end())
-        {
-            auto queue_iter = priority->add(key, offset, 0, cache_lock);
-            record = records.insert({{key, offset}, queue_iter}).first;
-        }
-        record->second->incrementSize(size, cache_lock);
-    }
-    cache_size += size;
-}
-
-void FileCache::QueryContext::use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
-{
-    if (skip_download_if_exceeds_query_cache)
-        return;
-
-    auto record = records.find({key, offset});
-    if (record != records.end())
-        record->second->use(cache_lock);
-}
-
-FileCache::QueryContextHolder::QueryContextHolder(
-    const String & query_id_,
-    FileCache * cache_,
-    FileCache::QueryContextPtr context_)
-    : query_id(query_id_)
-    , cache(cache_)
-    , context(context_)
-{
-}
-
-FileCache::QueryContextHolder::~QueryContextHolder()
-{
-    /// If only the query_map and the current holder hold the context_query,
-    /// the query has been completed and the query_context is released.
-    if (context && context.use_count() == 2)
-        cache->removeQueryContext(query_id);
 }
 
 void FileCache::initialize()
@@ -216,27 +95,43 @@ void FileCache::initialize()
             }
             catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                initialization_exception = std::current_exception();
                 throw;
             }
         }
         else
+        {
             fs::create_directories(cache_base_path);
+        }
 
         is_initialized = true;
     }
 }
 
 void FileCache::useCell(
-    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const
+    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock)
 {
     auto file_segment = cell.file_segment;
 
-    if (file_segment->isDownloaded()
-        && fs::file_size(getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->isPersistent())) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. Current file segment: {}",
-                        file_segment->range().toString());
+    if (file_segment->isDownloaded())
+    {
+        fs::path path = file_segment->getPathInLocalCache();
+        if (!fs::exists(path))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "File path does not exist, but file has DOWNLOADED state. {}",
+                file_segment->getInfoForLog());
+        }
+
+        if (fs::file_size(path) == 0)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot have zero size downloaded file segments. {}",
+                file_segment->getInfoForLog());
+        }
+    }
 
     result.push_back(cell.file_segment);
 
@@ -347,7 +242,12 @@ FileSegments FileCache::getImpl(
 }
 
 FileSegments FileCache::splitRangeIntoCells(
-    const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock)
+    const Key & key,
+    size_t offset,
+    size_t size,
+    FileSegment::State state,
+    bool is_persistent,
+    std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
 
@@ -471,15 +371,15 @@ void FileCache::fillHolesWithEmptyFileSegments(
 
 FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent)
 {
-    assertInitialized();
-
-    FileSegment::Range range(offset, offset + size - 1);
-
     std::lock_guard cache_lock(mutex);
+
+    assertInitialized(cache_lock);
 
 #ifndef NDEBUG
     assertCacheCorrectness(key, cache_lock);
 #endif
+
+    FileSegment::Range range(offset, offset + size - 1);
 
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
@@ -499,15 +399,15 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
 
 FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
 {
-    assertInitialized();
-
-    FileSegment::Range range(offset, offset + size - 1);
-
     std::lock_guard cache_lock(mutex);
+
+    assertInitialized(cache_lock);
 
 #ifndef NDEBUG
     assertCacheCorrectness(key, cache_lock);
 #endif
+
+    FileSegment::Range range(offset, offset + size - 1);
 
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
@@ -542,7 +442,7 @@ FileCache::FileSegmentCell * FileCache::addCell(
     if (files[key].contains(offset))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
+            "Cache cell already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             key.toString(), offset, size, dumpStructureUnlocked(key, cache_lock));
 
     auto skip_or_download = [&]() -> FileSegmentPtr
@@ -730,9 +630,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         auto remove_file_segment = [&](FileSegmentPtr file_segment, size_t file_segment_size)
         {
             query_context->remove(file_segment->key(), file_segment->offset(), file_segment_size, cache_lock);
-
-            std::lock_guard segment_lock(file_segment->mutex);
-            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+            remove(file_segment, cache_lock);
         };
 
         assert(trash.empty());
@@ -849,19 +747,13 @@ bool FileCache::tryReserveForMainList(
         }
     }
 
-    auto remove_file_segment = [&](FileSegmentPtr file_segment)
-    {
-        std::lock_guard segment_lock(file_segment->mutex);
-        remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-    };
-
     /// This case is very unlikely, can happen in case of exception from
     /// file_segment->complete(), which would be a logical error.
     assert(trash.empty());
     for (auto & cell : trash)
     {
         if (auto file_segment = cell->file_segment)
-            remove_file_segment(file_segment);
+            remove(file_segment, cache_lock);
     }
 
     if (is_overflow())
@@ -883,7 +775,7 @@ bool FileCache::tryReserveForMainList(
     for (auto & cell : to_evict)
     {
         if (auto file_segment = cell->file_segment)
-            remove_file_segment(file_segment);
+            remove(file_segment, cache_lock);
     }
 
     if (main_priority->getCacheSize(cache_lock) > (1ull << 63))
@@ -897,9 +789,9 @@ bool FileCache::tryReserveForMainList(
 
 void FileCache::removeIfExists(const Key & key)
 {
-    assertInitialized();
-
     std::lock_guard cache_lock(mutex);
+
+    assertInitialized(cache_lock);
 
     auto it = files.find(key);
     if (it == files.end())
@@ -994,27 +886,36 @@ void FileCache::removeIfReleasable()
 #endif
 }
 
+void FileCache::remove(FileSegmentPtr file_segment, std::lock_guard<std::mutex> & cache_lock)
+{
+    std::lock_guard segment_lock(file_segment->mutex);
+    remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+}
+
 void FileCache::remove(
     Key key, size_t offset,
     std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
 {
-    LOG_TEST(log, "Remove. Key: {}, offset: {}", key.toString(), offset);
+    LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", key.toString(), offset);
 
-    auto * cell = getCell(key, offset, cache_lock);
-    if (!cell)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", key.toString(), offset);
+    String cache_file_path;
 
-    bool is_persistent_file_segment = cell->file_segment->isPersistent();
-
-    if (cell->queue_iterator)
     {
-        cell->queue_iterator->removeAndGetNext(cache_lock);
+        auto * cell = getCell(key, offset, cache_lock);
+        if (!cell)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", key.toString(), offset);
+
+        if (cell->queue_iterator)
+        {
+            cell->queue_iterator->removeAndGetNext(cache_lock);
+        }
+
+        cache_file_path = cell->file_segment->getPathInLocalCache();
     }
 
     auto & offsets = files[key];
     offsets.erase(offset);
 
-    auto cache_file_path = getPathInLocalCache(key, offset, is_persistent_file_segment);
     if (fs::exists(cache_file_path))
     {
         try
@@ -1033,9 +934,10 @@ void FileCache::remove(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
-                            key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
+                key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
         }
     }
 }
@@ -1222,12 +1124,6 @@ size_t FileCache::getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_l
     return main_priority->getCacheSize(cache_lock);
 }
 
-size_t FileCache::getAvailableCacheSize() const
-{
-    std::lock_guard cache_lock(mutex);
-    return getAvailableCacheSizeUnlocked(cache_lock);
-}
-
 size_t FileCache::getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const
 {
     return max_size - getUsedCacheSizeUnlocked(cache_lock);
@@ -1270,9 +1166,10 @@ FileCache::FileSegmentCell::FileSegmentCell(
             break;
         }
         default:
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
-                            FileSegment::stateToString(file_segment->download_state));
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
+                FileSegment::stateToString(file_segment->download_state));
     }
 }
 
@@ -1344,6 +1241,132 @@ void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lo
     assert(total_size == main_priority->getCacheSize(cache_lock));
     assert(main_priority->getCacheSize(cache_lock) <= max_size);
     assert(main_priority->getElementsNum(cache_lock) <= max_element_size);
+}
+
+FileCache::QueryContextPtr FileCache::getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock)
+{
+    if (!isQueryInitialized())
+        return nullptr;
+
+    return getQueryContext(std::string(CurrentThread::getQueryId()), cache_lock);
+}
+
+FileCache::QueryContextPtr FileCache::getQueryContext(const String & query_id, std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    auto query_iter = query_map.find(query_id);
+    return (query_iter == query_map.end()) ? nullptr : query_iter->second;
+}
+
+void FileCache::removeQueryContext(const String & query_id)
+{
+    std::lock_guard cache_lock(mutex);
+    auto query_iter = query_map.find(query_id);
+
+    if (query_iter == query_map.end())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to release query context that does not exist (query_id: {})",
+            query_id);
+    }
+
+    query_map.erase(query_iter);
+}
+
+FileCache::QueryContextPtr FileCache::getOrSetQueryContext(
+    const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> & cache_lock)
+{
+    if (query_id.empty())
+        return nullptr;
+
+    auto context = getQueryContext(query_id, cache_lock);
+    if (context)
+        return context;
+
+    auto query_context = std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache);
+    auto query_iter = query_map.emplace(query_id, query_context).first;
+    return query_iter->second;
+}
+
+FileCache::QueryContextHolder FileCache::getQueryContextHolder(const String & query_id, const ReadSettings & settings)
+{
+    std::lock_guard cache_lock(mutex);
+
+    if (!enable_filesystem_query_cache_limit || settings.max_query_cache_size == 0)
+        return {};
+
+    /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
+    /// we create context query for current query.
+    auto context = getOrSetQueryContext(query_id, settings, cache_lock);
+    return QueryContextHolder(query_id, this, context);
+}
+
+void FileCache::QueryContext::remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+{
+    if (cache_size < size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deleted cache size exceeds existing cache size");
+
+    if (!skip_download_if_exceeds_query_cache)
+    {
+        auto record = records.find({key, offset});
+        if (record != records.end())
+        {
+            record->second->removeAndGetNext(cache_lock);
+            records.erase({key, offset});
+        }
+    }
+    cache_size -= size;
+}
+
+void FileCache::QueryContext::reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+{
+    if (cache_size + size > max_cache_size)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Reserved cache size exceeds the remaining cache size (key: {}, offset: {})",
+            key.toString(), offset);
+    }
+
+    if (!skip_download_if_exceeds_query_cache)
+    {
+        auto record = records.find({key, offset});
+        if (record == records.end())
+        {
+            auto queue_iter = priority->add(key, offset, 0, cache_lock);
+            record = records.insert({{key, offset}, queue_iter}).first;
+        }
+        record->second->incrementSize(size, cache_lock);
+    }
+    cache_size += size;
+}
+
+void FileCache::QueryContext::use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+{
+    if (skip_download_if_exceeds_query_cache)
+        return;
+
+    auto record = records.find({key, offset});
+    if (record != records.end())
+        record->second->use(cache_lock);
+}
+
+FileCache::QueryContextHolder::QueryContextHolder(
+    const String & query_id_,
+    FileCache * cache_,
+    FileCache::QueryContextPtr context_)
+    : query_id(query_id_)
+    , cache(cache_)
+    , context(context_)
+{
+}
+
+FileCache::QueryContextHolder::~QueryContextHolder()
+{
+    /// If only the query_map and the current holder hold the context_query,
+    /// the query has been completed and the query_context is released.
+    if (context && context.use_count() == 2)
+        cache->removeQueryContext(query_id);
 }
 
 }

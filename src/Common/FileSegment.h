@@ -130,7 +130,7 @@ public:
 
     bool isDownloader() const;
 
-    bool isDownloaded() const { return is_downloaded.load(); }
+    bool isDownloaded() const;
 
     static String getCallerId();
 
@@ -142,7 +142,7 @@ public:
 
     void completeBatchAndResetDownloader();
 
-    void completeWithState(State state, bool auto_resize = false);
+    void completeWithState(State state);
 
     String getInfoForLog() const;
 
@@ -171,7 +171,7 @@ public:
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
-    size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
+    size_t getDownloadedSizeUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;
@@ -187,6 +187,8 @@ private:
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
     bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
+    bool isDownloadedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+
     void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
 
     bool lastFileSegmentHolder() const;
@@ -195,12 +197,8 @@ private:
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock);
-    void completeBasedOnCurrentStateUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
-
-    void completeImpl(
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    void completeWithoutState(std::lock_guard<std::mutex> & cache_lock);
 
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
@@ -240,7 +238,8 @@ private:
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
 
-    std::atomic<bool> is_downloaded{false};
+    bool is_downloaded{false};
+
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
