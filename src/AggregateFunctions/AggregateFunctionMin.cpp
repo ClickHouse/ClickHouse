@@ -31,11 +31,7 @@ AggregateFunctionPtr createAggregateFunctionMin(
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
         return AggregateFunctionPtr(new AggregateFunctionMin<String, AggregateFunctionMinDataString<ColumnString>>(argument_type));
-
-    // TODO: Add FixedString? and generic type support to AggregateFunctionMin
-    //    if (which.idx == TypeIndex::FixedString)
-    //        return AggregateFunctionPtr(new AggregateFunctionMin<String, AggregateFunctionMinDataString<ColumnFixedString>>(argument_type));
-    return AggregateFunctionPtr(new AggregateFunctionsSingleValue<AggregateFunctionMinData<SingleValueDataGeneric>>(argument_type));
+    return AggregateFunctionPtr(new AggregateFunctionMin<String, AggregateFunctionMinDataGeneric>(argument_type));
 }
 
 AggregateFunctionPtr createAggregateFunctionArgMin(

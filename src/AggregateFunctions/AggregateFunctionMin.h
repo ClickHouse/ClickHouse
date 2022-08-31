@@ -237,14 +237,14 @@ struct AggregateFunctionMinDataNumeric
             add(rhs.min);
     }
 
-    void write(WriteBuffer & buf) const
+    void write(WriteBuffer & buf, const ISerialization &) const
     {
         writeBinary(has_value, buf);
         if (has_value)
             writeBinary(min, buf);
     }
 
-    void read(ReadBuffer & buf, Arena *)
+    void read(ReadBuffer & buf, const ISerialization &, Arena *)
     {
         readBinary(has_value, buf);
         if (has_value)
@@ -511,14 +511,14 @@ struct AggregateFunctionMinDataString
             add(rhs.getStringRef(), arena);
     }
 
-    void write(WriteBuffer & buf) const
+    void write(WriteBuffer & buf, const ISerialization &) const
     {
         writeBinary(size, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void read(ReadBuffer & buf, Arena * arena)
+    void read(ReadBuffer & buf, const ISerialization &, Arena * arena)
     {
         Int32 rhs_size;
         readBinary(rhs_size, buf);
@@ -563,11 +563,121 @@ static_assert(
     sizeof(AggregateFunctionMinDataString<ColumnString>) == AggregateFunctionMinDataString<ColumnString>::AUTOMATIC_STORAGE_SIZE,
     "Incorrect size of SingleValueDataString struct");
 
+
+struct AggregateFunctionMinDataGeneric
+{
+private:
+    Field value;
+
+    bool has() const { return !value.isNull(); }
+
+    void ALWAYS_INLINE inline add(const Field & new_value)
+    {
+        if (new_value < value)
+            value = new_value;
+    }
+
+public:
+    void ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
+    {
+        if (!has())
+            column.get(row_num, value);
+        else
+        {
+            Field new_value;
+            column.get(row_num, new_value);
+            add(new_value);
+        }
+    }
+
+    void ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { add(column, 0, arena); }
+
+    void insertResultInto(IColumn & to) const
+    {
+        if (has())
+            to.insert(value);
+        else
+            to.insertDefault();
+    }
+
+    template <bool add_all_elements, bool add_if_cond_zero>
+    void NO_INLINE
+    addManyImpl(const IColumn & column, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end, Arena * arena)
+    {
+        if constexpr (!add_all_elements)
+        {
+            while (!condition_map[start] != add_if_cond_zero && start < end)
+                start++;
+            if (start >= end)
+                return;
+        }
+
+        size_t min_idx = start;
+        for (size_t i = start + 1; i < end; i++)
+        {
+            if (!add_all_elements && !condition_map[i] != add_if_cond_zero)
+                continue;
+            if (column.compareAt(i, min_idx, column, /* nan_direction_hint = */ 0) < 0)
+                min_idx = i;
+        }
+
+        add(column, min_idx, arena);
+    }
+
+    void addMany(const IColumn & column, size_t start, size_t end, Arena * arena)
+    {
+        addManyImpl<true, false>(column, nullptr, start, end, arena);
+    }
+
+    void addManyNotNull(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena)
+    {
+        addManyImpl<false, true>(column, null_map, start, end, arena);
+    }
+
+    void addManyConditional(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena)
+    {
+        addManyImpl<false, false>(column, condition_map, start, end, arena);
+    }
+
+    void merge(const AggregateFunctionMinDataGeneric & rhs, Arena *)
+    {
+        if (rhs.has())
+            add(rhs.value);
+    }
+
+    void write(WriteBuffer & buf, const ISerialization & serialization) const
+    {
+        if (has())
+        {
+            writeBinary(true, buf);
+            serialization.serializeBinary(value, buf);
+        }
+        else
+            writeBinary(false, buf);
+    }
+
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
+    {
+        bool is_not_null;
+        readBinary(is_not_null, buf);
+
+        if (is_not_null)
+            serialization.deserializeBinary(value, buf);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool is_compilable = false;
+#endif
+};
+
 template <typename T, typename Data>
 class AggregateFunctionMin final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T, Data>>
 {
+    SerializationPtr serialization;
+
 public:
-    explicit AggregateFunctionMin(const DataTypePtr & type) : IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T, Data>>({type}, {})
+    explicit AggregateFunctionMin(const DataTypePtr & type)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMin<T, Data>>({type}, {}), serialization(type->getDefaultSerialization())
     {
         if (!type->isComparable())
             throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
@@ -634,12 +744,12 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        this->data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        this->data(place).read(buf, *serialization, arena);
     }
 
     bool allocatesMemoryInArena() const override
