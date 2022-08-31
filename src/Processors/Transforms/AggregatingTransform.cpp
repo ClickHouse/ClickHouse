@@ -53,7 +53,7 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        SourceFromNativeStream(const TemporaryFileStreamPtr & tmp_stream_)
+        SourceFromNativeStream(TemporaryFileStreamHolder & tmp_stream_)
             : ISource(tmp_stream_->getHeader())
             , tmp_stream(tmp_stream_)
         {}
@@ -70,7 +70,7 @@ namespace
         }
 
     private:
-        const TemporaryFileStreamPtr & tmp_stream;
+        TemporaryFileStreamHolder & tmp_stream;
     };
 }
 
@@ -595,9 +595,9 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        const auto & tmp_data = params->aggregator.getTemporaryData();
-        Pipe pipe;
+        auto & tmp_data = params->aggregator.getTemporaryData();
 
+        Pipe pipe;
         {
             auto header = params->aggregator.getHeader(false);
             Pipes pipes;
@@ -611,9 +611,9 @@ void AggregatingTransform::initGenerate()
         LOG_DEBUG(
             log,
             "Will merge {} temporary files of size {} compressed, {} uncompressed.",
-            files.files.size(),
-            ReadableSize(files.sum_size_compressed),
-            ReadableSize(files.sum_size_uncompressed));
+            tmp_data.getStreams().size(),
+            ReadableSize(tmp_data.getStat().compressed_size),
+            ReadableSize(tmp_data.getStat().uncompressed_size));
 
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 

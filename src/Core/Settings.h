@@ -399,6 +399,9 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, max_network_bandwidth_for_user, 0, "The maximum speed of data exchange over the network in bytes per second for all concurrently running user queries. Zero means unlimited.", 0)\
     M(UInt64, max_network_bandwidth_for_all_users, 0, "The maximum speed of data exchange over the network in bytes per second for all concurrently running queries. Zero means unlimited.", 0) \
     \
+    M(UInt64, max_temp_data_on_disk_size_for_user, 0, "The maximum amount of data consumed by temorary files on disk in bytes for all concurrently running user queries. Zero means unlimited.", 0)\
+    M(UInt64, max_temp_data_on_disk_size_for_query, 0, "The maximum amount of data consumed by temorary files on disk in bytes for all concurrently running queries. Zero means unlimited.", 0)\
+    \
     M(UInt64, backup_threads, 16, "The maximum number of threads to execute BACKUP requests.", 0) \
     M(UInt64, restore_threads, 16, "The maximum number of threads to execute RESTORE requests.", 0) \
     \

@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/logger_useful.h>
 
 
@@ -28,7 +29,7 @@ public:
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
-        TemporaryDataOnDisk tmp_data_,
+        TemporaryDataOnDiskPtr tmp_data_,
         size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSortingTransform"; }
@@ -44,7 +45,7 @@ private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
     size_t max_bytes_before_external_sort;
-    TemporaryDataOnDisk tmp_data;
+    TemporaryDataOnDiskPtr tmp_data;
     size_t min_free_disk_space;
 
     size_t sum_rows_in_blocks = 0;
