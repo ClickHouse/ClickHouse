@@ -150,8 +150,9 @@ private:
     Poco::Logger * log;
 
     bool is_initialized = false;
+    std::exception_ptr initialization_exception;
 
-    void assertInitialized() const;
+    void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 
     std::optional<ThreadPool> async_write_threadpool;
     ssize_t background_download_current_memory_usage = 0;
@@ -167,6 +168,10 @@ private:
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
         std::unique_lock<std::mutex> & segment_lock);
+
+    void remove(
+        FileSegmentPtr file_segment,
+        std::lock_guard<std::mutex> & cache_lock);
 
     bool isLastFileSegmentHolder(
         const Key & key,

@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/cli
 sidebar_position: 17
 sidebar_label: Command-Line Client
 ---

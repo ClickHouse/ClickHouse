@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/log-family/tinylog
+---
 # TinyLog {#tinylog}
 
 最简单的表引擎，用于将数据存储在磁盘上。每列都存储在单独的压缩文件中。写入时，数据将附加到文件末尾。

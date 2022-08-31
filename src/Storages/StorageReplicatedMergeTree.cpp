@@ -343,6 +343,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// It does not make sense for CREATE query
     if (attach)
     {
+        if (current_zookeeper && current_zookeeper->exists(replica_path + "/host"))
+        {
+            /// Check it earlier if we can (we don't want incompatible version to start).
+            /// If "/host" doesn't exist, then replica is probably dropped and there's nothing to check.
+            ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(current_zookeeper, replica_path);
+        }
+
         if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
         {
             skip_sanity_checks = true;
@@ -863,20 +870,10 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         return;
     }
 
-    /// Analog of removeRecursive(remote_replica_path)
-    /// but it removes "metadata" firstly.
-    ///
-    /// This will allow to mark table as readonly
-    /// and skip any checks of parts between on-disk and in the zookeeper.
-    ///
-    /// Without this removeRecursive() may remove "parts" first
-    /// and on DETACH/ATTACH (or server restart) it will trigger the following error:
-    ///
-    ///       "The local set of parts of table X doesn't look like the set of parts in ZooKeeper"
-    ///
     {
-        /// Remove metadata first
-        [[maybe_unused]] auto code = zookeeper->tryRemove(fs::path(remote_replica_path) / "metadata");
+        /// Remove "host" node first to mark replica as dropped (the choice is arbitrary,
+        /// it could be any node without children that exists since ancient server versions and not re-created on startup)
+        [[maybe_unused]] auto code = zookeeper->tryRemove(fs::path(remote_replica_path) / "host");
         assert(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE);
 
         /// Then try to remove paths that are known to be flat (all children are leafs)
@@ -897,11 +894,11 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
             ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/" + node, -1));
 
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/columns", -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/host", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/is_lost", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/log_pointer", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/max_processed_insert_time", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/min_unprocessed_insert_time", -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/metadata", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/metadata_version", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/mutation_pointer", -1));
         Coordination::Responses res;

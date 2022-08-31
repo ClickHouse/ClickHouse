@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/special/view
 sidebar_position: 42
 sidebar_label: View
 ---

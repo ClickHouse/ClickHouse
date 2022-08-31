@@ -38,7 +38,13 @@ namespace ErrorCodes
 namespace
 {
     template <typename Factory>
-    void fillRow(MutableColumns & res_columns, const String & name, UInt64 is_aggregate, const String & create_query, FunctionOrigin function_origin, const Factory & f)
+    void fillRow(
+        MutableColumns & res_columns,
+        const String & name,
+        UInt64 is_aggregate,
+        const String & create_query,
+        FunctionOrigin function_origin,
+        const Factory & factory)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
@@ -50,15 +56,25 @@ namespace
         }
         else
         {
-            res_columns[2]->insert(f.isCaseInsensitive(name));
-            if (f.isAlias(name))
-                res_columns[3]->insert(f.aliasTo(name));
+            res_columns[2]->insert(factory.isCaseInsensitive(name));
+            if (factory.isAlias(name))
+                res_columns[3]->insert(factory.aliasTo(name));
             else
                 res_columns[3]->insertDefault();
         }
 
         res_columns[4]->insert(create_query);
         res_columns[5]->insert(static_cast<Int8>(function_origin));
+
+        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        {
+            if (factory.isAlias(name))
+                res_columns[6]->insertDefault();
+            else
+                res_columns[6]->insert(factory.getDocumentation(name).description);
+        }
+        else
+            res_columns[6]->insertDefault();
     }
 }
 
@@ -79,7 +95,8 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
         {"case_insensitive", std::make_shared<DataTypeUInt8>()},
         {"alias_to", std::make_shared<DataTypeString>()},
         {"create_query", std::make_shared<DataTypeString>()},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())}
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
+        {"description", std::make_shared<DataTypeString>()},
     };
 }
 

@@ -80,7 +80,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .file_segment_range = { file_segment_range.left, file_segment_range.right },
         .requested_range = { first_offset, read_until_position },
         .file_segment_size = file_segment_range.size(),
-        .cache_attempted = true,
+        .read_from_cache_attempted = true,
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
@@ -726,6 +726,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         bool cached_part_is_finished = current_write_offset == file_offset_of_buffer_end;
 
         LOG_TEST(log, "Current write offset: {}, file offset of buffer end: {}", current_write_offset, file_offset_of_buffer_end);
+
         if (cached_part_is_finished)
         {
 #ifndef NDEBUG

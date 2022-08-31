@@ -41,9 +41,9 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ThreadGroupStatusPtr thread_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
+    ThreadGroupStatusPtr thread_group;
+    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
+        thread_group = CurrentThread::get().getThreadGroup();
 
     auto task = std::make_shared<std::packaged_task<Result()>>([request, thread_group]
     {
@@ -52,7 +52,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
         SCOPE_EXIT_SAFE({
             if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
+                CurrentThread::detachQuery();
         });
 
         setThreadName("VFSRead");
