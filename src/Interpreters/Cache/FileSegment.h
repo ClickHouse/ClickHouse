@@ -149,7 +149,7 @@ public:
     /// Wait for the change of state from DOWNLOADING to any other.
     State wait();
 
-    bool isDownloaded() const { return is_downloaded.load(); }
+    bool isDownloaded() const;
 
     void waitBackgroundDownloadIfExists(size_t offset) const;
 

@@ -12,7 +12,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Types.h>
-#include <Common/FileSegment.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>

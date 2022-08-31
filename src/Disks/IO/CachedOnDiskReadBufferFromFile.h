@@ -7,7 +7,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Common/FileSegment.h>
+#include <Interpreters/Cache/FileSegment.h>
 
 
 namespace CurrentMetrics
