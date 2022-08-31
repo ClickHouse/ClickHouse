@@ -30,6 +30,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include "Core/UUID.h"
+#include "base/types.h"
 
 #include <boost/algorithm/string/classification.hpp>
 #include <Poco/Base64Decoder.h>
@@ -46,6 +47,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int KEEPER_EXCEPTION;
     extern const int LOGICAL_ERROR;
+    extern const int LIMIT_EXCEEDED;
 }
 
 namespace
@@ -128,18 +130,48 @@ public:
 
     void onFinish() override
     {
-        auto & zookeeper = storage.getClient();
+        auto zookeeper = storage.getClient();
 
         Coordination::Requests requests;
+
+        auto keys_limit = storage.keysLimit();
+
+        size_t current_keys_num = 0;
+        size_t new_keys_num = 0;
+
+        if (keys_limit != 0)
+        {
+            Coordination::Stat root_stat;
+            zookeeper->get(storage.rootKeeperPath(), &root_stat);
+            // exclude metadata node
+            current_keys_num = root_stat.numChildren - 1;
+        }
 
         for (const auto & [key, value] : new_values)
         {
             auto path = storage.fullPathForKey(key);
 
             if (zookeeper->exists(path))
+            {
                 requests.push_back(zkutil::makeSetRequest(path, value, -1));
+            }
             else
+            {
                 requests.push_back(zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent));
+                ++new_keys_num;
+            }
+        }
+
+        if (new_keys_num != 0)
+        {
+            auto will_be = current_keys_num + new_keys_num;
+            if (keys_limit != 0 && will_be > keys_limit)
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "Limit would be exceeded by inserting {} new key(s). Limit is {}, while the number of keys would be {}",
+                    new_keys_num,
+                    keys_limit,
+                    will_be);
         }
 
         zookeeper->multi(requests);
@@ -209,12 +241,14 @@ StorageKeeperMap::StorageKeeperMap(
     bool attach,
     std::string_view primary_key_,
     const std::string & root_path_,
-    bool create_missing_root_path)
+    bool create_missing_root_path,
+    UInt64 keys_limit_)
     : IStorage(table_id)
     , WithContext(context_->getGlobalContext())
     , root_path(zkutil::extractZooKeeperPath(root_path_, false))
     , primary_key(primary_key_)
     , zookeeper_name(zkutil::extractZooKeeperName(root_path_))
+    , keys_limit(keys_limit_)
     , log(&Poco::Logger::get("StorageKeeperMap"))
 {
     if (table_id.uuid == UUIDHelpers::Nil)
@@ -226,6 +260,24 @@ StorageKeeperMap::StorageKeeperMap(
         throw Exception("root_path should not be empty", ErrorCodes::BAD_ARGUMENTS);
     if (!root_path.starts_with('/'))
         throw Exception("root_path should start with '/'", ErrorCodes::BAD_ARGUMENTS);
+
+
+    auto config_keys_limit = context_->getConfigRef().getUInt64("keeper_map_keys_limit", 0);
+    if (config_keys_limit != 0 && keys_limit > config_keys_limit)
+    {
+        LOG_WARNING(
+            log,
+            "Keys limit for {} defined by argument ({}) is larger than the one defined by 'keeper_map_keys_limit' config ({}). Will use "
+            "config defined value",
+            getStorageID().getFullTableName(),
+            keys_limit,
+            config_keys_limit);
+        keys_limit = config_keys_limit;
+    }
+    else if (keys_limit > 0)
+    {
+        LOG_INFO(log, "Keys limit for {} will be set to {}", getStorageID().getFullTableName(), keys_limit);
+    }
 
     std::filesystem::path root_path_fs{root_path};
     auto metadata_path_fs = root_path_fs / "ch_metadata";
@@ -351,7 +403,7 @@ Pipe StorageKeeperMap::read(
         return Pipe::unitePipes(std::move(pipes));
     };
 
-    auto & client = getClient();
+    auto client = getClient();
     if (all_scan)
         return process_keys(std::make_shared<std::vector<std::string>>(client->getChildren(root_path)));
 
@@ -441,7 +493,7 @@ void StorageKeeperMap::drop()
     removeMetadataNodes(client, metadata_drop_lock);
 }
 
-zkutil::ZooKeeperPtr & StorageKeeperMap::getClient() const
+zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
 {
     std::lock_guard lock{zookeeper_mutex};
     if (!zookeeper_client || zookeeper_client->expired())
@@ -464,6 +516,11 @@ const std::string & StorageKeeperMap::rootKeeperPath() const
 std::string StorageKeeperMap::fullPathForKey(const std::string_view key) const
 {
     return fmt::format("{}/{}", root_path, key);
+}
+
+UInt64 StorageKeeperMap::keysLimit() const
+{
+    return keys_limit;
 }
 
 std::optional<bool> StorageKeeperMap::isTableValid() const
@@ -586,38 +643,45 @@ Block StorageKeeperMap::getSampleBlock(const Names &) const
 
 namespace
 {
-    StoragePtr create(const StorageFactory::Arguments & args)
-    {
-        ASTs & engine_args = args.engine_args;
-        if (engine_args.empty() || engine_args.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage KeeperMap requires 1-2 arguments:\n"
-                "root_path: path in the Keeper where the values will be stored (required)\n"
-                "create_missing_root_path: 1 if the root path should be created if it's missing, otherwise throw exception (default: 1)\n",
-                default_host);
 
-        auto root_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "root_path");
+StoragePtr create(const StorageFactory::Arguments & args)
+{
+    ASTs & engine_args = args.engine_args;
+    if (engine_args.empty() || engine_args.size() > 3)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage KeeperMap requires 1-2 arguments:\n"
+            "root_path: path in the Keeper where the values will be stored (required)\n"
+            "create_missing_root_path: 1 if the root path should be created if it's missing, otherwise throw exception (default: 1)\n",
+            "keys_limit: number of keys allowed to be stored, 0 is no limit (default: 0)\n",
+            default_host);
 
-        bool create_missing_root_path = true;
-        if (engine_args.size() > 1)
-            create_missing_root_path = checkAndGetLiteralArgument<UInt64>(engine_args[1], "create_missing_root_path");
+    auto root_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "root_path");
 
-        StorageInMemoryMetadata metadata;
-        metadata.setColumns(args.columns);
-        metadata.setConstraints(args.constraints);
+    bool create_missing_root_path = true;
+    if (engine_args.size() > 1)
+        create_missing_root_path = checkAndGetLiteralArgument<UInt64>(engine_args[1], "create_missing_root_path");
 
-        if (!args.storage_def->primary_key)
-            throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+    UInt64 keys_limit = 0;
+    if (engine_args.size() > 2)
+        keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[2], "keys_limit");
 
-        metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
-        auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
-        if (primary_key_names.size() != 1)
-            throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(args.columns);
+    metadata.setConstraints(args.constraints);
 
-        return std::make_shared<StorageKeeperMap>(
-            args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], root_path, create_missing_root_path);
-    }
+    if (!args.storage_def->primary_key)
+        throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+    auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
+    if (primary_key_names.size() != 1)
+        throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+
+    return std::make_shared<StorageKeeperMap>(
+        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], root_path, create_missing_root_path, keys_limit);
+}
+
 }
 
 void registerStorageKeeperMap(StorageFactory & factory)
