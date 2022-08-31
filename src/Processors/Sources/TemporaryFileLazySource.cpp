@@ -18,7 +18,7 @@ Chunk TemporaryFileLazySource::generate()
         return {};
 
     if (!stream)
-        stream = std::make_unique<TemporaryFileStream>(path, header);
+        stream = std::make_unique<TemporaryFileStreamLegacy>(path, header);
 
     auto block = stream->block_in->read();
     if (!block)
