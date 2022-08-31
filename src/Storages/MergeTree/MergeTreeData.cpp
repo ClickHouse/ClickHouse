@@ -1599,7 +1599,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
                         /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
                         /// or not. So we are not doing it
                         bool keep_shared = false;
-                        if (it->path().find("tmp-fetch") != std::string::npos)
+                        if (it->path().find("fetch") != std::string::npos)
                         {
                             keep_shared = disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication;
                             if (keep_shared)
