@@ -1,6 +1,7 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Core/NamesAndTypes.h>
 
@@ -37,7 +38,7 @@ UnionNode::UnionNode()
     children[queries_child_index] = std::make_shared<ListNode>();
 }
 
-NamesAndTypesList UnionNode::computeProjectionColumns() const
+NamesAndTypes UnionNode::computeProjectionColumns() const
 {
     std::vector<NamesAndTypes> projections;
     const auto & query_nodes = getQueries().getNodes();
@@ -48,7 +49,7 @@ NamesAndTypesList UnionNode::computeProjectionColumns() const
     {
         if (auto * query_node_typed = query_node->as<QueryNode>())
         {
-            auto projection_columns = query_node_typed->computeProjectionColumns();
+            auto projection_columns = query_node_typed->getProjectionColumns();
             query_node_projection = NamesAndTypes(projection_columns.begin(), projection_columns.end());
         }
         else if (auto * union_node_typed = query_node->as<UnionNode>())
@@ -63,7 +64,7 @@ NamesAndTypesList UnionNode::computeProjectionColumns() const
             throw Exception(ErrorCodes::TYPE_MISMATCH, "UNION different number of columns in queries");
     }
 
-    NamesAndTypesList result_columns;
+    NamesAndTypes result_columns;
 
     size_t projections_size = projections.size();
     DataTypes projection_column_types;
@@ -120,6 +121,12 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
 
+    if (constant_value)
+    {
+        buffer << ", constant_value: " << constant_value->getValue().dump();
+        buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    }
+
     buffer << ", union_mode: ";
 
     if (union_mode == SelectUnionMode::ALL || union_mode == SelectUnionMode::DISTINCT)
@@ -151,6 +158,13 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const UnionNode &>(rhs);
+    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
+        return false;
+    else if (constant_value && !rhs_typed.constant_value)
+        return false;
+    else if (!constant_value && rhs_typed.constant_value)
+        return false;
+
     return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name;
 }
 
@@ -161,6 +175,17 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
 
     state.update(cte_name.size());
     state.update(cte_name);
+
+    if (constant_value)
+    {
+        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
+        state.update(constant_dump.size());
+        state.update(constant_dump);
+
+        auto constant_value_type_name = constant_value->getType()->getName();
+        state.update(constant_value_type_name.size());
+        state.update(constant_value_type_name);
+    }
 }
 
 ASTPtr UnionNode::toASTImpl() const
@@ -182,10 +207,10 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
     result_query_node->cte_name = cte_name;
-
     result_query_node->union_mode = union_mode;
     result_query_node->union_modes = union_modes;
     result_query_node->union_modes_set = union_modes_set;
+    result_query_node->constant_value = constant_value;
 
     return result_query_node;
 }

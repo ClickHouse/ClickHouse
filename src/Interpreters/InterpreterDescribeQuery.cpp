@@ -62,7 +62,7 @@ Block InterpreterDescribeQuery::getSampleBlock(bool include_subcolumns)
 
 BlockIO InterpreterDescribeQuery::execute()
 {
-    ColumnsDescription columns;
+    std::vector<ColumnDescription> columns;
     StorageSnapshotPtr storage_snapshot;
 
     const auto & ast = query_ptr->as<ASTDescribeQuery &>();
@@ -85,12 +85,20 @@ BlockIO InterpreterDescribeQuery::execute()
             names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context).getNamesAndTypesList();
         }
 
-        columns = ColumnsDescription(std::move(names_and_types));
+        for (auto && [name, type] : names_and_types)
+        {
+            ColumnDescription description;
+            description.name = std::move(name);
+            description.type = std::move(type);
+            columns.emplace_back(std::move(description));
+        }
     }
     else if (table_expression.table_function)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, getContext());
-        columns = table_function_ptr->getActualTableStructure(getContext());
+        auto table_function_column_descriptions = table_function_ptr->getActualTableStructure(getContext());
+        for (const auto & table_function_column_description : table_function_column_descriptions)
+            columns.emplace_back(table_function_column_description);
     }
     else
     {
@@ -101,7 +109,9 @@ BlockIO InterpreterDescribeQuery::execute()
 
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
         storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
-        columns = metadata_snapshot->getColumns();
+        auto metadata_column_descriptions = metadata_snapshot->getColumns();
+        for (const auto & metadata_column_description : metadata_column_descriptions)
+            columns.emplace_back(metadata_column_description);
     }
 
     bool extend_object_types = settings.describe_extend_object_types && storage_snapshot;

@@ -11,6 +11,7 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Analyzer/Identifier.h>
+#include <Analyzer/ConstantValue.h>
 
 class SipHash;
 
@@ -85,6 +86,29 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
+    /// Returns true if node has constant value
+    bool hasConstantValue() const
+    {
+        return getConstantValueOrNull() != nullptr;
+    }
+
+    /** Returns constant value with type if node has constant value, and can be replaced with it.
+      * Examples: scalar subquery, function with constant arguments.
+      */
+    virtual const ConstantValue & getConstantValue() const
+    {
+        auto constant_value = getConstantValueOrNull();
+        if (!constant_value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node does not have constant value");
+
+        return *constant_value;
+    }
+
+    virtual ConstantValuePtr getConstantValueOrNull() const
+    {
+        return {};
+    }
+
     /// Dump query tree to string
     String dumpTree() const;
 
@@ -114,25 +138,25 @@ public:
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
 
-    /// Check if node has alias
+    /// Returns true if node has alias, false otherwise
     bool hasAlias() const
     {
         return !alias.empty();
     }
 
-    /// Get node alias value if specified
+    /// Get node alias
     const String & getAlias() const
     {
         return alias;
     }
 
-    /// Set node alias value
+    /// Set node alias
     void setAlias(String alias_value)
     {
         alias = std::move(alias_value);
     }
 
-    /// Remove node alias value
+    /// Remove node alias
     void removeAlias()
     {
         alias = {};

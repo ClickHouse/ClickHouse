@@ -57,7 +57,7 @@ ASTPtr ArrayJoinNode::toASTImpl() const
     array_join_ast->expression_list = array_join_ast->children.back();
 
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    addTableExpressionIntoTablesInSelectQuery(tables_in_select_query_ast, children[table_expression_child_index]);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[table_expression_child_index]);
 
     auto array_join_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
     array_join_query_element_ast->children.push_back(std::move(array_join_ast));

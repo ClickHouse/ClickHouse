@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
+#include <Core/Field.h>
+
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
@@ -91,7 +94,7 @@ public:
     }
 
     /// Compute union projection
-    NamesAndTypesList computeProjectionColumns() const;
+    NamesAndTypes computeProjectionColumns() const;
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -99,6 +102,25 @@ public:
     }
 
     String getName() const override;
+
+    DataTypePtr getResultType() const override
+    {
+        if (constant_value)
+            return constant_value->getType();
+
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for non scalar union node");
+    }
+
+    /// Perform constant folding for scalar union node
+    void performConstantFolding(ConstantValuePtr constant_folded_value)
+    {
+        constant_value = std::move(constant_folded_value);
+    }
+
+    ConstantValuePtr getConstantValueOrNull() const override
+    {
+        return constant_value;
+    }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
@@ -118,6 +140,7 @@ private:
     SelectUnionMode union_mode;
     SelectUnionModes union_modes;
     SelectUnionModesSet union_modes_set;
+    ConstantValuePtr constant_value;
 
     static constexpr size_t queries_child_index = 0;
     static constexpr size_t children_size = queries_child_index + 1;

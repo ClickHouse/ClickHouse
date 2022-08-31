@@ -6,6 +6,10 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/TableNode.h>
 
 namespace DB
 {
@@ -82,7 +86,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -124,6 +128,58 @@ void addTableExpressionIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_a
                 table_expression->getNodeTypeName());
         }
     }
+}
+
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
+{
+    QueryTreeNodes result;
+
+    std::deque<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push_back(join_tree_node);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.front());
+        nodes_to_process.pop_front();
+
+        auto node_type = node_to_process->getNodeType();
+
+        switch (node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+                [[fallthrough]];
+            case QueryTreeNodeType::QUERY:
+                [[fallthrough]];
+            case QueryTreeNodeType::UNION:
+                [[fallthrough]];
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
+                nodes_to_process.push_back(array_join_node.getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = node_to_process->as<JoinNode &>();
+                nodes_to_process.push_back(join_node.getLeftTableExpression());
+                nodes_to_process.push_back(join_node.getRightTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
+                    node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
+    return result;
 }
 
 }

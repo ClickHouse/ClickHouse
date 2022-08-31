@@ -50,14 +50,14 @@ private:
   *
   * For column node column node identifier from planner context is used.
   */
-using QueryTreeNodeToName = std::unordered_map<const IQueryTreeNode *, String>;
-String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name);
+using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
+String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name);
 
 /** Calculate query tree expression node name action dag name.
   *
   * For column node column node identifier from planner context is used.
   */
-String calculateActionsDAGNodeName(const IQueryTreeNode * node, const PlannerContext & planner_context);
+String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context);
 
 
 }

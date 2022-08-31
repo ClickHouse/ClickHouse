@@ -41,7 +41,7 @@ public:
         const auto & global_planner_context = planner_context.getGlobalPlannerContext();
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
 
-        String set_key = global_planner_context->getSetKey(in_second_argument.get());
+        String set_key = global_planner_context->getSetKey(in_second_argument);
         auto prepared_set = global_planner_context->getSetOrNull(set_key);
 
         if (prepared_set)
@@ -55,6 +55,16 @@ public:
         {
             global_planner_context->registerSet(set_key, storage_set->getSet());
         }
+        else if (auto constant_value = in_second_argument->getConstantValueOrNull())
+        {
+            auto set = makeSetForConstantValue(
+                in_first_argument->getResultType(),
+                constant_value->getValue(),
+                constant_value->getType(),
+                settings);
+
+            global_planner_context->registerSet(set_key, std::move(set));
+        }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION)
         {
@@ -66,18 +76,6 @@ public:
             global_planner_context->registerSet(set_key, set);
             global_planner_context->registerSubqueryNodeForSet(set_key, SubqueryNodeForSet{in_second_argument, set});
         }
-        else if (in_second_argument_node_type == QueryTreeNodeType::CONSTANT)
-        {
-            auto & in_second_argument_constant_node = in_second_argument->as<ConstantNode &>();
-
-            auto set = makeSetForConstantValue(
-                in_first_argument->getResultType(),
-                in_second_argument_constant_node.getResultType(),
-                in_second_argument_constant_node.getConstantValue(),
-                settings);
-
-            global_planner_context->registerSet(set_key, std::move(set));
-        }
         else
         {
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -87,7 +85,8 @@ public:
 
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
-        return child_node->getNodeType() != QueryTreeNodeType::QUERY;
+        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY ||
+            child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
 };
 

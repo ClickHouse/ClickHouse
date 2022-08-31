@@ -115,6 +115,18 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 {
 }
 
+InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
+    const QueryTreeNodePtr & query_tree_,
+    const SelectQueryOptions & select_query_options_,
+    ContextPtr context_)
+    : WithContext(context_)
+    , query(query_tree_->toAST())
+    , query_tree(query_tree_)
+    , select_query_options(select_query_options_)
+    , planner(query_tree, select_query_options, context_)
+{
+}
+
 Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();

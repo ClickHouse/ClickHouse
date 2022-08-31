@@ -102,6 +102,12 @@ public:
         return !qualified_identifier.empty();
     }
 
+    /// Returns true if matcher is not qualified with identifier, false otherwise
+    bool isUnqualified() const
+    {
+        return qualified_identifier.empty();
+    }
+
     /// Get qualified identifier
     const Identifier & getQualifiedIdentifier() const
     {

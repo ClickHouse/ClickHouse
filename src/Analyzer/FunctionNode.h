@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/ConstantValue.h>
 
 namespace DB
 {
@@ -141,6 +142,17 @@ public:
       */
     void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, DataTypePtr result_type_value);
 
+    /// Perform constant folding for function node
+    void performConstantFolding(ConstantValuePtr constant_folded_value)
+    {
+        constant_value = std::move(constant_folded_value);
+    }
+
+    ConstantValuePtr getConstantValueOrNull() const override
+    {
+        return constant_value;
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::FUNCTION;
@@ -172,6 +184,7 @@ private:
     FunctionOverloadResolverPtr function;
     AggregateFunctionPtr aggregate_function;
     DataTypePtr result_type;
+    ConstantValuePtr constant_value;
 };
 
 }

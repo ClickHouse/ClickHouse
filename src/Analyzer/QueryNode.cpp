@@ -1,6 +1,7 @@
 #include <Analyzer/QueryNode.h>
 
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Core/NamesAndTypes.h>
 
@@ -28,29 +29,6 @@ QueryNode::QueryNode()
     children[projection_child_index] = std::make_shared<ListNode>();
     children[group_by_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
-}
-
-NamesAndTypesList QueryNode::computeProjectionColumns() const
-{
-    NamesAndTypes query_columns;
-
-    const auto & projection_nodes = getProjection();
-    query_columns.reserve(projection_nodes.getNodes().size());
-
-    for (const auto & projection_node : projection_nodes.getNodes())
-    {
-        auto column_type = projection_node->getResultType();
-        std::string column_name;
-
-        if (projection_node->hasAlias())
-            column_name = projection_node->getAlias();
-        else
-            column_name = projection_node->getName();
-
-        query_columns.emplace_back(column_name, column_type);
-    }
-
-    return {query_columns.begin(), query_columns.end()};
 }
 
 String QueryNode::getName() const
@@ -105,10 +83,31 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
 
+    if (constant_value)
+    {
+        buffer << ", constant_value: " << constant_value->getValue().dump();
+        buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    }
+
     if (hasWith())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "WITH\n";
         getWith().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (!projection_columns.empty())
+    {
+        buffer << '\n';
+        buffer << std::string(indent + 2, ' ') << "PROJECTION COLUMNS\n";
+
+        size_t projection_columns_size = projection_columns.size();
+        for (size_t i = 0; i < projection_columns_size; ++i)
+        {
+            const auto & projection_column = projection_columns[i];
+            buffer << std::string(indent + 4, ' ') << projection_column.name << " " << projection_column.type->getName();
+            if (i + 1 != projection_columns_size)
+                buffer << '\n';
+        }
     }
 
     buffer << '\n';
@@ -161,6 +160,13 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
+    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
+        return false;
+    else if (constant_value && !rhs_typed.constant_value)
+        return false;
+    else if (!constant_value && rhs_typed.constant_value)
+        return false;
+
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
         cte_name == rhs_typed.cte_name &&
@@ -178,6 +184,17 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
 
     state.update(is_distinct);
     state.update(is_limit_with_ties);
+
+    if (constant_value)
+    {
+        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
+        state.update(constant_dump.size());
+        state.update(constant_dump);
+
+        auto constant_value_type_name = constant_value->getType()->getName();
+        state.update(constant_value_type_name.size());
+        state.update(constant_value_type_name);
+    }
 }
 
 ASTPtr QueryNode::toASTImpl() const
@@ -191,7 +208,7 @@ ASTPtr QueryNode::toASTImpl() const
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, children[projection_child_index]->toAST());
 
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    addTableExpressionIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree());
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree());
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())
@@ -243,6 +260,8 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
     result_query_node->cte_name = cte_name;
+    result_query_node->projection_columns = projection_columns;
+    result_query_node->constant_value = constant_value;
 
     return result_query_node;
 }
