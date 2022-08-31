@@ -1,4 +1,4 @@
-name: ReleaseWorkflow
+name: PublishedReleaseCI
 # - Gets artifacts from S3
 # - Sends it to JFROG Artifactory
 # - Adds them to the release assets
