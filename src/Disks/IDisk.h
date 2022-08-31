@@ -102,8 +102,8 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>())
-        : executor(std::move(executor_))
+    explicit IDisk(std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
+        : executor(executor_)
     {
     }
 
@@ -193,6 +193,7 @@ public:
         const WriteSettings & settings = {}) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;
 
     /// Remove file if it exists.
@@ -220,16 +221,21 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-    virtual String getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
+    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
     virtual bool supportsCache() const { return false; }
+
+    virtual NameSet getCacheLayersNames() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getDataSourceDescription().type);
+    }
 
     /// Returns a list of storage objects (contains path, size, ...).
     /// (A list is returned because for Log family engines there might
     /// be multiple files in remote fs for single clickhouse file.
     virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getDataSourceDescription().type);
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
@@ -237,7 +243,7 @@ public:
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getDataSourceDescription().type);
     }
 
     /// Batch request to remove multiple files.
@@ -265,8 +271,8 @@ public:
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
-    /// Return disk type - "local", "s3", etc.
-    virtual DiskType getType() const = 0;
+    /// Return data source description
+    virtual DataSourceDescription getDataSourceDescription() const = 0;
 
     /// Involves network interaction.
     virtual bool isRemote() const = 0;
@@ -315,7 +321,7 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual MetadataStoragePtr getMetadataStorage();
+    virtual MetadataStoragePtr getMetadataStorage() = 0;
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
@@ -343,13 +349,22 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual DiskObjectStoragePtr createDiskObjectStorage(const String &)
+    /// Create disk object storage according to disk type.
+    /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
+    /// for DiskObjectStorage create just a copy.
+    virtual DiskObjectStoragePtr createDiskObjectStorage()
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            getType());
+            getDataSourceDescription().type);
     }
+
+    virtual bool supportsStat() const { return false; }
+    virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
+
+    virtual bool supportsChmod() const { return false; }
+    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
 protected:
     friend class DiskDecorator;
@@ -363,7 +378,7 @@ protected:
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
 private:
-    std::unique_ptr<Executor> executor;
+    std::shared_ptr<Executor> executor;
 };
 
 using Disks = std::vector<DiskPtr>;

@@ -1,12 +1,11 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Poco/TemporaryFile.h>
 #include <ranges>
 #include <filesystem>
+
 
 namespace DB
 {
@@ -248,6 +247,11 @@ void MetadataStorageFromDiskTransaction::writeStringToFile(
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
     addOperation(std::make_unique<SetLastModifiedOperation>(path, timestamp, *metadata_storage.getDisk()));
+}
+
+void MetadataStorageFromDiskTransaction::chmod(const String & path, mode_t mode)
+{
+    addOperation(std::make_unique<ChmodOperation>(path, mode, *metadata_storage.getDisk()));
 }
 
 void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path)

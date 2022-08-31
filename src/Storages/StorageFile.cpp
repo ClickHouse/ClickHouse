@@ -264,7 +264,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     /// in case of file descriptor we have a stream of data and we cannot
     /// start reading data from the beginning after reading some data for
     /// schema inference.
-    ReadBufferIterator read_buffer_iterator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
@@ -308,7 +308,11 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
             "table structure manually",
             format);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
+    std::optional<ColumnsDescription> columns_from_cache;
+    if (context->getSettingsRef().schema_inference_use_cache_for_file)
+        columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
+
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == paths.end())
             return nullptr;
@@ -316,7 +320,16 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         return createReadBuffer(*it++, false, "File", -1, compression_method, context);
     };
 
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
+    ColumnsDescription columns;
+    if (columns_from_cache)
+        columns = *columns_from_cache;
+    else
+        columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
+
+    if (context->getSettingsRef().schema_inference_use_cache_for_file)
+        addColumnsToCache(paths, columns, format, format_settings, context);
+
+    return columns;
 }
 
 bool StorageFile::supportsSubsetOfColumns() const
@@ -444,36 +457,24 @@ public:
 
     using FilesInfoPtr = std::shared_ptr<FilesInfo>;
 
-    static Block getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
+    static Block getBlockForSource(const Block & block_for_format, const FilesInfoPtr & files_info)
     {
-        auto header = metadata_snapshot->getSampleBlock();
-
-        /// Note: AddingDefaultsTransform doesn't change header.
-
-        if (need_path_column)
-            header.insert(
+        auto res = block_for_format;
+        if (files_info->need_path_column)
+        {
+            res.insert(
                 {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
                  std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                  "_path"});
-        if (need_file_column)
-            header.insert(
+        }
+        if (files_info->need_file_column)
+        {
+            res.insert(
                 {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
                  std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                  "_file"});
-
-        return header;
-    }
-
-    static Block getBlockForSource(
-        const StorageFilePtr & storage,
-        const StorageSnapshotPtr & storage_snapshot,
-        const ColumnsDescription & columns_description,
-        const FilesInfoPtr & files_info)
-    {
-        if (storage->supportsSubsetOfColumns())
-            return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-        else
-            return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
+        }
+        return res;
     }
 
     StorageFileSource(
@@ -483,13 +484,15 @@ public:
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_,
+        const Block & block_for_format_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : ISource(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
+        : ISource(getBlockForSource(block_for_format_, files_info_))
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
         , read_buf(std::move(read_buf_))
         , columns_description(std::move(columns_description_))
+        , block_for_format(block_for_format_)
         , context(context_)
         , max_block_size(max_block_size_)
     {
@@ -533,15 +536,8 @@ public:
                 if (!read_buf)
                     read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
-                auto get_block_for_format = [&]() -> Block
-                {
-                    if (storage->supportsSubsetOfColumns())
-                        return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-                    return storage_snapshot->metadata->getSampleBlock();
-                };
-
-                auto format = context->getInputFormat(
-                    storage->format_name, *read_buf, get_block_for_format(), max_block_size, storage->format_settings);
+                auto format
+                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));
@@ -627,6 +623,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     ColumnsDescription columns_description;
+    Block block_for_format;
 
     ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
     UInt64 max_block_size;
@@ -693,13 +690,30 @@ Pipe StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        const auto get_columns_for_format = [&]() -> ColumnsDescription
+        ColumnsDescription columns_description;
+        Block block_for_format;
+        if (supportsSubsetOfColumns())
         {
-            if (supportsSubsetOfColumns())
-                return storage_snapshot->getDescriptionForColumns(column_names);
-            else
-                return storage_snapshot->metadata->getColumns();
-        };
+            auto fetch_columns = column_names;
+            const auto & virtuals = getVirtuals();
+            std::erase_if(
+                fetch_columns,
+                [&](const String & col)
+                {
+                    return std::any_of(
+                        virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col) { return col == virtual_col.name; });
+                });
+
+            if (fetch_columns.empty())
+                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+            columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
+        }
+        else
+        {
+            columns_description = storage_snapshot->metadata->getColumns();
+        }
+
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
 
         /// In case of reading from fd we have to check whether we have already created
         /// the read buffer from it in Storage constructor (for schema inference) or not.
@@ -710,7 +724,14 @@ Pipe StorageFile::read(
             read_buffer = std::move(peekable_read_buffer_from_fd);
 
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, storage_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(read_buffer)));
+            this_ptr,
+            storage_snapshot,
+            context,
+            max_block_size,
+            files_info,
+            columns_description,
+            block_for_format,
+            std::move(read_buffer)));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -810,18 +831,37 @@ public:
 
     void consume(Chunk chunk) override
     {
+        std::lock_guard cancel_lock(cancel_mutex);
+        if (cancelled)
+            return;
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onCancel() override
+    {
+        std::lock_guard cancel_lock(cancel_mutex);
+        finalize();
+        cancelled = true;
     }
 
     void onException() override
     {
-        if (!writer)
-            return;
-        onFinish();
+        std::lock_guard cancel_lock(cancel_mutex);
+        finalize();
     }
 
     void onFinish() override
     {
+        std::lock_guard cancel_lock(cancel_mutex);
+        finalize();
+    }
+
+private:
+    void finalize()
+    {
+        if (!writer)
+            return;
+
         try
         {
             writer->finalize();
@@ -836,7 +876,6 @@ public:
         }
     }
 
-private:
     StorageMetadataPtr metadata_snapshot;
     String table_name_for_log;
 
@@ -854,6 +893,9 @@ private:
     ContextPtr context;
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
+
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -1192,4 +1234,48 @@ NamesAndTypesList StorageFile::getVirtuals() const
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
+
+SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
+{
+    static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_file", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+    return schema_cache;
+}
+
+std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(
+    const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context)
+{
+    /// Check if the cache contains one of the paths.
+    auto & schema_cache = getSchemaCache(context);
+    struct stat file_stat{};
+    for (const auto & path : paths)
+    {
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        {
+            if (0 != stat(path.c_str(), &file_stat))
+                return std::nullopt;
+
+            return file_stat.st_mtime;
+        };
+
+        auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);
+        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
+        if (columns)
+            return columns;
+    }
+
+    return std::nullopt;
+}
+
+void StorageFile::addColumnsToCache(
+    const Strings & paths,
+    const ColumnsDescription & columns,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
+{
+    auto & schema_cache = getSchemaCache(context);
+    auto cache_keys = getKeysForSchemaCache(paths, format_name, format_settings, context);
+    schema_cache.addMany(cache_keys, columns);
+}
+
 }

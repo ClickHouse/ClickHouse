@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/select/join
 sidebar_label: JOIN
 ---
 

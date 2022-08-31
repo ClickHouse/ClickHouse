@@ -2,6 +2,8 @@
 
 #if USE_AWS_S3
 
+#include <IO/S3Common.h>
+
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
@@ -24,9 +26,8 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
-#include <Common/IFileCache.h>
-#include <Common/FileCacheFactory.h>
 #include <Common/getRandomASCIIString.h>
+
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 
@@ -89,7 +90,7 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
 
 std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    return getRandomASCIIString(32);
 }
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
@@ -115,23 +116,6 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
     return true;
 }
 
-String S3ObjectStorage::getCacheBasePath() const
-{
-    if (!cache)
-        return "";
-
-    return cache->getBasePath();
-}
-
-void S3ObjectStorage::removeCacheIfExists(const std::string & path_key)
-{
-    if (!cache || path_key.empty())
-        return;
-
-    IFileCache::Key key = cache->hash(path_key);
-    cache->removeIfExists(key);
-}
-
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
     const ReadSettings & read_settings,
@@ -144,12 +128,26 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto settings_ptr = s3_settings.get();
 
-    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        client.get(),
-        bucket,
-        version_id,
+    auto read_buffer_creator =
+        [this, settings_ptr, disk_read_settings]
+        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_shared<ReadBufferFromS3>(
+            client.get(),
+            bucket,
+            path,
+            version_id,
+            settings_ptr->s3_settings.max_single_read_retries,
+            disk_read_settings,
+            /* use_external_buffer */true,
+            /* offset */0,
+            read_until_position,
+            /* restricted_seek */true);
+    };
+
+    auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
         objects,
-        settings_ptr->s3_settings.max_single_read_retries,
         disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
@@ -193,10 +191,6 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    bool cache_on_write = cache
-         && write_settings.enable_filesystem_cache_on_write_operations
-         && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
-
     auto settings_ptr = s3_settings.get();
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
@@ -206,9 +200,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         attributes,
         buf_size,
         threadPoolCallbackRunner(getThreadPoolWriter()),
-        disk_write_settings,
-        cache_on_write ? cache : nullptr);
-
+        disk_write_settings);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(
         std::move(s3_buffer), std::move(finalize_callback), object.absolute_path);
@@ -380,6 +372,15 @@ void S3ObjectStorage::copyObjectImpl(
     }
 
     throwIfError(outcome);
+
+    auto settings_ptr = s3_settings.get();
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObjectMultipartImpl(
@@ -461,6 +462,14 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
         throwIfError(outcome);
     }
+
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObject( // NOLINT
@@ -479,19 +488,6 @@ void S3ObjectStorage::copyObject( // NOLINT
         copyObjectImpl(
             bucket, object_from.absolute_path, bucket, object_to.absolute_path, head, object_to_attributes);
     }
-}
-
-ReadSettings S3ObjectStorage::patchSettings(const ReadSettings & read_settings) const
-{
-    ReadSettings settings{read_settings};
-    if (cache)
-    {
-        if (IFileCache::isReadOnly())
-            settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
-        settings.remote_fs_cache = cache;
-    }
-    return IObjectStorage::patchSettings(settings);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
@@ -535,7 +531,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         getClient(config, config_prefix, context),
         getSettings(config, config_prefix, context),
-        version_id, s3_capabilities, new_namespace, nullptr);
+        version_id, s3_capabilities, new_namespace,
+        S3::URI(Poco::URI(config.getString(config_prefix + ".endpoint"))).endpoint);
 }
 
 }

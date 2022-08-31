@@ -78,7 +78,7 @@ DataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_rel
     auto new_data_part = storage.createPart(name, new_type, info, new_data_part_storage);
 
     new_data_part->uuid = uuid;
-    new_data_part->setColumns(columns);
+    new_data_part->setColumns(columns, {});
     new_data_part->partition.value = partition.value;
     new_data_part->minmax_idx = minmax_idx;
 
@@ -118,7 +118,7 @@ DataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_rel
             auto projection_data_part
                 = storage.createPart(projection_name, projection_type, projection_info, projection_part_storage_builder->getStorage(), parent_part);
             projection_data_part->is_temp = false; // clean up will be done on parent part
-            projection_data_part->setColumns(projection->getColumns());
+            projection_data_part->setColumns(projection->getColumns(), {});
 
             projection_part_storage_builder->createDirectories();
             const auto & desc = projections.get(name);
