@@ -59,6 +59,24 @@ String FileCache::getPathInLocalCache(const Key & key) const
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
 }
 
+void FileCache::removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) const
+{
+    /// Note: it is guaranteed that there is no concurrency here with files deletion
+    /// because cache key directories are create only in FileCache class under cache_lock.
+
+    auto key_str = key.toString();
+    auto key_prefix_path = fs::path(cache_base_path) / key_str.substr(0, 3);
+    auto key_path = key_prefix_path / key_str;
+
+    if (!fs::exists(key_path))
+        return;
+
+    fs::remove_all(key_path);
+
+    if (fs::is_empty(key_prefix_path))
+        fs::remove(key_prefix_path);
+}
+
 static bool isQueryInitialized()
 {
     return CurrentThread::isInitialized()
@@ -174,15 +192,8 @@ FileSegments FileCache::getImpl(
     const auto & file_segments = it->second;
     if (file_segments.empty())
     {
-        auto key_path = getPathInLocalCache(key);
-
         files.erase(key);
-
-        /// Note: it is guaranteed that there is no concurrency with files deletion,
-        /// because cache files are deleted only inside FileCache and under cache lock.
-        if (fs::exists(key_path))
-            fs::remove_all(key_path);
-
+        removeKeyDirectoryIfExists(key, cache_lock);
         return {};
     }
 
@@ -827,14 +838,10 @@ void FileCache::removeIfExists(const Key & key)
         }
     }
 
-    auto key_path = getPathInLocalCache(key);
-
     if (!some_cells_were_skipped)
     {
         files.erase(key);
-
-        if (fs::exists(key_path))
-            fs::remove_all(key_path);
+        removeKeyDirectoryIfExists(key, cache_lock);
     }
 }
 
@@ -924,12 +931,8 @@ void FileCache::remove(
 
             if (is_initialized && offsets.empty())
             {
-                auto key_path = getPathInLocalCache(key);
-
                 files.erase(key);
-
-                if (fs::exists(key_path))
-                    fs::remove_all(key_path);
+                removeKeyDirectoryIfExists(key, cache_lock);
             }
         }
         catch (...)
