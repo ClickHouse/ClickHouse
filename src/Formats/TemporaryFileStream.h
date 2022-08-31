@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// To read the data that was flushed into the temporary data file.
-struct TemporaryFileStream
+struct TemporaryFileStreamLegacy
 {
     struct Stat
     {
@@ -22,8 +22,8 @@ struct TemporaryFileStream
     CompressedReadBuffer compressed_in;
     std::unique_ptr<NativeReader> block_in;
 
-    explicit TemporaryFileStream(const std::string & path);
-    TemporaryFileStream(const std::string & path, const Block & header_);
+    explicit TemporaryFileStreamLegacy(const std::string & path);
+    TemporaryFileStreamLegacy(const std::string & path, const Block & header_);
 
     /// Flush data from input stream into file for future reading
     static Stat write(const std::string & path, const Block & header, QueryPipelineBuilder builder, const std::string & codec);

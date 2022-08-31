@@ -53,33 +53,24 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        SourceFromNativeStream(const Block & header, const std::string & path)
-                : ISource(header), file_in(path), compressed_in(file_in),
-                  block_in(std::make_unique<NativeReader>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
-        {
-        }
+        SourceFromNativeStream(const TemporaryFileStreamPtr & tmp_stream_)
+            : ISource(tmp_stream_->getHeader())
+            , tmp_stream(tmp_stream_)
+        {}
 
         String getName() const override { return "SourceFromNativeStream"; }
 
         Chunk generate() override
         {
-            if (!block_in)
-                return {};
-
-            auto block = block_in->read();
+            auto block = tmp_stream->read();
             if (!block)
-            {
-                block_in.reset();
                 return {};
-            }
 
             return convertToChunk(block);
         }
 
     private:
-        ReadBufferFromFile file_in;
-        CompressedReadBuffer compressed_in;
-        std::unique_ptr<NativeReader> block_in;
+        const TemporaryFileStreamPtr & tmp_stream;
     };
 }
 
@@ -577,7 +568,7 @@ void AggregatingTransform::initGenerate()
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
         return;
 
-    if (!params->aggregator.hasTemporaryFiles())
+    if (!params->aggregator.hasTemporaryData())
     {
         auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
         auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
@@ -604,15 +595,15 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        const auto & files = params->aggregator.getTemporaryFiles();
+        const auto & tmp_data = params->aggregator.getTemporaryData();
         Pipe pipe;
 
         {
             auto header = params->aggregator.getHeader(false);
             Pipes pipes;
 
-            for (const auto & file : files.files)
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(header, file->path())));
+            for (const auto & tmp_stream : tmp_data.getStreams())
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
 
             pipe = Pipe::unitePipes(std::move(pipes));
         }
