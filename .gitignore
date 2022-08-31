@@ -58,10 +58,6 @@ cmake_install.cmake
 CTestTestfile.cmake
 *.a
 *.o
-*.so
-*.dll
-*.lib
-*.dylib
 cmake-build-*
 
 # Python cache
