@@ -187,13 +187,13 @@ CI_CONFIG = {
     "tests_config": {
         # required_build - build name for artifacts
         # force_tests - force success status for tests
-        "Stateful tests (address)": {
+        "Stateful tests (asan)": {
             "required_build": "package_asan",
         },
-        "Stateful tests (thread)": {
+        "Stateful tests (tsan)": {
             "required_build": "package_tsan",
         },
-        "Stateful tests (memory)": {
+        "Stateful tests (msan)": {
             "required_build": "package_msan",
         },
         "Stateful tests (ubsan)": {
@@ -214,13 +214,13 @@ CI_CONFIG = {
         "Stateful tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
-        "Stateless tests (address)": {
+        "Stateless tests (asan)": {
             "required_build": "package_asan",
         },
-        "Stateless tests (thread)": {
+        "Stateless tests (tsan)": {
             "required_build": "package_tsan",
         },
-        "Stateless tests (memory)": {
+        "Stateless tests (msan)": {
             "required_build": "package_msan",
         },
         "Stateless tests (ubsan)": {
@@ -247,16 +247,16 @@ CI_CONFIG = {
         "Stateless tests (release, s3 storage)": {
             "required_build": "package_release",
         },
-        "Stress test (address)": {
+        "Stress test (asan)": {
             "required_build": "package_asan",
         },
-        "Stress test (thread)": {
+        "Stress test (tsan)": {
             "required_build": "package_tsan",
         },
-        "Stress test (undefined)": {
+        "Stress test (ubsan)": {
             "required_build": "package_ubsan",
         },
-        "Stress test (memory)": {
+        "Stress test (msan)": {
             "required_build": "package_msan",
         },
         "Stress test (debug)": {
@@ -265,13 +265,13 @@ CI_CONFIG = {
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
-        "Integration tests (thread)": {
+        "Integration tests (tsan)": {
             "required_build": "package_tsan",
         },
         "Integration tests (release)": {
             "required_build": "package_release",
         },
-        "Integration tests (memory)": {
+        "Integration tests (msan)": {
             "required_build": "package_msan",
         },
         "Integration tests flaky check (asan)": {
@@ -313,7 +313,7 @@ CI_CONFIG = {
         "AST fuzzer (UBSan)": {
             "required_build": "package_ubsan",
         },
-        "Stateless tests flaky check (address)": {
+        "Stateless tests flaky check (asan)": {
             "required_build": "package_asan",
         },
         "ClickHouse Keeper Jepsen": {
