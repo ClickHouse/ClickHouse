@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/table-functions/odbc
 sidebar_position: 44
 sidebar_label: odbc
 ---

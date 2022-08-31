@@ -34,18 +34,17 @@ public:
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
-        DiskType disk_type_,
         bool send_metadata_,
         uint64_t thread_pool_size_);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    DiskType getType() const override { return disk_type; }
+    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
 
     bool supportZeroCopyReplication() const override { return true; }
 
-    bool supportParallelWrite() const override { return true; }
+    bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
     const String & getName() const override { return name; }
 
@@ -55,7 +54,7 @@ public:
 
     void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
-    std::string getCacheBasePath() const override
+    const std::string & getCacheBasePath() const override
     {
         return object_storage->getCacheBasePath();
     }
@@ -154,6 +153,8 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
@@ -164,9 +165,37 @@ public:
 
     UInt64 getRevision() const override;
 
-    DiskObjectStoragePtr createDiskObjectStorage(const String & name_) override;
+    DiskObjectStoragePtr createDiskObjectStorage() override;
 
     bool supportsCache() const override;
+
+    /// Is object storage read only?
+    /// For example: WebObjectStorage is read only as it allows to read from a web server
+    /// with static files, so only read-only operations are allowed for this storage.
+    bool isReadOnly() const override;
+
+    /// Add a cache layer.
+    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// There can be any number of cache layers:
+    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
+    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+
+    /// Get structure of object storage this disk works with. Examples:
+    /// DiskObjectStorage(S3ObjectStorage)
+    /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
+    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
+
+    /// Get names of all cache layers. Name is how cache is defined in configuration file.
+    NameSet getCacheLayersNames() const override;
+
+    static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
+
+    bool supportsStat() const override { return metadata_storage->supportsStat(); }
+    struct stat stat(const String & path) const override;
+
+    bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
+    void chmod(const String & path, mode_t mode) override;
 
 private:
 
@@ -178,7 +207,6 @@ private:
     const String object_storage_root_path;
     Poco::Logger * log;
 
-    const DiskType disk_type;
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 

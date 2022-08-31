@@ -101,6 +101,10 @@ void registerProtobufSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<ProtobufSchemaReader>(settings);
     });
+
+    for (const auto & name : {"Protobuf", "ProtobufSingle"})
+        factory.registerAdditionalInfoForSchemaCacheGetter(
+            name, [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 }

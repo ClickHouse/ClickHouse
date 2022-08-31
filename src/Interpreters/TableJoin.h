@@ -5,10 +5,10 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Storages/IKVStorage.h>
+#include <Interpreters/IKeyValueEntity.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -28,10 +28,10 @@ class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
-class DictionaryReader;
+class DictionaryJoinAdapter;
 class StorageJoin;
 class StorageDictionary;
-class IKeyValueStorage;
+class IKeyValueEntity;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -140,10 +140,9 @@ private:
 
     std::shared_ptr<StorageJoin> right_storage_join;
 
-    std::shared_ptr<StorageDictionary> right_storage_dictionary;
-    std::shared_ptr<DictionaryReader> dictionary_reader;
+    std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    std::shared_ptr<IKeyValueStorage> right_kv_storage;
+    std::string right_storage_name;
 
     Names requiredJoinedNames() const;
 
@@ -301,18 +300,18 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
-    void setStorageJoin(std::shared_ptr<IKeyValueStorage> storage);
+    /// Remember storage name in case of joining with dictionary or another special storage
+    void setRightStorageName(const std::string & storage_name);
+    const std::string & getRightStorageName() const;
+
+    void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
-    void setStorageJoin(std::shared_ptr<StorageDictionary> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
 
-    bool tryInitDictJoin(const Block & sample_block, ContextPtr context);
+    bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
-    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join || right_kv_storage; }
-    const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
-
-    std::shared_ptr<IKeyValueStorage> getStorageKeyValue() { return right_kv_storage; }
+    std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 };
 
 }

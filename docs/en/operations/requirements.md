@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/requirements
 sidebar_position: 44
 sidebar_label: Requirements
 ---

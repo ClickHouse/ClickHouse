@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/alter/ttl
 sidebar_position: 44
 sidebar_label: TTL
 ---
@@ -34,7 +35,7 @@ CREATE TABLE table_with_ttl
 )
 ENGINE MergeTree()
 ORDER BY tuple()
-TTL event_time + INTERVAL 3 MONTH;
+TTL event_time + INTERVAL 3 MONTH
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO table_with_ttl VALUES (now(), 1, 'username1');
