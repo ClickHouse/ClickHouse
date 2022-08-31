@@ -1,6 +1,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
+#include <Storages/MutationCommands.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -10,11 +11,15 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
 
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/MutationsInterpreter.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -190,6 +195,54 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
     initDB();
+}
+
+void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::Type::DELETE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only DELETE mutation supported for EmbeddedRocksDB");
+    }
+}
+
+void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPtr context_)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
+
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, true, /*return_deleted_row*/ true);
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+    PullingPipelineExecutor executor(pipeline);
+
+    Block block;
+    while (executor.pull(block))
+    {
+        auto column_it = std::find_if(block.begin(), block.end(), [&](const auto & column) { return column.name == primary_key; });
+        assert(column_it != block.end());
+
+        auto column = column_it->column;
+        auto size = column->size();
+
+        rocksdb::WriteBatch batch;
+        WriteBufferFromOwnString wb_key;
+        for (size_t i = 0; i < size; ++i)
+        {
+            wb_key.restart();
+
+            column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key);
+            auto status = batch.Delete(wb_key.str());
+            if (!status.ok())
+                throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+
+        }
+
+        auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+        if (!status.ok())
+            throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+    }
+
 }
 
 void StorageEmbeddedRocksDB::initDB()
