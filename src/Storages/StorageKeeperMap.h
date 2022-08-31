@@ -30,7 +30,8 @@ public:
         bool attach,
         std::string_view primary_key_,
         const std::string & root_path_,
-        bool create_missing_root_path);
+        bool create_missing_root_path,
+        UInt64 keys_limit_);
 
     Pipe read(
         const Names & column_names,
@@ -62,12 +63,11 @@ public:
         return node->getColumnName() == primary_key;
     }
 
-    zkutil::ZooKeeperPtr & getClient() const;
+    zkutil::ZooKeeperPtr getClient() const;
     const std::string & rootKeeperPath() const;
     std::string fullPathForKey(std::string_view key) const;
 
-    const std::string & lockPath() const;
-    std::optional<bool> isTableValid() const;
+    UInt64 keysLimit() const;
 
     template <bool throw_on_error>
     void checkTable() const
@@ -103,6 +103,8 @@ public:
 private:
     bool removeMetadataNodes(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
 
+    std::optional<bool> isTableValid() const;
+
     const std::string root_path;
     std::string primary_key;
 
@@ -115,6 +117,8 @@ private:
     std::string dropped_lock_path;
 
     std::string zookeeper_name;
+
+    uint64_t keys_limit{0};
 
     mutable std::mutex zookeeper_mutex;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
