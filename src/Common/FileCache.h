@@ -140,7 +140,9 @@ private:
     bool enable_filesystem_query_cache_limit;
 
     Poco::Logger * log;
+
     bool is_initialized = false;
+    std::exception_ptr initialization_exception;
 
     mutable std::mutex mutex;
 
@@ -151,6 +153,10 @@ private:
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock);
+
+    void remove(
+        FileSegmentPtr file_segment,
+        std::lock_guard<std::mutex> & cache_lock);
 
     bool isLastFileSegmentHolder(
         const Key & key,
@@ -164,7 +170,7 @@ private:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock);
 
-    void assertInitialized() const;
+    void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 
     struct FileSegmentCell : private boost::noncopyable
     {
@@ -220,7 +226,7 @@ private:
         bool is_persistent,
         std::lock_guard<std::mutex> & cache_lock);
 
-    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const;
+    static void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserveForMainList(
         const Key & key,
