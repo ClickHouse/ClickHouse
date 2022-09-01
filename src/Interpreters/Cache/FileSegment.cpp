@@ -478,7 +478,14 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset, size_t max_wait_
 
     LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded", offset);
 
-    shared_future->wait_for(std::chrono::seconds(max_wait_seconds));
+    auto wait_result = shared_future->wait_for(std::chrono::seconds(max_wait_seconds));
+    if (wait_result != std::future_status::ready)
+    {
+        LOG_DEBUG(
+            log,
+            "Timeout ({} sec) for waiting background download exceeded, will continue without cache",
+            max_wait_seconds);
+    }
 
     LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded is finished", offset);
 }
@@ -1544,7 +1551,8 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set a downloader. ({})", file_segment->getInfoForLog());
 
     SCOPE_EXIT({
-        file_segment->resetDownloader();
+        if (file_segment->isDownloader())
+            file_segment->resetDownloader();
     });
 
     bool reserved = file_segment->reserve(size);
@@ -1561,7 +1569,9 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         return false;
     }
 
-    (*current_file_segment_it)->write(data, size, offset);
+    file_segment->write(data, size, offset);
+    file_segment->completePartAndResetDownloader();
+
     current_file_segment_write_offset += size;
 
     return true;

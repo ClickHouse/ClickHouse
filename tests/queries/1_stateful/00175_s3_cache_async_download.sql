@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-random-settings
 
-SET filesystem_cache_asynchronous_write=1;
+SET enable_filesystem_cache_asynchronous_write=1;
 SET enable_filesystem_cache_on_write_operations=0;
 SET max_memory_usage='20G';
 SYSTEM DROP FILESYSTEM CACHE;

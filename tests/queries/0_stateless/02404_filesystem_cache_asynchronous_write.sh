@@ -22,7 +22,7 @@ SETTINGS enable_filesystem_cache_on_write_operations = 0;
 """
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
-SET filesystem_cache_asynchronous_write=1;
+SET enable_filesystem_cache_asynchronous_write=1;
 SET max_threads=42;
 SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null;
 """
@@ -30,7 +30,7 @@ SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%'
 function query()
 {
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
-SET filesystem_cache_asynchronous_write=1;
+SET enable_filesystem_cache_asynchronous_write=1;
 SET max_threads=42;
 SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null SETTINGS max_query_cache_size=5242880;
 SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null SETTINGS max_query_cache_size=5242880;
