@@ -411,12 +411,12 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 {
     checkTable<true>();
     auto client = getClient();
-    client->tryRemoveChildrenRecursive(root_path, true, getBaseName(metadata_path));
+    client->tryRemoveChildrenRecursive(root_path, true, zkutil::RemoveException{getBaseName(metadata_path), /*remove_subtree_*/ false});
 }
 
 bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
 {
-    zookeeper->removeChildrenRecursive(root_path, getBaseName(metadata_path));
+    zookeeper->removeChildrenRecursive(root_path, zkutil::RemoveException{getBaseName(metadata_path), /*remove_subtree_*/ false});
 
     bool completely_removed = false;
     Coordination::Requests ops;

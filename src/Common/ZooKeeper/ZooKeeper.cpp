@@ -720,7 +720,7 @@ void ZooKeeper::removeChildren(const std::string & path)
 }
 
 
-void ZooKeeper::removeChildrenRecursive(const std::string & path, const std::string_view keep_child_node)
+void ZooKeeper::removeChildrenRecursive(const std::string & path, RemoveException keep_child)
 {
     Strings children = getChildren(path);
     while (!children.empty())
@@ -728,18 +728,23 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const std::str
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+            if (keep_child.path.empty() || keep_child.path != children.back()) [[likely]]
             {
                 removeChildrenRecursive(fs::path(path) / children.back());
                 ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
             }
+            else if (keep_child.remove_subtree)
+            {
+                removeChildrenRecursive(fs::path(path) / children.back());
+            }
+
             children.pop_back();
         }
         multi(ops);
     }
 }
 
-bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probably_flat, const std::string_view keep_child_node)
+bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probably_flat, RemoveException keep_child)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
@@ -756,7 +761,7 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
         {
             String child_path = fs::path(path) / children.back();
 
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+            if (keep_child.path.empty() || keep_child.path != children.back()) [[likely]]
             {
                 /// Will try to avoid recursive getChildren calls if child_path probably has no children.
                 /// It may be extremely slow when path contain a lot of leaf children.
@@ -765,6 +770,10 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
 
                 batch.push_back(child_path);
                 ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
+            }
+            else if (keep_child.remove_subtree && !probably_flat)
+            {
+                tryRemoveChildrenRecursive(child_path);
             }
 
             children.pop_back();
