@@ -37,7 +37,6 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
     bool save_marks_in_cache_,
     const ReadSettings & read_settings_,
-    ThreadPool * load_marks_threadpool_,
     size_t columns_in_mark_)
     : data_part_storage(std::move(data_part_storage_))
     , mark_cache(mark_cache_)
@@ -47,9 +46,8 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     , save_marks_in_cache(save_marks_in_cache_)
     , columns_in_mark(columns_in_mark_)
     , read_settings(read_settings_)
-    , load_marks_threadpool(load_marks_threadpool_)
 {
-    if (load_marks_threadpool)
+    if (read_settings_.load_marks_asynchronously)
     {
         future = loadMarksAsync();
     }
@@ -62,6 +60,16 @@ MergeTreeMarksLoader::~MergeTreeMarksLoader()
         future.wait();
     }
 }
+
+std::shared_ptr<ThreadPool> MergeTreeMarksLoader::getLoadMarksThreadpool()
+{
+    constexpr size_t pool_size = 50;
+    constexpr size_t queue_size = 1000000;
+    static std::shared_ptr<ThreadPool> load_marks_threadpool = std::make_shared<ThreadPool>(pool_size, pool_size, queue_size);
+
+    return load_marks_threadpool;
+}
+
 
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
@@ -193,7 +201,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     });
 
     auto task_future = task->get_future();
-    load_marks_threadpool->scheduleOrThrow([task]{ (*task)(); });
+    getLoadMarksThreadpool()->scheduleOrThrow([task]{ (*task)(); });
     return task_future;
 }
 

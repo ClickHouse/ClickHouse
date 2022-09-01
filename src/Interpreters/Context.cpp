@@ -215,7 +215,6 @@ struct ContextSharedPart
     std::unique_ptr<AccessControl> access_control;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
-    mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -1710,18 +1709,6 @@ void Context::dropMarkCache() const
     auto lock = getLock();
     if (shared->mark_cache)
         shared->mark_cache->reset();
-}
-
-ThreadPool & Context::getLoadMarksThreadpool() const
-{
-    auto lock = getLock();
-    if (!shared->load_marks_threadpool)
-    {
-        constexpr size_t pool_size = 50;
-        constexpr size_t queue_size = 1000000;
-        shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
-    }
-    return *shared->load_marks_threadpool;
 }
 
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)

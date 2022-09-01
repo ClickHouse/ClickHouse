@@ -22,7 +22,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_,
-    ThreadPool * load_marks_cache_threadpool_,
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
@@ -43,7 +42,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           data_part->index_granularity_info,
           settings.save_marks_in_cache,
           settings.read_settings,
-          load_marks_cache_threadpool_,
           data_part->getColumns().size())
 {
     try
