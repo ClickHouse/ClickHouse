@@ -56,7 +56,7 @@ public:
     bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0, bool enable_tracing_context_propagation = true);
+    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -113,7 +113,7 @@ private:
     std::exception_ptr first_exception;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool enable_tracing_context_propagation = true);
+    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -156,14 +156,18 @@ public:
 
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
+  *
+  * NOTE: User code should use 'ThreadFromGlobalPool' declared below instead of directly using this class.
+  *
   */
-class ThreadFromGlobalPool : boost::noncopyable
+template <bool propagate_opentelemetry_context = true>
+class ThreadFromGlobalPoolImpl : boost::noncopyable
 {
 public:
-    ThreadFromGlobalPool() = default;
+    ThreadFromGlobalPoolImpl() = default;
 
     template <typename Function, typename... Args>
-    explicit ThreadFromGlobalPool(Function && func, Args &&... args)
+    explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
         : state(std::make_shared<State>())
     {
         /// NOTE:
@@ -187,15 +191,19 @@ public:
             /// before sending signal that permits to join this thread.
             DB::ThreadStatus thread_status;
             std::apply(function, arguments);
-        });
+        },
+        0, // default priority
+        0, // default wait_microseconds
+        propagate_opentelemetry_context
+        );
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPoolImpl & operator=(ThreadFromGlobalPoolImpl && rhs) noexcept
     {
         if (initialized())
             abort();
@@ -203,7 +211,7 @@ public:
         return *this;
     }
 
-    ~ThreadFromGlobalPool()
+    ~ThreadFromGlobalPoolImpl()
     {
         if (initialized())
             abort();
@@ -256,72 +264,19 @@ protected:
     }
 };
 
-/// This class is used by ThreadPool only to allocate threads in GlobalThreadPool.
-/// Any user code should use ThreadFromGlobalPool instead of this class to schedule a job in a thread.
-///
-/// The difference between this class and ThreadFromGlobalPool is that this class disables the tracing context propagation to underlying thread.
-/// If the context is propagated, not only the underlying worker will restore context but also the worker of ThreadPool.
-///
-/// Since workers of ThreadPool won't exit until the ThreadPool is destroyed, the context restored by underlying worker won't be deleted for a very long time
-/// which would cause wrong contexts for jobs for ThreadPool
-///
-class Thread4ThreadPool : public ThreadFromGlobalPool
-{
-public:
-    Thread4ThreadPool() = default;
-
-    template <typename Function, typename... Args>
-    explicit Thread4ThreadPool(Function && func, Args &&... args)
-    {
-        state = std::make_shared<State>();
-
-        /// NOTE:
-        /// - If this will throw an exception, the destructor won't be called
-        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
-        GlobalThreadPool::instance().scheduleOrThrow([
-            state = state,
-            func = std::forward<Function>(func),
-            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
-        {
-            SCOPE_EXIT(state->event.set());
-
-            state->thread_id = std::this_thread::get_id();
-
-            /// This moves are needed to destroy function and arguments before exit.
-            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(func);
-            auto arguments = std::move(args);
-
-            /// Thread status holds raw pointer on query context, thus it always must be destroyed
-            /// before sending signal that permits to join this thread.
-            DB::ThreadStatus thread_status;
-            std::apply(function, arguments);
-        },
-
-        // default priority
-        0,
-
-        // default wait_microseconds
-        0,
-
-        /// Disable tracing context propagation on underlying thread pool because ThreadPool already has kept the context in its jobs.
-        false
-        );
-    }
-
-    Thread4ThreadPool(Thread4ThreadPool && rhs) noexcept
-    {
-        *this = std::move(rhs);
-    }
-
-    Thread4ThreadPool & operator=(Thread4ThreadPool && rhs) noexcept
-    {
-        if (initialized())
-            abort();
-        state = std::move(rhs.state);
-        return *this;
-    }
-};
-
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
-using ThreadPool = ThreadPoolImpl<Thread4ThreadPool>;
+///
+/// The template parameter of ThreadFromGlobalPool is set to false to disable tracing context propagation to underlying worker.
+/// Because ThreadFromGlobalPool schedules a job upon GlobalThreadPool, this means there will be two workers to schedule a job in 'ThreadPool',
+/// one is at GlobalThreadPool level, the other is at ThreadPool level, so tracing context will be initialized on the same thread twice.
+///
+/// Once the worker on ThreadPool gains the control of execution, it won't return until it's shutdown,
+/// which means the tracing context initialized at underlying worker level won't be delete for a very long time.
+/// This would cause wrong context for further jobs scheduled in ThreadPool.
+///
+/// To make sure the tracing context are correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
+///
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
+
+/// An alias for user code to execute a job in the global thread pool
+using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
