@@ -247,6 +247,7 @@ add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
+add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -569,10 +570,6 @@ if (TARGET ch_contrib::rapidjson)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
-
-if (TARGET ch_contrib::annoy)
-    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
-endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
