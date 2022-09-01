@@ -1,16 +1,15 @@
 -- { echo }
+
+set intersect_default_mode = 'DISTINCT';
+set except_default_mode = 'DISTINCT';
 select 1 intersect select 1;
 1
 select 2 intersect select 1;
 select 1 except select 1;
 select 2 except select 1;
 2
-select number from numbers(20) intersect select number from numbers(5, 5);
+select 5 from numbers(20) intersect select number from numbers(5, 5);
 5
-6
-7
-8
-9
 select number from numbers(10) except select number from numbers(5);
 5
 6
@@ -35,16 +34,9 @@ select 1 intersect select 1 except select 2 intersect select 1 except select 3 i
 select 1 intersect select 1 except select 2 intersect select 1 except select 3 intersect select 2;
 1
 select 1 intersect select 1 except select 2 intersect select 1 except select 3 intersect select 2 except select 1;
-select number from numbers(10) except select 5;
+select number%3 from numbers(10) except select 1;
 0
-1
 2
-3
-4
-6
-7
-8
-9
 select number from numbers(100) intersect select number from numbers(20, 60) except select number from numbers(30, 20) except select number from numbers(60, 20);
 20
 21
@@ -116,23 +108,23 @@ select 1 union all select 2  except (select 2 except select 1 union all select 1
 select 1 intersect select count() from (select 1 except select 2 intersect select 2 union all select 1);
 explain syntax select 1 intersect select 1;
 SELECT 1
-INTERSECT ALL
+INTERSECT DISTINCT
 SELECT 1
 explain syntax select 1 except select 1;
 SELECT 1
-EXCEPT ALL
+EXCEPT DISTINCT
 SELECT 1
 explain syntax select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
 SELECT 1
 UNION ALL
 SELECT 2
-EXCEPT ALL
+EXCEPT DISTINCT
 SELECT 2
-EXCEPT ALL
+EXCEPT DISTINCT
 SELECT 1
 UNION ALL
 SELECT 1
-EXCEPT ALL
+EXCEPT DISTINCT
 SELECT 4
 set limit=1;
 select 1 intersect select 1;
