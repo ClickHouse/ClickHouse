@@ -1,1 +1,0 @@
-../../../../en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-polygon.md
