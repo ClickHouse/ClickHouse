@@ -13,11 +13,11 @@
 
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
-#include <Common/FileCache_fwd.h>
-#include <Common/FileSegment.h>
-#include <Common/IFileCachePriority.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <Common/logger_useful.h>
-#include <Common/FileCacheType.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 
 namespace DB
 {
@@ -140,7 +140,9 @@ private:
     bool enable_filesystem_query_cache_limit;
 
     Poco::Logger * log;
+
     bool is_initialized = false;
+    std::exception_ptr initialization_exception;
 
     mutable std::mutex mutex;
 
@@ -151,6 +153,10 @@ private:
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock);
+
+    void remove(
+        FileSegmentPtr file_segment,
+        std::lock_guard<std::mutex> & cache_lock);
 
     bool isLastFileSegmentHolder(
         const Key & key,
@@ -164,7 +170,7 @@ private:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock);
 
-    void assertInitialized() const;
+    void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 
     struct FileSegmentCell : private boost::noncopyable
     {
@@ -220,7 +226,7 @@ private:
         bool is_persistent,
         std::lock_guard<std::mutex> & cache_lock);
 
-    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const;
+    static void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserveForMainList(
         const Key & key,
@@ -254,6 +260,8 @@ private:
     size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
     void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
+
+    void removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & cache_lock) const;
 
     /// Used to track and control the cache access of each query.
     /// Through it, we can realize the processing of different queries by the cache layer.
