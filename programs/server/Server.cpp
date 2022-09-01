@@ -971,7 +971,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         std::string tmp_path = config().getString("tmp_path", path / "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
-        size_t tmp_max_size = config().getString("tmp_max_size", 0);
+        size_t tmp_max_size = config().getUInt64("tmp_max_size", 0);
         const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy, tmp_max_size);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());

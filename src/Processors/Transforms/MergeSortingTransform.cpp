@@ -30,12 +30,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_ENOUGH_SPACE;
-}
-
-
 class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
@@ -64,7 +58,7 @@ public:
             updateWriteStat(stat);
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-                path, ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
+                tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size.load())), ReadableSize(static_cast<double>(stat.uncompressed_size.load())));
         }
 
         Block block = tmp_stream.read();
@@ -76,7 +70,7 @@ public:
     }
 
 private:
-    void updateWriteStat(TemporaryFileStream::Stat stat)
+    void updateWriteStat(const TemporaryFileStream::Stat & stat)
     {
         ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
         ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
@@ -105,7 +99,7 @@ MergeSortingTransform::MergeSortingTransform(
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
-    , tmp_data(tmp_data_)
+    , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
 {
 }
@@ -181,11 +175,10 @@ void MergeSortingTransform::consume(Chunk chunk)
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
         size_t size = sum_bytes_in_blocks + min_free_disk_space;
-        auto & tmp_stream = tmp_data.createStream(CurrentMetrics::TemporaryFilesForSort, size)
+        auto & tmp_stream = tmp_data->createStream(header_without_constants, CurrentMetrics::TemporaryFilesForSort, size);
 
-        merge_sorter
-            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
-        auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, tmp_stream);
+        merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+        auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, tmp_stream, log);
 
         processors.emplace_back(current_processor);
 

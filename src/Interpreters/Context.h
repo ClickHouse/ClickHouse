@@ -162,7 +162,6 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 class TemporaryDataOnDisk;
-using TemporaryDataOnDiskPtr = std::shared_ptr<TemporaryDataOnDisk>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -364,8 +363,8 @@ private:
     /// A flag, used to mark if reader needs to apply deleted rows mask.
     bool apply_deleted_mask = true;
 
-    /// Temprary data for query execution.
-    TemporaryDataOnDiskPtr temp_data_on_disk;
+    /// Temporary data for query execution.
+    std::shared_ptr<TemporaryDataOnDisk> temp_data_on_disk;
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -441,8 +440,9 @@ public:
 
     VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
-    TemporaryDataOnDiskPtr getTempDataOnDisk() const;
-    void setTempDataOnDisk(const TemporaryDataOnDiskPtr & temp_data_on_disk_);
+    std::shared_ptr<TemporaryDataOnDisk> getSharedTempDataOnDisk() const;
+    std::unique_ptr<TemporaryDataOnDisk> getTempDataOnDisk() const;
+    void setTempDataOnDisk(std::shared_ptr<TemporaryDataOnDisk> temp_data_on_disk_);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);

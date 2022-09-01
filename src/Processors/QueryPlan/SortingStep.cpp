@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static ITransformingStep::Traits getTraits(size_t limit)
 {
     return ITransformingStep::Traits
@@ -37,7 +42,7 @@ SortingStep::SortingStep(
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
-    TemporaryDataOnDiskPtr tmp_data_,
+    std::shared_ptr<TemporaryDataOnDisk> tmp_data_,
     size_t min_free_disk_space_,
     bool optimize_sorting_by_input_stream_properties_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
@@ -192,7 +197,7 @@ void SortingStep::mergeSorting(QueryPipelineBuilder & pipeline, const SortDescri
                 max_bytes_before_remerge / pipeline.getNumStreams(),
                 remerge_lowered_memory_bytes_ratio,
                 max_bytes_before_external_sort,
-                tmp_data,
+                std::make_unique<TemporaryDataOnDisk>(tmp_data, 0),
                 min_free_disk_space);
         });
 }

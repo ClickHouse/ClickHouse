@@ -555,7 +555,7 @@ void AggregatingTransform::initGenerate()
         elapsed_seconds, src_rows / elapsed_seconds,
         ReadableSize(src_bytes / elapsed_seconds));
 
-    if (params->aggregator.hasTemporaryFiles())
+    if (params->aggregator.hasTemporaryData())
     {
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
@@ -602,18 +602,21 @@ void AggregatingTransform::initGenerate()
             auto header = params->aggregator.getHeader(false);
             Pipes pipes;
 
-            for (const auto & tmp_stream : tmp_data.getStreams())
+            for (auto & tmp_stream : tmp_data.getStreams())
                 pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
 
             pipe = Pipe::unitePipes(std::move(pipes));
         }
 
+        size_t num_streams = tmp_data.getStreams().size();
+        size_t compressed_size = tmp_data.getStat().compressed_size;
+        size_t uncompressed_size = tmp_data.getStat().uncompressed_size;
         LOG_DEBUG(
             log,
             "Will merge {} temporary files of size {} compressed, {} uncompressed.",
-            tmp_data.getStreams().size(),
-            ReadableSize(tmp_data.getStat().compressed_size),
-            ReadableSize(tmp_data.getStat().uncompressed_size));
+            num_streams,
+            ReadableSize(compressed_size),
+            ReadableSize(uncompressed_size));
 
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 
