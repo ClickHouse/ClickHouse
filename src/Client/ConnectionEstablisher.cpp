@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
+    extern const int DNS_ERROR;
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
