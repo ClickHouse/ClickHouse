@@ -18,6 +18,12 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    echo "Azure is disabled"
+else
+    azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+fi
+
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 
@@ -82,17 +88,15 @@ sleep 5
 function run_tests()
 {
     set -x
-    # We can have several additional options so we path them as array because it's
-    # more idiologically correct.
+    # We can have several additional options so we pass them as array because it is more ideologically correct.
     read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
 
-    # Skip these tests, because they fail when we rerun them multiple times
+    HIGH_LEVEL_COVERAGE=YES
+
+    # Use random order in flaky check
     if [ "$NUM_TRIES" -gt "1" ]; then
         ADDITIONAL_OPTIONS+=('--order=random')
-        ADDITIONAL_OPTIONS+=('--skip')
-        ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
-        # Note that flaky check must be ran in parallel, but for now we run
-        # everything in parallel except DatabaseReplicated. See below.
+        HIGH_LEVEL_COVERAGE=NO
     fi
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
@@ -115,10 +119,15 @@ function run_tests()
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
         ADDITIONAL_OPTIONS+=('--run-by-hash-total')
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
+        HIGH_LEVEL_COVERAGE=NO
     fi
 
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
+    fi
+
+    if [[ "${HIGH_LEVEL_COVERAGE}" = "YES" ]]; then
+        ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
     set +e
@@ -130,6 +139,13 @@ function run_tests()
 }
 
 export -f run_tests
+
+if [ "$NUM_TRIES" -gt "1" ]; then
+    # We don't run tests with Ordinary database in PRs, only in master.
+    # So run new/changed tests with Ordinary at least once in flaky check.
+    timeout "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+      | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
+fi
 
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 

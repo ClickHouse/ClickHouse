@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/integrations/kafka
+---
 # Kafka {#kafka}
 
 此引擎与 [Apache Kafka](http://kafka.apache.org/) 结合使用。

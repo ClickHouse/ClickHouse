@@ -82,6 +82,22 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 }
 
 
+void ReadBufferFromWebServer::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+    impl.reset();
+}
+
+
+SeekableReadBuffer::Range ReadBufferFromWebServer::getRemainingReadRange() const
+{
+    return Range{
+        .left = static_cast<size_t>(offset),
+        .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt
+    };
+}
+
+
 bool ReadBufferFromWebServer::nextImpl()
 {
     if (read_until_position)

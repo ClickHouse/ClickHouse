@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/string-functions
+---
 # 字符串函数 {#zi-fu-chuan-han-shu}
 
 ## empty {#string-functions-empty}

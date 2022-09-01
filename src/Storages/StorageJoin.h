@@ -76,14 +76,10 @@ public:
     Block getRightSampleBlock() const
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        Block block = metadata_snapshot->getSampleBlock().sortColumns();
+        Block block = metadata_snapshot->getSampleBlock();
         if (use_nulls && isLeftOrFull(kind))
-        {
             for (auto & col : block)
-            {
                 JoinCommon::convertColumnToNullable(col);
-            }
-        }
         return block;
     }
 

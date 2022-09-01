@@ -1,8 +1,8 @@
 #include "StorageSystemRemoteDataPaths.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Common/IFileCache.h>
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context.h>
@@ -56,7 +56,8 @@ Pipe StorageSystemRemoteDataPaths::read(
             disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
 
             FileCachePtr cache;
-            auto cache_base_path = disk->getCacheBasePath();
+            auto cache_base_path = disk->supportsCache() ? disk->getCacheBasePath() : "";
+
             if (!cache_base_path.empty())
                 cache = FileCacheFactory::instance().get(cache_base_path);
 

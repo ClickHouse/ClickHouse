@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/special/dictionary
 sidebar_position: 20
 sidebar_label: Dictionary
 ---
