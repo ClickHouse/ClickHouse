@@ -703,11 +703,11 @@ size_t MergeTreeBaseSelectProcessor::estimateMaxBatchSizeForHugeRanges()
 {
     /// This is an empirical number and it is so,
     /// because we have an adaptive granularity by default.
-    const size_t average_granule_size_bytes = 8UL * 1024 * 1024 * 10; // 10 MiB
+    const size_t average_granule_size_bytes = 1024 * 1024 * 10; // 10 MiB
 
     /// We want to have one RTT per one gigabyte of data read from disk
     /// this could be configurable.
-    const size_t max_size_for_one_request = 8UL * 1024 * 1024 * 1024; // 1 GiB
+    const size_t max_size_for_one_request = 1024 * 1024 * 1024; // 1 GiB
 
     size_t sum_average_marks_size = 0;
     /// getColumnSize is not fully implemented for compact parts
