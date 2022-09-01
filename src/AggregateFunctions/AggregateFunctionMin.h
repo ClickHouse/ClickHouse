@@ -3,14 +3,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsCommon.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/IDataType.h>
 
 #include <base/StringRef.h>
@@ -20,10 +19,11 @@
 #include <Common/config.h>
 
 #include <algorithm>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <type_traits>
+#include <vector>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -41,19 +41,75 @@ namespace ErrorCodes
 }
 
 template <typename T>
-struct AggregateFunctionMinDataNumeric
+struct ComparatorMin
 {
+    using Type = T;
+    static inline const String name{"min"};
+
+    static ALWAYS_INLINE inline bool cmp(const T & a, const T & b) { return a < b; }
+    static ALWAYS_INLINE inline const T & cmp_get(const T & a, const T & b) { return std::min(a, b); }
+    static ALWAYS_INLINE inline bool column_compareAt(const IColumn & column, size_t n, size_t m)
+    {
+        return column.compareAt(n, m, column, /* nan/null direction hint = */ 1) < 0;
+    }
+#if USE_EMBEDDED_COMPILER
+    static ALWAYS_INLINE inline llvm::Value * llvm_cmp(llvm::IRBuilder<> & b, llvm::Value * value_to_check, llvm::Value * value)
+    {
+        if constexpr (!canBeNativeType<T>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type");
+        if constexpr (std::is_floating_point_v<Type>)
+            return b.CreateFCmpOLT(value_to_check, value);
+        if constexpr (std::numeric_limits<Type>::is_signed)
+            return b.CreateICmpSLT(value_to_check, value);
+        else
+            return b.CreateICmpULT(value_to_check, value);
+    }
+#endif
+};
+
+template <typename T>
+struct ComparatorMax
+{
+    using Type = T;
+    static inline const String name{"max"};
+
+    static ALWAYS_INLINE inline bool cmp(const T & a, const T & b) { return a > b; }
+    static ALWAYS_INLINE inline const T & cmp_get(const T & a, const T & b) { return std::max(a, b); }
+    static ALWAYS_INLINE inline bool column_compareAt(const IColumn & column, size_t n, size_t m)
+    {
+        return column.compareAt(n, m, column, /* nan/null direction hint = */ 1) > 0;
+    }
+#if USE_EMBEDDED_COMPILER
+    static ALWAYS_INLINE inline llvm::Value * llvm_cmp(llvm::IRBuilder<> & b, llvm::Value * value_to_check, llvm::Value * value)
+    {
+        if constexpr (!canBeNativeType<T>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type");
+        if constexpr (std::is_floating_point_v<Type>)
+            return b.CreateFCmpOGT(value_to_check, value);
+        if constexpr (std::numeric_limits<Type>::is_signed)
+            return b.CreateICmpSGT(value_to_check, value);
+        else
+            return b.CreateICmpUGT(value_to_check, value);
+    }
+#endif
+};
+
+template <typename Comparator>
+struct AggregateFunctionsMinMaxDataNumeric
+{
+    using ComparatorType = Comparator;
+    using T = typename Comparator::Type;
     using ColVecType = ColumnVectorOrDecimal<T>;
     static constexpr bool is_native_integer = std::is_integral_v<T>;
     bool has_value = false;
-    T min{};
+    T value{};
 
-    void ALWAYS_INLINE inline add(T value)
+    void ALWAYS_INLINE inline add(T new_value)
     {
         if (!has_value)
-            min = value;
+            value = new_value;
         else
-            min = std::min(min, value);
+            value = Comparator::cmp_get(value, new_value);
         has_value = true;
     }
 
@@ -68,7 +124,7 @@ struct AggregateFunctionMinDataNumeric
     void insertResultInto(IColumn & to) const
     {
         if (has_value)
-            assert_cast<ColVecType &>(to).getData().push_back(min);
+            assert_cast<ColVecType &>(to).getData().push_back(value);
         else
             assert_cast<ColVecType &>(to).insertDefault();
     }
@@ -92,7 +148,7 @@ struct AggregateFunctionMinDataNumeric
                   if (!has_value)
                   {
                       has_value = true;
-                      min = *ptr;
+                      value = *ptr;
                   }
               }
               else
@@ -104,7 +160,7 @@ struct AggregateFunctionMinDataNumeric
                           if (!condition_map[i] == add_if_cond_zero)
                           {
                               has_value = true;
-                              min = ptr[i];
+                              value = ptr[i];
                               break;
                           }
                       }
@@ -113,7 +169,7 @@ struct AggregateFunctionMinDataNumeric
                   }
               }
 
-              T aux{min};  /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
+              T aux{value}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
               if constexpr (std::is_floating_point_v<T>)
               {
                   constexpr size_t unroll_block = 256 / sizeof(T);
@@ -131,18 +187,18 @@ struct AggregateFunctionMinDataNumeric
                           {
                               if constexpr (add_all_elements)
                               {
-                                  partial_min[j] = std::min(partial_min[j], ptr[i+j]);
+                                  partial_min[j] = Comparator::cmp_get(partial_min[j], ptr[i + j]);
                               }
                               else
                               {
                                   if (!condition_map[i+j] == add_if_cond_zero)
-                                      partial_min[j] = std::min(partial_min[j], ptr[i+j]);
+                                      partial_min[j] = Comparator::cmp_get(partial_min[j], ptr[i + j]);
                               }
                           }
                           i += unroll_block;
                       }
                       for (size_t j = 0; i < unroll_block; i++)
-                          aux = std::min(aux, partial_min[j]);
+                          aux = Comparator::cmp_get(aux, partial_min[j]);
                   }
               }
 
@@ -150,16 +206,16 @@ struct AggregateFunctionMinDataNumeric
               {
                   if constexpr (add_all_elements)
                   {
-                      aux = std::min(aux, ptr[i]);
+                      aux = Comparator::cmp_get(aux, ptr[i]);
                   }
                   else
                   {
                       if (!condition_map[i] == add_if_cond_zero)
-                          aux = std::min(aux, ptr[i]);
+                          aux = Comparator::cmp_get(aux, ptr[i]);
                   }
               }
 
-              min = aux;
+              value = aux;
               has_value = true;
         })
     )
@@ -231,24 +287,24 @@ struct AggregateFunctionMinDataNumeric
         addManyImpl<false, false>(ptr, condition_map, start, end);
     }
 
-    void merge(const AggregateFunctionMinDataNumeric & rhs, Arena *)
+    void merge(const AggregateFunctionsMinMaxDataNumeric & rhs, Arena *)
     {
         if (rhs.has_value)
-            add(rhs.min);
+            add(rhs.value);
     }
 
     void write(WriteBuffer & buf, const ISerialization &) const
     {
         writeBinary(has_value, buf);
         if (has_value)
-            writeBinary(min, buf);
+            writeBinary(value, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization &, Arena *)
     {
         readBinary(has_value, buf);
         if (has_value)
-            readBinary(min, buf);
+            readBinary(value, buf);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -258,7 +314,7 @@ struct AggregateFunctionMinDataNumeric
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        static constexpr size_t value_offset_from_structure = offsetof(AggregateFunctionMinDataNumeric<T>, min);
+        static constexpr size_t value_offset_from_structure = offsetof(AggregateFunctionsMinMaxDataNumeric<Comparator>, value);
 
         auto * type = toNativeType<T>(builder);
         auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
@@ -312,14 +368,7 @@ struct AggregateFunctionMinDataNumeric
         auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
         auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
-        llvm::Value * should_change_after_comparison = nullptr;
-        if constexpr (std::is_floating_point_v<T>)
-            should_change_after_comparison = b.CreateFCmpOLT(value_to_check, value);
-        else if constexpr (std::numeric_limits<T>::is_signed)
-            should_change_after_comparison = b.CreateICmpSLT(value_to_check, value);
-        else
-            should_change_after_comparison = b.CreateICmpULT(value_to_check, value);
-
+        llvm::Value * should_change_after_comparison = Comparator::llvm_cmp(b, value_to_check, value);
         b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, if_should_not_change);
 
         b.SetInsertPoint(if_should_change);
@@ -362,15 +411,7 @@ struct AggregateFunctionMinDataNumeric
         auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
         auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
-
-        llvm::Value * should_change_after_comparison = nullptr;
-        if constexpr (std::is_floating_point_v<T>)
-            should_change_after_comparison = b.CreateFCmpOLT(value_src, value_dst);
-        else if constexpr (std::numeric_limits<T>::is_signed)
-            should_change_after_comparison = b.CreateICmpSLT(value_src, value_dst);
-        else
-            should_change_after_comparison = b.CreateICmpULT(value_src, value_dst);
-
+        llvm::Value * should_change_after_comparison = Comparator::llvm_cmp(b, value_src, value_dst);
         b.CreateCondBr(
             b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)),
             if_should_change,
@@ -395,8 +436,10 @@ struct AggregateFunctionMinDataNumeric
 #endif
 };
 
-struct AggregateFunctionMinDataString
+template <typename Comparator>
+struct AggregateFunctionsMinMaxDataString
 {
+    using ComparatorType = Comparator;
     Int32 size = -1; /// -1 indicates that there is no value.
     Int32 capacity = 0; /// power of two or zero
     char * large_data;
@@ -443,7 +486,7 @@ struct AggregateFunctionMinDataString
 
     void ALWAYS_INLINE inline add(const StringRef & s, Arena * arena)
     {
-        if (!has() || s < getStringRef())
+        if (!has() || Comparator::cmp(s, getStringRef()))
             setImpl(s, arena);
     }
 
@@ -476,17 +519,17 @@ struct AggregateFunctionMinDataString
                 return;
         }
 
-        StringRef lowest = col.getDataAtWithTerminatingZero(start);
+        StringRef idx = col.getDataAtWithTerminatingZero(start);
         for (size_t i = start + 1; i < end; i++)
         {
             if (!add_all_elements && !condition_map[i] != add_if_cond_zero)
                 continue;
-            StringRef idx_ref = col.getDataAtWithTerminatingZero(i);
-            if (idx_ref < lowest)
-                lowest = idx_ref;
+            StringRef iref = col.getDataAtWithTerminatingZero(i);
+            if (Comparator::cmp(iref, idx))
+                idx = iref;
         }
 
-        add(lowest, arena);
+        add(idx, arena);
     }
 
     void addMany(const IColumn & column, size_t start, size_t end, Arena * arena)
@@ -504,7 +547,7 @@ struct AggregateFunctionMinDataString
         addManyImpl<false, false>(column, condition_map, start, end, arena);
     }
 
-    void merge(const AggregateFunctionMinDataString & rhs, Arena * arena)
+    void merge(const AggregateFunctionsMinMaxDataString & rhs, Arena * arena)
     {
         if (rhs.has())
             add(rhs.getStringRef(), arena);
@@ -559,12 +602,16 @@ struct AggregateFunctionMinDataString
 };
 
 static_assert(
-    sizeof(AggregateFunctionMinDataString) == AggregateFunctionMinDataString::AUTOMATIC_STORAGE_SIZE,
+    sizeof(AggregateFunctionsMinMaxDataString<ComparatorMin<StringRef>>)
+        == AggregateFunctionsMinMaxDataString<ComparatorMin<StringRef>>::AUTOMATIC_STORAGE_SIZE,
     "Incorrect size of SingleValueDataString struct");
 
 
-struct AggregateFunctionMinDataGeneric
+template <typename Comparator>
+struct AggregateFunctionsMinMaxDataGeneric
 {
+    using ComparatorType = Comparator;
+
 private:
     Field value;
 
@@ -572,7 +619,7 @@ private:
 
     void ALWAYS_INLINE inline add(const Field & new_value)
     {
-        if (!has() || new_value < value)
+        if (!has() || Comparator::cmp(new_value, value))
             value = new_value;
     }
 
@@ -611,16 +658,16 @@ public:
                 return;
         }
 
-        size_t min_idx = start;
+        size_t idx = start;
         for (size_t i = start + 1; i < end; i++)
         {
             if (!add_all_elements && !condition_map[i] != add_if_cond_zero)
                 continue;
-            if (column.compareAt(i, min_idx, column, /* nan_direction_hint = */ 0) < 0)
-                min_idx = i;
+            if (Comparator::column_compareAt(column, i, idx))
+                idx = i;
         }
 
-        add(column, min_idx, arena);
+        add(column, idx, arena);
     }
 
     void addMany(const IColumn & column, size_t start, size_t end, Arena * arena)
@@ -638,7 +685,7 @@ public:
         addManyImpl<false, false>(column, condition_map, start, end, arena);
     }
 
-    void merge(const AggregateFunctionMinDataGeneric & rhs, Arena *)
+    void merge(const AggregateFunctionsMinMaxDataGeneric & rhs, Arena *)
     {
         if (rhs.has())
             add(rhs.value);
@@ -670,20 +717,20 @@ public:
 };
 
 template <typename Data>
-class AggregateFunctionMin final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMin<Data>>
+class AggregateFunctionsMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsMinMax<Data>>
 {
     SerializationPtr serialization;
 
 public:
-    explicit AggregateFunctionMin(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMin<Data>>({type}, {}), serialization(type->getDefaultSerialization())
+    explicit AggregateFunctionsMinMax(const DataTypePtr & type)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsMinMax<Data>>({type}, {}), serialization(type->getDefaultSerialization())
     {
         if (!type->isComparable())
             throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
                 + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    String getName() const override { return "min"; }
+    String getName() const override { return Data::ComparatorType::name; }
 
     DataTypePtr getReturnType() const override { return this->argument_types.at(0); }
 
@@ -813,4 +860,35 @@ public:
     }
 #endif
 };
+
+/// min, max
+template <template <typename> class Comparator>
+static IAggregateFunction *
+createAggregateFunctionExtreme(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & argument_type = argument_types[0];
+
+    WhichDataType which(argument_type);
+#define NUMERIC_DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<TYPE>>>(argument_type); /// NOLINT
+    FOR_NUMERIC_TYPES(NUMERIC_DISPATCH)
+
+    NUMERIC_DISPATCH(DateTime64)
+    NUMERIC_DISPATCH(Decimal32)
+    NUMERIC_DISPATCH(Decimal64)
+    NUMERIC_DISPATCH(Decimal128)
+#undef NUMERIC_DISPATCH
+
+    if (which.idx == TypeIndex::Date)
+        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<DataTypeDate::FieldType>>>(argument_type);
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<DataTypeDateTime::FieldType>>>(argument_type);
+    if (which.idx == TypeIndex::String)
+        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataString<Comparator<StringRef>>>(argument_type);
+    return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataGeneric<Comparator<Field>>>(argument_type);
+}
 }

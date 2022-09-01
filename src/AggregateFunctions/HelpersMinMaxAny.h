@@ -14,7 +14,7 @@ namespace DB
 {
 struct Settings;
 
-/// min, max, any, anyLast, anyHeavy, etc...
+/// any, anyLast, anyHeavy, etc...
 template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
 static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {

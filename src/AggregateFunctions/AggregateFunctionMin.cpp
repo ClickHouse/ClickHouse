@@ -13,31 +13,9 @@ namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionMin(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    assertNoParameters(name, parameters);
-    assertUnary(name, argument_types);
-
-    const DataTypePtr & argument_type = argument_types[0];
-
-    WhichDataType which(argument_type);
-#define NUMERIC_DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<TYPE>>(argument_type)); /// NOLINT
-    FOR_NUMERIC_TYPES(NUMERIC_DISPATCH)
-
-    NUMERIC_DISPATCH(DateTime64)
-    NUMERIC_DISPATCH(Decimal32)
-    NUMERIC_DISPATCH(Decimal64)
-    NUMERIC_DISPATCH(Decimal128)
-#undef DISPATCH
-
-    if (which.idx == TypeIndex::Date)
-        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<DataTypeDate::FieldType>>(argument_type));
-    if (which.idx == TypeIndex::DateTime)
-        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<DataTypeDateTime::FieldType>>(argument_type));
-    if (which.idx == TypeIndex::String)
-        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataString>(argument_type));
-    return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataGeneric>(argument_type));
+    return AggregateFunctionPtr(createAggregateFunctionExtreme<ComparatorMin>(name, argument_types, parameters, settings));
 }
 
 AggregateFunctionPtr createAggregateFunctionArgMin(
