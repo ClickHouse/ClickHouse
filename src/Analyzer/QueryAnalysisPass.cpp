@@ -93,6 +93,7 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
+    extern const int TOO_DEEP_SUBQUERIES;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -183,7 +184,6 @@ namespace ErrorCodes
   * TODO: JOIN support SELF JOIN with MergeTree. JOIN support matchers.
   * TODO: WINDOW functions
   * TODO: Table expression modifiers final, sample_size, sample_offset
-  * TODO: Scalar subqueries subquery depth
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
   */
 
@@ -547,6 +547,9 @@ struct IdentifierResolveScope
     /// Node to projection name
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_projection_name;
 
+    /// Subquery depth
+    size_t subquery_depth = 0;
+
     TableExpressionData & getTableExpressionDataOrThrow(QueryTreeNodePtr table_expression_node)
     {
         auto it = table_expression_node_to_data.find(table_expression_node);
@@ -826,7 +829,7 @@ private:
 
     QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunction(const std::string & function_name);
 
-    void evaluateScalarSubquery(QueryTreeNodePtr & query_tree_node);
+    void evaluateScalarSubquery(QueryTreeNodePtr & query_tree_node, size_t subquery_depth);
 
     /// Resolve identifier functions
 
@@ -942,7 +945,7 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunction(const std
 }
 
 /// Evaluate scalar subquery and perform constant folding.
-void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node)
+void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node, size_t subquery_depth)
 {
     auto * query_node = node->as<QueryNode>();
     auto * union_node = node->as<UnionNode>();
@@ -951,6 +954,10 @@ void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node)
             "Node must have query or union type. Actual {} {}",
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
+
+    if ((query_node && query_node->hasConstantValue()) ||
+        (union_node && union_node->hasConstantValue()))
+        return;
 
     auto subquery_context = Context::createCopy(context);
     Settings subquery_settings = context->getSettings();
@@ -965,9 +972,7 @@ void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node)
         //     context->addScalar(it.first, it.second);
     }
 
-    size_t subquery_depth = 0;
-    auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth + 1, true /*is_subqueyr*/);
-
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
     auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, options, subquery_context);
 
     auto io = interpreter->execute();
@@ -1043,7 +1048,7 @@ void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node)
     {
         auto tuple_column = ColumnTuple::create(block.getColumns());
         tuple_column->get(0, scalar_value);
-        scalar_type = std::make_shared<DataTypeTuple>(block.getDataTypes());
+        scalar_type = std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames());
     }
 
     auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
@@ -1263,21 +1268,18 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
     {
         resolveFunction(it->second, scope);
     }
-    else if (node_type == QueryTreeNodeType::QUERY)
+    else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
         IdentifierResolveScope subquery_scope(it->second, &scope /*parent_scope*/);
-        resolveQuery(it->second, subquery_scope);
+        subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+        if (node_type == QueryTreeNodeType::QUERY)
+            resolveQuery(it->second, subquery_scope);
+        else if (node_type == QueryTreeNodeType::UNION)
+            resolveUnion(it->second, subquery_scope);
 
         if (identifier_lookup.isExpressionLookup())
-            evaluateScalarSubquery(it->second);
-    }
-    else if (node_type == QueryTreeNodeType::UNION)
-    {
-        IdentifierResolveScope subquery_scope(it->second, &scope /*parent_scope*/);
-        resolveUnion(it->second, subquery_scope);
-
-        if (identifier_lookup.isExpressionLookup())
-            evaluateScalarSubquery(it->second);
+            evaluateScalarSubquery(it->second, subquery_scope.subquery_depth);
     }
 
     scope.expressions_in_resolve_process_stack.popNode();
@@ -2663,15 +2665,15 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
 
             in_second_argument = std::move(in_second_argument_query_node);
         }
-        else if (query_node)
+        else if (query_node || union_node)
         {
             IdentifierResolveScope subquery_scope(in_second_argument, &scope /*parent_scope*/);
-            resolveQuery(in_second_argument, subquery_scope);
-        }
-        else if (union_node)
-        {
-            IdentifierResolveScope subquery_scope(in_second_argument, &scope /*parent_scope*/);
-            resolveUnion(in_second_argument, subquery_scope);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+            if (query_node)
+                resolveQuery(in_second_argument, subquery_scope);
+            else if (union_node)
+                resolveUnion(in_second_argument, subquery_scope);
         }
     }
 
@@ -3178,20 +3180,22 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
         case QueryTreeNodeType::QUERY:
         {
             IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
             resolveQuery(node, subquery_scope);
 
             if (!allow_table_expression)
-                evaluateScalarSubquery(node);
+                evaluateScalarSubquery(node, subquery_scope.subquery_depth);
 
             break;
         }
         case QueryTreeNodeType::UNION:
         {
             IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
             resolveUnion(node, subquery_scope);
 
             if (!allow_table_expression)
-                evaluateScalarSubquery(node);
+                evaluateScalarSubquery(node, subquery_scope.subquery_depth);
 
             break;
         }
@@ -3893,12 +3897,14 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::QUERY:
         {
             IdentifierResolveScope subquery_scope(join_tree_node, &scope);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
             resolveQuery(join_tree_node, subquery_scope);
             break;
         }
         case QueryTreeNodeType::UNION:
         {
             IdentifierResolveScope subquery_scope(join_tree_node, &scope);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
             resolveUnion(join_tree_node, subquery_scope);
             break;
         }
@@ -4132,6 +4138,12 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
   */
 void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
 {
+    const auto & settings = context->getSettingsRef();
+    if (settings.max_subquery_depth && scope.subquery_depth > settings.max_subquery_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES,
+            "Too deep subqueries. Maximum: {}",
+            settings.max_subquery_depth.toString());
+
     auto & query_node_typed = query_node->as<QueryNode &>();
 
     /// Initialize aliases in query node scope
