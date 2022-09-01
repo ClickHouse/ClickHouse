@@ -21,7 +21,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int TABLE_IS_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
 }
