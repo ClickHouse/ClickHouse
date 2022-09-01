@@ -67,7 +67,11 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
                                    const std::string &,
                                    [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr
     {
+<<<<<<< HEAD
 #if USE_YAML_CPP
+=======
+#if USE_CASSANDRA
+>>>>>>> b7808fd61df837e84406ddb7f1701fcfb37d8942
         if (dict_struct.has_expressions)
         {
             throw Exception(
@@ -92,7 +96,11 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 
 }
 
+<<<<<<< HEAD
 #if USE_YAML_CPP
+=======
+#if USE_CASSANDRA
+>>>>>>> b7808fd61df837e84406ddb7f1701fcfb37d8942
 
 namespace DB
 
