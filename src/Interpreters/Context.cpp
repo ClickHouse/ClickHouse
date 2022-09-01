@@ -52,7 +52,6 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
@@ -153,7 +152,6 @@ struct ContextSharedPart
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_user_defined_executable_functions_mutex;
-    mutable std::mutex external_models_mutex;
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
@@ -191,9 +189,7 @@ struct ContextSharedPart
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
-    mutable std::unique_ptr<ExternalModelsLoader> external_models_loader;
 
-    ExternalLoaderXMLConfigRepository * external_models_config_repository = nullptr;
     scope_guard models_repository_guard;
 
     ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository = nullptr;
@@ -350,8 +346,6 @@ struct ContextSharedPart
             external_dictionaries_loader->enablePeriodicUpdates(false);
         if (external_user_defined_executable_functions_loader)
             external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
-        if (external_models_loader)
-            external_models_loader->enablePeriodicUpdates(false);
 
         Session::shutdownNamedSessions();
 
@@ -382,7 +376,6 @@ struct ContextSharedPart
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
-        std::unique_ptr<ExternalModelsLoader> delete_external_models_loader;
         std::unique_ptr<BackgroundSchedulePool> delete_buffer_flush_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_distributed_schedule_pool;
@@ -421,7 +414,6 @@ struct ContextSharedPart
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
-            delete_external_models_loader = std::move(external_models_loader);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
@@ -449,7 +441,6 @@ struct ContextSharedPart
         delete_embedded_dictionaries.reset();
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
-        delete_external_models_loader.reset();
         delete_ddl_worker.reset();
         delete_buffer_flush_schedule_pool.reset();
         delete_schedule_pool.reset();
@@ -1465,48 +1456,6 @@ ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedEx
         shared->external_user_defined_executable_functions_loader =
             std::make_unique<ExternalUserDefinedExecutableFunctionsLoader>(getGlobalContext());
     return *shared->external_user_defined_executable_functions_loader;
-}
-
-const ExternalModelsLoader & Context::getExternalModelsLoader() const
-{
-    return const_cast<Context *>(this)->getExternalModelsLoader();
-}
-
-ExternalModelsLoader & Context::getExternalModelsLoader()
-{
-    std::lock_guard lock(shared->external_models_mutex);
-    return getExternalModelsLoaderUnlocked();
-}
-
-ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked()
-{
-    if (!shared->external_models_loader)
-        shared->external_models_loader =
-            std::make_unique<ExternalModelsLoader>(getGlobalContext());
-    return *shared->external_models_loader;
-}
-
-void Context::loadOrReloadModels(const Poco::Util::AbstractConfiguration & config)
-{
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "models_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
-
-    std::lock_guard lock(shared->external_models_mutex);
-
-    auto & external_models_loader = getExternalModelsLoaderUnlocked();
-
-    if (shared->external_models_config_repository)
-    {
-        shared->external_models_config_repository->updatePatterns(patterns);
-        external_models_loader.reloadConfig(shared->external_models_config_repository->getName());
-        return;
-    }
-
-    auto app_path = getPath();
-    auto config_path = getConfigRef().getString("config-file", "config.xml");
-    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
-    shared->external_models_config_repository = repository.get();
-    shared->models_repository_guard = external_models_loader.addConfigRepository(std::move(repository));
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
