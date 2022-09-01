@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/table-functions/null
 sidebar_position: 53
 sidebar_label: null функция
 ---
