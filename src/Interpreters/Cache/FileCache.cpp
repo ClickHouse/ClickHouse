@@ -2,7 +2,8 @@
 
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <Common/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -10,7 +11,6 @@
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
-#include <Common/LRUFileCachePriority.h>
 
 namespace fs = std::filesystem;
 

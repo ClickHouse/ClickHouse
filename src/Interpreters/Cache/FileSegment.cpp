@@ -3,7 +3,7 @@
 #include <base/getThreadId.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Common/hex.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
