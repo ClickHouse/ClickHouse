@@ -301,6 +301,11 @@ struct ConvertImpl
     }
 };
 
+/** Conversion of Date32 to Date: check bounds.
+  */
+template <typename Name> struct ConvertImpl<DataTypeDate32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+    : DateTimeTransformImpl<DataTypeDate32, DataTypeDate, ToDateImpl> {};
+
 /** Conversion of DateTime to Date: throw off time component.
   */
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name, ConvertDefaultBehaviorTag>
@@ -319,12 +324,17 @@ struct ToDateTimeImpl
 
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(DayNum(d));
+        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        return date_time <= 0xffffffff ? UInt32(date_time) : UInt32(0xffffffff);
     }
 
-    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d));
+        if (d < 0)
+            return 0;
+
+        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        return date_time <= 0xffffffff ? date_time : 0xffffffff;
     }
 
     static inline UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
@@ -332,10 +342,21 @@ struct ToDateTimeImpl
         return dt;
     }
 
-    // TODO: return UInt32 ???
-    static inline Int64 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
+    static inline UInt32 execute(Int64 d, const DateLUTImpl & time_zone)
     {
-        return dt64;
+        if (d < 0)
+            return 0;
+
+        auto date_time = time_zone.toDate(d);
+        return date_time <= 0xffffffff ? date_time : 0xffffffff;
+    }
+
+    static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & /*time_zone*/)
+    {
+        if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
+            return 0;
+
+        return std::min<Int64>(t.whole, Int64(0xFFFFFFFF));
     }
 };
 
@@ -355,9 +376,12 @@ struct ToDateTransform32Or64
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // since converting to Date, no need in values outside of default LUT range.
+        if (from < 0)
+            return 0;
+
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
-            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(DATE_LUT_MAX_DAY_NUM));
     }
 };
 
@@ -372,9 +396,14 @@ struct ToDateTransform32Or64Signed
         /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
         if (from < 0)
             return 0;
+
+        auto day_num = time_zone.toDayNum(ExtendedDayNum(from));
+        return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
+
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
-            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(0xFFFFFFFF));
+
     }
 };
 
@@ -405,7 +434,7 @@ struct ToDate32Transform32Or64
     {
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? from
-            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(DATE_LUT_MAX_EXTEND_DAY_NUM));
     }
 };
 
@@ -421,7 +450,7 @@ struct ToDate32Transform32Or64Signed
             return daynum_min_offset;
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? from
-            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+            : time_zone.toDayNum(std::min<Int64>(Int64(from), Int64(0xFFFFFFFF)));
     }
 };
 
@@ -447,35 +476,49 @@ struct ToDate32Transform8Or16Signed
   */
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16>> {};
 
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate32, ToDate32Transform32Or64<UInt32, Int32>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate32, ToDate32Transform32Or64<UInt64, Int32>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate32, ToDate32Transform8Or16Signed<Int8, Int32>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate32, ToDate32Transform8Or16Signed<Int16, Int32>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt32, DataTypeDate32, ToDate32Transform32Or64Signed<Int32, Int32>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt64, DataTypeDate32, ToDate32Transform32Or64Signed<Int64, Int32>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate32, ToDate32Transform32Or64Signed<Float32, Int32>> {};
+
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32>> {};
 
@@ -487,7 +530,7 @@ struct ToDateTimeTransform64
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        return std::min(time_t(from), time_t(0xFFFFFFFF));
+        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
     }
 };
 
@@ -509,11 +552,12 @@ struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & /* time_zone */)
     {
         if (from < 0)
             return 0;
-        return std::min(time_t(from), time_t(0xFFFFFFFF));
+
+        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
     }
 };
 
@@ -634,8 +678,6 @@ struct FromDateTime64Transform
     }
 };
 
-/** Conversion of DateTime64 to Date or DateTime: discards fractional part.
- */
 template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, TransformDateTime64<ToDateImpl>> {};
 template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag>
@@ -659,7 +701,7 @@ struct ToDateTime64Transform
 
     inline DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
-        const auto dt = ToDateTimeImpl::execute(d, time_zone);
+        const auto dt = time_zone.fromDayNum(ExtendedDayNum(d));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -1017,9 +1059,7 @@ inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuff
 {
     ExtendedDayNum tmp(0);
     if (!tryReadDateText(tmp, rb))
-    {
         return false;
-    }
     x = tmp;
     return true;
 }
@@ -1102,9 +1142,27 @@ struct ConvertThroughParsing
         if (in.eof())
             return true;
 
-        /// Special case, that allows to parse string with DateTime as Date.
-        if (std::is_same_v<ToDataType, DataTypeDate> && (in.buffer().size()) == strlen("YYYY-MM-DD hh:mm:ss"))
-            return true;
+        /// Special case, that allows to parse string with DateTime or DateTime64 as Date or Date32.
+        if constexpr (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            if (!in.eof() && (*in.position() == ' ' || *in.position() == 'T'))
+            {
+                if (in.buffer().size() == strlen("YYYY-MM-DD hh:mm:ss"))
+                    return true;
+
+                if (in.buffer().size() >= strlen("YYYY-MM-DD hh:mm:ss.x")
+                    && in.buffer().begin()[19] == '.')
+                {
+                    in.position() = in.buffer().begin() + 20;
+
+                    while (!in.eof() && isNumericASCII(*in.position()))
+                        ++in.position();
+
+                    if (in.eof())
+                        return true;
+                }
+            }
+        }
 
         return false;
     }
@@ -1240,8 +1298,10 @@ struct ConvertThroughParsing
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
+                    {
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
+                    }
                     else
                     {
                         parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
@@ -1294,8 +1354,10 @@ struct ConvertThroughParsing
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
+                    {
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
+                    }
                     else
                         parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                 }
@@ -1786,7 +1848,7 @@ private:
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
-                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DataTypeDateTime64.",
+                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DateTime64.",
                             ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
                 }
                 else if (arguments.size() != 2)
