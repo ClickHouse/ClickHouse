@@ -1,3 +1,6 @@
+---
+slug: /ru/sql-reference/data-types/nested-data-structures/nested
+---
 # Nested {#nested}
 
 ## Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}

@@ -91,13 +91,6 @@ static const NameSet exit_strings
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 };
 
-static const std::initializer_list<std::pair<String, String>> backslash_aliases
-{
-    { "\\l", "SHOW DATABASES" },
-    { "\\d", "SHOW TABLES" },
-    { "\\c", "USE" },
-};
-
 
 namespace ErrorCodes
 {
@@ -1999,6 +1992,21 @@ void ClientBase::runInteractive()
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr.enableBracketedPaste();
 
+    static const std::initializer_list<std::pair<String, String>> backslash_aliases =
+        {
+            { "\\l", "SHOW DATABASES" },
+            { "\\d", "SHOW TABLES" },
+            { "\\c", "USE" },
+        };
+
+    static const std::initializer_list<String> repeat_last_input_aliases =
+        {
+            ".",  /// Vim shortcut
+            "/"   /// Oracle SQL Plus shortcut
+        };
+
+    String last_input;
+
     do
     {
         auto input = lr.readLine(prompt(), ":-] ");
@@ -2016,7 +2024,7 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        for (const auto& [alias, command] : backslash_aliases)
+        for (const auto & [alias, command] : backslash_aliases)
         {
             auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
             if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
@@ -2034,10 +2042,20 @@ void ClientBase::runInteractive()
             }
         }
 
+        for (const auto & alias : repeat_last_input_aliases)
+        {
+            if (input == alias)
+            {
+                input  = last_input;
+                break;
+            }
+        }
+
         try
         {
             if (!processQueryText(input))
                 break;
+            last_input = input;
         }
         catch (const Exception & e)
         {

@@ -279,6 +279,8 @@ public:
     /// Does not allow any FUNCTION_UNKNOWN (will instantly return true).
     bool anyUnknownOrAlwaysTrue() const;
 
+    bool alwaysFalse() const;
+
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
 

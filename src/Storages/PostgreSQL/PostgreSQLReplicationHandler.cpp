@@ -321,13 +321,13 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             nested_storages,
             (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
 
+    replication_handler_initialized = true;
+
     consumer_task->activateAndSchedule();
     cleanup_task->activateAndSchedule();
 
     /// Do not rely anymore on saved storage pointers.
     materialized_storages.clear();
-
-    replication_handler_initialized = true;
 }
 
 
