@@ -1,9 +1,9 @@
 #pragma once
 
-#include <base/StringRef.h>
-#include <DataTypes/IDataType.h>
+#include <AggregateFunctions/AggregateFunctionArgMinMaxAnyBase.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionMinMaxAny.h> // SingleValueDataString used in embedded compiler
+#include <DataTypes/IDataType.h>
+#include <base/StringRef.h>
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
 #include <AggregateFunctions/AggregateFunctionArgMinMax.h>
+#include <AggregateFunctions/AggregateFunctionArgMinMaxAnyBase.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 

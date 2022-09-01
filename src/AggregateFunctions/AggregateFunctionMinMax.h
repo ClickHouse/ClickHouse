@@ -1,15 +1,11 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/IDataType.h>
 
 #include <base/StringRef.h>
@@ -26,8 +22,8 @@
 #include <vector>
 
 #if USE_EMBEDDED_COMPILER
-#    include <llvm/IR/IRBuilder.h>
 #    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
 #endif
 
 namespace DB
@@ -726,8 +722,10 @@ public:
         : IAggregateFunctionDataHelper<Data, AggregateFunctionsMinMax<Data>>({type}, {}), serialization(type->getDefaultSerialization())
     {
         if (!type->isComparable())
-            throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
-                + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Illegal type " + type->getName() + " of argument of aggregate function " + getName()
+                    + " because the values of that data type are not comparable",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     String getName() const override { return Data::ComparatorType::name; }
@@ -798,10 +796,7 @@ public:
         this->data(place).read(buf, *serialization, arena);
     }
 
-    bool allocatesMemoryInArena() const override
-    {
-        return false;
-    }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -860,35 +855,4 @@ public:
     }
 #endif
 };
-
-/// min, max
-template <template <typename> class Comparator>
-static IAggregateFunction *
-createAggregateFunctionExtreme(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-{
-    assertNoParameters(name, parameters);
-    assertUnary(name, argument_types);
-
-    const DataTypePtr & argument_type = argument_types[0];
-
-    WhichDataType which(argument_type);
-#define NUMERIC_DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<TYPE>>>(argument_type); /// NOLINT
-    FOR_NUMERIC_TYPES(NUMERIC_DISPATCH)
-
-    NUMERIC_DISPATCH(DateTime64)
-    NUMERIC_DISPATCH(Decimal32)
-    NUMERIC_DISPATCH(Decimal64)
-    NUMERIC_DISPATCH(Decimal128)
-#undef NUMERIC_DISPATCH
-
-    if (which.idx == TypeIndex::Date)
-        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<DataTypeDate::FieldType>>>(argument_type);
-    if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<DataTypeDateTime::FieldType>>>(argument_type);
-    if (which.idx == TypeIndex::String)
-        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataString<Comparator<StringRef>>>(argument_type);
-    return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataGeneric<Comparator<Field>>>(argument_type);
-}
 }

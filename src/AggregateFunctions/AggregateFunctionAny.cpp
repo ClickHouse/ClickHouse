@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/HelpersMinMaxAny.h>
+#include <AggregateFunctions/HelpersArgMinMaxAny.h>
 
 
 namespace DB
