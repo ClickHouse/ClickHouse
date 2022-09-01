@@ -42,9 +42,9 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
+    ThreadGroupStatusPtr running_group;
+    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
+        running_group = CurrentThread::get().getThreadGroup();
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
@@ -53,6 +53,15 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     auto task = std::make_shared<std::packaged_task<Result()>>([request, running_group, query_context]
     {
         ThreadStatus thread_status;
+
+        SCOPE_EXIT({
+            if (running_group)
+                thread_status.detachQuery();
+        });
+
+        /// To be able to pass ProfileEvents.
+        if (running_group)
+            thread_status.attachQuery(running_group);
 
         /// Save query context if any, because cache implementation needs it.
         if (query_context)
@@ -73,9 +82,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
-
-        if (running_group)
-            thread_status.detachQuery();
 
         return Result{ .size = bytes_read, .offset = offset };
     });
