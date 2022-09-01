@@ -318,6 +318,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
+    M(FileSegmentWriteMicroseconds, "Metric per file segment. Time spend writing cache") \
     M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
     M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
     M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
