@@ -242,7 +242,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
             auto sorting_step = std::make_unique<SortingStep>(
                 projection_plan->getCurrentDataStream(),
-                query_info.projection->input_order_info->order_key_prefix_descr,
+                query_info.projection->input_order_info->sort_description_for_merging,
                 output_order_descr,
                 settings.max_block_size,
                 limit);
