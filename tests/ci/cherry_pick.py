@@ -242,7 +242,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
     def _assign_new_pr(self, new_pr: PullRequest):
         # It looks there some race when multiple .add_to_assignees are executed,
         # so we'll add all at once
-        assignees = [self.pr.user]
+        assignees = [self.pr.user, self.pr.merged_by]
         if self.pr.assignees:
             assignees.extend(self.pr.assignees)
         logging.info(
