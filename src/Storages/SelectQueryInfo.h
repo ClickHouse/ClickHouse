@@ -60,6 +60,24 @@ struct PrewhereInfo
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
+
+    PrewhereInfoPtr clone() const
+    {
+        PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+
+        if (row_level_filter)
+            prewhere_info->row_level_filter = row_level_filter->clone();
+
+        if (prewhere_actions)
+            prewhere_info->prewhere_actions = prewhere_actions->clone();
+
+        prewhere_info->row_level_column_name = row_level_column_name;
+        prewhere_info->prewhere_column_name = prewhere_column_name;
+        prewhere_info->remove_prewhere_column = remove_prewhere_column;
+        prewhere_info->need_filter = need_filter;
+
+        return prewhere_info;
+    }
 };
 
 /// Helper struct to store all the information about the filter expression.
@@ -83,17 +101,33 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
-    SortDescription order_key_fixed_prefix_descr;
-    SortDescription order_key_prefix_descr;
+    /// Sort description for merging of already sorted streams.
+    /// Always a prefix of ORDER BY or GROUP BY description specified in query.
+    SortDescription sort_description_for_merging;
+
+    /** Size of prefix of sorting key that is already
+     * sorted before execution of sorting or aggreagation.
+     *
+     * Contains both columns that scpecified in
+     * ORDER BY or GROUP BY clause of query
+     * and columns that turned out to be already sorted.
+     *
+     * E.g. if we have sorting key ORDER BY (a, b, c, d)
+     * and query with `WHERE a = 'x' AND b = 'y' ORDER BY c, d` clauses.
+     * sort_description_for_merging will be equal to (c, d) and
+     * used_prefix_of_sorting_key_size will be equal to 4.
+     */
+    size_t used_prefix_of_sorting_key_size;
+
     int direction;
     UInt64 limit;
 
     InputOrderInfo(
-        const SortDescription & order_key_fixed_prefix_descr_,
-        const SortDescription & order_key_prefix_descr_,
+        const SortDescription & sort_description_for_merging_,
+        size_t used_prefix_of_sorting_key_size_,
         int direction_, UInt64 limit_)
-        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
-        , order_key_prefix_descr(order_key_prefix_descr_)
+        : sort_description_for_merging(sort_description_for_merging_)
+        , used_prefix_of_sorting_key_size(used_prefix_of_sorting_key_size_)
         , direction(direction_), limit(limit_)
     {
     }
@@ -156,8 +190,10 @@ struct SelectQueryInfo
     TreeRewriterResultPtr syntax_analyzer_result;
 
     /// This is an additional filer applied to current table.
-    /// It is needed only for additional PK filtering.
     ASTPtr additional_filter_ast;
+
+    /// It is needed for PK analysis based on row_level_policy and additional_filters.
+    ASTs filter_asts;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
@@ -183,6 +219,10 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
-};
 
+    InputOrderInfoPtr getInputOrderInfo() const
+    {
+        return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
+    }
+};
 }

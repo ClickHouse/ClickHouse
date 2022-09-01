@@ -14,7 +14,6 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
     REPORTS_PATH,
-    S3_URL,
     TEMP_PATH,
 )
 from report import create_build_html_report
@@ -38,7 +37,6 @@ class BuildResult:
         compiler,
         build_type,
         sanitizer,
-        bundled,
         libraries,
         status,
         elapsed_seconds,
@@ -47,7 +45,6 @@ class BuildResult:
         self.compiler = compiler
         self.build_type = build_type
         self.sanitizer = sanitizer
-        self.bundled = bundled
         self.libraries = libraries
         self.status = status
         self.elapsed_seconds = elapsed_seconds
@@ -92,7 +89,6 @@ def get_failed_report(
         compiler="unknown",
         build_type="unknown",
         sanitizer="unknown",
-        bundled="unknown",
         libraries="unknown",
         status=message,
         elapsed_seconds=0,
@@ -109,7 +105,6 @@ def process_report(
         compiler=build_config["compiler"],
         build_type=build_config["build_type"],
         sanitizer=build_config["sanitizer"],
-        bundled=build_config["bundled"],
         libraries=build_config["libraries"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
@@ -245,7 +240,7 @@ def main():
         logging.error("No success builds, failing check")
         sys.exit(1)
 
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
 
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"

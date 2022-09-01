@@ -1,6 +1,7 @@
 #include <iostream>
 #include <filesystem>
 #include <boost/program_options.hpp>
+#include <Common/filesystemHelpers.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
@@ -378,10 +379,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                bool is_symlink = fs::is_symlink(symlink_path);
+                bool is_symlink = FS::isSymlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
+                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
                 if (is_symlink && points_to == main_bin_path)
                 {
@@ -707,7 +708,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// dpkg or apt installers can ask for non-interactive work explicitly.
 
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
+        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
         bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;

@@ -854,6 +854,7 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 
 KeyCondition::KeyCondition(
     const ASTPtr & query,
+    const ASTs & additional_filter_asts,
     TreeRewriterResultPtr syntax_analyzer_result,
     PreparedSetsPtr prepared_sets_,
     ContextPtr context,
@@ -883,13 +884,35 @@ KeyCondition::KeyCondition(
         array_joined_columns.insert(name);
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
-    if (select.where() || select.prewhere())
+
+    ASTs filters;
+    if (select.where())
+        filters.push_back(select.where());
+
+    if (select.prewhere())
+        filters.push_back(select.prewhere());
+
+    for (const auto & filter_ast : additional_filter_asts)
+        filters.push_back(filter_ast);
+
+    if (!filters.empty())
     {
         ASTPtr filter_query;
-        if (select.where() && select.prewhere())
-            filter_query = makeASTFunction("and", select.where(), select.prewhere());
+        if (filters.size() == 1)
+        {
+            filter_query = filters.front();
+        }
         else
-            filter_query = select.where() ? select.where() : select.prewhere();
+        {
+            auto function = std::make_shared<ASTFunction>();
+
+            function->name = "and";
+            function->arguments = std::make_shared<ASTExpressionList>();
+            function->children.push_back(function->arguments);
+            function->arguments->children = std::move(filters);
+
+            filter_query = function;
+        }
 
         /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
           * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
@@ -2440,7 +2463,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
     return rpn_stack[0];
 }
 
-
 bool KeyCondition::mayBeTrueInRange(
     size_t used_key_size,
     const FieldRef * left_keys,
@@ -2451,6 +2473,7 @@ bool KeyCondition::mayBeTrueInRange(
 }
 
 String KeyCondition::RPNElement::toString() const { return toString("column " + std::to_string(key_column), false); }
+
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
 {
     auto print_wrapped_column = [this, &column_name, print_constants](WriteBuffer & buf)
@@ -2540,10 +2563,12 @@ bool KeyCondition::alwaysUnknownOrTrue() const
 {
     return unknownOrAlwaysTrue(false);
 }
+
 bool KeyCondition::anyUnknownOrAlwaysTrue() const
 {
     return unknownOrAlwaysTrue(true);
 }
+
 bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
 {
     std::vector<UInt8> rpn_stack;
@@ -2604,6 +2629,80 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
     return rpn_stack[0];
 }
 
+bool KeyCondition::alwaysFalse() const
+{
+    /// 0: always_false, 1: always_true, 2: non_const
+    std::vector<UInt8> rpn_stack;
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.push_back(1);
+        }
+        else if (element.function == RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.push_back(0);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET
+            || element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
+            || element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            rpn_stack.push_back(2);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            assert(!rpn_stack.empty());
+
+            auto & arg = rpn_stack.back();
+            if (arg == 0)
+                arg = 1;
+            else if (arg == 1)
+                arg = 0;
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+
+            if (arg1 == 0 || arg2 == 0)
+                rpn_stack.back() = 0;
+            else if (arg1 == 1 && arg2 == 1)
+                rpn_stack.back() = 1;
+            else
+                rpn_stack.back() = 2;
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+
+            if (arg1 == 1 || arg2 == 1)
+                rpn_stack.back() = 1;
+            else if (arg1 == 0 && arg2 == 0)
+                rpn_stack.back() = 0;
+            else
+                rpn_stack.back() = 2;
+        }
+        else
+            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception("Unexpected stack size in KeyCondition::alwaysFalse", ErrorCodes::LOGICAL_ERROR);
+
+    return rpn_stack[0] == 0;
+}
 
 size_t KeyCondition::getMaxKeyColumn() const
 {
