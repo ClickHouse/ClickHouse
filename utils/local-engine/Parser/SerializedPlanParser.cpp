@@ -957,6 +957,16 @@ ActionsDAGPtr SerializedPlanParser::parseFunction(
     return actions_dag;
 }
 
+const ActionsDAG::Node * SerializedPlanParser::toFunctionNode(ActionsDAGPtr action_dag, const String function, const DB::ActionsDAG::NodeRawConstPtrs args)
+{
+    auto function_builder = DB::FunctionFactory::instance().get(function, this->context);
+    std::string args_name;
+    join(args, ',', args_name);
+    auto result_name = function + "(" + args_name + ")";
+    const auto * function_node = &action_dag->addFunction(function_builder, args, result_name);
+    return function_node;
+}
+
 const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr action_dag, const substrait::Expression & rel)
 {
     switch (rel.rex_type_case())
@@ -1201,11 +1211,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported cast input {}", rel.cast().input().DebugString());
             }
-            auto function_builder = DB::FunctionFactory::instance().get(ch_function_name, this->context);
-            std::string args_name;
-            join(args, ',', args_name);
-            auto result_name = ch_function_name + "(" + args_name + ")";
-            const auto * function_node = &action_dag->addFunction(function_builder, args, result_name);
+            const auto * function_node = toFunctionNode(action_dag, ch_function_name, args);
             action_dag->addOrReplaceInIndex(*function_node);
             return function_node;
         }
@@ -1247,6 +1253,14 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             std::string result;
             std::vector<String> useless;
             return parseFunctionWithDAG(rel, result, useless, action_dag, false);
+        }
+        case substrait::Expression::RexTypeCase::kSingularOrList: {
+            DB::ActionsDAG::NodeRawConstPtrs args;
+            args.emplace_back(parseArgument(action_dag, rel.singular_or_list().value()));
+            args.emplace_back(parseArgument(action_dag, rel.singular_or_list().options(0)));
+            const auto * function_node = toFunctionNode(action_dag, "in", args);
+            action_dag->addOrReplaceInIndex(*function_node);
+            return function_node;
         }
         default: {
             throw Exception(

@@ -107,6 +107,7 @@ private:
     const ActionsDAG::Node * parseFunctionWithDAG(const substrait::Expression &rel, std::string & result_name, std::vector<String> &required_columns, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
     DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel &rel, bool & is_final);
     const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression &rel);
+    const ActionsDAG::Node * toFunctionNode(ActionsDAGPtr action_dag, const String function, const DB::ActionsDAG::NodeRawConstPtrs args);
     // remove nullable after isNotNull
     void removeNullable(std::vector<String> require_columns, ActionsDAGPtr actionsDag);
     void wrapNullable(std::vector<String> columns, ActionsDAGPtr actionsDag);
