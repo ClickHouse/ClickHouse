@@ -37,7 +37,7 @@ But because ClickHouse is linked with most of the symbols exported (-rdynamic fl
 It allows to get source file names and line numbers from addresses. Only available if you use -g option for compiler.
 It is also used by default for ClickHouse builds, but because of its weight (about two gigabytes)
 it is split to separate binary and provided in clickhouse-common-static-dbg package.
-This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse and is loaded automatically by tools like gdb, addr2line.
+This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse.debug and is loaded automatically by tools like gdb, addr2line.
 When you build ClickHouse by yourself, debug info is not split and present in a single huge binary.
 
 What ClickHouse is using to provide good stack traces?
@@ -391,6 +391,7 @@ void collectSymbolsFromELF(
     std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
     local_debug_info_path += ".debug";
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
+    debug_info_path += ".debug";
 
     if (std::filesystem::exists(local_debug_info_path))
         object_name = local_debug_info_path;
