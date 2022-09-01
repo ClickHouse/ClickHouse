@@ -301,16 +301,16 @@ CI_CONFIG = {
         "AST fuzzer (debug)": {
             "required_build": "package_debug",
         },
-        "AST fuzzer (ASan)": {
+        "AST fuzzer (asan)": {
             "required_build": "package_asan",
         },
-        "AST fuzzer (MSan)": {
+        "AST fuzzer (msan)": {
             "required_build": "package_msan",
         },
-        "AST fuzzer (TSan)": {
+        "AST fuzzer (tsan)": {
             "required_build": "package_tsan",
         },
-        "AST fuzzer (UBSan)": {
+        "AST fuzzer (ubsan)": {
             "required_build": "package_ubsan",
         },
         "Stateless tests flaky check (asan)": {
