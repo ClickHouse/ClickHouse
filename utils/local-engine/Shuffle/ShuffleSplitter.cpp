@@ -114,7 +114,10 @@ void ShuffleSplitter::spillPartition(size_t partition_id)
             = std::make_unique<DB::NativeWriter>(*partition_write_buffers[partition_id], 0, partition_buffer[partition_id].getHeader());
     }
     DB::Block result = partition_buffer[partition_id].releaseColumns();
-    partition_outputs[partition_id]->write(result);
+    if (result.rows() > 0)
+    {
+        partition_outputs[partition_id]->write(result);
+    }
     split_result.total_spill_time += watch.elapsedNanoseconds();
     split_result.total_bytes_spilled += result.bytes();
 }

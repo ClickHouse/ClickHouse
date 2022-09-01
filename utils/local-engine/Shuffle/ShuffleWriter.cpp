@@ -15,7 +15,10 @@ void ShuffleWriter::write(const Block & block)
     {
         native_writer = std::make_unique<NativeWriter>(*write_buffer, 0, block.cloneEmpty());
     }
-    native_writer->write(block);
+    if (block.rows() > 0)
+    {
+        native_writer->write(block);
+    }
 }
 void ShuffleWriter::flush()
 {

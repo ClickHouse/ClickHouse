@@ -24,12 +24,8 @@ Block * local_engine::ShuffleReader::read()
 {
     auto block = input_stream->read();
     setCurrentBlock(block);
-    if (header.columns() == 0)
+    if (unlikely(header.columns() == 0))
         header = currentBlock().cloneEmpty();
-    if (currentBlock().columns() == 0)
-    {
-        currentBlock() = header.cloneEmpty();
-    }
     return &currentBlock();
 }
 ShuffleReader::~ShuffleReader()

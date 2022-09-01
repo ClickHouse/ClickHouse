@@ -34,17 +34,10 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
     DB::ASTTableJoin::Strictness strictness_,
     const DB::ColumnsDescription & columns_)
 {
-    {
-        std::lock_guard join_lock(join_lock_mutex);
-        if (!storage_join_lock.contains(key))
-        {
-            storage_join_lock.emplace(key, std::make_shared<std::mutex>());
-        }
-    }
 
-    std::lock_guard build_lock(*storage_join_lock.at(key));
     if (!storage_join_map.contains(key))
     {
+        std::lock_guard build_lock(join_lock_mutex);
         if (!storage_join_map.contains(key))
         {
             // limit memory usage
