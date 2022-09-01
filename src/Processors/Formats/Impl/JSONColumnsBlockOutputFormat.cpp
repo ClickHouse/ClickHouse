@@ -7,15 +7,10 @@
 namespace DB
 {
 
-JSONColumnsBlockOutputFormat::JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, size_t indent_)
-    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_), fields(header_.getNamesAndTypes()), indent(indent_)
+JSONColumnsBlockOutputFormat::JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8, size_t indent_)
+    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_, validate_utf8), indent(indent_)
 {
-    for (auto & field : fields)
-    {
-        WriteBufferFromOwnString buf;
-        writeJSONString(field.name, buf, format_settings);
-        field.name = buf.str().substr(1, buf.str().size() - 2);
-    }
+    names = JSONUtils::makeNamesValidJSONStrings(header_.getNames(), format_settings, validate_utf8);
 }
 
 void JSONColumnsBlockOutputFormat::writeChunkStart()
@@ -25,7 +20,7 @@ void JSONColumnsBlockOutputFormat::writeChunkStart()
 
 void JSONColumnsBlockOutputFormat::writeColumnStart(size_t column_index)
 {
-    JSONUtils::writeCompactArrayStart(*ostr, indent + 1, fields[column_index].name.data());
+    JSONUtils::writeCompactArrayStart(*ostr, indent + 1, names[column_index].data());
 }
 
 void JSONColumnsBlockOutputFormat::writeChunkEnd()
@@ -42,7 +37,7 @@ void registerOutputFormatJSONColumns(FormatFactory & factory)
         const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONColumnsBlockOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<JSONColumnsBlockOutputFormat>(buf, sample, format_settings, format_settings.json.validate_utf8);
     });
 }
 

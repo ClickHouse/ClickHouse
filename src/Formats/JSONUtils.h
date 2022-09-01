@@ -44,9 +44,7 @@ namespace JSONUtils
         const FormatSettings & format_settings,
         bool yield_strings);
 
-    DataTypePtr getCommonTypeForJSONFormats(const DataTypePtr & first, const DataTypePtr & second, bool allow_bools_as_numbers);
-
-    void makeNamesAndTypesWithValidUTF8(NamesAndTypes & fields, const FormatSettings & settings, bool & need_validate_utf8);
+    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8);
 
     /// Functions helpers for writing JSON data to WriteBuffer.
 
@@ -78,7 +76,7 @@ namespace JSONUtils
 
     void writeColumns(
         const Columns & columns,
-        const NamesAndTypes & fields,
+        const Names & names,
         const Serializations & serializations,
         size_t row_num,
         bool yield_strings,
@@ -94,7 +92,7 @@ namespace JSONUtils
         const FormatSettings & settings,
         WriteBuffer & out);
 
-    void writeMetadata(const NamesAndTypes & fields, const FormatSettings & settings, WriteBuffer & out);
+    void writeMetadata(const Names & names, const DataTypes & types, const FormatSettings & settings, WriteBuffer & out);
 
     void writeAdditionalInfo(
         size_t rows,
@@ -104,6 +102,24 @@ namespace JSONUtils
         const Progress & progress,
         bool write_statistics,
         WriteBuffer & out);
+
+    void skipColon(ReadBuffer & in);
+    void skipComma(ReadBuffer & in);
+
+    String readFieldName(ReadBuffer & in);
+
+    void skipArrayStart(ReadBuffer & in);
+    void skipArrayEnd(ReadBuffer & in);
+    bool checkAndSkipArrayStart(ReadBuffer & in);
+    bool checkAndSkipArrayEnd(ReadBuffer & in);
+
+    void skipObjectStart(ReadBuffer & in);
+    void skipObjectEnd(ReadBuffer & in);
+    bool checkAndSkipObjectEnd(ReadBuffer & in);
+
+    NamesAndTypesList readMetadata(ReadBuffer & in);
+
+    void skipTheRestOfObject(ReadBuffer & in);
 }
 
 }

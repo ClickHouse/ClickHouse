@@ -49,20 +49,17 @@ JSONCompactEachRowFormatReader::JSONCompactEachRowFormatReader(ReadBuffer & in_,
 
 void JSONCompactEachRowFormatReader::skipRowStartDelimiter()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar('[', *in);
+    JSONUtils::skipArrayStart(*in);
 }
 
 void JSONCompactEachRowFormatReader::skipFieldDelimiter()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar(',', *in);
+    JSONUtils::skipComma(*in);
 }
 
 void JSONCompactEachRowFormatReader::skipRowEndDelimiter()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar(']', *in);
+    JSONUtils::skipArrayEnd(*in);
 
     skipWhitespaceIfAny(*in);
     if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
@@ -130,8 +127,7 @@ bool JSONCompactEachRowFormatReader::parseFieldDelimiterWithDiagnosticInfo(Write
 {
     try
     {
-        skipWhitespaceIfAny(*in);
-        assertChar(',', *in);
+        JSONUtils::skipComma(*in);
     }
     catch (const DB::Exception &)
     {

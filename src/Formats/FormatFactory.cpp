@@ -95,6 +95,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
+    format_settings.json.use_metadata = settings.input_format_json_use_metadata;
+    format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
@@ -195,6 +197,9 @@ InputFormatPtr FormatFactory::getInput(
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
+//    LOG_DEBUG(&Poco::Logger::get("FormatFactory"), "getInput");
+//    std::cerr << "getInput\n";
+
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 
@@ -204,6 +209,9 @@ InputFormatPtr FormatFactory::getInput(
     }
 
     const Settings & settings = context->getSettingsRef();
+//    LOG_DEBUG(&Poco::Logger::get("FormatFactory"), "max_threads={}", settings.max_threads);
+//    std::cerr << "max_threads=" << settings.max_threads << "\n";
+
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
 
     // Doesn't make sense to use parallel parsing with less than four threads
@@ -243,6 +251,9 @@ InputFormatPtr FormatFactory::getInput(
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
                context->getApplicationType() == Context::ApplicationType::SERVER};
+
+//        LOG_DEBUG(&Poco::Logger::get("FormatFactory"), "Use parallel parsing with {} max threads", params.max_threads);
+//        std::cerr << "Use parallel parsing with max_threads=" << settings.max_threads << "\n";
         return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
@@ -259,6 +270,9 @@ InputFormatPtr FormatFactory::getInputFormat(
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
+//    LOG_DEBUG(&Poco::Logger::get("FormatFactory"), "getInputFormat");
+//    std::cerr << "getInputFormat\n";
+
     const auto & input_getter = getCreators(name).input_creator;
     if (!input_getter)
         throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
