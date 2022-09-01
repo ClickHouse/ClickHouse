@@ -81,7 +81,8 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     {
         if (chroot.front() != '/')
             throw KeeperException(
-                std::string("Root path in config file should start with '/', but got ") + chroot, Coordination::Error::ZBADARGUMENTS);
+                Coordination::Error::ZBADARGUMENTS,
+                "Root path in config file should start with '/', but got {}", chroot);
         if (chroot.back() == '/')
             chroot.pop_back();
     }
