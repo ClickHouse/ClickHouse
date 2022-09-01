@@ -120,17 +120,20 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         for (size_t i = 0; i != data_types.size(); ++i)
             column_names.push_back("c" + std::to_string(i + 1));
     }
-    /// If column names were set, check that the number of names match the number of types.
-    else if (column_names.size() != data_types.size())
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
-
-    for (size_t i = 0; i != column_names.size(); ++i)
+    else if (!data_types.empty())
     {
-        auto hint_it = hints.find(column_names[i]);
-        if (hint_it != hints.end())
-            data_types[i] = hint_it->second;
+        /// If column names were set, check that the number of names match the number of types.
+        if ((column_names.size() != data_types.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
+
+        for (size_t i = 0; i != column_names.size(); ++i)
+        {
+            auto hint_it = hints.find(column_names[i]);
+            if (hint_it != hints.end())
+                data_types[i] = hint_it->second;
+        }
     }
 
     for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
