@@ -4,7 +4,7 @@
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/IOutputFormatWithUTF8Validation.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -13,7 +13,7 @@ namespace DB
 
 /** Stream for output data in JSON format.
   */
-class JSONRowOutputFormat : public IRowOutputFormat
+class JSONRowOutputFormat : public IRowOutputFormatWithUTF8Validation
 {
 public:
     JSONRowOutputFormat(
@@ -28,14 +28,6 @@ public:
     void onProgress(const Progress & value) override;
 
     String getContentType() const override { return "application/json; charset=UTF-8"; }
-
-    void flush() override
-    {
-        ostr->next();
-
-        if (validating_ostr)
-            out.next();
-    }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {
@@ -67,12 +59,9 @@ protected:
 
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
-    std::unique_ptr<WriteBuffer> validating_ostr;    /// Validates UTF-8 sequences, replaces bad sequences with replacement character.
-    WriteBuffer * ostr;
-
     size_t field_number = 0;
     size_t row_count = 0;
-    NamesAndTypes fields;   /// The field names are pre-escaped to be put into JSON string literal.
+    Names names;   /// The column names are pre-escaped to be put into JSON string literal.
 
     Statistics statistics;
     FormatSettings settings;

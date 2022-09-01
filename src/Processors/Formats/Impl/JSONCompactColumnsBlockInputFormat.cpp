@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/JSONUtils.h>
 
 namespace DB
 {
@@ -12,29 +13,18 @@ JSONCompactColumnsReader::JSONCompactColumnsReader(ReadBuffer & in_) : JSONColum
 
 void JSONCompactColumnsReader::readChunkStart()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar('[', *in);
-    skipWhitespaceIfAny(*in);
+    JSONUtils::skipArrayStart(*in);
 }
 
 std::optional<String> JSONCompactColumnsReader::readColumnStart()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar('[', *in);
-    skipWhitespaceIfAny(*in);
+    JSONUtils::skipArrayStart(*in);
     return std::nullopt;
 }
 
 bool JSONCompactColumnsReader::checkChunkEnd()
 {
-    skipWhitespaceIfAny(*in);
-    if (!in->eof() && *in->position() == ']')
-    {
-        ++in->position();
-        skipWhitespaceIfAny(*in);
-        return true;
-    }
-    return false;
+    return JSONUtils::checkAndSkipArrayEnd(*in);
 }
 
 

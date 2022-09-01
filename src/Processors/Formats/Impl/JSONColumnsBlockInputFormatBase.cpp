@@ -21,23 +21,14 @@ JSONColumnsReaderBase::JSONColumnsReaderBase(ReadBuffer & in_) : in(&in_)
 
 bool JSONColumnsReaderBase::checkColumnEnd()
 {
-    skipWhitespaceIfAny(*in);
-    if (!in->eof() && *in->position() == ']')
-    {
-        ++in->position();
-        skipWhitespaceIfAny(*in);
-        return true;
-    }
-    return false;
+    return JSONUtils::checkAndSkipArrayEnd(*in);
 }
 
 bool JSONColumnsReaderBase::checkColumnEndOrSkipFieldDelimiter()
 {
     if (checkColumnEnd())
         return true;
-    skipWhitespaceIfAny(*in);
-    assertChar(',', *in);
-    skipWhitespaceIfAny(*in);
+    JSONUtils::skipComma(*in);
     return false;
 }
 
@@ -45,9 +36,7 @@ bool JSONColumnsReaderBase::checkChunkEndOrSkipColumnDelimiter()
 {
     if (checkChunkEnd())
         return true;
-    skipWhitespaceIfAny(*in);
-    assertChar(',', *in);
-    skipWhitespaceIfAny(*in);
+    JSONUtils::skipComma(*in);
     return false;
 }
 

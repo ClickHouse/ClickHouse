@@ -13,22 +13,14 @@ namespace ErrorCodes
 }
 
 JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, 1)
+    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, true, 1), types(header_.getDataTypes())
 {
-    bool need_validate_utf8 = false;
-    JSONUtils::makeNamesAndTypesWithValidUTF8(fields, format_settings, need_validate_utf8);
-
-    if (need_validate_utf8)
-    {
-        validating_ostr = std::make_unique<WriteBufferValidUTF8>(out);
-        ostr = validating_ostr.get();
-    }
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writePrefix()
 {
     JSONUtils::writeObjectStart(*ostr);
-    JSONUtils::writeMetadata(fields, format_settings, *ostr);
+    JSONUtils::writeMetadata(names, types, format_settings, *ostr);
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeSuffix()
@@ -66,7 +58,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeExtremes(Chunk chunk)
 void JSONColumnsWithMetadataBlockOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
     JSONUtils::writeObjectStart(*ostr, 2, title);
-    JSONUtils::writeColumns(columns, fields, serializations, row_num, false, format_settings, *ostr, 3);
+    JSONUtils::writeColumns(columns, names, serializations, row_num, false, format_settings, *ostr, 3);
     JSONUtils::writeObjectEnd(*ostr, 2);
 }
 
@@ -79,7 +71,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeTotals(Chunk chunk)
     const auto & columns = chunk.getColumns();
     JSONUtils::writeFieldDelimiter(*ostr, 2);
     JSONUtils::writeObjectStart(*ostr, 1, "totals");
-    JSONUtils::writeColumns(columns, fields, serializations, 0, false, format_settings, *ostr, 2);
+    JSONUtils::writeColumns(columns, names, serializations, 0, false, format_settings, *ostr, 2);
     JSONUtils::writeObjectEnd(*ostr, 1);
 }
 
