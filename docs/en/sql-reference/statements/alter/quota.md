@@ -2,9 +2,8 @@
 slug: /en/sql-reference/statements/alter/quota
 sidebar_position: 46
 sidebar_label: QUOTA
+title: "ALTER QUOTA"
 ---
-
-# ALTER QUOTA
 
 Changes quotas.
 
