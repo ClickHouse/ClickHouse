@@ -67,13 +67,11 @@ public:
       */
     virtual ~WriteBuffer()
     {
-#ifndef NDEBUG
         if (count() && is_finalize_required && !finalized)
         {
             LOG_ERROR(&Poco::Logger::get("WriteBuffer"), "WriteBuffer is not finalized in destructor, it may indicate a bug");
             std::terminate();
         }
-#endif
     }
 
     inline void nextIfAtEnd()
