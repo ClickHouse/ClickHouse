@@ -209,6 +209,10 @@ SELECT '--';
 
 DESCRIBE (SELECT arrayMap(x -> (SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2) AS a, [1, 2, 3]),  arrayMap(x -> (SELECT 1), [1,2,3]));
 
+SELECT '--';
+
+SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b;
+
 -- { echoOff }
 
 DROP TABLE test_table;
