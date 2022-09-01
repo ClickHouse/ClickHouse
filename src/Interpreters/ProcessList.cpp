@@ -69,7 +69,7 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextPtr query_context)
+ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context)
 {
     EntryPtr res;
 
@@ -198,7 +198,11 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
         if (user_process_list_it == user_to_queries.end())
-            user_process_list_it = user_to_queries.emplace(client_info.current_user, ProcessListForUser(query_context->getGlobalContext(), this)).first;
+        {
+            user_process_list_it = user_to_queries.emplace(std::piecewise_construct,
+                std::forward_as_tuple(client_info.current_user),
+                std::forward_as_tuple(query_context->getGlobalContext(), this)).first;
+        }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
@@ -568,7 +572,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
     if (global_context)
     {
         size_t size_limit = global_context->getSettingsRef().max_temp_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDisk>(global_context->getTempDataOnDisk(), size_limit);
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDisk>(global_context->getSharedTempDataOnDisk(), size_limit);
     }
 }
 

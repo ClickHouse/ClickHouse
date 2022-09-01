@@ -6,37 +6,33 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Formats/NativeWriter.h>
 #include <Formats/NativeReader.h>
+#include <Core/ProtocolDefines.h>
+
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
-void TemporaryDataOnDisk::deltaAlloc(int compressed_size, int uncompressed_size)
+void TemporaryDataOnDisk::deltaAlloc(int comp_delta, int uncomp_delta)
 {
-    size_t current_consuption = stat.compressed_size.fetch_add(compressed_size) + compressed_size;
-    stat.uncompressed_size.fetch_add(uncompressed_size);
+    size_t current_consuption = stat.compressed_size.fetch_add(comp_delta) + comp_delta;
+    stat.uncompressed_size.fetch_add(uncomp_delta);
 
     if (parent)
         parent->deltaAlloc(comp_delta, uncomp_delta);
 
-    if (compressed_size > 0 && limit && current_consuption > limit)
+    if (comp_delta > 0 && limit && current_consuption > limit)
         throw Exception("Memory limit exceeded", ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 }
 
-void TemporaryDataOnDisk::setAlloc(size_t compressed_size, size_t uncompressed_size)
-{
-    int comp_delta = compressed_size - stat.compressed_size.exchange(compressed_size);
-    int uncomp_delta = uncompressed_size - stat.uncompressed_size.exchange(uncompressed_size);
-
-    if (parent)
-        parent->deltaAlloc(comp_delta, uncomp_delta);
-}
-
-TemporaryFileStream & TemporaryDataOnDisk::createStream(CurrentMetrics::Value metric_scope, size_t reserve_size)
+TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t reserve_size)
 {
     std::lock_guard lock(mutex);
 
@@ -44,7 +40,7 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(CurrentMetrics::Value me
     ReservationPtr reservation = nullptr;
     if (reserve_size > 0)
     {
-        reservation = tmp_volume->reserve(reserve_size);
+        reservation = volume->reserve(reserve_size);
         if (!reservation)
             throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
         disk = reservation->getDisk();
@@ -54,8 +50,8 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(CurrentMetrics::Value me
         disk = volume->getDisk();
     }
 
-    TemporaryFileOnDiskHolder tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, metric_scope);
-    TemporaryFileStreamHolder & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(tmp_file, this));
+    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, metric_scope);
+    auto & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
     return *tmp_stream;
 }
 
@@ -81,7 +77,7 @@ struct TemporaryFileStream::OutputWriter
     {
         if (finalized)
             return;
-        out_writer.finalize();
+        out_writer.flush();
         out_compressed_buf.next();
         out_file_buf.next();
     }
@@ -120,9 +116,9 @@ struct TemporaryFileStream::InputReader
     NativeReader in_reader;
 };
 
-TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const TemporaryDataOnDiskPtr & parent_)
+TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header, TemporaryDataOnDisk * parent_)
     : parent(parent_)
-    , file(file_)
+    , file(std::move(file_))
     , out_writer(std::make_unique<OutputWriter>(file->path(), header))
 {
 }
@@ -133,19 +129,21 @@ void TemporaryFileStream::write(const Block & block)
         throw Exception("Writing has beed finished", ErrorCodes::LOGICAL_ERROR);
 
     out_writer->write(block);
-    setAlloc(out_writer->out_compressed_buf.getCompressedBytes(), out_writer->out_compressed_buf.getUncompressedBytes());
+    updateAlloc();
 }
 
-Stat TemporaryFileStream::finishWriting()
+TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
 {
     if (out_writer)
     {
+        Block header = out_writer->out_writer.getHeader();
         out_writer->finalize();
-        setAlloc(out_writer->out_compressed_buf.getCompressedBytes(), out_writer->out_compressed_buf.getUncompressedBytes());
+        updateAlloc();
+        out_writer.reset();
 
         in_reader = std::make_unique<InputReader>(file->path(), header);
     }
-    return stat;
+    return {compressed_size, uncompressed_size};
 }
 
 bool TemporaryFileStream::isWriteFinished() const
@@ -162,11 +160,38 @@ Block TemporaryFileStream::read()
     return in_reader->read();
 }
 
-~TemporaryFileStream::TemporaryFileStream()
+Block TemporaryFileStream::getHeader() const
+{
+    if (in_reader)
+        return in_reader->in_reader.getHeader();
+    if (out_writer)
+        return out_writer->out_writer.getHeader();
+    return {};
+}
+
+
+void TemporaryFileStream::updateAlloc()
+{
+    size_t new_compressed_size = out_writer->out_compressed_buf.getCompressedBytes();
+    size_t new_uncompressed_size = out_writer->out_compressed_buf.getUncompressedBytes();
+
+    if (unlikely(new_compressed_size < compressed_size || new_uncompressed_size < uncompressed_size))
+    {
+        LOG_ERROR(&Poco::Logger::get("TemporaryFileStream"),
+            "Temporary file {} size decreased after write: compressed: {} -> {}, uncompressed: {} -> {}",
+            file->path(), new_compressed_size, compressed_size, new_uncompressed_size, uncompressed_size);
+    }
+
+    parent->deltaAlloc(new_compressed_size - compressed_size, new_uncompressed_size - uncompressed_size);
+    this->compressed_size = new_compressed_size;
+    this->uncompressed_size = new_uncompressed_size;
+}
+
+TemporaryFileStream::~TemporaryFileStream()
 {
     try
     {
-        setAlloc(0, 0);
+        parent->deltaAlloc(-compressed_size, -uncompressed_size);
     }
     catch (...)
     {

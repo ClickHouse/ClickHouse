@@ -21,7 +21,7 @@ public:
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
-        TemporaryDataOnDiskPtr tmp_data_,
+        std::shared_ptr<TemporaryDataOnDisk> tmp_data_,
         size_t min_free_disk_space_,
         bool optimize_sorting_by_input_stream_properties_);
 
@@ -85,7 +85,7 @@ private:
     size_t max_bytes_before_remerge = 0;
     double remerge_lowered_memory_bytes_ratio = 0;
     size_t max_bytes_before_external_sort = 0;
-    TemporaryDataOnDiskPtr tmp_data = nullptr;
+    std::shared_ptr<TemporaryDataOnDisk> tmp_data = nullptr;
 
     size_t min_free_disk_space = 0;
     const bool optimize_sorting_by_input_stream_properties = false;

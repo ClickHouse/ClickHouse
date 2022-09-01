@@ -246,7 +246,7 @@ struct ProcessListForUser
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
 
-    TemporaryDataOnDiskPtr user_temp_data_on_disk;
+    std::shared_ptr<TemporaryDataOnDisk> user_temp_data_on_disk;
 
     UserOvercommitTracker user_overcommit_tracker;
 
@@ -379,7 +379,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries.
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextPtr query_context);
+    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }
