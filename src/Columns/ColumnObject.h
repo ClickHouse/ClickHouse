@@ -35,6 +35,10 @@ struct FieldInfo
 
     /// Number of dimension in array. 0 if field is scalar.
     size_t num_dimensions;
+
+    /// If true then this field is an array of variadic dimension field
+    /// and we need to normalize the dimension
+    bool need_fold_dimension;
 };
 
 FieldInfo getFieldInfo(const Field & field);

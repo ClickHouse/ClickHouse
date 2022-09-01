@@ -10,7 +10,7 @@
         -->
         <formatting>
             <type>json</type>
-            <names>
+            <!--<names>
                 <date_time>DATE_TIME</date_time>
                 <thread_name>THREAD_NAME</thread_name>
                 <thread_id>THREAD_ID</thread_id>
@@ -20,7 +20,7 @@
                 <message>MESSAGE</message>
                 <source_file>SOURCE_FILE</source_file>
                 <source_line>SOURCE_LINE</source_line>
-            </names>
+            </names>-->
         </formatting>
     </logger>
 

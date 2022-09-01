@@ -393,6 +393,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     {
         auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
 
+        size_t preprocessed = 0;
         LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
         auto idx = state_machine->last_commit_index() + 1;
         for (const auto & entry : *log_entries)
@@ -401,7 +402,12 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
                 state_machine->pre_commit(idx, entry->get_buf());
 
             ++idx;
+            ++preprocessed;
+
+            if (preprocessed % 50000 == 0)
+                LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
         }
+        LOG_INFO(log, "Preprocessing done");
     }
 
     loadLatestConfig();
