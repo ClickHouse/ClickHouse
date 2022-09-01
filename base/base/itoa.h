@@ -352,7 +352,7 @@ static inline char * writeUIntText(T x, char * p)
     static_assert(is_unsigned_v<T>);
 
     int len = digits10(x);
-    auto *pp = p + len;
+    auto * pp = p + len;
     while (x >= 100)
     {
         const auto i = x % 100;
