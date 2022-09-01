@@ -995,9 +995,12 @@ class TestCase:
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
             try:
+                drop_database_query = "DROP DATABASE " + database
+                if args.replicated_database:
+                    drop_database_query += " ON CLUSTER test_cluster_database_replicated"
                 clickhouse_execute(
                     args,
-                    "DROP DATABASE " + database,
+                    drop_database_query,
                     timeout=seconds_left,
                     settings={
                         "log_comment": args.testcase_basename,
