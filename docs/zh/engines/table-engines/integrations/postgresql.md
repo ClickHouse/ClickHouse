@@ -1,7 +1,6 @@
 ---
-slug: /zh/engines/table-engines/integrations/postgresql
-sidebar_position: 11
-sidebar_label: PostgreSQL
+toc_priority: 11
+toc_title: PostgreSQL
 ---
 
 # PostgreSQL {#postgresql}

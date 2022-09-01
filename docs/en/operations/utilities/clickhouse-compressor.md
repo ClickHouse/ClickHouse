@@ -1,8 +1,4 @@
----
-slug: /en/operations/utilities/clickhouse-compressor
----
-
-# clickhouse-compressor 
+## ClickHouse compressor
 
 Simple program for data compression and decompression.
 

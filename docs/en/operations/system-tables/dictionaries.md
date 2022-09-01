@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/dictionaries
----
-# dictionaries
+# system.dictionaries {#system_tables-dictionaries}
 
 Contains information about [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 

@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/set-role
-sidebar_position: 50
-sidebar_label: SET ROLE
+toc_priority: 50
+toc_title: SET ROLE
 ---
 
 # SET ROLE {#set-role-statement}

@@ -1,7 +1,6 @@
 ---
-slug: /zh/getting-started/example-datasets/metrica
-sidebar_position: 15
-sidebar_label: Yandex.Metrica Data
+toc_priority: 15
+toc_title: Yandex.Metrica Data
 ---
 
 # Anonymized Yandex.Metrica Data {#anonymized-yandex-metrica-data}

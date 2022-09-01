@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/topk
-sidebar_position: 108
+toc_priority: 108
 ---
 
 # topK {#topk}

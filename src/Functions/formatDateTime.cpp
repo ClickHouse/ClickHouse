@@ -722,19 +722,19 @@ struct NameFormatDateTime
 
 struct NameFromUnixTime
 {
-    static constexpr auto name = "fromUnixTimestamp";
+    static constexpr auto name = "FROM_UNIXTIME";
 };
 
 using FunctionFormatDateTime = FunctionFormatDateTimeImpl<NameFormatDateTime, false>;
-using FunctionFromUnixTimestamp = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
+using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
 
 }
 
-REGISTER_FUNCTION(FormatDateTime)
+void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatDateTime>();
-    factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", "fromUnixTimestamp");
+    factory.registerFunction<FunctionFROM_UNIXTIME>();
+    factory.registerAlias("fromUnixTimestamp", "FROM_UNIXTIME");
 }
 
 }

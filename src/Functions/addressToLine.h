@@ -1,5 +1,5 @@
 #pragma once
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>

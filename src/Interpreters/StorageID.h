@@ -10,7 +10,7 @@ namespace Poco
 {
 namespace Util
 {
-class AbstractConfiguration; // NOLINT(cppcoreguidelines-virtual-class-destructor)
+class AbstractConfiguration;
 }
 }
 

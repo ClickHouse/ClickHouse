@@ -1,7 +1,4 @@
----
-slug: /en/operations/external-authenticators/ldap
----
-# LDAP
+# LDAP {#external-authenticators-ldap}
 
 LDAP server can be used to authenticate ClickHouse users. There are two different approaches for doing this:
 

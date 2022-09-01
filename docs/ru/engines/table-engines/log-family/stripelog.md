@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/log-family/stripelog
-sidebar_position: 32
-sidebar_label: StripeLog
+toc_priority: 32
+toc_title: StripeLog
 ---
 
 # StripeLog {#stripelog}

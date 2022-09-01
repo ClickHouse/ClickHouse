@@ -1,7 +1,7 @@
 ---
-slug: /ru/commercial/
-sidebar_position: 70
-sidebar_label: "Коммерческие услуги"
+toc_folder_title: "Коммерческие услуги"
+toc_priority: 70
+toc_title: "Коммерческие услуги"
 ---
 
 # Коммерческие услуги {#clickhouse-commercial-services}
@@ -10,5 +10,5 @@ sidebar_label: "Коммерческие услуги"
 
 Категории услуг:
 
--   [Облачные услуги](https://clickhouse.com/cloud/)
--   [Поддержка](https://clickhouse.com/support/program/)
+-   [Облачные услуги](../commercial/cloud.md)
+-   [Поддержка](../commercial/support.md)

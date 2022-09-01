@@ -3,19 +3,19 @@
 
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/logger_useful.h>
-#include <Processors/QueryPlan/UnionStep.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -68,7 +68,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     configuration.username,
                     configuration.password);
 
-                shard = std::make_shared<StorageMySQL>(
+                shard = StorageMySQL::create(
                     table_id_,
                     std::move(pool),
                     configuration.database,
@@ -92,15 +92,12 @@ StorageExternalDistributed::StorageExternalDistributed(
                 postgres_conf.set(configuration);
                 postgres_conf.addresses = addresses;
 
-                const auto & settings = context->getSettingsRef();
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
                     postgres_conf,
-                    settings.postgresql_connection_pool_size,
-                    settings.postgresql_connection_pool_wait_timeout,
-                    POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-                    settings.postgresql_connection_pool_auto_close_connection);
+                    context->getSettingsRef().postgresql_connection_pool_size,
+                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
+                shard = StoragePostgreSQL::create(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
                 break;
             }
 #endif
@@ -173,8 +170,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 }
 
 
-void StorageExternalDistributed::read(
-    QueryPlan & query_plan,
+Pipe StorageExternalDistributed::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -183,12 +179,10 @@ void StorageExternalDistributed::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    Pipes pipes;
     for (const auto & shard : shards)
     {
-        plans.emplace_back(std::make_unique<QueryPlan>());
-        shard->read(
-            *plans.back(),
+        pipes.emplace_back(shard->read(
             column_names,
             storage_snapshot,
             query_info,
@@ -196,28 +190,10 @@ void StorageExternalDistributed::read(
             processed_stage,
             max_block_size,
             num_streams
-        );
+        ));
     }
 
-    if (plans.empty())
-    {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
-    }
-
-    if (plans.size() == 1)
-    {
-        query_plan = std::move(*plans.front());
-        return;
-    }
-
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
-    for (auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
-
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -229,7 +205,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
         if (engine_args.size() < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine ExternalDistributed must have at least 2 arguments: engine_name, named_collection and/or description");
 
-        auto engine_name = checkAndGetLiteralArgument<String>(engine_args[0], "engine_name");
+        auto engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         StorageExternalDistributed::ExternalStorageEngine table_engine;
         if (engine_name == "URL")
             table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
@@ -256,7 +232,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = checkAndGetLiteralArgument<String>(value, "cluster_description");
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table engine URL", name);
@@ -271,17 +247,17 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (auto & engine_arg : engine_args)
                     engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-                cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
-                configuration.format = checkAndGetLiteralArgument<String>(engine_args[2], "format");
+                cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+                configuration.format = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
                 configuration.compression_method = "auto";
                 if (engine_args.size() == 4)
-                    configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[3], "compression_method");
+                    configuration.compression_method = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
             }
 
 
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 
-            return std::make_shared<StorageExternalDistributed>(
+            return StorageExternalDistributed::create(
                 cluster_description,
                 args.table_id,
                 configuration.format,
@@ -302,7 +278,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = checkAndGetLiteralArgument<String>(value, "cluster_description");
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table function URL", name);
@@ -320,15 +296,15 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                         "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-                cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
-                configuration.database = checkAndGetLiteralArgument<String>(engine_args[2], "database");
-                configuration.table = checkAndGetLiteralArgument<String>(engine_args[3], "table");
-                configuration.username = checkAndGetLiteralArgument<String>(engine_args[4], "username");
-                configuration.password = checkAndGetLiteralArgument<String>(engine_args[5], "password");
+                cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+                configuration.database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+                configuration.table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+                configuration.username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+                configuration.password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
             }
 
 
-            return std::make_shared<StorageExternalDistributed>(
+            return StorageExternalDistributed::create(
                 args.table_id,
                 table_engine,
                 cluster_description,

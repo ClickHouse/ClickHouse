@@ -7,10 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -18,7 +16,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -803,20 +800,6 @@ namespace
         node = makeASTFunction("exists", subquery);
         return true;
     }
-
-    bool parseGrouping(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-    {
-        ASTPtr expr_list;
-        if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
-            return false;
-
-        auto res = std::make_shared<ASTFunction>();
-        res->name = "grouping";
-        res->arguments = expr_list;
-        res->children.push_back(res->arguments);
-        node = std::move(res);
-        return true;
-    }
 }
 
 
@@ -902,8 +885,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
         || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
         parsed_special_function = parseDateDiff(pos, node, expected);
-    else if (function_name_lowercase == "grouping")
-        parsed_special_function = parseGrouping(pos, node, expected);
 
     if (parsed_special_function.has_value())
         return parsed_special_function.value() && ParserToken(TokenType::ClosingRoundBracket).ignore(pos);
@@ -1068,16 +1049,13 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
+    ParserKeyword view("VIEW");
     ParserSelectWithUnionQuery select;
 
     ASTPtr identifier;
     ASTPtr query;
 
-    bool if_permitted = false;
-
-    if (ParserKeyword{"VIEWIFPERMITTED"}.ignore(pos, expected))
-        if_permitted = true;
-    else if (!ParserKeyword{"VIEW"}.ignore(pos, expected))
+    if (!view.ignore(pos, expected))
         return false;
 
     if (pos->type != TokenType::OpeningRoundBracket)
@@ -1097,30 +1075,15 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
     }
 
-    ASTPtr else_ast;
-    if (if_permitted)
-    {
-        if (!ParserKeyword{"ELSE"}.ignore(pos, expected))
-            return false;
-
-        if (!ParserWithOptionalAlias{std::make_unique<ParserFunction>(true, true), true}.parse(pos, else_ast, expected))
-            return false;
-    }
-
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
-
     ++pos;
-
-    auto expr_list = std::make_shared<ASTExpressionList>();
-    expr_list->children.push_back(query);
-    if (if_permitted)
-        expr_list->children.push_back(else_ast);
-
     auto function_node = std::make_shared<ASTFunction>();
     tryGetIdentifierNameInto(identifier, function_node->name);
-    function_node->name = if_permitted ? "viewIfPermitted" : "view";
-    function_node->arguments = expr_list;
+    auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
+    expr_list_with_single_query->children.push_back(query);
+    function_node->name = "view";
+    function_node->arguments = expr_list_with_single_query;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
     return true;
@@ -1198,15 +1161,15 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     node->frame_is_default = false;
     if (keyword_rows.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::ROWS;
+        node->frame_type = WindowFrame::FrameType::Rows;
     }
     else if (keyword_groups.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::GROUPS;
+        node->frame_type = WindowFrame::FrameType::Groups;
     }
     else if (keyword_range.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::RANGE;
+        node->frame_type = WindowFrame::FrameType::Range;
     }
     else
     {
@@ -1483,31 +1446,6 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr collation;
-
-    if (!ParserIdentifier(true).parse(pos, collation, expected))
-        return false;
-
-    // check the collation name is valid
-    const String name = getIdentifierName(collation);
-
-    bool valid_collation = name == "binary" ||
-                           endsWith(name, "_bin") ||
-                           endsWith(name, "_ci") ||
-                           endsWith(name, "_cs") ||
-                           endsWith(name, "_ks");
-
-    if (!valid_collation)
-        return false;
-
-    auto collation_node = std::make_shared<ASTCollation>();
-    collation_node->collation = collation;
-    node = collation_node;
-    return true;
-}
-
 
 template <TokenType ...tokens>
 static bool isOneOf(TokenType token)
@@ -1701,101 +1639,52 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     char buf[MAX_LENGTH_OF_NUMBER + 1];
 
-    size_t size = pos->size();
-    memcpy(buf, pos->begin, size);
-    buf[size] = 0;
-    char * start_pos = buf;
-
-    if (*start_pos == '0')
-    {
-        ++start_pos;
-        --size;
-
-        /// binary
-        if (*start_pos == 'b')
-        {
-            ++start_pos;
-            --size;
-            if (parseNumber(start_pos, size, negative, 2, res))
-            {
-                auto literal = std::make_shared<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
-                node = literal;
-
-                return true;
-            }
-            else
-                return false;
-        }
-
-        /// hexadecimal
-        if (*start_pos == 'x' || *start_pos == 'X')
-        {
-            ++start_pos;
-            --size;
-            if (parseNumber(start_pos, size, negative, 16, res))
-            {
-                auto literal = std::make_shared<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
-                node = literal;
-
-                return true;
-            }
-        }
-        else
-        {
-            /// possible leading zeroes in integer
-            while (*start_pos == '0')
-            {
-                ++start_pos;
-                --size;
-            }
-            if (parseNumber(start_pos, size, negative, 10, res))
-            {
-                auto literal = std::make_shared<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
-                node = literal;
-
-                return true;
-            }
-        }
-    }
-    else if (parseNumber(start_pos, size, negative, 10, res))
-    {
-        auto literal = std::make_shared<ASTLiteral>(res);
-        literal->begin = literal_begin;
-        literal->end = ++pos;
-        node = literal;
-
-        return true;
-    }
+    memcpy(buf, pos->begin, pos->size());
+    buf[pos->size()] = 0;
 
     char * pos_double = buf;
     errno = 0;    /// Functions strto* don't clear errno.
     Float64 float_value = std::strtod(buf, &pos_double);
-    if (pos_double == buf + pos->size() && errno != ERANGE)
+    if (pos_double != buf + pos->size() || errno == ERANGE)
     {
-        if (float_value < 0)
-            throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
+        /// Try to parse number as binary literal representation. Example: 0b0001.
+        if (pos->size() > 2 && buf[0] == '0' && buf[1] == 'b')
+        {
+            char * buf_skip_prefix = buf + 2;
 
-        if (negative)
-            float_value = -float_value;
+            if (parseNumber(buf_skip_prefix, pos->size() - 2, negative, 2, res))
+            {
+                auto literal = std::make_shared<ASTLiteral>(res);
+                literal->begin = literal_begin;
+                literal->end = ++pos;
+                node = literal;
 
-        res = float_value;
+                return true;
+            }
+        }
 
-        auto literal = std::make_shared<ASTLiteral>(res);
-        literal->begin = literal_begin;
-        literal->end = ++pos;
-        node = literal;
-
-        return true;
+        expected.add(pos, "number");
+        return false;
     }
 
-    expected.add(pos, "number");
-    return false;
+    if (float_value < 0)
+        throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
+
+    if (negative)
+        float_value = -float_value;
+
+    res = float_value;
+
+    /// try to use more exact type: UInt64
+
+    parseNumber(buf, pos->size(), negative, 0, res);
+
+    auto literal = std::make_shared<ASTLiteral>(res);
+    literal->begin = literal_begin;
+    literal->end = ++pos;
+    node = literal;
+
+    return true;
 }
 
 
@@ -1975,7 +1864,7 @@ const char * ParserAlias::restricted_keywords[] =
     "NOT",
     "OFFSET",
     "ON",
-    "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
+    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
     "PREWHERE",
     "RIGHT",
@@ -1989,7 +1878,6 @@ const char * ParserAlias::restricted_keywords[] =
     "WITH",
     "INTERSECT",
     "EXCEPT",
-    "ELSE",
     nullptr
 };
 
@@ -2045,18 +1933,16 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
-    ASTPtr res;
+    auto res = std::make_shared<ASTColumnsMatcher>();
     if (column_list)
     {
-        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
-        list_matcher->column_list = column_list;
-        res = list_matcher;
+        res->column_list = column_list;
+        res->children.push_back(res->column_list);
     }
     else
     {
-        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res = regexp_matcher;
+        res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        res->children.push_back(regex_node);
     }
 
     ParserColumnsTransformers transformers_p(allowed_transformers);
@@ -2562,35 +2448,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->children.push_back(expr_elem);
     if (locale_node)
         elem->children.push_back(locale_node);
-
-    node = elem;
-
-    return true;
-}
-
-bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword as("AS");
-    ParserExpression element_p;
-    ParserIdentifier ident_p;
-
-    ASTPtr ident;
-    if (!ident_p.parse(pos, ident, expected))
-        return false;
-
-    ASTPtr expr;
-    if (as.ignore(pos, expected))
-    {
-        if (!element_p.parse(pos, expr, expected))
-            return false;
-    }
-    else
-        expr = ident;
-
-    auto elem = std::make_shared<ASTInterpolateElement>();
-    elem->column = ident->getColumnName();
-    elem->expr = expr;
-    elem->children.push_back(expr);
 
     node = elem;
 

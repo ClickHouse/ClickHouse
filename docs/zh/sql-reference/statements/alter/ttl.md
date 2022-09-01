@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/statements/alter/ttl
-sidebar_position: 44
-sidebar_label: TTL
+toc_priority: 44
+toc_title: TTL
 ---
 
 # 表的 TTL 操作 {#manipulations-with-table-ttl}

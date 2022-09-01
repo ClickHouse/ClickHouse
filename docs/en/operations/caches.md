@@ -1,12 +1,11 @@
 ---
-slug: /en/operations/caches
-sidebar_position: 65
-sidebar_label: Caches
+toc_priority: 65
+toc_title: Caches
 ---
 
-# Cache Types
+# Cache Types {#cache-types}
 
-When performing queries, ClickHouse uses different caches.
+When performing queries, ClichHouse uses different caches.
 
 Main cache types:
 
@@ -20,7 +19,6 @@ Additional cache types:
 - Compiled expressions cache.
 - [Avro format](../interfaces/formats.md#data-format-avro) schemas cache.
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
-- Schema inference cache.
 
 Indirectly used:
 

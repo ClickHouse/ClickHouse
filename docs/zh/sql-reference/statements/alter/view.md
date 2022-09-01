@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/statements/alter/view
-sidebar_position: 50
-sidebar_label: VIEW
+toc_priority: 50
+toc_title: VIEW
 ---
 
 # ALTER TABLE … MODIFY QUERY 语句 {#alter-modify-query}

@@ -55,7 +55,7 @@ def golang_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]
@@ -82,7 +82,7 @@ def php_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]
@@ -109,7 +109,7 @@ def nodejs_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]
@@ -136,7 +136,7 @@ def java_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]
@@ -365,7 +365,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "currentDatabase()\ndefault\n"
+    assert stdout.decode() == "DATABASE()\ndefault\n"
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
@@ -377,7 +377,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "currentDatabase()\ndefault\n"
+    assert stdout.decode() == "DATABASE()\ndefault\n"
 
 
 def test_mysql_select_user(started_cluster):

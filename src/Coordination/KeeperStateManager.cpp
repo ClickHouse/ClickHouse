@@ -1,11 +1,10 @@
 #include <Coordination/KeeperStateManager.h>
 
-#include <filesystem>
 #include <Coordination/Defines.h>
-#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
+#include <filesystem>
 #include <Common/isLocalAddress.h>
-#include <IO/ReadHelpers.h>
+#include <Common/DNSResolver.h>
 
 namespace DB
 {
@@ -13,11 +12,24 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
-    extern const int CORRUPTED_DATA;
 }
 
 namespace
 {
+
+bool isLoopback(const std::string & hostname)
+{
+    try
+    {
+        return DNSResolver::instance().resolveHost(hostname).isLoopback();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return false;
+}
 
 bool isLocalhost(const std::string & hostname)
 {
@@ -35,19 +47,18 @@ bool isLocalhost(const std::string & hostname)
 
 std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::AbstractConfiguration & config)
 {
-    using namespace std::string_literals;
-    static const std::array config_port_names = {
-        "keeper_server.tcp_port"s,
-        "keeper_server.tcp_port_secure"s,
-        "interserver_http_port"s,
-        "interserver_https_port"s,
-        "tcp_port"s,
-        "tcp_with_proxy_port"s,
-        "tcp_port_secure"s,
-        "mysql_port"s,
-        "postgresql_port"s,
-        "grpc_port"s,
-        "prometheus.port"s,
+    static const char * config_port_names[] = {
+        "keeper_server.tcp_port",
+        "keeper_server.tcp_port_secure",
+        "interserver_http_port",
+        "interserver_https_port",
+        "tcp_port",
+        "tcp_with_proxy_port",
+        "tcp_port_secure",
+        "mysql_port",
+        "postgresql_port",
+        "grpc_port",
+        "prometheus.port",
     };
 
     std::unordered_map<UInt64, std::string> ports;
@@ -67,11 +78,8 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 /// 3. Raft internal port is not equal to any other port for client
 /// 4. No duplicate IDs
 /// 5. Our ID present in hostnames list
-KeeperStateManager::KeeperConfigurationWrapper
-KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
+KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
-    const bool hostname_checks_enabled = config.getBool(config_prefix + ".hostname_checks_enabled", true);
-
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -85,7 +93,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
-    bool localhost_present = false;
+    std::string loopback_hostname;
     std::string non_local_hostname;
     size_t local_address_counter = 0;
     for (const auto & server_key : keys)
@@ -101,46 +109,35 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
 
-        if (client_ports.contains(port))
+        if (client_ports.count(port) != 0)
         {
-            throw Exception(
-                ErrorCodes::RAFT_ERROR,
-                "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
-                hostname,
-                port,
-                client_ports[port]);
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
+                            hostname, port, client_ports[port]);
         }
 
-        if (hostname_checks_enabled)
+        if (isLoopback(hostname))
         {
-            if (hostname == "localhost")
-            {
-                localhost_present = true;
-                local_address_counter++;
-            }
-            else if (isLocalhost(hostname))
-            {
-                local_address_counter++;
-            }
-            else
-            {
-                non_local_hostname = hostname;
-            }
+            loopback_hostname = hostname;
+            local_address_counter++;
+        }
+        else if (isLocalhost(hostname))
+        {
+            local_address_counter++;
+        }
+        else
+        {
+            non_local_hostname = hostname;
         }
 
         if (start_as_follower)
             result.servers_start_as_followers.insert(new_server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
-        if (check_duplicated_hostnames.contains(endpoint))
+        if (check_duplicated_hostnames.count(endpoint))
         {
-            throw Exception(
-                ErrorCodes::RAFT_ERROR,
-                "Raft config contains duplicate endpoints: "
-                "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
-                endpoint,
-                check_duplicated_hostnames[endpoint],
-                new_server_id);
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate endpoints: "
+                            "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
+                            endpoint, check_duplicated_hostnames[endpoint], new_server_id);
         }
         else
         {
@@ -148,13 +145,8 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
             for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
             {
                 if (new_server_id == id)
-                    throw Exception(
-                        ErrorCodes::RAFT_ERROR,
-                        "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
-                        "but going to add it one more time with endpoint {}",
-                        id,
-                        id_endpoint,
-                        endpoint);
+                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
+                                    "but going to add it one more time with endpoint {}", id, id_endpoint, endpoint);
             }
             check_duplicated_hostnames.emplace(endpoint, new_server_id);
         }
@@ -176,38 +168,31 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 
-    if (hostname_checks_enabled)
+    if (!loopback_hostname.empty() && !non_local_hostname.empty())
     {
-        if (localhost_present && !non_local_hostname.empty())
-        {
-            throw Exception(
-                ErrorCodes::RAFT_ERROR,
-                "Mixing 'localhost' and non-local hostnames ('{}') in raft_configuration is not allowed. "
-                "Different hosts can resolve 'localhost' to themselves so it's not allowed.",
-                non_local_hostname);
-        }
+        throw Exception(
+            ErrorCodes::RAFT_ERROR,
+            "Mixing loopback and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. "
+            "Different hosts can resolve it to themselves so it's not allowed.",
+            loopback_hostname, non_local_hostname);
+    }
 
-        if (!non_local_hostname.empty() && local_address_counter > 1)
-        {
-            throw Exception(
-                ErrorCodes::RAFT_ERROR,
-                "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
-                "Such configuration is not allowed because single host can vote multiple times.",
-                local_address_counter,
-                non_local_hostname);
-        }
+    if (!non_local_hostname.empty() && local_address_counter > 1)
+    {
+        throw Exception(
+            ErrorCodes::RAFT_ERROR,
+            "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
+            "Such configuration is not allowed because single host can vote multiple times.",
+            local_address_counter, non_local_hostname);
     }
 
     return result;
 }
 
-KeeperStateManager::KeeperStateManager(
-    int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
-    : my_server_id(server_id_)
-    , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
-    , server_state_path(state_file_path)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
+: my_server_id(server_id_)
+, secure(false)
+, log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -220,7 +205,6 @@ KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix_,
     const std::string & log_storage_path,
-    const std::string & state_file_path,
     const Poco::Util::AbstractConfiguration & config,
     const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
@@ -228,12 +212,10 @@ KeeperStateManager::KeeperStateManager(
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
-          log_storage_path,
-          coordination_settings->rotate_log_storage_interval,
-          coordination_settings->force_sync,
-          coordination_settings->compress_logs))
-    , server_state_path(state_file_path)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+                    log_storage_path,
+                    coordination_settings->rotate_log_storage_interval,
+                    coordination_settings->force_sync,
+                    coordination_settings->compress_logs))
 {
 }
 
@@ -259,9 +241,9 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
     return nullptr;
 }
 
-void KeeperStateManager::flushAndShutDownLogStore()
+void KeeperStateManager::flushLogStore()
 {
-    log_store->flushChangelogAndShutdown();
+    log_store->flush();
 }
 
 void KeeperStateManager::save_config(const nuraft::cluster_config & config)
@@ -271,143 +253,10 @@ void KeeperStateManager::save_config(const nuraft::cluster_config & config)
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
-const std::filesystem::path & KeeperStateManager::getOldServerStatePath()
-{
-    static auto old_path = [this]
-    {
-        return server_state_path.parent_path() / (server_state_path.filename().generic_string() + "-OLD");
-    }();
-
-    return old_path;
-}
-
-namespace
-{
-enum ServerStateVersion : uint8_t
-{
-    V1 = 0
-};
-
-constexpr auto current_server_state_version = ServerStateVersion::V1;
-
-}
-
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
-    const auto & old_path = getOldServerStatePath();
-
-    if (std::filesystem::exists(server_state_path))
-        std::filesystem::rename(server_state_path, old_path);
-
-    WriteBufferFromFile server_state_file(server_state_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-    auto buf = state.serialize();
-
-    // calculate checksum
-    SipHash hash;
-    hash.update(current_server_state_version);
-    hash.update(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
-    writeIntBinary(hash.get64(), server_state_file);
-
-    writeIntBinary(static_cast<uint8_t>(current_server_state_version), server_state_file);
-
-    server_state_file.write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
-    server_state_file.sync();
-    server_state_file.close();
-
-    std::filesystem::remove(old_path);
-}
-
-nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
-{
-    const auto & old_path = getOldServerStatePath();
-
-    const auto try_read_file = [this](const auto & path) -> nuraft::ptr<nuraft::srv_state>
-    {
-        try
-        {
-            ReadBufferFromFile read_buf(path);
-            auto content_size = read_buf.getFileSize();
-
-            if (content_size == 0)
-                return nullptr;
-
-            uint64_t read_checksum{0};
-            readIntBinary(read_checksum, read_buf);
-
-            uint8_t version;
-            readIntBinary(version, read_buf);
-
-            auto buffer_size = content_size - sizeof read_checksum - sizeof version;
-
-            auto state_buf = nuraft::buffer::alloc(buffer_size);
-            read_buf.read(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
-
-            SipHash hash;
-            hash.update(version);
-            hash.update(reinterpret_cast<const char *>(state_buf->data_begin()), state_buf->size());
-
-            if (read_checksum != hash.get64())
-            {
-                const auto error_string = fmt::format(
-                    "Invalid checksum while reading state from {}. Got {}, expected {}",
-                    path.generic_string(),
-                    hash.get64(),
-                    read_checksum);
-#ifdef NDEBUG
-                LOG_ERROR(logger, fmt::runtime(error_string));
-                return nullptr;
-#else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_string);
-#endif
-            }
-
-            auto state = nuraft::srv_state::deserialize(*state_buf);
-            LOG_INFO(logger, "Read state from {}", path.generic_string());
-            return state;
-        }
-        catch (const std::exception & e)
-        {
-            if (const auto * exception = dynamic_cast<const Exception *>(&e);
-                exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
-            {
-                throw;
-            }
-
-            LOG_ERROR(logger, "Failed to deserialize state from {}", path.generic_string());
-            return nullptr;
-        }
-    };
-
-    if (std::filesystem::exists(server_state_path))
-    {
-        auto state = try_read_file(server_state_path);
-
-        if (state)
-        {
-            if (std::filesystem::exists(old_path))
-                std::filesystem::remove(old_path);
-
-            return state;
-        }
-
-        std::filesystem::remove(server_state_path);
-    }
-
-    if (std::filesystem::exists(old_path))
-    {
-        auto state = try_read_file(old_path);
-
-        if (state)
-        {
-            std::filesystem::rename(old_path, server_state_path);
-            return state;
-        }
-
-        std::filesystem::remove(old_path);
-    }
-
-    LOG_WARNING(logger, "No state was read");
-    return nullptr;
+    nuraft::ptr<nuraft::buffer> buf = state.serialize();
+    server_state = nuraft::srv_state::deserialize(*buf);
 }
 
 ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
@@ -427,31 +276,16 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
     ConfigUpdateActions result;
 
     /// First of all add new servers
-    for (const auto & [new_id, server_config] : new_ids)
+    for (auto [new_id, server_config] : new_ids)
     {
-        auto old_server_it = old_ids.find(new_id);
-        if (old_server_it == old_ids.end())
+        if (!old_ids.count(new_id))
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
-        else
-        {
-            const auto & old_endpoint = old_server_it->second->get_endpoint();
-            if (old_endpoint != server_config->get_endpoint())
-            {
-                LOG_WARNING(
-                    &Poco::Logger::get("RaftConfiguration"),
-                    "Config will be ignored because a server with ID {} is already present in the cluster on a different endpoint ({}). "
-                    "The endpoint of the current servers should not be changed. For servers on a new endpoint, please use a new ID.",
-                    new_id,
-                    old_endpoint);
-                return {};
-            }
-        }
     }
 
     /// After that remove old ones
     for (auto [old_id, server_config] : old_ids)
     {
-        if (!new_ids.contains(old_id))
+        if (!new_ids.count(old_id))
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
     }
 

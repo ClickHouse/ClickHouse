@@ -1,11 +1,9 @@
 import pytest
 import time
-import logging
 import psycopg2
 from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
-from helpers.postgres_utility import get_postgres_conn
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
@@ -20,40 +18,62 @@ node1 = cluster.add_instance(
     with_postgres_cluster=True,
 )
 
+postgres_dict_table_template = """
+    CREATE TABLE IF NOT EXISTS {} (
+    id Integer NOT NULL, key Integer NOT NULL, value Integer NOT NULL, PRIMARY KEY (id))
+    """
+click_dict_table_template = """
+    CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (
+        `key` UInt32, `value` UInt32
+    ) ENGINE = Dictionary({})
+    """
+
+
+def get_postgres_conn(ip, port, database=False):
+    if database == True:
+        conn_string = "host={} port={} dbname='clickhouse' user='postgres' password='mysecretpassword'".format(
+            ip, port
+        )
+    else:
+        conn_string = (
+            "host={} port={} user='postgres' password='mysecretpassword'".format(
+                ip, port
+            )
+        )
+
+    conn = psycopg2.connect(conn_string)
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    conn.autocommit = True
+    return conn
+
 
 def create_postgres_db(conn, name):
     cursor = conn.cursor()
-    cursor.execute(f"CREATE DATABASE {name}")
+    cursor.execute("CREATE DATABASE {}".format(name))
 
 
 def create_postgres_table(cursor, table_name):
-    cursor.execute(
-        f"""
-    CREATE TABLE IF NOT EXISTS {table_name} (
-    id Integer NOT NULL, key Integer NOT NULL, value Integer NOT NULL, PRIMARY KEY (id))
-    """
-    )
+    cursor.execute(postgres_dict_table_template.format(table_name))
 
 
 def create_and_fill_postgres_table(cursor, table_name, port, host):
     create_postgres_table(cursor, table_name)
     # Fill postgres table using clickhouse postgres table function and check
-    table_func = f"""postgresql('{host}:{port}', 'postgres_database', '{table_name}', 'postgres', 'mysecretpassword')"""
-    node1.query(
-        f"""INSERT INTO TABLE FUNCTION {table_func} SELECT number, number, number from numbers(10000)"""
+    table_func = """postgresql('{}:{}', 'clickhouse', '{}', 'postgres', 'mysecretpassword')""".format(
+        host, port, table_name
     )
-    result = node1.query(f"SELECT count() FROM {table_func}")
+    node1.query(
+        """INSERT INTO TABLE FUNCTION {} SELECT number, number, number from numbers(10000)
+            """.format(
+            table_func, table_name
+        )
+    )
+    result = node1.query("SELECT count() FROM {}".format(table_func))
     assert result.rstrip() == "10000"
 
 
 def create_dict(table_name, index=0):
-    node1.query(
-        f"""
-    CREATE TABLE IF NOT EXISTS `test`.`dict_table_{table_name}` (
-        `key` UInt32, `value` UInt32
-    ) ENGINE = Dictionary(dict{str(index)})
-    """
-    )
+    node1.query(click_dict_table_template.format(table_name, "dict" + str(index)))
 
 
 @pytest.fixture(scope="module")
@@ -65,14 +85,14 @@ def started_cluster():
         postgres_conn = get_postgres_conn(
             ip=cluster.postgres_ip, port=cluster.postgres_port
         )
-        logging.debug("postgres1 connected")
-        create_postgres_db(postgres_conn, "postgres_database")
+        print("postgres1 connected")
+        create_postgres_db(postgres_conn, "clickhouse")
 
-        postgres2_conn = get_postgres_conn(
+        postgres_conn = get_postgres_conn(
             ip=cluster.postgres2_ip, port=cluster.postgres_port
         )
-        logging.debug("postgres2 connected")
-        create_postgres_db(postgres2_conn, "postgres_database")
+        print("postgres2 connected")
+        create_postgres_db(postgres_conn, "clickhouse")
 
         yield cluster
 
@@ -97,22 +117,27 @@ def test_load_dictionaries(started_cluster):
     create_dict(table_name)
     dict_name = "dict0"
 
-    node1.query(f"SYSTEM RELOAD DICTIONARY {dict_name}")
+    node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert (
-        node1.query(f"SELECT count() FROM `test`.`dict_table_{table_name}`").rstrip()
+        node1.query(
+            "SELECT count() FROM `test`.`dict_table_{}`".format(table_name)
+        ).rstrip()
         == "10000"
     )
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'key', toUInt64(0))") == "0\n"
+        node1.query("SELECT dictGetUInt32('{}', 'key', toUInt64(0))".format(dict_name))
+        == "0\n"
     )
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(9999))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(9999))".format(dict_name)
+        )
         == "9999\n"
     )
 
-    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-    node1.query(f"DROP TABLE IF EXISTS {table_name}")
-    node1.query(f"DROP DICTIONARY IF EXISTS {dict_name}")
+    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
+    node1.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node1.query("DROP DICTIONARY IF EXISTS {}".format(dict_name))
 
 
 def test_postgres_dictionaries_custom_query_full_load(started_cluster):
@@ -134,7 +159,7 @@ def test_postgres_dictionaries_custom_query_full_load(started_cluster):
 
     query = node1.query
     query(
-        f"""
+        """
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -144,14 +169,16 @@ def test_postgres_dictionaries_custom_query_full_load(started_cluster):
     PRIMARY KEY id
     LAYOUT(FLAT())
     SOURCE(PostgreSQL(
-        DB 'postgres_database'
-        HOST '{started_cluster.postgres_ip}'
-        PORT {started_cluster.postgres_port}
+        DB 'clickhouse'
+        HOST '{}'
+        PORT {}
         USER 'postgres'
         PASSWORD 'mysecretpassword'
         QUERY $doc$SELECT id, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id);$doc$))
     LIFETIME(0)
-    """
+    """.format(
+            started_cluster.postgres_ip, started_cluster.postgres_port
+        )
     )
 
     result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
@@ -183,7 +210,7 @@ def test_postgres_dictionaries_custom_query_partial_load_simple_key(started_clus
 
     query = node1.query
     query(
-        f"""
+        """
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -193,13 +220,15 @@ def test_postgres_dictionaries_custom_query_partial_load_simple_key(started_clus
     PRIMARY KEY id
     LAYOUT(DIRECT())
     SOURCE(PostgreSQL(
-        DB 'postgres_database'
-        HOST '{started_cluster.postgres_ip}'
-        PORT {started_cluster.postgres_port}
+        DB 'clickhouse'
+        HOST '{}'
+        PORT {}
         USER 'postgres'
         PASSWORD 'mysecretpassword'
         QUERY $doc$SELECT id, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id) WHERE {{condition}};$doc$))
-    """
+    """.format(
+            started_cluster.postgres_ip, started_cluster.postgres_port
+        )
     )
 
     result = query(
@@ -233,7 +262,7 @@ def test_postgres_dictionaries_custom_query_partial_load_complex_key(started_clu
 
     query = node1.query
     query(
-        f"""
+        """
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -244,13 +273,15 @@ def test_postgres_dictionaries_custom_query_partial_load_complex_key(started_clu
     PRIMARY KEY id, key
     LAYOUT(COMPLEX_KEY_DIRECT())
     SOURCE(PostgreSQL(
-        DB 'postgres_database'
-        HOST '{started_cluster.postgres_ip}'
-        PORT {started_cluster.postgres_port}
+        DB 'clickhouse'
+        HOST '{}'
+        PORT {}
         USER 'postgres'
         PASSWORD 'mysecretpassword'
         QUERY $doc$SELECT id, key, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id, key) WHERE {{condition}};$doc$))
-    """
+    """.format(
+            started_cluster.postgres_ip, started_cluster.postgres_port
+        )
     )
 
     result = query(
@@ -283,56 +314,70 @@ def test_invalidate_query(started_cluster):
     # invalidate query: SELECT value FROM test0 WHERE id = 0
     dict_name = "dict0"
     create_dict(table_name)
-    node1.query(f"SYSTEM RELOAD DICTIONARY {dict_name}")
+    node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)
+        )
         == "0\n"
     )
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(1))".format(dict_name)
+        )
         == "1\n"
     )
 
     # update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value+1 WHERE id = 0")
+    cursor.execute("UPDATE {} SET value=value+1 WHERE id = 0".format(table_name))
     while True:
         result = node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))"
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)
         )
         if result != "0\n":
             break
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)
+        )
         == "1\n"
     )
 
     # no update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value*2 WHERE id != 0")
+    cursor.execute("UPDATE {} SET value=value*2 WHERE id != 0".format(table_name))
     time.sleep(5)
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)
+        )
         == "1\n"
     )
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(1))".format(dict_name)
+        )
         == "1\n"
     )
 
     # update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value+1 WHERE id = 0")
+    cursor.execute("UPDATE {} SET value=value+1 WHERE id = 0".format(table_name))
     time.sleep(5)
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)
+        )
         == "2\n"
     )
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
+        node1.query(
+            "SELECT dictGetUInt32('{}', 'value', toUInt64(1))".format(dict_name)
+        )
         == "2\n"
     )
 
-    node1.query(f"DROP TABLE IF EXISTS {table_name}")
-    node1.query(f"DROP DICTIONARY IF EXISTS {dict_name}")
-    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node1.query("DROP DICTIONARY IF EXISTS {}".format(dict_name))
+    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
 
 
 def test_dictionary_with_replicas(started_cluster):
@@ -401,7 +446,7 @@ def test_postgres_schema(started_cluster):
         host 'postgres1'
         user  'postgres'
         password 'mysecretpassword'
-        db 'postgres_database'
+        db 'clickhouse'
         table 'test_schema.test_table'))
         LIFETIME(MIN 1 MAX 2)
         LAYOUT(HASHED());
@@ -413,8 +458,6 @@ def test_postgres_schema(started_cluster):
     result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
     assert int(result.strip()) == 99
     node1.query("DROP DICTIONARY IF EXISTS postgres_dict")
-    cursor.execute("DROP TABLE test_schema.test_table")
-    cursor.execute("DROP SCHEMA test_schema")
 
 
 def test_predefined_connection_configuration(started_cluster):
@@ -523,7 +566,7 @@ def test_bad_configuration(started_cluster):
         host 'postgres1'
         user  'postgres'
         password 'mysecretpassword'
-        dbbb 'postgres_database'
+        dbbb 'clickhouse'
         table 'test_schema.test_table'))
         LIFETIME(MIN 1 MAX 2)
         LAYOUT(HASHED());

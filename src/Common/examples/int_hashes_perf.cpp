@@ -8,17 +8,15 @@
 
 #include <iostream>
 #include <iomanip>
-#include <pcg_random.hpp>
 #include <Poco/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
-#include <Common/randomSeed.h>
 #include <Core/Defines.h>
 
 
 static void setAffinity()
 {
-#if !defined(OS_DARWIN) && !defined(OS_FREEBSD) && !defined(__sun)
+#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__sun)
     cpu_set_t mask;
     CPU_ZERO(&mask);
     CPU_SET(0, &mask);
@@ -268,9 +266,9 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        pcg64 rng(randomSeed());
+        srand48(rdtsc());
         for (size_t i = 0; i < BUF_SIZE; ++i)
-            data[i] = rng();
+            data[i] = lrand48();
 
         watch.stop();
         double elapsed = watch.elapsedSeconds();
@@ -285,7 +283,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 1) test<identity>  (n, data.data(), "0: identity");
     if (!method || method == 2) test<intHash32> (n, data.data(), "1: intHash32");
-#if !defined(OS_DARWIN) /// The difference in size_t: unsigned long on Linux, unsigned long long on Mac OS.
+#if !defined(__APPLE__) /// The difference in size_t: unsigned long on Linux, unsigned long long on Mac OS.
     if (!method || method == 3) test<intHash64> (n, data.data(), "2: intHash64");
 #endif
     if (!method || method == 4) test<hash3>     (n, data.data(), "3: two rounds");

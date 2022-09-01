@@ -9,7 +9,7 @@ namespace DB
 struct NameProtocol { static constexpr auto name = "protocol"; };
 using FunctionProtocol = FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, NameProtocol>;
 
-REGISTER_FUNCTION(Protocol)
+void registerFunctionProtocol(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionProtocol>();
 }

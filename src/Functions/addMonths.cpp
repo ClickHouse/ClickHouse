@@ -7,7 +7,7 @@ namespace DB
 
 using FunctionAddMonths = FunctionDateOrDateTimeAddInterval<AddMonthsImpl>;
 
-REGISTER_FUNCTION(AddMonths)
+void registerFunctionAddMonths(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAddMonths>();
 }

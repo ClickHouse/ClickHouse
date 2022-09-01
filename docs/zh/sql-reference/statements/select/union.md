@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/statements/select/union
-sidebar_label: UNION ALL
+toc_title: UNION ALL
 ---
 
 # UNION ALL子句 {#union-clause}

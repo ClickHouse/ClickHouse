@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/query_thread_log
----
-# query_thread_log
+# system.query_thread_log {#system_tables-query_thread_log}
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
