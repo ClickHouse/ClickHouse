@@ -19,7 +19,7 @@ bool ArrayConcat::convertImpl(String & out,IParser::Pos & pos)
     return directMapping(out, pos, "arrayConcat");
 }
 
-bool ArrayIif::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayIif::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -30,7 +30,8 @@ bool ArrayIif::convertImpl(String & out,IParser::Pos & pos)
     const auto if_false = getArgument(function_name, pos);
 
     out = std::format(
-        "arrayMap(x -> if(x.1 != 0, x.2, x.3), arrayZip({0}, arrayResize({1}, length({0}), null), arrayResize({2}, length({0}), null)))",
+        "arrayMap(x -> multiIf(toTypeName(x.1) = 'String', null, toInt64(x.1) != 0, x.2, x.3), "
+        "arrayZip({0}, arrayResize({1}, length({0}), null), arrayResize({2}, length({0}), null)))",
         conditions,
         if_true,
         if_false);
