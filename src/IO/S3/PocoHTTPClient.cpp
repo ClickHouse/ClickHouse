@@ -185,7 +185,7 @@ namespace
     }
 }
 
-S3MetricKind PocoHTTPClient::getMetricKind(Aws::Http::HttpRequest & request)
+PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::HttpRequest & request) const
 {
     switch (request.GetMethod())
     {
@@ -201,11 +201,11 @@ S3MetricKind PocoHTTPClient::getMetricKind(Aws::Http::HttpRequest & request)
     throw Exception("Unsupported request method", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void PocoHTTPClient::addMetric(Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount)
+void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
-    constexpr ProfileEvents::Event NotUsed{-1};
+    constexpr ProfileEvents::Event NotUsed = 0;
 
-    const ProfileEvents::Event events_map[S3MetricType::EnumSize][S3MetricKind::EnumSize] = {
+    const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
         {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
         {ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors},
@@ -213,7 +213,7 @@ void PocoHTTPClient::addMetric(Aws::Http::HttpRequest & request, S3MetricType ty
         {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
     };
 
-    const ProfileEvents::Event disk_s3_events_map[S3MetricType::EnumSize][S3MetricKind::EnumSize] = {
+    const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {NotUsed, NotUsed},
         {ProfileEvents::DiskS3ReadRequestsCount, ProfileEvents::DiskS3WriteRequestsCount},
         {ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors},
@@ -241,7 +241,7 @@ void PocoHTTPClient::makeRequestInternal(
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Make request to: {}", uri);
 
-    addMetric(S3MetricType::Count);
+    addMetric(request, S3MetricType::Count);
     CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
 
     try
@@ -348,7 +348,7 @@ void PocoHTTPClient::makeRequestInternal(
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
-            addMetric(S3MetricType::Microseconds, watch.elapsedMicroseconds());
+            addMetric(request, S3MetricType::Microseconds, watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
 
@@ -363,7 +363,7 @@ void PocoHTTPClient::makeRequestInternal(
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Redirecting request to new location: {}", location);
 
-                addMetric(S3MetricType::Redirects);
+                addMetric(request, S3MetricType::Redirects);
 
                 continue;
             }
@@ -401,7 +401,7 @@ void PocoHTTPClient::makeRequestInternal(
                     LOG_WARNING(log, "Response for request contain <Error> tag in body, settings internal server error (500 code)");
                     response->SetResponseCode(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
 
-                    addMetric(S3MetricType::Errors);
+                    addMetric(request, S3MetricType::Errors);
                     if (error_report)
                         error_report(request_configuration);
 
@@ -415,11 +415,11 @@ void PocoHTTPClient::makeRequestInternal(
 
                 if (status_code == 429 || status_code == 503)
                 { // API throttling
-                    addMetric(S3MetricType::Throttling);
+                    addMetric(request, S3MetricType::Throttling);
                 }
                 else if (status_code >= 300)
                 {
-                    addMetric(S3MetricType::Errors);
+                    addMetric(request, S3MetricType::Errors);
                     if (status_code >= 500 && error_report)
                         error_report(request_configuration);
                 }
@@ -437,7 +437,7 @@ void PocoHTTPClient::makeRequestInternal(
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 
-        addMetric(S3MetricType::Errors);
+        addMetric(request, S3MetricType::Errors);
     }
 }
 

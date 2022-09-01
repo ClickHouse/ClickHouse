@@ -141,8 +141,8 @@ private:
         EnumSize,
     };
 
-    S3MetricKind getMetricKind(Aws::Http::HttpRequest & request);
-    void addMetric(Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1);
+    S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request) const;
+    void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
 
     std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     std::function<void(const ClientConfigurationPerRequest &)> error_report;
