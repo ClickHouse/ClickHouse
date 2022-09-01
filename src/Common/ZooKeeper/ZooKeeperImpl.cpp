@@ -644,7 +644,7 @@ void ZooKeeper::receiveThread()
             auto prev_bytes_received = in->count();
 
             clock::time_point now = clock::now();
-            UInt64 max_wait_us = args.operation_timeout_ms;
+            UInt64 max_wait_us = args.operation_timeout_ms * 1000;
             std::optional<RequestInfo> earliest_operation;
 
             {
