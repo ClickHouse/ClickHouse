@@ -89,6 +89,7 @@ void registerStorageSQLite(StorageFactory & factory);
 #endif
 
 void registerStorageHudi(StorageFactory & factory);
+void registerStorageDelta(StorageFactory & factory);
 
 void registerStorages()
 {
@@ -174,6 +175,7 @@ void registerStorages()
     #endif
 
     registerStorageHudi(factory);
+    registerStorageDelta(factory);
 }
 
 }
