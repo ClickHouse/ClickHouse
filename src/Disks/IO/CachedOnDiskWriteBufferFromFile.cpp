@@ -1,7 +1,7 @@
 #include "CachedOnDiskWriteBufferFromFile.h"
 
-#include <Common/FileCacheFactory.h>
-#include <Common/FileSegment.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
@@ -11,6 +11,7 @@ namespace ProfileEvents
 {
     extern const Event CachedWriteBufferCacheWriteBytes;
     extern const Event CachedWriteBufferCacheWriteMicroseconds;
+    extern const Event FileSegmentWriteMicroseconds;
 }
 
 namespace DB
@@ -118,6 +119,9 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
 
     ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteBytes, size);
     ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());
+
+    current_file_segment_counters.increment(
+        ProfileEvents::FileSegmentWriteMicroseconds, watch.elapsedMicroseconds());
 }
 
 void CachedOnDiskWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment & file_segment)
@@ -134,7 +138,7 @@ void CachedOnDiskWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment
             .requested_range = {},
             .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
             .file_segment_size = file_segment_range.size(),
-            .cache_attempted = false,
+            .read_from_cache_attempted = false,
             .read_buffer_id = {},
             .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(current_file_segment_counters.getPartiallyAtomicSnapshot()),
         };
