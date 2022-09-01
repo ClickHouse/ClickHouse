@@ -47,12 +47,9 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartCompact>(shared_from_this());
-    auto context = storage.getContext();
-    auto * load_marks_threadpool = reader_settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-
     return std::make_unique<MergeTreeReaderCompact>(
         ptr, columns_to_read, metadata_snapshot, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings, load_marks_threadpool,
+        mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }
 
