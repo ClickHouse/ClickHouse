@@ -4103,6 +4103,31 @@ def test_issue26643(kafka_cluster):
     # kafka_cluster.open_bash_shell('instance')
 
 
+def test_num_consumers_limit(kafka_cluster):
+    instance.query("DROP TABLE IF EXISTS test.kafka")
+
+    error = instance.query_and_get_error(
+        """
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n', '', 100)
+            SETTINGS kafka_commit_on_select = 1;
+        """
+    )
+
+    assert "BAD_ARGUMENTS" in error
+
+    instance.query(
+        """
+        SET kafka_disable_num_consumers_limit = 1;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n', '', 100)
+            SETTINGS kafka_commit_on_select = 1;
+        """
+    )
+
+    instance.query("DROP TABLE test.kafka")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

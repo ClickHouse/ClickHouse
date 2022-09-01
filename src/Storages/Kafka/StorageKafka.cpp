@@ -38,8 +38,6 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -786,7 +784,7 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
         auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
 
-        if (num_consumers > physical_cpu_cores)
+        if (!args.getLocalContext()->getSettingsRef().kafka_disable_num_consumers_limit && num_consumers > physical_cpu_cores)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be bigger than {}", physical_cpu_cores);
         }
