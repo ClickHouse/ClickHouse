@@ -35,7 +35,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DataType, ParserTest,
             "SELECT [1, 2, 3]"
         },
         {
-            "print dynamic([1, [2], 3])",
+            "print dynamic([1, dynamic([2]), 3])",
             "SELECT [1, [2], 3]"
         },
         {
@@ -47,11 +47,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DataType, ParserTest,
             "SELECT ['a', 'b', 'c']"
         },
         {
-            "print dynamic([1, 'a'])",
+            "print dynamic([1, 'a', true, false])",
             "SELECT [1, 'a']"
         },
         {
-            "print dynamic([datetime(1), timespan(1d), 1, 2])",
+            "print dynamic([date(1), time(1d), 1, 2])",
             "SELECT [parseDateTime64BestEffortOrNull('1', 9, 'UTC'), 86400., 1, 2]"
         }
 })));
