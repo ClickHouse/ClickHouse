@@ -285,14 +285,7 @@ TracingContextHolder::TracingContextHolder(
 
     /// This object is created to initialize tracing context on a new thread,
     /// it's helpful to record the thread_id so that we know the thread switching from the span log
-    try
-    {
-        this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
-    }
-    catch (...)
-    {
-        /// It's acceptable that this attribute is not recorded if any exception is raised
-    }
+    this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
 
     /// set up trace context on current thread
     current_thread_trace_context = _parent_trace_context;

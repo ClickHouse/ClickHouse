@@ -87,7 +87,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool enable_tracing_context_propagation)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -150,17 +150,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             }
         }
 
-        if (enable_tracing_context_propagation)
-        {
-            /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
-            const auto &current_thread_context = DB::OpenTelemetry::CurrentContext();
-            jobs.emplace(std::move(job), priority, current_thread_context);
-        }
-        else
-        {
-            DB::OpenTelemetry::TracingContextOnThread empty;
-            jobs.emplace(std::move(job), priority, empty);
-        }
+        jobs.emplace(std::move(job),
+                     priority,
+                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread());
 
         ++scheduled_jobs;
         new_job_or_shutdown.notify_one();
@@ -182,9 +175,9 @@ bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_mi
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds, bool enable_tracing_context_propagation)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
-    scheduleImpl<void>(std::move(job), priority, wait_microseconds, enable_tracing_context_propagation);
+    scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
 }
 
 template <typename Thread>
@@ -288,12 +281,13 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
         if (!need_shutdown)
         {
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+
             /// Set up tracing context for this thread by its parent context
             DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thead_trace_context);
 
             try
             {
-                ALLOW_ALLOCATIONS_IN_SCOPE;
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
@@ -356,7 +350,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 
 template class ThreadPoolImpl<std::thread>;
-template class ThreadPoolImpl<Thread4ThreadPool>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
+template class ThreadFromGlobalPoolImpl<true>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
