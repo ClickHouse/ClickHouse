@@ -15,11 +15,11 @@
                 <thread_name>THREAD_NAME</thread_name>
                 <thread_id>THREAD_ID</thread_id>
                 <level>LEVEL</level>
-                <query_id>QUERY_ID</query_id>
-                <logger_name>LOGGER_NAME</logger_name>
+                <!--<query_id>QUERY_ID</query_id>
+                <logger_name>LOGGER_NAME</logger_name>-->
                 <message>MESSAGE</message>
                 <source_file>SOURCE_FILE</source_file>
-                <source_line>SOURCE_LINE</source_line>
+                <!--<source_line>SOURCE_LINE</source_line>-->
             </names>
         </formatting>
     </logger>
