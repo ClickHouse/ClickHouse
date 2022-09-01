@@ -12,6 +12,7 @@
 #include <aws/s3/model/ListObjectsV2Result.h>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
