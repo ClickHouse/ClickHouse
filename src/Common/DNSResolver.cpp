@@ -102,13 +102,10 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
             return DNSResolver::IPAddresses(1, ip);
     }
 
-    /// Family: AF_UNSPEC
-    /// AI_ALL is required for checking if client is allowed to connect from an address
-    auto flags = Poco::Net::DNS::DNS_HINT_AI_V4MAPPED | Poco::Net::DNS::DNS_HINT_AI_ALL;
     /// Do not resolve IPv6 (or IPv4) if no local IPv6 (or IPv4) addresses are configured.
     /// It should not affect client address checking, since client cannot connect from IPv6 address
     /// if server has no IPv6 addresses.
-    flags |= Poco::Net::DNS::DNS_HINT_AI_ADDRCONFIG;
+    auto flags = Poco::Net::DNS::DNS_HINT_AI_ADDRCONFIG;
 
     DNSResolver::IPAddresses addresses;
 
