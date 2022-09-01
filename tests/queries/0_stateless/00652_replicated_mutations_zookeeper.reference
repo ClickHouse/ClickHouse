@@ -12,3 +12,6 @@ Query should fail 2
 0000000001	DELETE WHERE x = 2	1
 0000000002	DELETE WHERE x = 3	1
 0000000003	DELETE WHERE x = 4	0
+** alter_update_repl rows:
+123	repl_updated_123
+234	repl_updated_234

@@ -80,6 +80,16 @@ sleep 1.5
 # Check that the first mutation is cleaned
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, is_done FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mutations_cleaner_r2' ORDER BY mutation_id"
 
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE alter_update_repl \
+    (d Date, key UInt32, value1 String, value2 UInt64, materialized_value String MATERIALIZED concat('materialized_', toString(value2 + 7))) \
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/alter_update_repl', '1') ORDER BY key PARTITION BY toYYYYMM(d)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update_repl VALUES ('2000-01-01', 123, 'abc', 10), ('2000-01-01', 234, 'cde', 20)"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update_repl UPDATE materialized_value = concat('repl_updated_', toString(key)) WHERE 1" \
+    --update_allow_materialized_columns=1 --mutations_sync=1
+${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA alter_update_repl"
+${CLICKHOUSE_CLIENT} --query="SELECT '** alter_update_repl rows:'"
+${CLICKHOUSE_CLIENT} --query="SELECT key, materialized_value FROM alter_update_repl"
+
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE mutations_r1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE mutations_r2"
 

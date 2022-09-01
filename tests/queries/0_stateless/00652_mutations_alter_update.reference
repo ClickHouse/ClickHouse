@@ -32,6 +32,3 @@ Updating partition key should fail
 ** alter_update rows[setting from session]:
 123	updated_123
 234	updated_234
-** alter_update_repl rows:
-123	repl_updated_123
-234	repl_updated_234
