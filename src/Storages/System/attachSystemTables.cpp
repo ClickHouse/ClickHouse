@@ -25,6 +25,7 @@
 #include <Storages/System/StorageSystemMerges.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
+#include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemOne.h>
@@ -163,6 +164,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue");
     attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue");
     attach<StorageSystemDictionaries>(context, system_database, "dictionaries");
+    attach<StorageSystemModels>(context, system_database, "models");
     attach<StorageSystemClusters>(context, system_database, "clusters");
     attach<StorageSystemGraphite>(context, system_database, "graphite_retentions");
     attach<StorageSystemMacros>(context, system_database, "macros");
