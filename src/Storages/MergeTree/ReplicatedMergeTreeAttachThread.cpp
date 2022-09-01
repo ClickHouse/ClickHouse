@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
@@ -77,6 +82,23 @@ void ReplicatedMergeTreeAttachThread::run()
     }
 }
 
+void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path)
+{
+    /// Since 20.4 and until 22.9 "/metadata" and "/metadata_version" nodes were created on replica startup.
+    /// Since 21.12 we could use "/metadata" to check if replica is dropped (see StorageReplicatedMergeTree::dropReplica),
+    /// but it did not work correctly, because "/metadata" node was re-created on server startup.
+    /// Since 22.9 we do not recreate these nodes and use "/host" to check if replica is dropped.
+
+    String replica_metadata;
+    const bool replica_metadata_exists = zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
+    if (!replica_metadata_exists || replica_metadata.empty() || !zookeeper->exists(replica_path + "/metadata_version"))
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Upgrade from 20.3 and older to 22.9 and newer "
+                        "should be done through an intermediate version (failed to get metadata or metadata_version for {},"
+                        "assuming it's because of upgrading)", replica_path);
+    }
+}
+
 void ReplicatedMergeTreeAttachThread::runImpl()
 {
     storage.setZooKeeper();
@@ -104,40 +126,23 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         return;
     }
 
+    bool host_node_exists = zookeeper->exists(replica_path + "/host");
+    if (!host_node_exists)
+    {
+        LOG_WARNING(log, "Replica {} is dropped (but metadata is not completely removed from ZooKeeper), "
+                         "table will stay in readonly mode", replica_path);
+        storage.has_metadata_in_zookeeper = false;
+        return;
+    }
+
     storage.has_metadata_in_zookeeper = true;
 
-    /// In old tables this node may missing or be empty
-    String replica_metadata;
-    const bool replica_metadata_exists = zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
-
-    if (!replica_metadata_exists || replica_metadata.empty())
-    {
-        /// We have to check shared node granularity before we create ours.
-        storage.other_replicas_fixed_granularity = storage.checkFixedGranularityInZookeeper();
-
-        ReplicatedMergeTreeTableMetadata current_metadata(storage, metadata_snapshot);
-
-        zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(), zkutil::CreateMode::Persistent);
-    }
+    checkHasReplicaMetadataInZooKeeper(zookeeper, replica_path);
 
     storage.checkTableStructure(replica_path, metadata_snapshot);
     storage.checkParts(skip_sanity_checks);
 
-    if (zookeeper->exists(replica_path + "/metadata_version"))
-    {
-        storage.metadata_version = parse<int>(zookeeper->get(replica_path + "/metadata_version"));
-    }
-    else
-    {
-        /// This replica was created with old clickhouse version, so we have
-        /// to take version of global node. If somebody will alter our
-        /// table, then we will fill /metadata_version node in zookeeper.
-        /// Otherwise on the next restart we can again use version from
-        /// shared metadata node because it was not changed.
-        Coordination::Stat metadata_stat;
-        zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-        storage.metadata_version = metadata_stat.version;
-    }
+    storage.metadata_version = parse<int>(zookeeper->get(replica_path + "/metadata_version"));
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
