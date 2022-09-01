@@ -89,7 +89,6 @@ TEST(FileCache, get)
 {
     if (fs::exists(cache_base_path))
         fs::remove_all(cache_base_path);
-    fs::create_directories(cache_base_path);
 
     DB::ThreadStatus thread_status;
 

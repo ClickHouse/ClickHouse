@@ -87,8 +87,6 @@ void FileCache::initialize()
     std::lock_guard cache_lock(mutex);
     if (!is_initialized)
     {
-        status_file = make_unique<StatusFile>(fs::path(cache_base_path) / "status", StatusFile::write_full_info);
-
         if (fs::exists(cache_base_path))
         {
             try
@@ -106,6 +104,7 @@ void FileCache::initialize()
             fs::create_directories(cache_base_path);
         }
 
+        status_file = make_unique<StatusFile>(fs::path(cache_base_path) / "status", StatusFile::write_full_info);
         is_initialized = true;
     }
 }
