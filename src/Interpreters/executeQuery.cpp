@@ -291,11 +291,14 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         if (auto query_log = context->getQueryLog())
             query_log->add(elem);
 
-    query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
-    query_span->addAttribute("clickhouse.exception", elem.exception);
-    query_span->addAttribute("db.statement", elem.query);
-    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
-    query_span->finish();
+    if (query_span)
+    {
+        query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
+        query_span->addAttribute("clickhouse.exception", elem.exception);
+        query_span->addAttribute("db.statement", elem.query);
+        query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+        query_span->finish();
+    }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
 
@@ -345,7 +348,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
-    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
+    /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
+    /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
+    /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
+    ///
+    /// This does not have impact on the final span logs, because these internal queries are issued by external queries,
+    /// we still have enough span logs for the execution of external queries.
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
 
     const auto current_time = std::chrono::system_clock::now();
 
@@ -668,7 +677,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             {
                 std::unique_ptr<OpenTelemetry::SpanHolder> span;
-                if (query_span->isTraceEnabled())
+                if (OpenTelemetry::CurrentContext().isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
                     std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
@@ -928,16 +937,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                query_span->addAttribute("db.statement", elem.query);
-                query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
-                query_span->addAttribute("clickhouse.query_status", "QueryFinish");
-                query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::CurrentContext().tracestate);
-                query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
-                query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
-                query_span->addAttributeIfNotZero("clickhouse.written_rows", info.written_rows);
-                query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
-                query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
-                query_span->finish();
+                if (query_span)
+                {
+                    query_span->addAttribute("db.statement", elem.query);
+                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                    query_span->addAttribute("clickhouse.query_status", "QueryFinish");
+                    query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::CurrentContext().tracestate);
+                    query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.written_rows", info.written_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+                    query_span->finish();
+                }
 
                 if (implicit_txn_control)
                 {
@@ -1023,11 +1035,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
 
-                query_span->addAttribute("db.statement", elem.query);
-                query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
-                query_span->addAttribute("clickhouse.exception", elem.exception);
-                query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
-                query_span->finish();
+                if (query_span)
+                {
+                    query_span->addAttribute("db.statement", elem.query);
+                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                    query_span->addAttribute("clickhouse.exception", elem.exception);
+                    query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
+                    query_span->finish();
+                }
             };
 
             res.finish_callback = std::move(finish_callback);
