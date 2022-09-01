@@ -217,7 +217,8 @@ void DataPartStorageOnDisk::checkAndFixMetadataConsistency() const
     for (auto it = iterate(); it->isValid(); it->next())
     {
         std::string path = reative_path / it->name();
-        metadata_storage->checkAndFixMetadataHardLink(path);
+        if (metadata_storage->isFile(path))
+            metadata_storage->checkAndFixMetadataHardLink(path);
     }
 }
 
