@@ -50,6 +50,7 @@ public:
     AsynchronousMetrics(
         ContextPtr global_context_,
         int update_period_seconds,
+        int heavy_metrics_update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     ~AsynchronousMetrics();
@@ -63,7 +64,11 @@ public:
     AsynchronousMetricValues getValues() const;
 
 private:
-    const std::chrono::seconds update_period;
+    using Duration = std::chrono::seconds;
+    using TimePoint = std::chrono::system_clock::time_point;
+
+    const Duration update_period;
+    const Duration heavy_metric_update_period;
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
     mutable std::mutex mutex;
@@ -74,7 +79,16 @@ private:
     /// Some values are incremental and we have to calculate the difference.
     /// On first run we will only collect the values to subtract later.
     bool first_run = true;
-    std::chrono::system_clock::time_point previous_update_time;
+    TimePoint previous_update_time;
+    TimePoint heavy_metric_previous_update_time;
+
+    struct DetachedPartsStats
+    {
+        size_t count;
+        size_t detached_by_user;
+    };
+
+    DetachedPartsStats detached_parts_stats{};
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;
@@ -185,7 +199,10 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> thread;
 
     void run();
-    void update(std::chrono::system_clock::time_point update_time);
+    void update(TimePoint update_time);
+
+    void updateDetachedPartsStats();
+    void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values);
 
     Poco::Logger * log;
 };
