@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-ordinary-database, no-fasttest
 
 DROP TABLE IF EXISTS 02416_test SYNC;
 
