@@ -194,11 +194,6 @@ compound_value	Tuple(id UInt64)
 arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
 SELECT '--';
 --
-DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, arrayMap(x -> untuple(a), [1,2,3]) FROM test_table);
-a	Tuple(id UInt64)					
-arrayMap(lambda(tuple(x), tupleElement(a, \'id\')), [1, 2, 3])	Array(UInt64)					
-SELECT '--';
---
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value, [1,2,3]));
 compound_value	Tuple(id UInt64, value String)					
 arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
@@ -256,3 +251,7 @@ DESCRIBE (SELECT arrayMap(x -> (SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2) AS
 arrayMap(lambda(tuple(x), _subquery_1), [1, 2, 3])	Array(Nullable(UInt8))					
 arrayMap(a, [1, 2, 3])	Array(Nullable(UInt8))					
 arrayMap(lambda(tuple(x), _subquery_3), [1, 2, 3])	Array(Nullable(UInt8))					
+SELECT '--';
+--
+SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b;
+(1,2)	1	2
