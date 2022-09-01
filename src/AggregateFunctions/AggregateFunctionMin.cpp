@@ -22,8 +22,7 @@ AggregateFunctionPtr createAggregateFunctionMin(
 
     WhichDataType which(argument_type);
 #define NUMERIC_DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) \
-        return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<TYPE>>(argument_type));
+    if (which.idx == TypeIndex::TYPE) return AggregateFunctionPtr(new AggregateFunctionMin<AggregateFunctionMinDataNumeric<TYPE>>(argument_type)); /// NOLINT
     FOR_NUMERIC_TYPES(NUMERIC_DISPATCH)
 
     NUMERIC_DISPATCH(DateTime64)
