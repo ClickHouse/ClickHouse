@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/
 sidebar_label: "Функции"
 sidebar_position: 32
 ---
