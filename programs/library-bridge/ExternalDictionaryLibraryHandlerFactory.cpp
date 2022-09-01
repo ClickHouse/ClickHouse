@@ -1,40 +1,37 @@
 #include "ExternalDictionaryLibraryHandlerFactory.h"
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-ExternalDictionaryLibraryHandlerPtr ExternalDictionaryLibraryHandlerFactory::get(const String & dictionary_id)
+SharedLibraryHandlerPtr ExternalDictionaryLibraryHandlerFactory::get(const std::string & dictionary_id)
 {
     std::lock_guard lock(mutex);
+    auto library_handler = library_handlers.find(dictionary_id);
 
-    if (auto handler = library_handlers.find(dictionary_id); handler != library_handlers.end())
-        return handler->second;
+    if (library_handler != library_handlers.end())
+        return library_handler->second;
+
     return nullptr;
 }
 
 
 void ExternalDictionaryLibraryHandlerFactory::create(
-    const String & dictionary_id,
-    const String & library_path,
-    const std::vector<String> & library_settings,
+    const std::string & dictionary_id,
+    const std::string & library_path,
+    const std::vector<std::string> & library_settings,
     const Block & sample_block,
-    const std::vector<String> & attributes_names)
+    const std::vector<std::string> & attributes_names)
 {
     std::lock_guard lock(mutex);
-
-    if (library_handlers.contains(dictionary_id))
-    {
+    if (!library_handlers.contains(dictionary_id))
+        library_handlers.emplace(std::make_pair(dictionary_id, std::make_shared<ExternalDictionaryLibraryHandler>(library_path, library_settings, sample_block, attributes_names)));
+    else
         LOG_WARNING(&Poco::Logger::get("ExternalDictionaryLibraryHandlerFactory"), "Library handler with dictionary id {} already exists", dictionary_id);
-        return;
-    }
-
-    library_handlers.emplace(std::make_pair(dictionary_id, std::make_shared<ExternalDictionaryLibraryHandler>(library_path, library_settings, sample_block, attributes_names)));
 }
 
 
-bool ExternalDictionaryLibraryHandlerFactory::clone(const String & from_dictionary_id, const String & to_dictionary_id)
+bool ExternalDictionaryLibraryHandlerFactory::clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id)
 {
     std::lock_guard lock(mutex);
     auto from_library_handler = library_handlers.find(from_dictionary_id);
@@ -48,7 +45,7 @@ bool ExternalDictionaryLibraryHandlerFactory::clone(const String & from_dictiona
 }
 
 
-bool ExternalDictionaryLibraryHandlerFactory::remove(const String & dictionary_id)
+bool ExternalDictionaryLibraryHandlerFactory::remove(const std::string & dictionary_id)
 {
     std::lock_guard lock(mutex);
     /// extDict_libDelete is called in destructor.
