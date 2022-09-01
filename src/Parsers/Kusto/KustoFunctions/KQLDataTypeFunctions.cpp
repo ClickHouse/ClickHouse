@@ -8,7 +8,6 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
 
-#include <algorithm>
 #include <format>
 
 namespace DB
@@ -55,8 +54,8 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
 
 bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
 {
-    static constexpr std::array<std::string_view, 9> ALLOWED_KEYWORDS
-        = {"date", "datetime", "dynamic", "false", "null", "time", "timespan", "true"};
+    static const std::unordered_set<std::string_view> ALLOWED_KEYWORDS{
+        "date", "datetime", "dynamic", "false", "null", "time", "timespan", "true"};
 
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -71,8 +70,7 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
         if (const auto token_type = pos->type; token_type == TokenType::BareWord || token_type == TokenType::Number
             || token_type == TokenType::QuotedIdentifier || token_type == TokenType::StringLiteral)
         {
-            if (const std::string_view token(pos->begin, pos->end); token_type == TokenType::BareWord
-                && std::find(std::cbegin(ALLOWED_KEYWORDS), std::cend(ALLOWED_KEYWORDS), token) == std::cend(ALLOWED_KEYWORDS))
+            if (const std::string_view token(pos->begin, pos->end); token_type == TokenType::BareWord && !ALLOWED_KEYWORDS.contains(token))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Expression {} is not supported inside {}", token, function_name);
 
             out.append(getConvertedArgument(function_name, pos));
