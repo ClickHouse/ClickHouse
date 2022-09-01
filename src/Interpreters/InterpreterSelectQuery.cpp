@@ -639,7 +639,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
-    if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
+    bool can_analyze_again = false;
+    if (context->hasQueryContext())
+    {
+        /// Check number of calls of 'analyze' function.
+        /// If it is too big, we will not analyze the query again not to have exponential blowup.
+        std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
+        ++current_query_analyze_count;
+        can_analyze_again = settings.max_analyze_depth == 0 || current_query_analyze_count < settings.max_analyze_depth;
+    }
+
+    if (can_analyze_again && (analysis_result.prewhere_constant_filter_description.always_false ||
+                              analysis_result.prewhere_constant_filter_description.always_true))
     {
         if (analysis_result.prewhere_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
@@ -647,7 +658,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
-    if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
+
+    if (can_analyze_again && (analysis_result.where_constant_filter_description.always_false ||
+                              analysis_result.where_constant_filter_description.always_true))
     {
         if (analysis_result.where_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
@@ -658,7 +671,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
-        LOG_TRACE(log, "Running 'analyze' second time");
+        size_t current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter.load();
+        LOG_TRACE(log, "Running 'analyze' second time (current analyze depth: {})", current_query_analyze_count);
 
         /// Reuse already built sets for multiple passes of analysis
         prepared_sets = query_analyzer->getPreparedSets();
