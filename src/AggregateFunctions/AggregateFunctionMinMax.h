@@ -96,7 +96,8 @@ struct AggregateFunctionsMinMaxDataNumeric
     using ComparatorType = Comparator;
     using T = typename Comparator::Type;
     using ColVecType = ColumnVectorOrDecimal<T>;
-    static constexpr bool is_compilable = canBeNativeType<T>();
+    static constexpr bool supported_multitarget_type = std::is_integral_v<T> || std::is_floating_point_v<T>;
+
     bool has_value = false;
     T value{};
 
@@ -222,7 +223,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
-        if constexpr (is_compilable)
+        if constexpr (supported_multitarget_type)
         {
             if (isArchSupported(TargetArch::AVX2))
             {
@@ -244,7 +245,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
-        if constexpr (is_compilable)
+        if constexpr (supported_multitarget_type)
         {
             if (isArchSupported(TargetArch::AVX2))
             {
@@ -266,7 +267,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
-        if constexpr (is_compilable)
+        if constexpr (supported_multitarget_type)
         {
             if (isArchSupported(TargetArch::AVX2))
             {
@@ -304,6 +305,8 @@ struct AggregateFunctionsMinMaxDataNumeric
     }
 
 #if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = canBeNativeType<T>();
 
     static llvm::Value * getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
     {
