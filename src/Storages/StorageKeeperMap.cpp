@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnString.h>
 
+#include <Databases/DatabaseReplicated.h>
+
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 
@@ -233,8 +235,9 @@ StorageKeeperMap::StorageKeeperMap(
     , keys_limit(keys_limit_)
     , log(&Poco::Logger::get("StorageKeeperMap"))
 {
+    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (!table_id.hasUUID())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap cannot be used with '{}' database because UUID is needed. Please use Atomic or Replicated database", table_id.getDatabaseName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap cannot be used with '{}' database because it uses {} engine. Please use Atomic or Replicated database", table_id.getDatabaseName(), database->getEngineName());
 
     setInMemoryMetadata(metadata);
 
@@ -265,7 +268,13 @@ StorageKeeperMap::StorageKeeperMap(
     auto metadata_path_fs = root_path_fs / "ch_metadata";
     metadata_path = metadata_path_fs;
     tables_path = metadata_path_fs / "tables";
-    table_path = fs::path(tables_path) / toString(table_id.uuid);
+
+    auto table_unique_id = toString(table_id.uuid);
+    if (const auto replicated_database = std::dynamic_pointer_cast<DatabaseReplicated>(database))
+        table_unique_id += replicated_database->getFullReplicaName();
+
+    table_path = fs::path(tables_path) / table_unique_id;
+
     dropped_path = metadata_path_fs / "dropped";
     dropped_lock_path = fs::path(dropped_path) / "lock";
 
