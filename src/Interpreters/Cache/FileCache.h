@@ -12,13 +12,14 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Types.h>
-#include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileSegment.h>
+
 
 namespace DB
 {
@@ -273,6 +274,8 @@ private:
     size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
     void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
+
+    void removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & cache_lock) const;
 
     /// Used to track and control the cache access of each query.
     /// Through it, we can realize the processing of different queries by the cache layer.

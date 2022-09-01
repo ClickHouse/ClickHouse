@@ -364,6 +364,18 @@ CREATE TABLE system.metrics
 )
 ENGINE = SystemMetrics
 COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.models
+(
+    `name` String,
+    `status` Enum8('NOT_LOADED' = 0, 'LOADED' = 1, 'FAILED' = 2, 'LOADING' = 3, 'FAILED_AND_RELOADING' = 4, 'LOADED_AND_RELOADING' = 5, 'NOT_EXIST' = 6),
+    `origin` String,
+    `type` String,
+    `loading_start_time` DateTime,
+    `loading_duration` Float32,
+    `last_exception` String
+)
+ENGINE = SystemModels
+COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.mutations
 (
     `database` String,

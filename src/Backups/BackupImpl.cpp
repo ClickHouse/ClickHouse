@@ -625,7 +625,7 @@ CheckBackupResult checkBaseBackupForFile(const SizeAndChecksum & base_backup_inf
 {
     /// We cannot reuse base backup because our file is smaller
     /// than file stored in previous backup
-    if (new_entry_info.size > base_backup_info.first)
+    if (new_entry_info.size < base_backup_info.first)
         return CheckBackupResult::HasNothing;
 
     if (base_backup_info.first == new_entry_info.size)

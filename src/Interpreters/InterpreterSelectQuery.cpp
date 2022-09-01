@@ -2592,7 +2592,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 
     auto finish_sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
-        input_sorting_info->order_key_prefix_descr,
+        input_sorting_info->sort_description_for_merging,
         output_order_descr,
         settings.max_block_size,
         limit);
