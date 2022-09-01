@@ -186,13 +186,13 @@ public:
 
 }
 
-void registerFunctionSubstring(FunctionFactory & factory)
+REGISTER_FUNCTION(Substring)
 {
-    factory.registerFunction<FunctionSubstring<false>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSubstring<false>>({}, FunctionFactory::CaseInsensitive);
     factory.registerAlias("substr", "substring", FunctionFactory::CaseInsensitive);
     factory.registerAlias("mid", "substring", FunctionFactory::CaseInsensitive); /// from MySQL dialect
 
-    factory.registerFunction<FunctionSubstring<true>>(FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionSubstring<true>>({}, FunctionFactory::CaseSensitive);
 }
 
 }

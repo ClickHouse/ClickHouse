@@ -13,8 +13,7 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "deb",
             "static_binary_name": "amd64",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
@@ -24,8 +23,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
             "official": False,
@@ -36,8 +34,7 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "deb",
             "static_binary_name": "aarch64",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
@@ -47,8 +44,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -57,18 +53,16 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
         "package_tsan": {
-            "compiler": "clang-13",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -77,8 +71,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -87,8 +80,7 @@ CI_CONFIG = {
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -97,8 +89,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -108,18 +99,16 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "debug-amd64",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "enable",
             "with_coverage": False,
         },
-        "binary_splitted": {
+        "binary_shared": {
             "compiler": "clang-14",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "bundled": "bundled",
-            "splitted": "splitted",
+            "libraries": "shared",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -129,8 +118,7 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -139,8 +127,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -150,8 +137,7 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "freebsd",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -161,8 +147,7 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos-aarch64",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -172,8 +157,7 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "powerpc64le",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
+            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -192,7 +176,7 @@ CI_CONFIG = {
         ],
         "ClickHouse special build check": [
             "binary_tidy",
-            "binary_splitted",
+            "binary_shared",
             "binary_darwin",
             "binary_aarch64",
             "binary_freebsd",
@@ -203,13 +187,13 @@ CI_CONFIG = {
     "tests_config": {
         # required_build - build name for artifacts
         # force_tests - force success status for tests
-        "Stateful tests (address)": {
+        "Stateful tests (asan)": {
             "required_build": "package_asan",
         },
-        "Stateful tests (thread)": {
+        "Stateful tests (tsan)": {
             "required_build": "package_tsan",
         },
-        "Stateful tests (memory)": {
+        "Stateful tests (msan)": {
             "required_build": "package_msan",
         },
         "Stateful tests (ubsan)": {
@@ -230,13 +214,13 @@ CI_CONFIG = {
         "Stateful tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
-        "Stateless tests (address)": {
+        "Stateless tests (asan)": {
             "required_build": "package_asan",
         },
-        "Stateless tests (thread)": {
+        "Stateless tests (tsan)": {
             "required_build": "package_tsan",
         },
-        "Stateless tests (memory)": {
+        "Stateless tests (msan)": {
             "required_build": "package_msan",
         },
         "Stateless tests (ubsan)": {
@@ -263,16 +247,16 @@ CI_CONFIG = {
         "Stateless tests (release, s3 storage)": {
             "required_build": "package_release",
         },
-        "Stress test (address)": {
+        "Stress test (asan)": {
             "required_build": "package_asan",
         },
-        "Stress test (thread)": {
+        "Stress test (tsan)": {
             "required_build": "package_tsan",
         },
-        "Stress test (undefined)": {
+        "Stress test (ubsan)": {
             "required_build": "package_ubsan",
         },
-        "Stress test (memory)": {
+        "Stress test (msan)": {
             "required_build": "package_msan",
         },
         "Stress test (debug)": {
@@ -281,13 +265,13 @@ CI_CONFIG = {
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
-        "Integration tests (thread)": {
+        "Integration tests (tsan)": {
             "required_build": "package_tsan",
         },
         "Integration tests (release)": {
             "required_build": "package_release",
         },
-        "Integration tests (memory)": {
+        "Integration tests (msan)": {
             "required_build": "package_msan",
         },
         "Integration tests flaky check (asan)": {
@@ -297,7 +281,7 @@ CI_CONFIG = {
             "required_build": "package_release",
         },
         "Split build smoke test": {
-            "required_build": "binary_splitted",
+            "required_build": "binary_shared",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
@@ -317,19 +301,19 @@ CI_CONFIG = {
         "AST fuzzer (debug)": {
             "required_build": "package_debug",
         },
-        "AST fuzzer (ASan)": {
+        "AST fuzzer (asan)": {
             "required_build": "package_asan",
         },
-        "AST fuzzer (MSan)": {
+        "AST fuzzer (msan)": {
             "required_build": "package_msan",
         },
-        "AST fuzzer (TSan)": {
+        "AST fuzzer (tsan)": {
             "required_build": "package_tsan",
         },
-        "AST fuzzer (UBSan)": {
+        "AST fuzzer (ubsan)": {
             "required_build": "package_ubsan",
         },
-        "Stateless tests flaky check (address)": {
+        "Stateless tests flaky check (asan)": {
             "required_build": "package_asan",
         },
         "ClickHouse Keeper Jepsen": {
@@ -345,3 +329,18 @@ CI_CONFIG = {
         },
     },
 }  # type: dict
+
+# checks required by Mergeable Check
+REQUIRED_CHECKS = [
+    "Fast test",
+    "Style Check",
+    "ClickHouse build check",
+    "ClickHouse special build check",
+    "Stateful tests (release)",
+    "Stateless tests (release)",
+    "Unit tests (release-clang)",
+    "Unit tests (asan)",
+    "Unit tests (msan)",
+    "Unit tests (tsan)",
+    "Unit tests (ubsan)",
+]

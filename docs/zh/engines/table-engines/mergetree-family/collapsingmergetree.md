@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/collapsingmergetree
+---
 # CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 该引擎继承于 [MergeTree](mergetree.md)，并在数据块合并算法中添加了折叠行的逻辑。

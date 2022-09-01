@@ -72,9 +72,9 @@ public:
 
 }
 
-void registerFunctionIsNull(FunctionFactory & factory)
+REGISTER_FUNCTION(IsNull)
 {
-    factory.registerFunction<FunctionIsNull>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIsNull>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

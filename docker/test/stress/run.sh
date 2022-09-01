@@ -104,12 +104,16 @@ EOL
 
 function stop()
 {
+    local pid
+    # Preserve the pid, since the server can hung after the PID will be deleted.
+    pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
+
     clickhouse stop --do-not-kill && return
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
     echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
-    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 }
 
@@ -178,6 +182,7 @@ install_packages package_folder
 
 configure
 
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateful  # to have a proper environment
 
 start
@@ -217,6 +222,12 @@ start
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
                        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
+
+echo "Get previous release tag"
+previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
+echo $previous_release_tag
+
+stop
 
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
@@ -265,10 +276,6 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 
 echo -e "Backward compatibility check\n"
 
-echo "Get previous release tag"
-previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
-echo $previous_release_tag
-
 echo "Clone previous release repository"
 git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
@@ -278,7 +285,6 @@ mkdir previous_release_package_folder
 echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
-stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
 
 # Check if we cloned previous release repository successfully
@@ -301,7 +307,6 @@ else
     rm -rf /var/lib/clickhouse/*
 
     # Make BC check more funny by forcing Ordinary engine for system database
-    # New version will try to convert it to Atomic on startup
     mkdir /var/lib/clickhouse/metadata
     echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
 
@@ -311,8 +316,12 @@ else
     # Start server from previous release
     configure
 
-    # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
-    rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+    # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
+    rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
+
+    # Remove s3 related configs to avoid "there is no disk type `cache`"
+    rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
+    rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
 
     start
 
@@ -378,6 +387,7 @@ else
                -e "TABLE_IS_READ_ONLY" \
                -e "Code: 1000, e.code() = 111, Connection refused" \
                -e "UNFINISHED" \
+               -e "NETLINK_ERROR" \
                -e "Renaming unexpected part" \
                -e "PART_IS_TEMPORARILY_LOCKED" \
                -e "and a merge is impossible: we didn't find" \
@@ -390,6 +400,7 @@ else
                -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
                -e "This engine is deprecated and is not supported in transactions" \
                -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
+               -e "The set of parts restored in place of" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
@@ -433,6 +444,13 @@ else
     # Remove file bc_check_fatal_messages.txt if it's empty
     [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
 fi
+
+dmesg -T > /test_output/dmesg.log
+
+# OOM in dmesg -- those are real
+grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' /test_output/dmesg.log \
+    && echo -e 'OOM in dmesg\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'No OOM in dmesg\tOK' >> /test_output/test_results.tsv
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/

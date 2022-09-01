@@ -11,10 +11,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
@@ -77,9 +77,11 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 AsynchronousMetrics::AsynchronousMetrics(
     ContextPtr global_context_,
     int update_period_seconds,
+    int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , update_period(update_period_seconds)
+    , heavy_metric_update_period(heavy_metrics_update_period_seconds)
     , protocol_server_metrics_func(protocol_server_metrics_func_)
     , log(&Poco::Logger::get("AsynchronousMetrics"))
 {
@@ -563,7 +565,7 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 #endif
 
 
-void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_time)
+void AsynchronousMetrics::update(TimePoint update_time)
 {
     Stopwatch watch;
 
@@ -1584,6 +1586,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
 
+    updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
+
     /// Add more metrics as you wish.
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = watch.elapsedSeconds();
@@ -1599,6 +1603,78 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     // Finally, update the current metrics.
     std::lock_guard lock(mutex);
     values = new_values;
+}
+
+void AsynchronousMetrics::updateDetachedPartsStats()
+{
+    DetachedPartsStats current_values{};
+
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    {
+        if (!db.second->canContainMergeTreeTables())
+            continue;
+
+        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        {
+            const auto & table = iterator->table();
+            if (!table)
+                continue;
+
+            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            {
+                for (const auto & detached_part: table_merge_tree->getDetachedParts())
+                {
+                    if (!detached_part.valid_name)
+                        continue;
+
+                    if (detached_part.prefix.empty())
+                        ++current_values.detached_by_user;
+
+                    ++current_values.count;
+                }
+            }
+        }
+    }
+
+    detached_parts_stats = current_values;
+}
+
+void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values)
+{
+    const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
+    const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
+
+    if (update_heavy_metric)
+    {
+        heavy_metric_previous_update_time = update_time;
+
+        Stopwatch watch;
+
+        /// Test shows that listing 100000 entries consuming around 0.15 sec.
+        updateDetachedPartsStats();
+
+        watch.stop();
+
+        /// Normally heavy metrics don't delay the rest of the metrics calculation
+        /// otherwise log the warning message
+        auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
+        if (watch.elapsedSeconds() > (update_period.count() / 2.))
+            log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
+        else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
+            log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
+        LOG_IMPL(log, log_level.first, log_level.second,
+                 "Update heavy metrics. "
+                 "Update period {} sec. "
+                 "Update heavy metrics period {} sec.  "
+                 "Heavy metrics calculation elapsed: {} sec.",
+                 update_period.count(),
+                 heavy_metric_update_period.count(),
+                 watch.elapsedSeconds());
+
+    }
+
+    new_values["NumberOfDetachedParts"] = detached_parts_stats.count;
+    new_values["NumberOfDetachedByUserParts"] = detached_parts_stats.detached_by_user;
 }
 
 }

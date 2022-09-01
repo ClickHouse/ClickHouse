@@ -20,10 +20,10 @@ public:
     BackupCoordinationLocal();
     ~BackupCoordinationLocal() override;
 
-    void setStatus(const String & current_host, const String & new_status, const String & message) override;
-    void setErrorStatus(const String & current_host, const Exception & exception) override;
-    Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) override;
-    Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) override;
+    void setStage(const String & current_host, const String & new_stage, const String & message) override;
+    void setError(const String & current_host, const Exception & exception) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     void addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name,
                                 const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;

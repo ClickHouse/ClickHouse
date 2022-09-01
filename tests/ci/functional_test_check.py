@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import atexit
 
 from github import Github
 
@@ -22,6 +23,7 @@ from commit_status_helper import (
     get_commit,
     override_status,
     post_commit_status_to_file,
+    update_mergeable_check,
 )
 from clickhouse_helper import (
     ClickHouseHelper,
@@ -86,7 +88,8 @@ def get_run_command(
 
     envs = [
         f"-e MAX_RUN_TIME={int(0.9 * kill_timeout)}",
-        '-e S3_URL="https://clickhouse-datasets.s3.amazonaws.com"',
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
     ]
 
     if flaky_check:
@@ -205,9 +208,11 @@ if __name__ == "__main__":
     flaky_check = "flaky" in check_name.lower()
 
     run_changed_tests = flaky_check or validate_bugix_check
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     pr_info = PRInfo(need_changed_files=run_changed_tests)
+
+    atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -310,7 +315,7 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path

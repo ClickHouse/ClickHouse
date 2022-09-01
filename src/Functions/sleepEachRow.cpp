@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void registerFunctionSleepEachRow(FunctionFactory & factory)
+REGISTER_FUNCTION(SleepEachRow)
 {
     factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
 }
