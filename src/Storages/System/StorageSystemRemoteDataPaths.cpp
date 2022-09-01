@@ -1,8 +1,8 @@
 #include "StorageSystemRemoteDataPaths.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Common/FileCache.h>
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context.h>

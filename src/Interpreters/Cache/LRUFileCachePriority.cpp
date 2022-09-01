@@ -1,4 +1,4 @@
-#include <Common/LRUFileCachePriority.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
