@@ -12,7 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -374,19 +373,10 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         }
         case Type::RELOAD_MODEL:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadModel(query.target_model);
-            break;
-        }
         case Type::RELOAD_MODELS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadAllTriedToLoad();
+            /// SYSTEM RELOAD MODEL(S) is no longer supported. For compat reasons, it is not completely removed but retained as no-op.
             break;
         }
         case Type::RELOAD_FUNCTION:
