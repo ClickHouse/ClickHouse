@@ -42,7 +42,7 @@ NamesAndTypesList FilesystemCacheLogElement::getNamesAndTypes()
         {"total_requested_range", std::make_shared<DataTypeTuple>(types)},
         {"size", std::make_shared<DataTypeUInt64>()},
         {"read_type", std::make_shared<DataTypeString>()},
-        {"cache_attempted", std::make_shared<DataTypeUInt8>()},
+        {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
         {"read_buffer_id", std::make_shared<DataTypeString>()},
     };
@@ -62,7 +62,7 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(Tuple{requested_range.first, requested_range.second});
     columns[i++]->insert(file_segment_size);
     columns[i++]->insert(typeToString(cache_type));
-    columns[i++]->insert(cache_attempted);
+    columns[i++]->insert(read_from_cache_attempted);
 
     if (profile_counters)
     {

@@ -865,6 +865,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     size_t total_parts = parts.size();
 
+    /// TODO Support row_policy_filter and additional_filters
     auto part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, query_info.query, context);
     if (part_values && part_values->empty())
         return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
@@ -922,6 +923,9 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 fmt::join(primary_key_columns, ", ")))});
     }
     LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
+
+    if (key_condition->alwaysFalse())
+        return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
