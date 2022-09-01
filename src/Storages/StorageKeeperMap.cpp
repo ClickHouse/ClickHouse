@@ -235,6 +235,10 @@ StorageKeeperMap::StorageKeeperMap(
     , keys_limit(keys_limit_)
     , log(&Poco::Logger::get("StorageKeeperMap"))
 {
+    std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
+    if (path_prefix.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
+
     auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (!table_id.hasUUID())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap cannot be used with '{}' database because it uses {} engine. Please use Atomic or Replicated database", table_id.getDatabaseName(), database->getEngineName());
@@ -245,7 +249,6 @@ StorageKeeperMap::StorageKeeperMap(
         throw Exception("root_path should not be empty", ErrorCodes::BAD_ARGUMENTS);
     if (!root_path.starts_with('/'))
         throw Exception("root_path should start with '/'", ErrorCodes::BAD_ARGUMENTS);
-
 
     auto config_keys_limit = context_->getConfigRef().getUInt64("keeper_map_keys_limit", 0);
     if (config_keys_limit != 0 && keys_limit > config_keys_limit)
@@ -264,7 +267,9 @@ StorageKeeperMap::StorageKeeperMap(
         LOG_INFO(log, "Keys limit for {} will be set to {}", getStorageID().getFullTableName(), keys_limit);
     }
 
-    std::filesystem::path root_path_fs{root_path};
+    auto root_path_fs = fs::path(path_prefix) / std::string_view{root_path}.substr(1);
+    root_path = root_path_fs.generic_string();
+
     auto metadata_path_fs = root_path_fs / "ch_metadata";
     metadata_path = metadata_path_fs;
     tables_path = metadata_path_fs / "tables";
@@ -286,7 +291,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     auto client = getClient();
 
-    if (root_path != "/" && !client->exists(root_path))
+    if (root_path_fs != "/" && !client->exists(root_path))
     {
         if (!create_missing_root_path)
         {
@@ -312,7 +317,7 @@ StorageKeeperMap::StorageKeeperMap(
 
             if (code == Coordination::Error::ZNONODE ||  code == Coordination::Error::ZNODEEXISTS)
             {
-                LOG_INFO(log, "Someone else removed leftovers");
+                LOG_INFO(log, "Someone else removed leftover nodes");
             }
             else if (code != Coordination::Error::ZOK)
             {
@@ -648,7 +653,8 @@ StoragePtr create(const StorageFactory::Arguments & args)
             "create_missing_root_path: 1 if the root path should be created if it's missing, otherwise throw exception (default: 1)\n",
             "keys_limit: number of keys allowed to be stored, 0 is no limit (default: 0)");
 
-    auto root_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "root_path");
+    const auto root_path_node = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
+    auto root_path = checkAndGetLiteralArgument<std::string>(root_path_node, "root_path");
 
     bool create_missing_root_path = true;
     if (engine_args.size() > 1)

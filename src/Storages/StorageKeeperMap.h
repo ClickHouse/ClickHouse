@@ -105,7 +105,7 @@ private:
 
     std::optional<bool> isTableValid() const;
 
-    const std::string root_path;
+    std::string root_path;
     std::string primary_key;
 
     std::string metadata_path;
