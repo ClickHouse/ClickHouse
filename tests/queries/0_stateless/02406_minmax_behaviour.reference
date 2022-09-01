@@ -1,0 +1,27 @@
+minNan	1	nan	1	nan	nan
+maxNan	5	nan	4	nan	nan
+minIf	0
+maxIf	0
+minIf_FP	0
+maxIf_FP	0
+minIf_String	
+maxIf_String	
+minIf_NullableString	\N
+maxIf_NullableString	\N
+min_NullableString	22
+max_NullableString	26
+-- { echoOn }
+SET compile_aggregate_expressions=1;
+SET min_count_to_compile_aggregate_expression=0;
+minNan	1	nan	1	nan	nan
+maxNan	5	nan	4	nan	nan
+minIf	0
+maxIf	0
+minIf_FP	0
+maxIf_FP	0
+minIf_String	
+maxIf_String	
+minIf_NullableString	\N
+maxIf_NullableString	\N
+min_NullableString	22
+max_NullableString	26

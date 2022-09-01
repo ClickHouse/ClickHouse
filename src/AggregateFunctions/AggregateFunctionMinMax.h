@@ -96,7 +96,7 @@ struct AggregateFunctionsMinMaxDataNumeric
     using ComparatorType = Comparator;
     using T = typename Comparator::Type;
     using ColVecType = ColumnVectorOrDecimal<T>;
-    static constexpr bool is_native_integer = std::is_integral_v<T>;
+    static constexpr bool is_compilable = canBeNativeType<T>();
     bool has_value = false;
     T value{};
 
@@ -168,33 +168,33 @@ struct AggregateFunctionsMinMaxDataNumeric
               T aux{value}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
               if constexpr (std::is_floating_point_v<T>)
               {
-                  constexpr size_t unroll_block = 256 / sizeof(T);
+                  constexpr size_t unroll_block = 512 / sizeof(T);
                   size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
 
                   if (i < unrolled_end)
                   {
                       T partial_min[unroll_block];
-                      for (size_t j = 0; i < unroll_block; i++)
-                          partial_min[j] = aux;
+                      for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
+                          partial_min[unroll_it] = aux;
 
                       while (i < unrolled_end)
                       {
-                          for (size_t j = 0; i < unroll_block; i++)
+                          for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
                           {
                               if constexpr (add_all_elements)
                               {
-                                  partial_min[j] = Comparator::cmp_get(partial_min[j], ptr[i + j]);
+                                  partial_min[unroll_it] = Comparator::cmp_get(partial_min[unroll_it], ptr[i + unroll_it]);
                               }
                               else
                               {
-                                  if (!condition_map[i+j] == add_if_cond_zero)
-                                      partial_min[j] = Comparator::cmp_get(partial_min[j], ptr[i + j]);
+                                  if (!condition_map[i + unroll_it] == add_if_cond_zero)
+                                      partial_min[unroll_it] = Comparator::cmp_get(partial_min[unroll_it], ptr[i + unroll_it]);
                               }
                           }
                           i += unroll_block;
                       }
-                      for (size_t j = 0; i < unroll_block; i++)
-                          aux = Comparator::cmp_get(aux, partial_min[j]);
+                      for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
+                          aux = Comparator::cmp_get(aux, partial_min[unroll_it]);
                   }
               }
 
@@ -222,7 +222,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
-        if constexpr (is_native_integer)
+        if constexpr (is_compilable)
         {
             if (isArchSupported(TargetArch::AVX2))
             {
@@ -244,7 +244,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
-        if constexpr (is_native_integer)
+        if constexpr (is_compilable)
         {
             if (isArchSupported(TargetArch::AVX2))
             {
@@ -266,7 +266,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
 #if USE_MULTITARGET_CODE
-        if constexpr (is_native_integer)
+        if constexpr (is_compilable)
         {
             if (isArchSupported(TargetArch::AVX2))
             {
@@ -304,7 +304,6 @@ struct AggregateFunctionsMinMaxDataNumeric
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool is_compilable = canBeNativeType<T>();
 
     static llvm::Value * getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
     {
