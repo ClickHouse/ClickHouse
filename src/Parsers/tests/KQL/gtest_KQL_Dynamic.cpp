@@ -16,11 +16,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserTest,
         },
         {
             "print array_iff(A, B, C)",
-            "SELECT arrayMap(x -> if((x.1) != 0, x.2, x.3), arrayZip(A, arrayResize(B, length(A), NULL), arrayResize(C, length(A), NULL)))"
+            "SELECT arrayMap(x -> multiIf(toTypeName(x.1) = 'String', NULL, toInt64(x.1) != 0, x.2, x.3), arrayZip(A, arrayResize(B, length(A), NULL), arrayResize(C, length(A), NULL)))"
         },
         {
             "print array_iif(A, B, C)",
-            "SELECT arrayMap(x -> if((x.1) != 0, x.2, x.3), arrayZip(A, arrayResize(B, length(A), NULL), arrayResize(C, length(A), NULL)))"
+            "SELECT arrayMap(x -> multiIf(toTypeName(x.1) = 'String', NULL, toInt64(x.1) != 0, x.2, x.3), arrayZip(A, arrayResize(B, length(A), NULL), arrayResize(C, length(A), NULL)))"
         },
         {
             "print output = array_index_of(dynamic([1, 2, 3]), 2)",
