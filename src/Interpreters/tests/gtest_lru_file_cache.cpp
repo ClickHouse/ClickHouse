@@ -1,11 +1,11 @@
 #include <iomanip>
 #include <iostream>
 #include <gtest/gtest.h>
-#include <Common/FileCache.h>
-#include <Common/FileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/FileCacheSettings.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
