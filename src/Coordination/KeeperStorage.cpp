@@ -2135,7 +2135,7 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
     }
     catch (...)
     {
-        LOG_FATAL(&Poco::Logger::get("KeeperStorage"), "Failed to rollback log. Terminating to avoid incosistencies");
+        LOG_FATAL(&Poco::Logger::get("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
         std::terminate();
     }
 }

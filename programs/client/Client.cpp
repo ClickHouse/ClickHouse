@@ -723,7 +723,7 @@ bool Client::processWithFuzzing(const String & full_query)
         // queries, for lack of a better solution.
         // There is also a problem that fuzzer substitutes positive Int64
         // literals or Decimal literals, which are then parsed back as
-        // UInt64, and suddenly duplicate alias substitition starts or stops
+        // UInt64, and suddenly duplicate alias substitution starts or stops
         // working (ASTWithAlias::formatImpl) or something like that.
         // So we compare not even the first and second formatting of the
         // query, but second and third.
