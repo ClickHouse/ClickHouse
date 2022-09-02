@@ -221,7 +221,24 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto group_by_list = select_query_typed.groupBy();
     if (group_by_list)
-        current_query_tree->getGroupByNode() = buildExpressionList(group_by_list);
+    {
+        auto & group_by_children = group_by_list->children;
+
+        if (current_query_tree->isGroupByWithGroupingSets())
+        {
+            auto grouping_sets_list_node = std::make_shared<ListNode>();
+
+            for (auto & grouping_sets_keys : group_by_children)
+            {
+                auto grouping_sets_keys_list_node = buildExpressionList(grouping_sets_keys);
+                current_query_tree->getGroupBy().getNodes().emplace_back(std::move(grouping_sets_keys_list_node));
+            }
+        }
+        else
+        {
+            current_query_tree->getGroupByNode() = buildExpressionList(group_by_list);
+        }
+    }
 
     auto having_expression = select_query_typed.having();
     if (having_expression)
