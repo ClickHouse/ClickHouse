@@ -93,7 +93,7 @@ void JsonMetadataGetter::Init() {
                     LOG_DEBUG(log, "Timestamp {}", timestamp);
                 } else if (json.has("remove")) {
                     auto path = json["remove"]["path"].getString();
-                    auto timestamp = json["remove"]["modificationTime"].getInt();
+                    auto timestamp = json["remove"]["deletionTimestamp"].getInt();
 
                     metadata.remove(path, timestamp);
 
