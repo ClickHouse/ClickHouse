@@ -93,8 +93,6 @@ FROM url(
 SETTINGS max_http_get_redirects=1;
 ```
 
-It will take about 2 minutes depending on where you are in the world, and where your ClickHouse servers are. Almost all of the time is the download time of the CSV file from the UK government server.
-
 ## Validate the Data {#validate-data}
 
 Query:
