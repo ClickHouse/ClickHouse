@@ -156,8 +156,13 @@ QueryTreeNodes extractAggregateFunctionNodes(const QueryTreeNodePtr & query_node
     const auto & query_node_typed = query_node->as<QueryNode &>();
 
     QueryTreeNodes aggregate_function_nodes;
+    if (query_node_typed.hasHaving())
+        collectAggregateFunctionNodes(query_node_typed.getHaving(), aggregate_function_nodes);
+
+    if (query_node_typed.hasOrderBy())
+        collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
+
     collectAggregateFunctionNodes(query_node_typed.getProjectionNode(), aggregate_function_nodes);
-    collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
 
     return aggregate_function_nodes;
 }
@@ -924,7 +929,7 @@ void Planner::buildQueryPlanIfNeeded()
 
     ActionsChain actions_chain;
     std::optional<size_t> where_action_step_index;
-    std::string where_action_node_name;
+    std::string where_filter_action_node_name;
 
     if (query_node.hasWhere())
     {
@@ -932,7 +937,7 @@ void Planner::buildQueryPlanIfNeeded()
         const auto & where_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
         auto where_actions = convertExpressionNodeIntoDAG(query_node.getWhere(), where_input, planner_context);
-        where_action_node_name = where_actions->getOutputs().at(0)->result_name;
+        where_filter_action_node_name = where_actions->getOutputs().at(0)->result_name;
         actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(where_actions)));
         where_action_step_index = actions_chain.getLastStepIndex();
     }
@@ -990,6 +995,20 @@ void Planner::buildQueryPlanIfNeeded()
         auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions_dag), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
         actions_chain.addStep(std::move(aggregate_step));
         aggregate_step_index = actions_chain.getLastStepIndex();
+    }
+
+    std::optional<size_t> having_action_step_index;
+    std::string having_filter_action_node_name;
+
+    if (query_node.hasHaving())
+    {
+        chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+        const auto & having_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+        auto having_actions = convertExpressionNodeIntoDAG(query_node.getHaving(), having_input, planner_context);
+        having_filter_action_node_name = having_actions->getOutputs().at(0)->result_name;
+        actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(having_actions)));
+        having_action_step_index = actions_chain.getLastStepIndex();
     }
 
     std::optional<size_t> before_order_by_step_index;
@@ -1066,10 +1085,10 @@ void Planner::buildQueryPlanIfNeeded()
     if (where_action_step_index)
     {
         auto & where_actions_chain_node = actions_chain.at(*where_action_step_index);
-        bool remove_filter = !where_actions_chain_node->getChildRequiredOutputColumnsNames().contains(where_action_node_name);
+        bool remove_filter = !where_actions_chain_node->getChildRequiredOutputColumnsNames().contains(where_filter_action_node_name);
         auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
             where_actions_chain_node->getActions(),
-            where_action_node_name,
+            where_filter_action_node_name,
             remove_filter);
         where_step->setStepDescription("WHERE");
         query_plan.addStep(std::move(where_step));
@@ -1160,6 +1179,18 @@ void Planner::buildQueryPlanIfNeeded()
             std::move(group_by_sort_description),
             should_produce_results_in_order_of_bucket_number);
         query_plan.addStep(std::move(aggregating_step));
+    }
+
+    if (having_action_step_index)
+    {
+        auto & having_actions_chain_node = actions_chain.at(*having_action_step_index);
+        bool remove_filter = !having_actions_chain_node->getChildRequiredOutputColumnsNames().contains(having_filter_action_node_name);
+        auto having_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
+            having_actions_chain_node->getActions(),
+            having_filter_action_node_name,
+            remove_filter);
+        having_step->setStepDescription("HAVING");
+        query_plan.addStep(std::move(having_step));
     }
 
     if (query_node.isDistinct())

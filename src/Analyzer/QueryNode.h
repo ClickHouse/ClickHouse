@@ -180,6 +180,21 @@ public:
         return children[group_by_child_index];
     }
 
+    bool hasHaving() const
+    {
+        return getHaving() != nullptr;
+    }
+
+    const QueryTreeNodePtr & getHaving() const
+    {
+        return children[having_child_index];
+    }
+
+    QueryTreeNodePtr & getHaving()
+    {
+        return children[having_child_index];
+    }
+
     bool hasOrderBy() const
     {
         return !getOrderBy().getNodes().empty();
