@@ -51,6 +51,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/CollectAggregateFunctionVisitor.h>
 
 #include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
@@ -150,75 +151,27 @@ StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions
     return {limits, leaf_limits};
 }
 
-class CollectAggregateFunctionNodesMatcher
+QueryTreeNodes extractAggregateFunctionNodes(const QueryTreeNodePtr & query_node)
 {
-public:
-    using Visitor = ConstInDepthQueryTreeVisitor<CollectAggregateFunctionNodesMatcher, true, false>;
+    const auto & query_node_typed = query_node->as<QueryNode &>();
 
-    struct Data
-    {
-        Data(String assert_no_aggregates_place_message_, const PlannerContext & planner_context_)
-            : assert_no_aggregates_place_message(std::move(assert_no_aggregates_place_message_))
-            , planner_context(planner_context_)
-        {}
+    QueryTreeNodes aggregate_function_nodes;
+    collectAggregateFunctionNodes(query_node_typed.getProjectionNode(), aggregate_function_nodes);
+    collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
 
-        explicit Data(const PlannerContext & planner_context_)
-            : planner_context(planner_context_)
-        {}
-
-        String assert_no_aggregates_place_message;
-        const PlannerContext & planner_context;
-        QueryTreeNodes aggregate_function_nodes;
-    };
-
-    static void visit(const QueryTreeNodePtr & node, Data & data)
-    {
-        auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            return;
-
-        if (!function_node->isAggregateFunction())
-            return;
-
-        if (!data.assert_no_aggregates_place_message.empty())
-            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
-                "Aggregate function {} is found {} in query",
-                function_node->getName(),
-                data.assert_no_aggregates_place_message);
-
-        data.aggregate_function_nodes.push_back(node);
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
-    {
-        return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
-    }
-};
-
-using CollectAggregateFunctionNodesVisitor = CollectAggregateFunctionNodesMatcher::Visitor;
-
-void assertNoAggregatesFunctions(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message, const PlannerContext & planner_context)
-{
-    CollectAggregateFunctionNodesVisitor::Data data(assert_no_aggregates_place_message, planner_context);
-    CollectAggregateFunctionNodesVisitor(data).visit(node);
+    return aggregate_function_nodes;
 }
 
-AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodePtr & query_tree, const PlannerContext & planner_context)
+AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context)
 {
-    CollectAggregateFunctionNodesVisitor::Data data(planner_context);
-    CollectAggregateFunctionNodesVisitor(data).visit(query_tree);
-
     QueryTreeNodeToName node_to_name;
     NameSet unique_aggregate_action_node_names;
     AggregateDescriptions aggregate_descriptions;
 
-    for (auto & aggregate_function_node : data.aggregate_function_nodes)
+    for (const auto & aggregate_function_node : aggregate_function_nodes)
     {
-        for (auto & aggregate_function_node_child : aggregate_function_node->getChildren())
-            assertNoAggregatesFunctions(aggregate_function_node_child, "inside another aggregate function", planner_context);
-
-        auto & aggregagte_function_node_typed = aggregate_function_node->as<FunctionNode &>();
-        String node_name = calculateActionNodeName(aggregate_function_node, data.planner_context, node_to_name);
+        const auto & aggregagte_function_node_typed = aggregate_function_node->as<FunctionNode &>();
+        String node_name = calculateActionNodeName(aggregate_function_node, planner_context, node_to_name);
         auto [_, inserted] = unique_aggregate_action_node_names.emplace(node_name);
         if (!inserted)
             continue;
@@ -240,7 +193,7 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodePtr & quer
 
         for (const auto & argument_node : arguments_nodes)
         {
-            String argument_node_name = calculateActionNodeName(argument_node, data.planner_context, node_to_name);
+            String argument_node_name = calculateActionNodeName(argument_node, planner_context, node_to_name);
             aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
         }
 
@@ -250,48 +203,6 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodePtr & quer
 
     return aggregate_descriptions;
 }
-
-class ValidateGroupByColumnsMatcher
-{
-public:
-    using Visitor = ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsMatcher, true, false>;
-
-    struct Data
-    {
-        Data(const NameSet & group_by_keys_column_names_, const PlannerContext & planner_context_)
-            : group_by_keys_column_names(group_by_keys_column_names_)
-            , planner_context(planner_context_)
-        {}
-
-        const NameSet & group_by_keys_column_names;
-        const PlannerContext & planner_context;
-        QueryTreeNodeToName node_to_name;
-    };
-
-    static void visit(const QueryTreeNodePtr & node, Data & data)
-    {
-        auto * column_node = node->as<ColumnNode>();
-        if (!column_node)
-            return;
-
-        String column_node_name = calculateActionNodeName(node, data.planner_context);
-        if (!data.group_by_keys_column_names.contains(column_node_name))
-            throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-                "Column {} is not under aggregate function and not in GROUP BY keys",
-                column_node->formatASTForErrorMessage());
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
-    {
-        auto * function_node = parent_node->as<FunctionNode>();
-        if (function_node && function_node->isAggregateFunction())
-            return false;
-
-        return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
-    }
-};
-
-using ValidateGroupByColumnsVisitor = typename ValidateGroupByColumnsMatcher::Visitor;
 
 class CollectSourceColumnsMatcher
 {
@@ -1026,12 +937,8 @@ void Planner::buildQueryPlanIfNeeded()
         where_action_step_index = actions_chain.getLastStepIndex();
     }
 
-    if (query_node.hasWhere())
-        assertNoAggregatesFunctions(query_node.getWhere(), "in WHERE", *planner_context);
-    if (query_node.hasPrewhere())
-        assertNoAggregatesFunctions(query_node.getWhere(), "in PREWHERE", *planner_context);
-
-    AggregateDescriptions aggregates_descriptions = extractAggregateDescriptions(query_tree, *planner_context);
+    auto aggregate_function_nodes = extractAggregateFunctionNodes(query_tree);
+    AggregateDescriptions aggregates_descriptions = extractAggregateDescriptions(aggregate_function_nodes, *planner_context);
     ColumnsWithTypeAndName aggregates_columns;
     aggregates_columns.reserve(aggregates_descriptions.size());
     for (auto & aggregate_description : aggregates_descriptions)
@@ -1041,27 +948,46 @@ void Planner::buildQueryPlanIfNeeded()
     Names aggregate_keys;
     std::optional<size_t> aggregate_step_index;
 
+    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+    const auto & group_by_input = chain_available_output_columns ? *chain_available_output_columns
+                                                                 : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+    /// Only aggregation keys, and aggregates are available for next steps after GROUP BY step
+    ActionsDAGPtr group_by_actions_dag = std::make_shared<ActionsDAG>(group_by_input);
+    group_by_actions_dag->getOutputs().clear();
+
+    PlannerActionsVisitor actions_visitor(planner_context);
+
     if (query_node.hasGroupBy())
     {
-        const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-        const auto & group_by_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+        auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, query_node.getGroupByNode());
 
-        /// Only aggregation keys, and aggregates are available for next steps after GROUP BY step
-        auto group_by_actions = convertExpressionNodeIntoDAG(query_node.getGroupByNode(), group_by_input, planner_context);
-
-        aggregate_keys.reserve(group_by_actions->getOutputs().size());
-        for (auto & output : group_by_actions->getOutputs())
+        aggregate_keys.reserve(expression_dag_nodes.size());
+        for (auto & expression_dag_node : expression_dag_nodes)
         {
-            aggregate_keys_set.insert(output->result_name);
-            aggregate_keys.push_back(output->result_name);
+            aggregate_keys_set.insert(expression_dag_node->result_name);
+            aggregate_keys.push_back(expression_dag_node->result_name);
+            group_by_actions_dag->getOutputs().push_back(expression_dag_node);
         }
+    }
 
-        ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data(aggregate_keys_set, *planner_context);
-        ValidateGroupByColumnsVisitor validate_columns_visitor(validate_group_by_visitor_data);
-        validate_columns_visitor.visit(query_node.getProjectionNode());
-        validate_columns_visitor.visit(query_node.getOrderByNode());
+    if (!aggregate_function_nodes.empty())
+    {
+        for (auto & aggregate_function_node : aggregate_function_nodes)
+        {
+            auto & aggregate_function_node_typed = aggregate_function_node->as<FunctionNode &>();
+            for (const auto & aggregate_function_node_argument : aggregate_function_node_typed.getArguments().getNodes())
+            {
+                auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, aggregate_function_node_argument);
+                for (auto & expression_dag_node : expression_dag_nodes)
+                    group_by_actions_dag->getOutputs().push_back(expression_dag_node);
+            }
+        }
+    }
 
-        auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
+    if (!group_by_actions_dag->getOutputs().empty())
+    {
+        auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions_dag), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
         actions_chain.addStep(std::move(aggregate_step));
         aggregate_step_index = actions_chain.getLastStepIndex();
     }
@@ -1069,14 +995,12 @@ void Planner::buildQueryPlanIfNeeded()
     std::optional<size_t> before_order_by_step_index;
     if (query_node.hasOrderBy())
     {
-        const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+        chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
         const auto & order_by_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
         ActionsDAGPtr actions_dag = std::make_shared<ActionsDAG>(order_by_input);
         auto & actions_dag_outputs = actions_dag->getOutputs();
         actions_dag_outputs.clear();
-
-        PlannerActionsVisitor actions_visitor(planner_context);
 
         /** We add only sort column sort expression in before ORDER BY actions DAG.
           * WITH fill expressions must be constant nodes.
@@ -1094,7 +1018,7 @@ void Planner::buildQueryPlanIfNeeded()
         before_order_by_step_index = actions_chain.getLastStepIndex();
     }
 
-    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+    chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
     auto projection_actions = convertExpressionNodeIntoDAG(query_node.getProjectionNode(), projection_input, planner_context);
 

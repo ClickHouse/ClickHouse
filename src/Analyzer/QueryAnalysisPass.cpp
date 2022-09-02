@@ -49,6 +49,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/CollectAggregateFunctionVisitor.h>
 
 #include <Databases/IDatabase.h>
 
@@ -94,6 +95,7 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int TOO_DEEP_SUBQUERIES;
+    extern const int NOT_AN_AGGREGATE;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -4121,20 +4123,91 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
+class ValidateGroupByColumnsMatcher
+{
+public:
+    using Visitor = ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsMatcher, true, true>;
+
+    struct Data
+    {
+        const QueryTreeNodes & group_by_keys_nodes;
+    };
+
+    static void visit(const QueryTreeNodePtr & node, Data & data)
+    {
+        auto query_tree_node_type = node->getNodeType();
+        if (query_tree_node_type == QueryTreeNodeType::FUNCTION ||
+            query_tree_node_type == QueryTreeNodeType::CONSTANT ||
+            query_tree_node_type == QueryTreeNodeType::SORT_COLUMN)
+            return;
+
+        auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        auto column_node_source = column_node->getColumnSource();
+        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+            return;
+
+        for (const auto & group_by_key_node : data.group_by_keys_nodes)
+        {
+            if (node->isEqual(*group_by_key_node))
+                return;
+        }
+
+        std::string column_name;
+
+        if (column_node_source->hasAlias())
+            column_name = column_node_source->getAlias();
+        else if (auto * table_node = column_node_source->as<TableNode>())
+            column_name = table_node->getStorageID().getFullTableName();
+
+        column_name += '.' + column_node->getColumnName();
+
+        throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+            "Column {} is not under aggregate function and not in GROUP BY",
+            column_name);
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node, Data & data)
+    {
+        auto * child_function_node = child_node->as<FunctionNode>();
+        if (child_function_node)
+        {
+            if (child_function_node->isAggregateFunction())
+                return false;
+
+            for (const auto & group_by_key_node : data.group_by_keys_nodes)
+            {
+                if (child_node->isEqual(*group_by_key_node))
+                    return false;
+            }
+        }
+
+        return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
+    }
+};
+
+using ValidateGroupByColumnsVisitor = typename ValidateGroupByColumnsMatcher::Visitor;
+
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
   * if it is needed for later use.
   *
-  * lambda_node - query_tree_node that must have QueryNode type.
+  * query_node - query_tree_node that must have QueryNode type.
   * scope - query scope. It is caller responsibility to create it.
   *
   * Resolve steps:
   * 1. Initialize query scope with aliases.
-  * 2. Register CTE subqueries in scope.
+  * 2. Register CTE subqueries from WITH section in scope and remove them from WITH section.
   * 3. Resolve FROM section.
-  * 4. Resolve expressions in query parts.
-  * 5. Remove WITH section from query.
-  * 6. Validate nodes with duplicate aliases.
+  * 4. Resolve projection columns.
+  * 5. Resolve expressions in other query parts.
+  * 6. Remove WITH section from query.
+  * 7. Validate nodes with duplicate aliases.
+  * 8. Remove aliases from expression and lambda nodes.
+  * 9. Validate aggregates.
+  * 10. Resolve query tree node with projection columns.
   */
 void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
 {
@@ -4336,11 +4409,55 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
+    /// Remove aliases from expression and lambda nodes
+
     for (auto & [_, node] : scope.alias_name_to_expression_node)
         node->removeAlias();
 
     for (auto & [_, node] : scope.alias_name_to_lambda_node)
         node->removeAlias();
+
+    /** Validate aggregates
+      *
+      * 1. Check that there are no aggregate functions in WHERE.
+      * 2. Check that there are no aggregate functions in PREWHERE.
+      * 3. Check that there are no aggregate functions in another aggregate functions.
+      * 4. Check that there are no columns that are not specified in GROUP BY keys.
+      */
+    if (query_node_typed.hasWhere())
+        assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
+    if (query_node_typed.hasPrewhere())
+        assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
+
+    QueryTreeNodes aggregate_function_nodes;
+    collectAggregateFunctionNodes(query_node_typed.getProjectionNode(), aggregate_function_nodes);
+    collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
+
+    for (auto & aggregate_function_node : aggregate_function_nodes)
+    {
+        for (auto & aggregate_function_node_child : aggregate_function_node->getChildren())
+            assertNoAggregateFunctionNodes(aggregate_function_node_child, "inside another aggregate function");
+    }
+
+    QueryTreeNodes group_by_keys_nodes;
+    group_by_keys_nodes.reserve(query_node_typed.getGroupBy().getNodes().size());
+
+    for (auto & node : query_node_typed.getGroupBy().getNodes())
+    {
+        if (node->hasConstantValue())
+            continue;
+
+        group_by_keys_nodes.push_back(node);
+    }
+
+    if (!query_node_typed.getGroupBy().getNodes().empty() || !aggregate_function_nodes.empty())
+    {
+        ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data {group_by_keys_nodes};
+        ValidateGroupByColumnsVisitor validate_group_by_visitor(validate_group_by_visitor_data);
+
+        validate_group_by_visitor.visit(query_node_typed.getProjectionNode());
+        validate_group_by_visitor.visit(query_node_typed.getOrderByNode());
+    }
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 }
