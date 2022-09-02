@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/other-functions
----
 # 其他函数 {#qi-ta-han-shu}
 
 ## 主机名() {#hostname}

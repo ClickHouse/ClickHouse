@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/table-functions/merge
-sidebar_position: 38
-sidebar_label: merge
+toc_priority: 38
+toc_title: merge
 ---
 
-# merge
+# merge {#merge}
 
 Creates a temporary [Merge](../../engines/table-engines/special/merge.md) table. The table structure is taken from the first table encountered that matches the regular expression.
 

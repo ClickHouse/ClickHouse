@@ -23,10 +23,10 @@ public:
     constexpr StrongTypedef(): t() {}
 
     constexpr StrongTypedef(const Self &) = default;
-    constexpr StrongTypedef(Self &&) noexcept(std::is_nothrow_move_constructible_v<T>) = default;
+    constexpr StrongTypedef(Self &&) = default;
 
     Self & operator=(const Self &) = default;
-    Self & operator=(Self &&) noexcept(std::is_nothrow_move_assignable_v<T>)= default;
+    Self & operator=(Self &&) = default;
 
     template <class Enable = typename std::is_copy_assignable<T>::type>
     Self & operator=(const T & rhs) { t = rhs; return *this;}
@@ -34,10 +34,8 @@ public:
     template <class Enable = typename std::is_move_assignable<T>::type>
     Self & operator=(T && rhs) { t = std::move(rhs); return *this;}
 
-    // NOLINTBEGIN(google-explicit-constructor)
     operator const T & () const { return t; }
     operator T & () { return t; }
-    // NOLINTEND(google-explicit-constructor)
 
     bool operator==(const Self & rhs) const { return t == rhs.t; }
     bool operator<(const Self & rhs) const { return t < rhs.t; }
@@ -60,10 +58,7 @@ namespace std
     };
 }
 
-// NOLINTBEGIN(bugprone-macro-parentheses)
-
 #define STRONG_TYPEDEF(T, D) \
     struct D ## Tag {}; \
     using D = StrongTypedef<T, D ## Tag>; \
 
-// NOLINTEND(bugprone-macro-parentheses)

@@ -2,9 +2,9 @@
 
 SELECT toDateTime64('2205-12-12 12:12:12', 0, 'UTC');
 2205-12-12 12:12:12
-SELECT toDateTime64('2205-12-12 12:12:12', 0, 'Asia/Istanbul');
+SELECT toDateTime64('2205-12-12 12:12:12', 0, 'Europe/Moscow');
 2205-12-12 12:12:12
-SELECT toDateTime64('2205-12-12 12:12:12', 6, 'Asia/Istanbul');
+SELECT toDateTime64('2205-12-12 12:12:12', 6, 'Europe/Moscow');
 2205-12-12 12:12:12.000000
-SELECT toDateTime64('2205-12-12 12:12:12', 6, 'Asia/Istanbul');
+SELECT toDateTime64('2205-12-12 12:12:12', 6, 'Europe/Moscow');
 2205-12-12 12:12:12.000000

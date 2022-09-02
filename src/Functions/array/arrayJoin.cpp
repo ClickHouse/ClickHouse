@@ -69,7 +69,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ArrayJoin)
+void registerFunctionArrayJoin(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayJoin>();
 }

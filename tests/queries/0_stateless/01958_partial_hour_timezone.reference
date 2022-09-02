@@ -5,7 +5,7 @@ timeZoneOffset(t):                             -2670
 formatDateTime(t, '%F %T', 'Africa/Monrovia'): 1970-06-17 07:39:21
 toString(t, 'Africa/Monrovia'):                1970-06-17 07:39:21
 toStartOfMinute(t):                            1970-06-17 07:39:00
-toStartOfFiveMinutes(t):                       1970-06-17 07:35:00
+toStartOfFiveMinute(t):                        1970-06-17 07:35:00
 toStartOfFifteenMinutes(t):                    1970-06-17 07:30:00
 toStartOfTenMinutes(t):                        1970-06-17 07:30:00
 toStartOfHour(t):                              1970-06-17 07:00:00

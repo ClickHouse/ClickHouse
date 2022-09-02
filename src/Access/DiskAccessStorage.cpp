@@ -1,21 +1,17 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
-#include <Access/AccessChangesNotifier.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/RestoreSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <base/range.h>
 #include <filesystem>
 #include <fstream>
 
@@ -155,17 +151,29 @@ namespace
 
     bool tryParseUUID(const String & str, UUID & id)
     {
-        return tryParse(id, str);
+        try
+        {
+            id = parseFromString<UUID>(str);
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
     }
 }
 
 
-DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
+DiskAccessStorage::DiskAccessStorage(const String & directory_path_, bool readonly_)
+    : DiskAccessStorage(STORAGE_TYPE, directory_path_, readonly_)
+{
+}
+
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_)
+    : IAccessStorage(storage_name_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
-    backup_allowed = allow_backup_;
 
     std::error_code create_dir_error_code;
     std::filesystem::create_directories(directory_path, create_dir_error_code);
@@ -191,15 +199,7 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
 DiskAccessStorage::~DiskAccessStorage()
 {
     stopListsWritingThread();
-
-    try
-    {
-        writeLists();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    writeLists();
 }
 
 
@@ -327,8 +327,7 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
-    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
-    out.close();
+    std::ofstream{getNeedRebuildListsMarkFilePath(directory_path)};
 
     lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
     lists_writing_thread_is_waiting = true;
@@ -430,7 +429,7 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(AccessEntityType type) const
 bool DiskAccessStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return entries_by_id.contains(id);
+    return entries_by_id.count(id);
 }
 
 
@@ -453,7 +452,7 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
 }
 
 
-std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<String> DiskAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
@@ -464,28 +463,25 @@ std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWi
         else
             return std::nullopt;
     }
-    return std::make_pair(it->second.name, it->second.type);
+    return it->second.name;
 }
 
 
 std::optional<UUID> DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     UUID id = generateRandomID();
-    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
+    std::lock_guard lock{mutex};
+    if (insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, notifications))
         return id;
 
     return std::nullopt;
 }
 
 
-bool DiskAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
-{
-    std::lock_guard lock{mutex};
-    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
-}
-
-
-bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -517,7 +513,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     writeAccessEntityToDisk(id, *new_entity);
 
     if (name_collision && replace_if_exists)
-        removeNoLock(it_by_name->second->id, /* throw_if_not_exists = */ false);
+        removeNoLock(it_by_name->second->id, /* throw_if_not_exists = */ false, notifications);
 
     /// Do insertion.
     auto & entry = entries_by_id[id];
@@ -526,20 +522,22 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     entry.name = name;
     entry.entity = new_entity;
     entries_by_name[entry.name] = &entry;
-
-    changes_notifier.onEntityAdded(id, new_entity);
+    prepareNotifications(id, entry, false, notifications);
     return true;
 }
 
 
 bool DiskAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     std::lock_guard lock{mutex};
-    return removeNoLock(id, throw_if_not_exists);
+    return removeNoLock(id, throw_if_not_exists, notifications);
 }
 
 
-bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
+bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -560,24 +558,25 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
     deleteAccessEntityOnDisk(id);
 
     /// Do removing.
-    UUID removed_id = id;
+    prepareNotifications(id, entry, true, notifications);
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     entries_by_name.erase(entry.name);
     entries_by_id.erase(it);
-
-    changes_notifier.onEntityRemoved(removed_id, type);
     return true;
 }
 
 
 bool DiskAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     std::lock_guard lock{mutex};
-    return updateNoLock(id, update_func, throw_if_not_exists);
+    return updateNoLock(id, update_func, throw_if_not_exists, notifications);
 }
 
 
-bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
+bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -611,7 +610,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     bool name_changed = (new_name != old_name);
     if (name_changed)
     {
-        if (entries_by_name.contains(new_name))
+        if (entries_by_name.count(new_name))
             throwNameCollisionCannotRename(type, old_name, new_name);
         scheduleWriteLists(type);
     }
@@ -626,8 +625,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
         entries_by_name[entry.name] = &entry;
     }
 
-    changes_notifier.onEntityUpdated(id, new_entity);
-
+    prepareNotifications(id, entry, false, notifications);
     return true;
 }
 
@@ -652,24 +650,73 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 }
 
 
-void DiskAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+void DiskAccessStorage::prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const
 {
-    if (!isRestoreAllowed())
-        throwRestoreNotAllowed();
-
-    auto entities = restorer.getAccessEntitiesToRestore();
-    if (entities.empty())
+    if (!remove && !entry.entity)
         return;
 
-    auto create_access = restorer.getRestoreSettings().create_access;
-    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+    const AccessEntityPtr entity = remove ? nullptr : entry.entity;
+    for (const auto & handler : entry.handlers_by_id)
+        notifications.push_back({handler, id, entity});
 
-    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    for (const auto & handler : handlers_by_type[static_cast<size_t>(entry.type)])
+        notifications.push_back({handler, id, entity});
+}
+
+
+scope_guard DiskAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries_by_id.find(id);
+    if (it == entries_by_id.end())
+        return {};
+    const Entry & entry = it->second;
+    auto handler_it = entry.handlers_by_id.insert(entry.handlers_by_id.end(), handler);
+
+    return [this, id, handler_it]
     {
-        for (const auto & [id, entity] : entities)
-            insertWithID(id, entity, replace_if_exists, throw_if_exists);
-    });
+        std::lock_guard lock2{mutex};
+        auto it2 = entries_by_id.find(id);
+        if (it2 != entries_by_id.end())
+        {
+            const Entry & entry2 = it2->second;
+            entry2.handlers_by_id.erase(handler_it);
+        }
+    };
+}
+
+scope_guard DiskAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
+{
+    std::lock_guard lock{mutex};
+    auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    handlers.push_back(handler);
+    auto handler_it = std::prev(handlers.end());
+
+    return [this, type, handler_it]
+    {
+        std::lock_guard lock2{mutex};
+        auto & handlers2 = handlers_by_type[static_cast<size_t>(type)];
+        handlers2.erase(handler_it);
+    };
+}
+
+bool DiskAccessStorage::hasSubscription(const UUID & id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries_by_id.find(id);
+    if (it != entries_by_id.end())
+    {
+        const Entry & entry = it->second;
+        return !entry.handlers_by_id.empty();
+    }
+    return false;
+}
+
+bool DiskAccessStorage::hasSubscription(AccessEntityType type) const
+{
+    std::lock_guard lock{mutex};
+    const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    return !handlers.empty();
 }
 
 }

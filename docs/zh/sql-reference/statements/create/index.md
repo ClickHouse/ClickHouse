@@ -1,7 +1,7 @@
 ---
-slug: /zh/sql-reference/statements/create/
-sidebar_label: CREATE
-sidebar_position: 34
+toc_folder_title: CREATE
+toc_priority: 34
+toc_title: Overview
 ---
 
 # CREATE语法 {#create-queries}

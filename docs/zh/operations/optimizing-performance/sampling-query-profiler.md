@@ -1,9 +1,8 @@
 ---
-slug: /zh/operations/optimizing-performance/sampling-query-profiler
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 54
-sidebar_label: "\u67E5\u8BE2\u5206\u6790"
+toc_priority: 54
+toc_title: "\u67E5\u8BE2\u5206\u6790"
 ---
 
 # 采样查询探查器 {#sampling-query-profiler}

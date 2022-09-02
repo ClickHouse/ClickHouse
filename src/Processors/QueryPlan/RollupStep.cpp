@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 
 namespace DB
 {
@@ -22,43 +21,26 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-RollupStep::RollupStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_, bool use_nulls_)
-    : ITransformingStep(input_stream_, generateOutputHeader(params_.getHeader(input_stream_.header, final_), params_.keys, use_nulls_), getTraits())
+RollupStep::RollupStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_)
+    : ITransformingStep(input_stream_, params_->getHeader(), getTraits())
     , params(std::move(params_))
-    , keys_size(params.keys_size)
-    , final(final_)
-    , use_nulls(use_nulls_)
 {
     /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
+    for (auto key : params->params.keys)
+        output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
 }
 
-ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
-
-void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
-            return addGroupingSetForTotals(header, params.keys, use_nulls, settings, keys_size);
+            return nullptr;
 
-        auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), true);
-        return std::make_shared<RollupTransform>(header, std::move(transform_params), use_nulls);
+        return std::make_shared<RollupTransform>(header, std::move(params));
     });
 }
-
-void RollupStep::updateOutputStream()
-{
-    output_stream = createOutputStream(
-        input_streams.front(), appendGroupingSetColumn(params.getHeader(input_streams.front().header, final)), getDataStreamTraits());
-
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
-}
-
 
 }

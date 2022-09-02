@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/statements/select/with
-sidebar_label: WITH
+toc_title: WITH
 ---
 
 # Секция WITH {#with-clause}

@@ -1,7 +1,5 @@
 ---
-sidebar_label: 设置
-sidebar_position: 51
-slug: /zh/operations/settings/
+toc_folder_title: "\u8BBE\u7F6E"
 ---
 
 # 设置 {#settings}

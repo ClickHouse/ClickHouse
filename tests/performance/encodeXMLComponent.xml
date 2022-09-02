@@ -1,3 +1,7 @@
 <test>
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(encodeXMLComponent(URL))</query>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(encodeXMLComponent(URL))</query>
 </test>

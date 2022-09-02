@@ -15,8 +15,6 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 #include <boost/math/special_functions/fpclassify.hpp>
 
-// NOLINTBEGIN(*)
-
 /// Use same extended double for all platforms
 #if (LDBL_MANT_DIG == 64)
 #define CONSTEXPR_FROM_DOUBLE constexpr
@@ -578,8 +576,8 @@ private:
         else if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
-            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0];
+            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0];
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
             res.items[0] = c;
@@ -843,8 +841,8 @@ public:
         {
             using CompilerUInt128 = unsigned __int128;
 
-            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0];
+            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0];
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
@@ -1206,7 +1204,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 
     UnsignedT res{};
     for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
-        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i);
 
     return res;
 }
@@ -1480,5 +1478,3 @@ struct hash<wide::integer<Bits, Signed>>
 };
 
 }
-
-// NOLINTEND(*)

@@ -24,17 +24,13 @@ def started_cluster():
 
 
 def test_non_leader_replica(started_cluster):
-    node1.query("DROP TABLE IF EXISTS sometable SYNC")
-    node2.query("DROP TABLE IF EXISTS sometable SYNC")
-    node1.query("DROP TABLE IF EXISTS new_table_with_ddl")
-    node2.query("DROP TABLE IF EXISTS new_table_with_ddl")
 
-    node1.query(
+    node1.query_with_retry(
         """CREATE TABLE IF NOT EXISTS sometable(id UInt32, value String)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/sometable', '1') ORDER BY tuple()"""
     )
 
-    node2.query(
+    node2.query_with_retry(
         """CREATE TABLE IF NOT EXISTS sometable(id UInt32, value String)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/sometable', '2') ORDER BY tuple() SETTINGS replicated_can_become_leader = 0"""
     )
@@ -42,7 +38,7 @@ def test_non_leader_replica(started_cluster):
     node1.query(
         "INSERT INTO sometable SELECT number, toString(number) FROM numbers(100)"
     )
-    node2.query("SYSTEM SYNC REPLICA sometable")
+    node2.query_with_retry("SYSTEM SYNC REPLICA sometable", timeout=10)
 
     assert node1.query("SELECT COUNT() FROM sometable") == "100\n"
     assert node2.query("SELECT COUNT() FROM sometable") == "100\n"
