@@ -32,13 +32,13 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
         {})
     , part_in_memory(std::move(data_part_))
 {
-    for (const auto & [name, type] : columns_to_read)
+    for (const auto & column_to_read : columns_to_read)
     {
         /// If array of Nested column is missing in part,
         /// we have to read its offsets if they exist.
-        if (!part_in_memory->block.has(name) && typeid_cast<const DataTypeArray *>(type.get()))
-            if (auto offset_position = findColumnForOffsets(name))
-                positions_for_offsets[name] = *offset_position;
+        if (!part_in_memory->block.has(column_to_read.name) && typeid_cast<const DataTypeArray *>(column_to_read.type.get()))
+            if (auto offset_position = findColumnForOffsets(column_to_read))
+                positions_for_offsets[column_to_read.name] = *offset_position;
     }
 }
 
