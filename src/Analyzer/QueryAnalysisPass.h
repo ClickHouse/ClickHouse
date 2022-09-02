@@ -35,6 +35,7 @@ namespace DB
   * Constness of LIMIT and OFFSET.
   * Only columns that are specified in GROUP BY keys after GROUP BY.
   * No aggregate functions in WHERE, PREWHERE and inside another aggregate functions.
+  * GROUP BY modifiers CUBE, ROLLUP, GROUPING SETS and WITH TOTALS.
   *
   * 10. Special functions handling:
   * Function `untuple` is handled properly.

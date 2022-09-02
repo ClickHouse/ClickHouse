@@ -70,6 +70,46 @@ public:
         return is_limit_with_ties;
     }
 
+    void setIsGroupByWithTotals(bool is_group_by_with_totals_value)
+    {
+        is_group_by_with_totals = is_group_by_with_totals_value;
+    }
+
+    bool isGroupByWithTotals() const
+    {
+        return is_group_by_with_totals;
+    }
+
+    void setIsGroupByWithRollup(bool is_group_by_with_rollup_value)
+    {
+        is_group_by_with_rollup = is_group_by_with_rollup_value;
+    }
+
+    bool isGroupByWithRollup() const
+    {
+        return is_group_by_with_rollup;
+    }
+
+    void setIsGroupByWithCube(bool is_group_by_with_cube_value)
+    {
+        is_group_by_with_cube = is_group_by_with_cube_value;
+    }
+
+    bool isGroupByWithCube() const
+    {
+        return is_group_by_with_cube;
+    }
+
+    void setIsGroupByWithGroupingSets(bool is_group_by_with_grouping_sets_value)
+    {
+        is_group_by_with_grouping_sets = is_group_by_with_grouping_sets_value;
+    }
+
+    bool isGroupByWithGroupingSets() const
+    {
+        return is_group_by_with_grouping_sets;
+    }
+
     bool hasWith() const
     {
         return !getWith().getNodes().empty();
@@ -302,6 +342,11 @@ private:
     bool is_cte = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
+    bool is_group_by_with_totals = false;
+    bool is_group_by_with_rollup = false;
+    bool is_group_by_with_cube = false;
+    bool is_group_by_with_grouping_sets = false;
+
     std::string cte_name;
     NamesAndTypes projection_columns;
     ConstantValuePtr constant_value;
