@@ -924,7 +924,7 @@ bool StorageMergeTree::merge(
     if (!merge_mutate_entry)
         return false;
 
-    /// Copying a vector of columns `deduplicate bu columns.
+    /// Copying a vector of columns `deduplicate by columns.
     auto task = std::make_shared<MergePlainMergeTreeTask>(
         *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, [](bool){});
 
