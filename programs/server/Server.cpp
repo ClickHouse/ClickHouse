@@ -736,7 +736,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
     AsynchronousMetrics async_metrics(
-        global_context, config().getUInt("asynchronous_metrics_update_period_s", 1),
+        global_context,
+        config().getUInt("asynchronous_metrics_update_period_s", 1),
+        config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;

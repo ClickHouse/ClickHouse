@@ -1,7 +1,7 @@
 #pragma once
 
 #include <list>
-#include <Common/IFileCachePriority.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <Common/logger_useful.h>
 
 namespace DB
