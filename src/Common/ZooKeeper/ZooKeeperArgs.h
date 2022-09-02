@@ -3,12 +3,9 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/GetPriorityForLoadBalancing.h>
 
-namespace Poco
-{
-namespace Util
+namespace Poco::Util
 {
     class AbstractConfiguration;
-}
 }
 
 namespace zkutil
@@ -22,7 +19,6 @@ struct ZooKeeperArgs
     ZooKeeperArgs(const String & hosts_string);
     ZooKeeperArgs() = default;
     bool operator == (const ZooKeeperArgs &) const = default;
-    bool operator != (const ZooKeeperArgs &) const = default;
 
     String implementation = "zookeeper";
     Strings hosts;
