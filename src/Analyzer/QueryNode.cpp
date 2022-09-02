@@ -106,6 +106,10 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     buffer << ", is_cte: " << is_cte;
     buffer << ", is_distinct: " << is_distinct;
     buffer << ", is_limit_with_ties: " << is_limit_with_ties;
+    buffer << ", is_group_by_with_totals: " << is_group_by_with_totals;
+    buffer << ", is_group_by_with_rollup: " << is_group_by_with_rollup;
+    buffer << ", is_group_by_with_cube: " << is_group_by_with_cube;
+    buffer << ", is_group_by_with_grouping_sets: " << is_group_by_with_grouping_sets;
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
@@ -204,7 +208,11 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
         is_cte == rhs_typed.is_cte &&
         cte_name == rhs_typed.cte_name &&
         is_distinct == rhs_typed.is_distinct &&
-        is_limit_with_ties == rhs_typed.is_limit_with_ties;
+        is_limit_with_ties == rhs_typed.is_limit_with_ties &&
+        is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
+        is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
+        is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
+        is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -217,6 +225,10 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
 
     state.update(is_distinct);
     state.update(is_limit_with_ties);
+    state.update(is_group_by_with_totals);
+    state.update(is_group_by_with_rollup);
+    state.update(is_group_by_with_cube);
+    state.update(is_group_by_with_grouping_sets);
 
     if (constant_value)
     {
@@ -234,6 +246,11 @@ ASTPtr QueryNode::toASTImpl() const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
     select_query->distinct = is_distinct;
+    select_query->limit_with_ties = is_limit_with_ties;
+    select_query->group_by_with_totals = is_group_by_with_totals;
+    select_query->group_by_with_rollup = is_group_by_with_rollup;
+    select_query->group_by_with_cube = is_group_by_with_cube;
+    select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
 
     if (hasWith())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());
@@ -295,6 +312,10 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_cte = is_cte;
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
+    result_query_node->is_group_by_with_totals = is_group_by_with_totals;
+    result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
+    result_query_node->is_group_by_with_cube = is_group_by_with_cube;
+    result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->constant_value = constant_value;

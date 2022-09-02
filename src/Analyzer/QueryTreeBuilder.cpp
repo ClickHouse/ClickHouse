@@ -196,7 +196,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setCTEName(cte_name);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
-
+    current_query_tree->setIsGroupByWithTotals(select_query_typed.group_by_with_totals);
+    current_query_tree->setIsGroupByWithCube(select_query_typed.group_by_with_cube);
+    current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
+    current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->getJoinTree() = buildJoinTree(select_query_typed.tables());
     current_query_tree->setOriginalAST(select_query);
 

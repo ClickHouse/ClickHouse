@@ -26,6 +26,9 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -82,21 +85,20 @@ namespace ErrorCodes
   * TODO: JOIN support ASOF. JOIN support strictness. JOIN support constants. JOIN support ON t1.id = t1.id
   * TODO: JOIN drop unnecessary columns after ON, USING section
   * TODO: Support display names
-  * TODO: Support RBAC. Support RBAC for ALIAS columns.
+  * TODO: Support RBAC. Support RBAC for ALIAS columns
   * TODO: Support distributed query processing
   * TODO: Support PREWHERE
-  * TODO: Support GROUP BY, HAVING
-  * TODO: Support ORDER BY, LIMIT
+  * TODO: Support GROUPING SETS, grouping function
+  * TODO: Support ORDER BY
   * TODO: Support WINDOW FUNCTIONS
   * TODO: Support DISTINCT
   * TODO: Support trivial count optimization
-  * TODO: Support totals, extremes
   * TODO: Support projections
   * TODO: Support read in order optimization
   * TODO: UNION storage limits
   * TODO: Interpreter resources
   * TODO: Support max streams
-  * TODO: Support GROUPINS SETS, const aggregation keys, overflow row
+  * TODO: Support GROUPINS SETS, const aggregation keys
   * TODO: Support interpolate, LIMIT BY.
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
@@ -968,6 +970,7 @@ void Planner::buildQueryPlanIfNeeded()
     /// Only aggregation keys, and aggregates are available for next steps after GROUP BY step
     ActionsDAGPtr group_by_actions_dag = std::make_shared<ActionsDAG>(group_by_input);
     group_by_actions_dag->getOutputs().clear();
+    std::unordered_set<std::string_view> group_by_actions_dag_output_nodes_names;
 
     PlannerActionsVisitor actions_visitor(planner_context);
 
@@ -978,9 +981,13 @@ void Planner::buildQueryPlanIfNeeded()
         aggregate_keys.reserve(expression_dag_nodes.size());
         for (auto & expression_dag_node : expression_dag_nodes)
         {
+            if (group_by_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
+                continue;
+
             aggregate_keys_set.insert(expression_dag_node->result_name);
             aggregate_keys.push_back(expression_dag_node->result_name);
             group_by_actions_dag->getOutputs().push_back(expression_dag_node);
+            group_by_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
         }
     }
 
@@ -993,13 +1000,25 @@ void Planner::buildQueryPlanIfNeeded()
             {
                 auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, aggregate_function_node_argument);
                 for (auto & expression_dag_node : expression_dag_nodes)
+                {
+                    if (group_by_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
+                        continue;
+
                     group_by_actions_dag->getOutputs().push_back(expression_dag_node);
+                    group_by_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
+                }
             }
         }
     }
 
     if (!group_by_actions_dag->getOutputs().empty())
     {
+        /** For non ordinary GROUP BY we add virtual __grouping_set column
+          * With set number, which is used as an additional key at the stage of merging aggregating data.
+          */
+        if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets())
+            aggregates_columns.emplace_back(nullptr,  std::make_shared<DataTypeUInt64>(), "__grouping_set");
+
         auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions_dag), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
         actions_chain.addStep(std::move(aggregate_step));
         aggregate_step_index = actions_chain.getLastStepIndex();
@@ -1102,6 +1121,8 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(where_step));
     }
 
+    bool having_executed = false;
+
     if (!aggregates_descriptions.empty() || query_node.hasGroupBy())
     {
         if (aggregate_step_index)
@@ -1114,8 +1135,6 @@ void Planner::buildQueryPlanIfNeeded()
         }
 
         const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-
-        bool overflow_row = false;
         bool query_analyzer_const_aggregation_keys = false;
 
         const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
@@ -1124,10 +1143,16 @@ void Planner::buildQueryPlanIfNeeded()
             settings.max_entries_for_hash_table_stats,
             settings.max_size_to_preallocate_for_aggregation);
 
+        bool aggregate_overflow_row =
+            query_node.isGroupByWithTotals() &&
+            settings.max_rows_to_group_by &&
+            settings.group_by_overflow_mode == OverflowMode::ANY &&
+            settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+
         Aggregator::Params aggregator_params = Aggregator::Params(
             aggregate_keys,
             aggregates_descriptions,
-            overflow_row,
+            aggregate_overflow_row,
             settings.max_rows_to_group_by,
             settings.group_by_overflow_mode,
             settings.group_by_two_level_threshold,
@@ -1168,13 +1193,14 @@ void Planner::buildQueryPlanIfNeeded()
         const bool should_produce_results_in_order_of_bucket_number
             = select_query_options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
 
-        bool aggregate_final = select_query_options.to_stage > QueryProcessingStage::WithMergeableState;
-
         InputOrderInfoPtr input_order_info;
+        bool aggregate_final =
+            select_query_options.to_stage > QueryProcessingStage::WithMergeableState &&
+            !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
 
         auto aggregating_step = std::make_unique<AggregatingStep>(
             query_plan.getCurrentDataStream(),
-            std::move(aggregator_params),
+            aggregator_params,
             std::move(grouping_sets_params),
             aggregate_final,
             settings.max_block_size,
@@ -1187,9 +1213,48 @@ void Planner::buildQueryPlanIfNeeded()
             std::move(group_by_sort_description),
             should_produce_results_in_order_of_bucket_number);
         query_plan.addStep(std::move(aggregating_step));
+
+        if (query_node.isGroupByWithRollup())
+        {
+            auto rollup_step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
+            query_plan.addStep(std::move(rollup_step));
+        }
+        else if (query_node.isGroupByWithCube())
+        {
+            auto cube_step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
+            query_plan.addStep(std::move(cube_step));
+        }
+
+        if (query_node.isGroupByWithTotals())
+        {
+            bool remove_having_filter = false;
+            std::shared_ptr<ActionsDAG> having_actions;
+
+            if (having_action_step_index)
+            {
+                auto & having_actions_chain_node = actions_chain.at(*having_action_step_index);
+                remove_having_filter = !having_actions_chain_node->getChildRequiredOutputColumnsNames().contains(having_filter_action_node_name);
+                having_actions = having_actions_chain_node->getActions();
+                having_executed = true;
+            }
+
+            bool final = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+            auto totals_having_step = std::make_unique<TotalsHavingStep>(
+                query_plan.getCurrentDataStream(),
+                aggregates_descriptions,
+                aggregate_overflow_row,
+                having_actions,
+                having_filter_action_node_name,
+                remove_having_filter,
+                settings.totals_mode,
+                settings.totals_auto_threshold,
+                final);
+
+            query_plan.addStep(std::move(totals_having_step));
+        }
     }
 
-    if (having_action_step_index)
+    if (!having_executed && having_action_step_index)
     {
         auto & having_actions_chain_node = actions_chain.at(*having_action_step_index);
         bool remove_filter = !having_actions_chain_node->getChildRequiredOutputColumnsNames().contains(having_filter_action_node_name);
