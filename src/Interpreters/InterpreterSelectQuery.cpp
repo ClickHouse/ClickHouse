@@ -2282,7 +2282,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         bool can_use_projection_if_present = !query_info.projection || query_info.projection->complete;
 
         /// Create optimizer with prepared actions.
-        /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
+        /// TODO: It's better to calc input_order_info later, e.g. while reading from StorageMerge.
         if (optimize_anything_in_order && can_use_projection_if_present)
         {
             if (optimize_read_in_order)
