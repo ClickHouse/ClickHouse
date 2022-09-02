@@ -4429,6 +4429,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * 2. Check that there are no aggregate functions in PREWHERE.
       * 3. Check that there are no aggregate functions in another aggregate functions.
       * 4. Check that there are no columns that are not specified in GROUP BY keys.
+      * 5. Validate GROUP BY modifiers.
       */
     if (query_node_typed.hasWhere())
         assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
@@ -4462,7 +4463,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         group_by_keys_nodes.push_back(node);
     }
 
-    if (!query_node_typed.getGroupBy().getNodes().empty() || !aggregate_function_nodes.empty())
+    bool has_aggregation = !query_node_typed.getGroupBy().getNodes().empty() || !aggregate_function_nodes.empty();
+
+    if (has_aggregation)
     {
         ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data {group_by_keys_nodes};
         ValidateGroupByColumnsVisitor validate_group_by_visitor(validate_group_by_visitor_data);
@@ -4470,6 +4473,28 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         validate_group_by_visitor.visit(query_node_typed.getProjectionNode());
         validate_group_by_visitor.visit(query_node_typed.getOrderByNode());
     }
+
+    if (query_node_typed.isGroupByWithGroupingSets())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUPING SETS are not supported");
+
+    bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
+    if (!has_aggregation && (query_node_typed.isGroupByWithGroupingSets() || is_rollup_or_cube))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation");
+
+    if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.isGroupByWithTotals())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");
+
+    if (query_node_typed.isGroupByWithGroupingSets() && is_rollup_or_cube)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUPING SETS are not supported together with ROLLUP and CUBE");
+
+    if (query_node_typed.isGroupByWithRollup() && (query_node_typed.isGroupByWithGroupingSets() || query_node_typed.isGroupByWithCube()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ROLLUP is not supported together with GROUPING SETS and CUBE");
+
+    if (query_node_typed.isGroupByWithCube() && (query_node_typed.isGroupByWithGroupingSets() || query_node_typed.isGroupByWithRollup()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CUBE is not supported together with GROUPING SETS and ROLLUP");
+
+    if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 }
