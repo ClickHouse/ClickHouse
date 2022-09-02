@@ -48,15 +48,16 @@ void SerializationNullable::enumerateStreams(
     auto null_map_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false);
 
     settings.path.push_back(Substream::NullMap);
-    settings.path.back().data = SubstreamData(null_map_serialization)
+    auto null_map_data = SubstreamData(null_map_serialization)
         .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
         .withColumn(column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr)
         .withSerializationInfo(data.serialization_info);
 
+    settings.path.back().data = null_map_data;
     callback(settings.path);
 
     settings.path.back() = Substream::NullableElements;
-    settings.path.back().creator = std::make_shared<SubcolumnCreator>(settings.path.back().data.column);
+    settings.path.back().creator = std::make_shared<SubcolumnCreator>(null_map_data.column);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)
