@@ -123,7 +123,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     else if (!data_types.empty())
     {
         /// If column names were set, check that the number of names match the number of types.
-        if ((column_names.size() != data_types.size())
+        if (column_names.size() != data_types.size())
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
