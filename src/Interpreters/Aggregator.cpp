@@ -572,6 +572,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     , params(params_)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
     , tmp_data(std::make_unique<TemporaryDataOnDisk>(params.tmp_data, 0))
+    , tmp_data(params.tmp_data ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data, 0) : nullptr)
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
