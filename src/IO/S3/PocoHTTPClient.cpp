@@ -43,11 +43,17 @@ namespace ProfileEvents
     extern const Event S3WriteRequestsThrottling;
     extern const Event S3WriteRequestsRedirects;
 
+    extern const Event DiskS3ReadMicroseconds;
     extern const Event DiskS3ReadRequestsCount;
     extern const Event DiskS3ReadRequestsErrors;
+    extern const Event DiskS3ReadRequestsThrottling;
+    extern const Event DiskS3ReadRequestsRedirects;
 
+    extern const Event DiskS3WriteMicroseconds;
     extern const Event DiskS3WriteRequestsCount;
     extern const Event DiskS3WriteRequestsErrors;
+    extern const Event DiskS3WriteRequestsThrottling;
+    extern const Event DiskS3WriteRequestsRedirects;
 }
 
 namespace CurrentMetrics
@@ -203,8 +209,6 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
-    constexpr ProfileEvents::Event NotUsed = 0;
-
     const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
         {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
@@ -214,19 +218,18 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
     };
 
     const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
-        {NotUsed, NotUsed},
+        {ProfileEvents::DiskS3ReadMicroseconds, ProfileEvents::DiskS3WriteMicroseconds},
         {ProfileEvents::DiskS3ReadRequestsCount, ProfileEvents::DiskS3WriteRequestsCount},
         {ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors},
-        {NotUsed, NotUsed},
-        {NotUsed, NotUsed},
+        {ProfileEvents::DiskS3ReadRequestsThrottling, ProfileEvents::DiskS3WriteRequestsThrottling},
+        {ProfileEvents::DiskS3ReadRequestsRedirects, ProfileEvents::DiskS3WriteRequestsRedirects},
     };
 
     S3MetricKind kind = getMetricKind(request);
 
     ProfileEvents::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
     if (for_disk_s3)
-        if (ProfileEvents::Event event = disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)]; event != NotUsed)
-            ProfileEvents::increment(event, amount);
+        ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
 void PocoHTTPClient::makeRequestInternal(
