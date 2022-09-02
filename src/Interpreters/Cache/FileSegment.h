@@ -5,7 +5,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <list>
-#include <Common/FileCacheType.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+
 
 namespace Poco { class Logger; }
 

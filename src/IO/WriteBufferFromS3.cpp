@@ -4,7 +4,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
