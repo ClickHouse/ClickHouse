@@ -88,7 +88,7 @@ namespace ErrorCodes
   * TODO: Support RBAC. Support RBAC for ALIAS columns
   * TODO: Support distributed query processing
   * TODO: Support PREWHERE
-  * TODO: Support GROUPING SETS, grouping function
+  * TODO: Support grouping function
   * TODO: Support ORDER BY
   * TODO: Support WINDOW FUNCTIONS
   * TODO: Support DISTINCT
@@ -959,7 +959,6 @@ void Planner::buildQueryPlanIfNeeded()
     for (auto & aggregate_description : aggregates_descriptions)
         aggregates_columns.emplace_back(nullptr, aggregate_description.function->getReturnType(), aggregate_description.column_name);
 
-    NameSet aggregate_keys_set;
     Names aggregate_keys;
     std::optional<size_t> aggregate_step_index;
 
@@ -973,21 +972,73 @@ void Planner::buildQueryPlanIfNeeded()
     std::unordered_set<std::string_view> group_by_actions_dag_output_nodes_names;
 
     PlannerActionsVisitor actions_visitor(planner_context);
+    GroupingSetsParamsList grouping_sets_parameters_list;
 
     if (query_node.hasGroupBy())
     {
-        auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, query_node.getGroupByNode());
-
-        aggregate_keys.reserve(expression_dag_nodes.size());
-        for (auto & expression_dag_node : expression_dag_nodes)
+        if (query_node.isGroupByWithGroupingSets())
         {
-            if (group_by_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
-                continue;
+            for (auto & grouping_set_keys_list_node : query_node.getGroupBy().getNodes())
+            {
+                auto & grouping_set_keys_list_node_typed = grouping_set_keys_list_node->as<ListNode &>();
+                grouping_sets_parameters_list.emplace_back();
+                auto & grouping_sets_parameters = grouping_sets_parameters_list.back();
 
-            aggregate_keys_set.insert(expression_dag_node->result_name);
-            aggregate_keys.push_back(expression_dag_node->result_name);
-            group_by_actions_dag->getOutputs().push_back(expression_dag_node);
-            group_by_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
+                for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
+                {
+                    auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, grouping_set_key_node);
+                    aggregate_keys.reserve(expression_dag_nodes.size());
+
+                    for (auto & expression_dag_node : expression_dag_nodes)
+                    {
+                        grouping_sets_parameters.used_keys.push_back(expression_dag_node->result_name);
+                        if (group_by_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
+                            continue;
+
+                        aggregate_keys.push_back(expression_dag_node->result_name);
+                        group_by_actions_dag->getOutputs().push_back(expression_dag_node);
+                        group_by_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
+                    }
+                }
+            }
+
+            for (auto & grouping_sets_parameter : grouping_sets_parameters_list)
+            {
+                NameSet grouping_sets_used_keys;
+                Names grouping_sets_keys;
+
+                for (auto & key : grouping_sets_parameter.used_keys)
+                {
+                    auto [_, inserted] = grouping_sets_used_keys.insert(key);
+                    if (inserted)
+                        grouping_sets_keys.push_back(key);
+                }
+
+                for (auto & key : aggregate_keys)
+                {
+                    if (grouping_sets_used_keys.contains(key))
+                        continue;
+
+                    grouping_sets_parameter.missing_keys.push_back(key);
+                }
+
+                grouping_sets_parameter.used_keys = std::move(grouping_sets_keys);
+            }
+        }
+        else
+        {
+            auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, query_node.getGroupByNode());
+            aggregate_keys.reserve(expression_dag_nodes.size());
+
+            for (auto & expression_dag_node : expression_dag_nodes)
+            {
+                if (group_by_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
+                    continue;
+
+                aggregate_keys.push_back(expression_dag_node->result_name);
+                group_by_actions_dag->getOutputs().push_back(expression_dag_node);
+                group_by_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
+            }
         }
     }
 
@@ -1170,7 +1221,6 @@ void Planner::buildQueryPlanIfNeeded()
             stats_collecting_params
         );
 
-        GroupingSetsParamsList grouping_sets_params;
         SortDescription group_by_sort_description;
 
         auto merge_threads = settings.max_threads;
@@ -1201,7 +1251,7 @@ void Planner::buildQueryPlanIfNeeded()
         auto aggregating_step = std::make_unique<AggregatingStep>(
             query_plan.getCurrentDataStream(),
             aggregator_params,
-            std::move(grouping_sets_params),
+            std::move(grouping_sets_parameters_list),
             aggregate_final,
             settings.max_block_size,
             settings.aggregation_in_order_max_block_bytes,
