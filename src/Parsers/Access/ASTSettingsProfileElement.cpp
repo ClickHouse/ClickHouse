@@ -52,10 +52,22 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
                       << applyVisitor(FieldVisitorToString{}, max_value);
     }
 
-    if (readonly)
+    switch (type)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (*readonly ? " READONLY" : " WRITABLE")
-                      << (settings.hilite ? IAST::hilite_none : "");
+        case ConstraintType::NONE:
+            break;
+        case ConstraintType::WRITABLE:
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
+                          << (settings.hilite ? IAST::hilite_none : "");
+            break;
+        case ConstraintType::CONST:
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " READONLY"
+                          << (settings.hilite ? IAST::hilite_none : "");
+            break;
+        case ConstraintType::CHANGEABLE_IN_READONLY:
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
+                          << (settings.hilite ? IAST::hilite_none : "");
+            break;
     }
 }
 
