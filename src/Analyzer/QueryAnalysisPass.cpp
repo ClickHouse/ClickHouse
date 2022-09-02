@@ -4313,7 +4313,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasGroupBy())
-        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    {
+        if (query_node_typed.isGroupByWithGroupingSets())
+        {
+            for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
+                resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        }
+        else
+        {
+            resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        }
+    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -4457,10 +4467,24 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     for (auto & node : query_node_typed.getGroupBy().getNodes())
     {
-        if (node->hasConstantValue())
-            continue;
+        if (query_node_typed.isGroupByWithGroupingSets())
+        {
+            auto & grouping_set_keys = node->as<ListNode &>();
+            for (auto & grouping_set_key : grouping_set_keys.getNodes())
+            {
+                if (grouping_set_key->hasConstantValue())
+                    continue;
 
-        group_by_keys_nodes.push_back(node);
+                group_by_keys_nodes.push_back(grouping_set_key);
+            }
+        }
+        else
+        {
+            if (node->hasConstantValue())
+                continue;
+
+            group_by_keys_nodes.push_back(node);
+        }
     }
 
     bool has_aggregation = !query_node_typed.getGroupBy().getNodes().empty() || !aggregate_function_nodes.empty();
@@ -4473,9 +4497,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         validate_group_by_visitor.visit(query_node_typed.getProjectionNode());
         validate_group_by_visitor.visit(query_node_typed.getOrderByNode());
     }
-
-    if (query_node_typed.isGroupByWithGroupingSets())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUPING SETS are not supported");
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
     if (!has_aggregation && (query_node_typed.isGroupByWithGroupingSets() || is_rollup_or_cube))
