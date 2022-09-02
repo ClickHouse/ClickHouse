@@ -81,7 +81,7 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
             if (!other_constraint.max_value.isNull())
                 constraint.max_value = other_constraint.max_value;
             if (other_constraint.is_const)
-                constraint.is_const = true; // NOTE: In this mode <readonly/> flag cannot be overriden to be false
+                constraint.is_const = true; // NOTE: In this mode <readonly/> flag cannot be overridden to be false
         }
     }
 }
