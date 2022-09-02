@@ -285,6 +285,10 @@ void registerTSKVSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<TSKVSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("TSKV", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Escaped);
+    });
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/PrometheusTextOutputFormat.h>
 
 #include <optional>
+#include <algorithm>
 #include <type_traits>
 
 #include <base/defines.h>
@@ -306,7 +307,10 @@ void PrometheusTextOutputFormat::write(const Columns & columns, size_t row_num)
     }
 
     if (pos.help.has_value() && !columns[*pos.help]->isNullAt(row_num) && current_metric.help.empty())
+    {
         current_metric.help = getString(columns, row_num, *pos.help);
+        std::replace(current_metric.help.begin(), current_metric.help.end(), '\n', ' ');
+    }
 
     if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num) && current_metric.type.empty())
         current_metric.type = getString(columns, row_num, *pos.type);

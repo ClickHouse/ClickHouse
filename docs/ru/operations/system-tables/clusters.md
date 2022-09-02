@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/clusters
+---
 # system.clusters {#system-clusters}
 
 Содержит информацию о доступных в конфигурационном файле кластерах и серверах, которые в них входят.

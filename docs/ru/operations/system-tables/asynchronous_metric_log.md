@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/asynchronous_metric_log
+---
 ## system.asynchronous_metric_log {#system-tables-async-log}
 
 Содержит исторические значения метрик из таблицы `system.asynchronous_metrics`, которые сохраняются раз в минуту. По умолчанию включена.

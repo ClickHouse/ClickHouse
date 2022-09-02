@@ -127,7 +127,7 @@ public:
 
 REGISTER_FUNCTION(Stem)
 {
-    factory.registerFunction<FunctionStem>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionStem>();
 }
 
 }
