@@ -19,7 +19,7 @@ struct DecryptImpl
 namespace DB
 {
 
-REGISTER_FUNCTION(Decrypt)
+void registerFunctionDecrypt(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDecrypt<DecryptImpl>>();
 }

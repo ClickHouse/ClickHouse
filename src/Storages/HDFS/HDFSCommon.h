@@ -40,7 +40,11 @@ struct HDFSFileInfo
     HDFSFileInfo(HDFSFileInfo && other) = default;
     HDFSFileInfo & operator=(const HDFSFileInfo & other) = delete;
     HDFSFileInfo & operator=(HDFSFileInfo && other) = default;
-    ~HDFSFileInfo();
+
+    ~HDFSFileInfo()
+    {
+        hdfsFreeFileInfo(file_info, length);
+    }
 };
 
 

@@ -41,13 +41,13 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
 
-    for (size_t i = 0; i < group_by_info->sort_description_for_merging.size(); ++i)
+    for (size_t i = 0; i < group_by_info->order_key_prefix_descr.size(); ++i)
     {
         const auto & column_description = group_by_description_[i];
         group_by_description.emplace_back(column_description, res_header.getPositionByName(column_description.column_name));
     }
 
-    if (group_by_info->sort_description_for_merging.size() < group_by_description_.size())
+    if (group_by_info->order_key_prefix_descr.size() < group_by_description_.size())
     {
         group_by_key = true;
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params

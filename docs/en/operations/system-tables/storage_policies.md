@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/storage_policies
----
 # storage_policies
 
 Contains information about storage policies and volumes defined in the [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).

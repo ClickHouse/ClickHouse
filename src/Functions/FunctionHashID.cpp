@@ -4,7 +4,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(HashID)
+void registerFunctionHashID(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionHashID>();
 }

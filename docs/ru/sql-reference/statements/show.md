@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 ---
@@ -369,7 +368,6 @@ SHOW ACCESS
 
 :::info "Note"
     По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
-:::
 
 ### Синтаксис {#show-cluster-syntax}
 

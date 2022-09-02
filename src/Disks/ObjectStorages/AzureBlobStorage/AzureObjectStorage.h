@@ -9,16 +9,9 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/MultiVersion.h>
 
-#if USE_AZURE_BLOB_STORAGE
-#include <azure/storage/blobs.hpp>
-#endif
-
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
@@ -56,8 +49,6 @@ public:
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_);
-
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -128,10 +119,6 @@ private:
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
-
-    Poco::Logger * log;
-
-    DataSourceDescription data_source_description;
 };
 
 }

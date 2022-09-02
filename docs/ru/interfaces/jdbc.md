@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/jdbc
 sidebar_position: 22
 sidebar_label: "JDBC-драйвер"
 ---

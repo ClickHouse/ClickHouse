@@ -13,9 +13,9 @@ namespace
 
 }
 
-REGISTER_FUNCTION(Hypot)
+void registerFunctionHypot(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionHypot>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionHypot>(FunctionFactory::CaseInsensitive);
 }
 
 }

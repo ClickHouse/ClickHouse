@@ -18,7 +18,6 @@ protected:
     bool use_pread = false;               /// To access one fd from multiple threads, use 'pread' syscall instead of 'read'.
 
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
-
     int fd;
 
     bool nextImpl() override;
@@ -52,8 +51,6 @@ public:
 
     Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
 
-    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
-
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
     off_t seek(off_t off, int whence) override;
 
@@ -63,6 +60,8 @@ public:
     size_t getFileSize() override;
 
     void setProgressCallback(ContextPtr context);
+
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.

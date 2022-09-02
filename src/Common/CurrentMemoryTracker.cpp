@@ -51,23 +51,15 @@ void CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     {
         if (current_thread)
         {
-            Int64 will_be = current_thread->untracked_memory + size;
-            Int64 limit = current_thread->untracked_memory_limit + current_thread->untracked_memory_limit_increase;
+            current_thread->untracked_memory += size;
 
-            if (will_be > limit)
+            if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
             {
-                /// Increase limit before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
+                /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
                 /// more. It could be useful to enlarge Exception message in rethrow logic.
-                current_thread->untracked_memory_limit_increase = current_thread->untracked_memory_limit;
-                memory_tracker->allocImpl(will_be, throw_if_memory_exceeded);
-                current_thread->untracked_memory_limit_increase = 0;
+                Int64 tmp = current_thread->untracked_memory;
                 current_thread->untracked_memory = 0;
-            }
-            else
-            {
-                /// Update after successful allocations,
-                /// since failed allocations should not be take into account.
-                current_thread->untracked_memory = will_be;
+                memory_tracker->allocImpl(tmp, throw_if_memory_exceeded);
             }
         }
         /// total_memory_tracker only, ignore untracked_memory

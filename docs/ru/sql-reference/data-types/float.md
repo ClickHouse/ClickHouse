@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/float
 sidebar_position: 41
 sidebar_label: Float32, Float64
 ---

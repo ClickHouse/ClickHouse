@@ -17,7 +17,7 @@ using FunctionMultiFuzzyMatchAny = FunctionsMultiStringFuzzySearch<MultiMatchAny
 
 }
 
-REGISTER_FUNCTION(MultiFuzzyMatchAny)
+void registerFunctionMultiFuzzyMatchAny(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiFuzzyMatchAny>();
 }

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/table-functions/url
 sidebar_position: 41
 sidebar_label: url
 ---

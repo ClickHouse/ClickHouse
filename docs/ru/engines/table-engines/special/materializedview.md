@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/materializedview
 sidebar_position: 43
 sidebar_label: MaterializedView
 ---

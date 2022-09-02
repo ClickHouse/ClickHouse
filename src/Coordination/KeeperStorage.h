@@ -9,7 +9,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/KeeperContext.h>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -73,11 +72,10 @@ public:
     enum DigestVersion : uint8_t
     {
         NO_DIGEST = 0,
-        V1 = 1,
-        V2 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
+        V0 = 1
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V0;
 
     struct ResponseForSession
     {
@@ -229,41 +227,26 @@ public:
 
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
         {
-            const auto check_auth = [&](const auto & auth_ids)
+            for (const auto & session_auth : storage.session_and_auth[session_id])
             {
-                for (const auto & auth : auth_ids)
-                {
-                    using TAuth = std::remove_reference_t<decltype(auth)>;
-
-                    const AuthID * auth_ptr = nullptr;
-                    if constexpr (std::is_pointer_v<TAuth>)
-                        auth_ptr = auth;
-                    else
-                        auth_ptr = &auth;
-
-                    if (predicate(*auth_ptr))
-                        return true;
-                }
-                return false;
-            };
+                if (predicate(session_auth))
+                    return true;
+            }
 
             if (is_local)
-                return check_auth(storage.session_and_auth[session_id]);
-
-            if (check_auth(storage.session_and_auth[session_id]))
-                return true;
-
-            // check if there are uncommitted
-            const auto auth_it = session_and_auth.find(session_id);
-            if (auth_it == session_and_auth.end())
                 return false;
 
-            return check_auth(auth_it->second);
+            for (const auto & delta : deltas)
+            {
+                if (const auto * auth_delta = std::get_if<KeeperStorage::AddAuthDelta>(&delta.operation);
+                    auth_delta && auth_delta->session_id == session_id && predicate(auth_delta->auth_id))
+                    return true;
+            }
+
+            return false;
         }
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
-
-        std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
 
         struct UncommittedNode
         {
@@ -272,32 +255,7 @@ public:
             int64_t zxid{0};
         };
 
-        struct Hash
-        {
-            auto operator()(const std::string_view view) const
-            {
-                SipHash hash;
-                hash.update(view);
-                return hash.get64();
-            }
-
-            using is_transparent = void; // required to make find() work with different type than key_type
-        };
-
-        struct Equal
-        {
-            auto operator()(const std::string_view a,
-                            const std::string_view b) const
-            {
-                return a == b;
-            }
-
-            using is_transparent = void; // required to make find() work with different type than key_type
-        };
-
-        mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
-        std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
-
+        mutable std::unordered_map<std::string, UncommittedNode> nodes;
         std::list<Delta> deltas;
         KeeperStorage & storage;
     };
@@ -378,15 +336,11 @@ public:
 
     Digest getNodesDigest(bool committed) const;
 
-    KeeperContextPtr keeper_context;
+    const bool digest_enabled;
 
     const String superdigest;
 
-    bool initialized{false};
-
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
-
-    void initializeSystemNodes();
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_);
 
     /// Allocate new session id with the specified timeouts
     int64_t getSessionID(int64_t session_timeout_ms)
@@ -421,7 +375,7 @@ public:
         int64_t new_last_zxid,
         bool check_acl = true,
         std::optional<Digest> digest = std::nullopt);
-    void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
+    void rollbackRequest(int64_t rollback_zxid);
 
     void finalize();
 

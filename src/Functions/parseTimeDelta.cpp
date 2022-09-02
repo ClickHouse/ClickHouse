@@ -304,7 +304,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(ParseTimeDelta)
+void registerFunctionParseTimeDelta(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionParseTimeDelta>();
 }

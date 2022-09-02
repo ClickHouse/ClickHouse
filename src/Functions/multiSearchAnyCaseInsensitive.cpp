@@ -17,7 +17,7 @@ using FunctionMultiSearchCaseInsensitive = FunctionsMultiStringSearch<MultiSearc
 
 }
 
-REGISTER_FUNCTION(MultiSearchAnyCaseInsensitive)
+void registerFunctionMultiSearchAnyCaseInsensitive(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearchCaseInsensitive>();
 }

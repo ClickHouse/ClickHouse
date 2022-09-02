@@ -83,7 +83,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3IsValid)
+void registerFunctionH3IsValid(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3IsValid>();
 }

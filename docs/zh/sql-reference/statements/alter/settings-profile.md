@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/alter/settings-profile
 sidebar_position: 48
 sidebar_label: 配置文件设置
 ---

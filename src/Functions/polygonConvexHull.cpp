@@ -99,7 +99,7 @@ template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
 
-REGISTER_FUNCTION(PolygonConvexHull)
+void registerFunctionPolygonConvexHull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
 }

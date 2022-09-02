@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/
 sidebar_label: "Табличные функции"
 sidebar_position: 34
 ---

@@ -23,7 +23,6 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
@@ -1059,15 +1058,14 @@ public:
     std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
-
-    TemporaryFileOnDiskHolder createTempFile(size_t max_temp_file_size) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
     struct TemporaryFiles
     {
-        std::vector<TemporaryFileOnDiskHolder> files;
+        std::vector<std::unique_ptr<Poco::TemporaryFile>> files;
         size_t sum_size_uncompressed = 0;
         size_t sum_size_compressed = 0;
         mutable std::mutex mutex;
@@ -1350,11 +1348,8 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
-        const ColumnRawPtrs & key_columns,
-        Arena * arena_for_keys) const;
+        const ColumnRawPtrs & key_columns) const;
 
-    /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
-    /// If not provided, aggregates_pool is used instead. Refer to mergeBlocks() for an usage example.
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         Block block,
@@ -1362,9 +1357,7 @@ private:
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
-        bool no_more_keys,
-        Arena * arena_for_keys = nullptr) const;
-
+        bool no_more_keys) const;
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         Arena * aggregates_pool,
@@ -1375,8 +1368,7 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
-        const ColumnRawPtrs & key_columns,
-        Arena * arena_for_keys) const;
+        const ColumnRawPtrs & key_columns) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
         Block block,

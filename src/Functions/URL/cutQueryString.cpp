@@ -8,7 +8,7 @@ namespace DB
 struct NameCutQueryString { static constexpr auto name = "cutQueryString"; };
 using FunctionCutQueryString = FunctionStringToString<CutSubstringImpl<ExtractQueryString<false>>, NameCutQueryString>;
 
-REGISTER_FUNCTION(CutQueryString)
+void registerFunctionCutQueryString(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutQueryString>();
 }

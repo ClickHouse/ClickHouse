@@ -37,26 +37,6 @@ protected:
 
 using CommonDataTypeChecker = std::function<DataTypePtr(const DataTypePtr &, const DataTypePtr &)>;
 
-class IIRowSchemaReader : public ISchemaReader
-{
-public:
-    IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
-
-    bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & context) override;
-
-protected:
-    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
-    size_t getNumRowsRead() const override { return rows_read; }
-
-    size_t max_rows_to_read;
-    size_t rows_read = 0;
-    DataTypePtr default_type;
-    String hints_str;
-    FormatSettings format_settings;
-    std::unordered_map<String, DataTypePtr> hints;
-};
-
 /// Base class for schema inference for formats that read data row by row.
 /// It reads data row by row (up to max_rows_to_read), determines types of columns
 /// for each row and compare them with types from the previous rows. If some column
@@ -64,14 +44,16 @@ protected:
 /// (from argument default_type_) will be used for this column or the exception
 /// will be thrown (if default type is not set). If different columns have different
 /// default types, you can provide them by default_types_ argument.
-class IRowSchemaReader : public IIRowSchemaReader
+class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, const DataTypes & default_types_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_);
 
     NamesAndTypesList readSchema() override;
+
+    void setCommonTypeChecker(CommonDataTypeChecker checker) { common_type_checker = checker; }
 
 protected:
     /// Read one row and determine types of columns in it.
@@ -82,13 +64,17 @@ protected:
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
 
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t index);
+    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
+    size_t getNumRowsRead() const override { return rows_read; }
 
 private:
-    DataTypePtr getDefaultType(size_t column) const;
-    void initColumnNames(const String & column_names_str);
 
+    DataTypePtr getDefaultType(size_t column) const;
+    size_t max_rows_to_read;
+    size_t rows_read = 0;
+    DataTypePtr default_type;
     DataTypes default_types;
+    CommonDataTypeChecker common_type_checker;
     std::vector<String> column_names;
 };
 
@@ -97,12 +83,14 @@ private:
 /// Differ from IRowSchemaReader in that after reading a row we get
 /// a map {column_name : type} and some columns may be missed in a single row
 /// (in this case we will use types from the previous rows for missed columns).
-class IRowWithNamesSchemaReader : public IIRowSchemaReader
+class IRowWithNamesSchemaReader : public ISchemaReader
 {
 public:
-    IRowWithNamesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
+    IRowWithNamesSchemaReader(ReadBuffer & in_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
     bool hasStrictOrderOfColumns() const override { return false; }
+
+    void setCommonTypeChecker(CommonDataTypeChecker checker) { common_type_checker = checker; }
 
 protected:
     /// Read one row and determine types of columns in it.
@@ -111,7 +99,14 @@ protected:
     /// Set eof = true if can't read more data.
     virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
 
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
+    size_t getNumRowsRead() const override { return rows_read; }
+
+private:
+    size_t max_rows_to_read;
+    size_t rows_read = 0;
+    DataTypePtr default_type;
+    CommonDataTypeChecker common_type_checker;
 };
 
 /// Base class for schema inference for formats that don't need any data to
@@ -127,15 +122,13 @@ public:
 
 void chooseResultColumnType(
     DataTypePtr & type,
-    DataTypePtr & new_type,
-    std::function<void(DataTypePtr &, DataTypePtr &)> transform_types_if_needed,
+    const DataTypePtr & new_type,
+    CommonDataTypeChecker common_type_checker,
     const DataTypePtr & default_type,
     const String & column_name,
     size_t row);
 
 void checkResultColumnTypeAndAppend(
     NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t rows_read);
-
-Strings splitColumnNames(const String & column_names_str);
 
 }

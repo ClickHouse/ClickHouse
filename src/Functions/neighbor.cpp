@@ -203,7 +203,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Neighbor)
+void registerFunctionNeighbor(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNeighbor>();
 }
