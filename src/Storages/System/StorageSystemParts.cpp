@@ -13,6 +13,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/hex.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -97,7 +98,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 void StorageSystemParts::processNextStorage(
     ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
-    using State = IMergeTreeDataPart::State;
+    using State = MergeTreeDataPartState;
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
@@ -195,9 +196,9 @@ void StorageSystemParts::processNextStorage(
         if (part->isStoredOnDisk())
         {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
         }
         else
         {

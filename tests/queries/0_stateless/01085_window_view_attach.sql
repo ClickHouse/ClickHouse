@@ -3,6 +3,7 @@
 SET allow_experimental_window_view = 1;
 
 DROP DATABASE IF EXISTS test_01085;
+set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test_01085 ENGINE=Ordinary;
 
 DROP TABLE IF EXISTS test_01085.mt;

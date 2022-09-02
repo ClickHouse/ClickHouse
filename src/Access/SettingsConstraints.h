@@ -61,17 +61,17 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void setMinValue(const std::string_view & setting_name, const Field & min_value);
-    Field getMinValue(const std::string_view & setting_name) const;
+    void setMinValue(std::string_view setting_name, const Field & min_value);
+    Field getMinValue(std::string_view setting_name) const;
 
-    void setMaxValue(const std::string_view & setting_name, const Field & max_value);
-    Field getMaxValue(const std::string_view & setting_name) const;
+    void setMaxValue(std::string_view setting_name, const Field & max_value);
+    Field getMaxValue(std::string_view setting_name) const;
 
-    void setReadOnly(const std::string_view & setting_name, bool read_only);
-    bool isReadOnly(const std::string_view & setting_name) const;
+    void setReadOnly(std::string_view setting_name, bool read_only);
+    bool isReadOnly(std::string_view setting_name) const;
 
-    void set(const std::string_view & setting_name, const Field & min_value, const Field & max_value, bool read_only);
-    void get(const std::string_view & setting_name, Field & min_value, Field & max_value, bool & read_only) const;
+    void set(std::string_view setting_name, const Field & min_value, const Field & max_value, bool read_only);
+    void get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -105,8 +105,8 @@ private:
     };
     bool checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Constraint & getConstraintRef(const std::string_view & setting_name);
-    const Constraint * tryGetConstraint(const std::string_view & setting_name) const;
+    Constraint & getConstraintRef(std::string_view setting_name);
+    const Constraint * tryGetConstraint(std::string_view setting_name) const;
 
     std::unordered_map<std::string_view, Constraint> constraints;
     const AccessControl * access_control = nullptr;

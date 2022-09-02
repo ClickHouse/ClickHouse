@@ -57,7 +57,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
         /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "offsets_column has data ({}) inconsistent with nested_column ({})",
+                "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
                 data->size(), last_offset);
     }
 

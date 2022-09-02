@@ -23,6 +23,7 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
@@ -238,7 +239,7 @@ struct AggregationMethodString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -270,7 +271,7 @@ struct AggregationMethodStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -302,7 +303,7 @@ struct AggregationMethodFixedString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -333,7 +334,7 @@ struct AggregationMethodFixedStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -501,7 +502,7 @@ struct AggregationMethodSerialized
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         const auto * pos = key.data;
         for (auto & column : key_columns)
@@ -890,15 +891,15 @@ class NativeWriter;
 class Aggregator final
 {
 public:
+    using AggregateColumns = std::vector<ColumnRawPtrs>;
+    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
+    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
+    using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
+
     struct Params
     {
-        /// Data structure of source blocks.
-        Block src_header;
-        /// Data structure of intermediate blocks before merge.
-        Block intermediate_header;
-
         /// What to count.
-        const ColumnNumbers keys;
+        const Names keys;
         const AggregateDescriptions aggregates;
         const size_t keys_size;
         const size_t aggregates_size;
@@ -932,6 +933,8 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
+        bool only_merge;
+
         struct StatsCollectingParams
         {
             StatsCollectingParams();
@@ -952,8 +955,7 @@ public:
         StatsCollectingParams stats_collecting_params;
 
         Params(
-            const Block & src_header_,
-            const ColumnNumbers & keys_,
+            const Names & keys_,
             const AggregateDescriptions & aggregates_,
             bool overflow_row_,
             size_t max_rows_to_group_by_,
@@ -967,11 +969,9 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
-            const Block & intermediate_header_ = {},
+            bool only_merge_ = false, // true for projections
             const StatsCollectingParams & stats_collecting_params_ = {})
-            : src_header(src_header_)
-            , intermediate_header(intermediate_header_)
-            , keys(keys_)
+            : keys(keys_)
             , aggregates(aggregates_)
             , keys_size(keys.size())
             , aggregates_size(aggregates.size())
@@ -987,45 +987,33 @@ public:
             , min_free_disk_space(min_free_disk_space_)
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+            , only_merge(only_merge_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
 
         /// Only parameters that matter during merge.
-        Params(
-            const Block & intermediate_header_,
-            const ColumnNumbers & keys_,
-            const AggregateDescriptions & aggregates_,
-            bool overflow_row_,
-            size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, {}, {})
+        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
+            : Params(
+                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, true, {})
         {
-            intermediate_header = intermediate_header_;
         }
 
-        static Block getHeader(
-            const Block & src_header,
-            const Block & intermediate_header,
-            const ColumnNumbers & keys,
-            const AggregateDescriptions & aggregates,
-            bool final);
+        static Block
+        getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 
-        Block getHeader(bool final) const
-        {
-            return getHeader(src_header, intermediate_header, keys, aggregates, final);
-        }
+        Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
+
+        /// Remember the columns we will work with
+        ColumnRawPtrs makeRawKeyColumns(const Block & block) const;
+        AggregateColumnsConstData makeAggregateColumnsData(const Block & block) const;
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(WriteBuffer & out, size_t indent) const;
         void explain(JSONBuilder::JSONMap & map) const;
     };
 
-    explicit Aggregator(const Params & params_);
-
-    using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
-    using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
+    explicit Aggregator(const Block & header_, const Params & params_);
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
@@ -1071,14 +1059,15 @@ public:
     std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const;
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
+
+    TemporaryFileOnDiskHolder createTempFile(size_t max_temp_file_size) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
     struct TemporaryFiles
     {
-        std::vector<std::unique_ptr<Poco::TemporaryFile>> files;
+        std::vector<TemporaryFileOnDiskHolder> files;
         size_t sum_size_uncompressed = 0;
         size_t sum_size_compressed = 0;
         mutable std::mutex mutex;
@@ -1102,6 +1091,10 @@ private:
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
 
+    /// Data structure of source blocks.
+    Block header;
+    /// Positions of aggregation key columns in the header.
+    const ColumnNumbers keys_positions;
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
@@ -1181,6 +1174,14 @@ private:
         size_t row_end,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions) const;
+    void mergeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns) const;
+
+    void mergeOnBlockImpl(Block block, AggregatedDataVariants & result, bool no_more_keys) const;
 
     void executeImpl(
         AggregatedDataVariants & result,
@@ -1227,8 +1228,12 @@ private:
         AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
-        AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena) const;
+        AggregateFunctionInstruction * aggregate_instructions) const;
+    void mergeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
@@ -1338,24 +1343,49 @@ private:
 
     template <bool no_more_keys, typename Method, typename Table>
     void mergeStreamsImplCase(
-        Block & block,
-        Arena * aggregates_pool,
-        Method & method,
-        Table & data,
-        AggregateDataPtr overflow_row) const;
-
-    template <typename Method, typename Table>
-    void mergeStreamsImpl(
-        Block & block,
         Arena * aggregates_pool,
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
-        bool no_more_keys) const;
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns,
+        Arena * arena_for_keys) const;
 
-    void mergeWithoutKeyStreamsImpl(
-        Block & block,
+    /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
+    /// If not provided, aggregates_pool is used instead. Refer to mergeBlocks() for an usage example.
+    template <typename Method, typename Table>
+    void mergeStreamsImpl(
+        Block block,
+        Arena * aggregates_pool,
+        Method & method,
+        Table & data,
+        AggregateDataPtr overflow_row,
+        bool no_more_keys,
+        Arena * arena_for_keys = nullptr) const;
+
+    template <typename Method, typename Table>
+    void mergeStreamsImpl(
+        Arena * aggregates_pool,
+        Method & method,
+        Table & data,
+        AggregateDataPtr overflow_row,
+        bool no_more_keys,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns,
+        Arena * arena_for_keys) const;
+
+    void mergeBlockWithoutKeyStreamsImpl(
+        Block block,
         AggregatedDataVariants & result) const;
+    void mergeWithoutKeyStreamsImpl(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     template <typename Method>
     void mergeBucketImpl(

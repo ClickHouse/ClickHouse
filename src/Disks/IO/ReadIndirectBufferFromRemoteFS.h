@@ -30,6 +30,10 @@ public:
 
     void setReadUntilEnd() override;
 
+    bool isIntegratedWithFilesystemCache() const override { return true; }
+
+    size_t getFileSize() override;
+
 private:
     bool nextImpl() override;
 

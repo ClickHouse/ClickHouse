@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 import time
 
 
-from kazoo.client import KazooClient
+from kazoo.client import KazooClient, KazooRetry
 
 CLUSTER_SIZE = 5
 QUORUM_SIZE = CLUSTER_SIZE // 2 + 1
@@ -52,8 +52,12 @@ def started_cluster():
 
 def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+        hosts=cluster.get_instance_ip(nodename) + ":9181",
+        timeout=timeout,
+        connection_retry=KazooRetry(max_tries=10),
+        command_retry=KazooRetry(max_tries=10),
     )
+
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -90,9 +94,9 @@ def wait_nodes(nodes):
 
 
 def wait_and_assert_data(zk, path, data):
-    while zk.exists(path) is None:
+    while zk.retry(zk.exists, path) is None:
         time.sleep(0.1)
-    assert zk.get(path)[0] == data.encode()
+    assert zk.retry(zk.get, path)[0] == data.encode()
 
 
 def close_zk(zk):
@@ -117,7 +121,7 @@ def test_cluster_recovery(started_cluster):
         data_in_cluster = []
 
         def add_data(zk, path, data):
-            zk.create(path, data.encode())
+            zk.retry(zk.create, path, data.encode())
             data_in_cluster.append((path, data))
 
         def assert_all_data(zk):

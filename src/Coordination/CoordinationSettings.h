@@ -77,6 +77,7 @@ struct KeeperConfigurationAndSettings
 
     String log_storage_path;
     String snapshot_storage_path;
+    String state_file_path;
 
     void dump(WriteBufferFromOwnString & buf) const;
     static std::shared_ptr<KeeperConfigurationAndSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
@@ -84,6 +85,7 @@ struct KeeperConfigurationAndSettings
 private:
     static String getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
     static String getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+    static String getStateFilePathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
 };
 
 using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;

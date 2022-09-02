@@ -329,9 +329,9 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
         case 0:
         {
             const auto r = fuzz_rand() % 3;
-            def.frame_type = r == 0 ? WindowFrame::FrameType::Rows
-                : r == 1 ? WindowFrame::FrameType::Range
-                    : WindowFrame::FrameType::Groups;
+            def.frame_type = r == 0 ? WindowFrame::FrameType::ROWS
+                : r == 1 ? WindowFrame::FrameType::RANGE
+                    : WindowFrame::FrameType::GROUPS;
             break;
         }
         case 1:
@@ -385,7 +385,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             break;
     }
 
-    if (def.frame_type == WindowFrame::FrameType::Range
+    if (def.frame_type == WindowFrame::FrameType::RANGE
         && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded
         && def.frame_begin_preceding
         && def.frame_end_type == WindowFrame::BoundaryType::Current)

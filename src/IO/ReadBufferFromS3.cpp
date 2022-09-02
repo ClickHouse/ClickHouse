@@ -5,12 +5,13 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Common/Stopwatch.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 
+#include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 
@@ -47,7 +48,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
-    : SeekableReadBuffer(nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -164,6 +165,8 @@ bool ReadBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
+    if (read_settings.remote_throttler)
+        read_settings.remote_throttler->add(working_buffer.size());
 
     return true;
 }
@@ -222,20 +225,15 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-std::optional<size_t> ReadBufferFromS3::getFileSize()
+size_t ReadBufferFromS3::getFileSize()
 {
     if (file_size)
-        return file_size;
+        return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, false);
-
-    if (!object_size)
-    {
-        return std::nullopt;
-    }
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
 
     file_size = object_size;
-    return file_size;
+    return *file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()
@@ -304,7 +302,6 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
-
         size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
@@ -339,7 +336,7 @@ off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
     return off;
 }
 
-std::optional<size_t> ReadBufferS3Factory::getFileSize()
+size_t ReadBufferS3Factory::getFileSize()
 {
     return object_size;
 }

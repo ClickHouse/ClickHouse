@@ -114,7 +114,9 @@ endif()
 target_link_libraries(_aws_s3 PRIVATE _aws_s3_checksums)
 
 # The library is large - avoid bloat.
-target_compile_options (_aws_s3 PRIVATE -g0)
-target_compile_options (_aws_s3_checksums PRIVATE -g0)
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options (_aws_s3 PRIVATE -g0)
+    target_compile_options (_aws_s3_checksums PRIVATE -g0)
+endif()
 
 add_library(ch_contrib::aws_s3 ALIAS _aws_s3)

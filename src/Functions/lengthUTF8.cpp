@@ -68,13 +68,13 @@ using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUT
 
 }
 
-void registerFunctionLengthUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(LengthUTF8)
 {
     factory.registerFunction<FunctionLengthUTF8>();
 
     /// Compatibility aliases.
-    factory.registerFunction<FunctionLengthUTF8>("CHAR_LENGTH", FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionLengthUTF8>("CHARACTER_LENGTH", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("CHAR_LENGTH", "lengthUTF8", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("CHARACTER_LENGTH", "lengthUTF8", FunctionFactory::CaseInsensitive);
 }
 
 }
