@@ -1,0 +1,8 @@
+{% for option_value in ['true', 'false'] -%}
+{% for date_fun in ['toStartOfYear', 'toStartOfISOYear', 'toStartOfQuarter', 'toStartOfMonth', 'toStartOfWeek', 'toMonday', 'toLastDayOfMonth'] -%}
+SELECT {{ date_fun }}(toDate32('1950-02-02')) SETTINGS enable_date32_results = {{ option_value }};
+SELECT toTypeName({{ date_fun }}(toDate32('1950-02-02'))) SETTINGS enable_date32_results = {{ option_value }};
+SELECT {{ date_fun }}(toDateTime64('1950-02-02 10:20:30', 3)) SETTINGS enable_date32_results = {{ option_value }};
+SELECT toTypeName({{ date_fun }}(toDateTime64('1950-02-02 10:20:30', 3))) SETTINGS enable_date32_results = {{ option_value }};
+{% endfor -%}
+{% endfor -%}
