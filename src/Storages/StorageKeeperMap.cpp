@@ -6,6 +6,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
+#include <Core/ServerUUID.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -274,10 +275,7 @@ StorageKeeperMap::StorageKeeperMap(
     metadata_path = metadata_path_fs;
     tables_path = metadata_path_fs / "tables";
 
-    auto table_unique_id = toString(table_id.uuid);
-    if (const auto replicated_database = std::dynamic_pointer_cast<DatabaseReplicated>(database))
-        table_unique_id += replicated_database->getFullReplicaName();
-
+    auto table_unique_id = toString(table_id.uuid) + toString(ServerUUID::get());
     table_path = fs::path(tables_path) / table_unique_id;
 
     dropped_path = metadata_path_fs / "dropped";
