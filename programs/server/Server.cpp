@@ -88,6 +88,8 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
 
+#include <Server/TCPProtocolStack.h>
+
 #include "config_core.h"
 #include "Common/config_version.h"
 
@@ -1952,19 +1954,35 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
 #if USE_SSL
-            Poco::Net::SecureServerSocket socket;
+            //Poco::Net::SecureServerSocket socket;
+            Poco::Net::ServerSocket socket;
             auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
+
+            TCPProtocolStackFactory *stack = new TCPProtocolStackFactory(*this);
+            stack->append(new TLSHandlerFactory(*this));
+            stack->append(new TCPHandlerFactory(*this, false, false));
             return ProtocolServerAdapter(
                 listen_host,
                 port_name,
                 "secure native protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
+                    stack,
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
+/*
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "secure native protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new TCPHandlerFactory(*this, true, false),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+*/                    
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
