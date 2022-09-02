@@ -35,15 +35,12 @@ class AccessControl;
   *               <max>20000000000</max>
   *           </max_memory_usage>
   *           <force_index_by_date>
-  *               <readonly/>
+  *               <const/>
   *           </force_index_by_date>
+  *           <max_threads>
+  *               <changable_in_readonly/>
+  *           </max_threads>
   *       </constraints>
-  *       <allow>
-  *           <max_memory_usage>
-  *               <min>200000</min>
-  *               <max>10000000000</max>
-  *           <max_memory_usage>
-  *       </allow>
   *   </user_profile>
   * </profiles>
   *
@@ -51,7 +48,7 @@ class AccessControl;
   * If a setting cannot be change due to the read-only mode this class throws an exception.
   * The value of `readonly` is understood as follows:
   * 0 - not read-only mode, no additional checks.
-  * 1 - only read queries, as well as changing explicitly allowed settings.
+  * 1 - only read queries, as well as changing settings with <changable_in_readonly/> flag.
   * 2 - only read queries and you can change the settings, except for the `readonly` setting.
   *
   */
@@ -68,14 +65,12 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void constrainMinValue(const String & setting_name, const Field & min_value);
-    void constrainMaxValue(const String & setting_name, const Field & max_value);
-    void constrainReadOnly(const String & setting_name, bool read_only);
-    void allowMinValue(const String & setting_name, const Field & min_value);
-    void allowMaxValue(const String & setting_name, const Field & max_value);
-    void allowReadOnly(const String & setting_name, bool read_only);
+    void setMinValue(const String & setting_name, const Field & min_value);
+    void setMaxValue(const String & setting_name, const Field & max_value);
+    void setIsConst(const String & setting_name, bool is_const);
+    void setChangableInReadonly(const String & setting_name, bool is_const);
 
-    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const;
+    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, bool & is_const) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -99,7 +94,8 @@ private:
 
     struct Range
     {
-        bool read_only = false;
+        bool is_const = false;
+        bool changeable_in_readonly = false;
         Field min_value;
         Field max_value;
 
@@ -119,7 +115,7 @@ private:
 
         static Range forbidden(const String & explain, int code)
         {
-            return Range{.read_only = true, .explain = explain, .code = code};
+            return Range{.is_const = true, .explain = explain, .code = code};
         }
     };
 
@@ -143,7 +139,6 @@ private:
     // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
     using RangeMap = std::unordered_map<String, Range, StringHash, std::equal_to<>>;
     RangeMap constraints;
-    RangeMap allowances;
 
     const AccessControl * access_control = nullptr;
 };

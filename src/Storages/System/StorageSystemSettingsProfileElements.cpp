@@ -29,7 +29,7 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
-        {"allowance", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+        {"changeable_in_readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
         {"inherit_profile", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
     };
     return names_and_types;
@@ -65,8 +65,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
     auto & column_max_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_readonly = assert_cast<ColumnUInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn()).getData();
     auto & column_readonly_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
-    auto & column_allowance = assert_cast<ColumnUInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn()).getData();
-    auto & column_allowance_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
+    auto & column_changeable_in_readonly = assert_cast<ColumnUInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn()).getData();
+    auto & column_changeable_in_readonly_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_inherit_profile = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
     auto & column_inherit_profile_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
 
@@ -104,23 +104,23 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         }
 
         bool inserted_readonly = false;
-        if (element.readonly && !element.setting_name.empty())
+        if (element.is_const && !element.setting_name.empty())
         {
             column_readonly.push_back(*element.readonly);
             column_readonly_null_map.push_back(false);
             inserted_readonly = true;
         }
 
-        bool inserted_allowance = false;
-        if (element.kind == SettingsProfileElement::RangeKind::Allow && !element.setting_name.empty())
+        bool inserted_changeable_in_readonly = false;
+        if (element.changeable_in_readonly && !element.setting_name.empty())
         {
-            column_allowance.push_back(true);
-            column_allowance_null_map.push_back(false);
-            inserted_allowance = true;
+            column_changeable_in_readonly.push_back(true);
+            column_changeable_in_readonly_null_map.push_back(false);
+            inserted_changeable_in_readonly = true;
         }
 
         bool inserted_setting_name = false;
-        if (inserted_value || inserted_min || inserted_max || inserted_readonly || inserted_allowance)
+        if (inserted_value || inserted_min || inserted_max || inserted_readonly || inserted_changeable_in_readonly)
         {
             const auto & setting_name = element.setting_name;
             column_setting_name.insertData(setting_name.data(), setting_name.size());

@@ -7,7 +7,7 @@
 namespace DB
 {
 /** Represents a settings profile's element like the following
-  * {variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE]} | PROFILE 'profile_name'
+  * {variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY]} | PROFILE 'profile_name'
   */
 class ASTSettingsProfileElement : public IAST
 {
@@ -17,7 +17,13 @@ public:
     Field value;
     Field min_value;
     Field max_value;
-    std::optional<bool> readonly;
+    enum class ConstraintType {
+        NONE, // default
+        WRITABLE,
+        CONST, // equals READONLY
+        CHANGEABLE_IN_READONLY,
+    };
+    ConstraintType type;
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
     bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.
 
@@ -30,7 +36,7 @@ public:
 
 
 /** Represents settings profile's elements like the following
-  * {{variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE]} | PROFILE 'profile_name'} [,...]
+  * {{variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY]} | PROFILE 'profile_name'} [,...]
   */
 class ASTSettingsProfileElements : public IAST
 {

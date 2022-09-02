@@ -36,65 +36,53 @@ void SettingsConstraints::clear()
 }
 
 
-void SettingsConstraints::constrainMinValue(const String & setting_name, const Field & min_value)
+void SettingsConstraints::setMinValue(const String & setting_name, const Field & min_value)
 {
     constraints[setting_name].min_value = Settings::castValueUtil(setting_name, min_value);
 }
 
-void SettingsConstraints::constrainMaxValue(const String & setting_name, const Field & max_value)
+void SettingsConstraints::setMaxValue(const String & setting_name, const Field & max_value)
 {
     constraints[setting_name].max_value = Settings::castValueUtil(setting_name, max_value);
 }
 
-void SettingsConstraints::constrainReadOnly(const String & setting_name, bool read_only)
+void SettingsConstraints::setIsConst(const String & setting_name, bool is_const)
 {
-    constraints[setting_name].read_only = read_only;
+    constraints[setting_name].is_const = is_const;
 }
 
-void SettingsConstraints::allowMinValue(const String & setting_name, const Field & min_value)
+void SettingsConstraints::setChangableInReadonly(const String & setting_name, bool changeable_in_readonly)
 {
-    allowances[setting_name].min_value = Settings::castValueUtil(setting_name, min_value);
+    constraints[setting_name].changeable_in_readonly = changeable_in_readonly;
 }
 
-void SettingsConstraints::allowMaxValue(const String & setting_name, const Field & max_value)
-{
-    allowances[setting_name].max_value = Settings::castValueUtil(setting_name, max_value);
-}
-
-void SettingsConstraints::allowReadOnly(const String & setting_name, bool read_only)
-{
-    allowances[setting_name].read_only = read_only;
-}
-
-void SettingsConstraints::get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const
+void SettingsConstraints::get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, bool & is_const) const
 {
     auto range = getRange(current_settings, setting_name);
     min_value = range.min_value;
     max_value = range.max_value;
-    read_only = range.read_only;
+    is_const = range.is_const;
 }
 
 void SettingsConstraints::merge(const SettingsConstraints & other)
 {
-    for (const auto & [other_name, other_constraint] : other.constraints)
+    if (access_control.doesSettingsConstraintsReplacePrevious())
     {
-        auto & constraint = constraints[other_name];
-        if (!other_constraint.min_value.isNull())
-            constraint.min_value = other_constraint.min_value;
-        if (!other_constraint.max_value.isNull())
-            constraint.max_value = other_constraint.max_value;
-        if (other_constraint.read_only)
-            constraint.read_only = true;
+        for (const auto & [other_name, other_constraint] : other.constraints)
+            constraints[other_name] = other_constraint;
     }
-    for (const auto & [other_name, other_allowance] : other.allowances)
+    else
     {
-        auto & allowance = allowances[other_name];
-        if (!other_allowance.min_value.isNull())
-            allowance.min_value = other_allowance.min_value;
-        if (!other_allowance.max_value.isNull())
-            allowance.max_value = other_allowance.max_value;
-        if (other_allowance.read_only)
-            allowance.read_only = true;
+        for (const auto & [other_name, other_constraint] : other.constraints)
+        {
+            auto & constraint = constraints[other_name];
+            if (!other_constraint.min_value.isNull())
+                constraint.min_value = other_constraint.min_value;
+            if (!other_constraint.max_value.isNull())
+                constraint.max_value = other_constraint.max_value;
+            if (other_constraint.is_const)
+                constraint.is_const = true; // NOTE: In this mode <readonly/> flag cannot be overriden to be false
+        }
     }
 }
 
@@ -229,7 +217,7 @@ bool SettingsConstraints::Range::check(SettingChange & change, const Field & new
             return false;
     }
 
-    if (read_only)
+    if (is_const)
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception("Setting " + setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
@@ -279,36 +267,34 @@ SettingsConstraints::Range SettingsConstraints::getRange(const Settings & curren
 
     /** The `readonly` value is understood as follows:
       * 0 - no read-only restrictions.
-      * 1 - only read requests, as well as changing explicitly allowed settings.
+      * 1 - only read requests, as well as changing settings with `changable_in_readonly` flag.
       * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
       */
 
     if (current_settings.readonly > 1 && setting_name == "readonly")
         return Range::forbidden("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
 
+    auto it = constraints.find(setting_name);
     if (current_settings.readonly == 1)
     {
-        auto it = allowances.find(setting_name);
-        if (it == allowances.end())
+        if (it == constraints.end() || !it->second.changeable_in_readonly)
             return Range::forbidden("Cannot modify '" + String(setting_name) + "' setting in readonly mode", ErrorCodes::READONLY);
-        return it->second;
     }
     else // For both readonly=0 and readonly=2
     {
-        auto it = constraints.find(setting_name);
         if (it == constraints.end())
             return Range::allowed();
-        return it->second;
     }
+    return it->second;
 }
 
 bool SettingsConstraints::Range::operator==(const Range & other) const
 {
-    return read_only == other.read_only && min_value == other.min_value && max_value == other.max_value;
+    return is_const == other.is_const && changeable_in_readonly == other.changeable_in_readonly && min_value == other.min_value && max_value == other.max_value;
 }
 
 bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right)
 {
-    return left.constraints == right.constraints && left.allowances == right.allowances;
+    return left.constraints == right.constraints;
 }
 }

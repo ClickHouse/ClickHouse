@@ -158,6 +158,9 @@ public:
     void setSelectFromInformationSchemaRequiresGrant(bool enable) { select_from_information_schema_requires_grant = enable; }
     bool doesSelectFromInformationSchemaRequireGrant() const { return select_from_information_schema_requires_grant; }
 
+    void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
+    bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
+
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
         const std::vector<UUID> & current_roles,
@@ -223,6 +226,7 @@ private:
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
+    std::atomic_bool settings_constraints_replace_previous = false;
 };
 
 }
