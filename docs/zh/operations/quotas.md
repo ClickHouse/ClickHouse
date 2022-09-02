@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/quotas
+---
 # 配额 {#quotas}
 
 配额允许您在一段时间内限制资源使用情况，或者只是跟踪资源的使用。

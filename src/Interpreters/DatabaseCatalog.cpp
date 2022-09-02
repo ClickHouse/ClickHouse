@@ -19,6 +19,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
+#include <Common/checkStackSize.h>
 
 #include "config_core.h"
 
@@ -31,6 +32,7 @@
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
+
 
 namespace CurrentMetrics
 {
@@ -255,6 +257,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     ContextPtr context_,
     std::optional<Exception> * exception) const
 {
+    checkStackSize();
+
     if (!table_id)
     {
         if (exception)
@@ -1019,7 +1023,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (!disk->exists(data_path))
+        if (!disk->exists(data_path) || disk->isReadOnly())
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);

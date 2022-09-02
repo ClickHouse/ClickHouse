@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/settings_profiles
+---
 # system.settings_profiles {#system_tables-settings_profiles}
 
 Содержит свойства сконфигурированных профилей настроек.

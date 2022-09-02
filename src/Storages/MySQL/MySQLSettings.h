@@ -13,6 +13,7 @@ namespace Poco::Util
 namespace DB
 {
 class ASTStorage;
+class ASTSetQuery;
 
 #define LIST_OF_MYSQL_SETTINGS(M) \
     M(UInt64, connection_pool_size, 16, "Size of connection pool (if all connections are in use, the query will wait until some connection will be freed).", 0) \
@@ -32,6 +33,7 @@ using MySQLBaseSettings = BaseSettings<MySQLSettingsTraits>;
 struct MySQLSettings : public MySQLBaseSettings
 {
     void loadFromQuery(ASTStorage & storage_def);
+    void loadFromQuery(const ASTSetQuery & settings_def);
 };
 
 
