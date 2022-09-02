@@ -25,16 +25,16 @@ namespace DB
         explicit CaresPTRResolver(provider_token);
         ~CaresPTRResolver() override;
 
-        std::vector<std::string> resolve(const std::string & ip) override;
+        std::unordered_set<std::string> resolve(const std::string & ip) override;
 
-        std::vector<std::string> resolve_v6(const std::string & ip) override;
+        std::unordered_set<std::string> resolve_v6(const std::string & ip) override;
 
     private:
         void wait();
 
-        void resolve(const std::string & ip, std::vector<std::string> & response);
+        void resolve(const std::string & ip, std::unordered_set<std::string> & response);
 
-        void resolve_v6(const std::string & ip, std::vector<std::string> & response);
+        void resolve_v6(const std::string & ip, std::unordered_set<std::string> & response);
 
         ares_channel channel;
     };
