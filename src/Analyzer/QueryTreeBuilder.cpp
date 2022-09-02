@@ -220,6 +220,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (group_by_list)
         current_query_tree->getGroupByNode() = buildExpressionList(group_by_list);
 
+    auto having_expression = select_query_typed.having();
+    if (having_expression)
+        current_query_tree->getHaving() = buildExpression(having_expression);
+
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
         current_query_tree->getOrderByNode() = buildSortColumnList(select_order_by_list);
