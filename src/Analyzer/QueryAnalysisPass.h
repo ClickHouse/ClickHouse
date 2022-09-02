@@ -29,7 +29,14 @@ namespace DB
   * 8. For query node projection columns are calculated. Later passes cannot change type, display name of projection column, and cannot add or remove
   * columns in projection section.
   *
-  * 9. Special functions handling:
+  * 9. Query is validated. Parts that are validated:
+  *
+  * Constness of function parameters.
+  * Constness of LIMIT and OFFSET.
+  * Only columns that are specified in GROUP BY keys after GROUP BY.
+  * No aggregate functions in WHERE, PREWHERE and inside another aggregate functions.
+  *
+  * 10. Special functions handling:
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
   *
