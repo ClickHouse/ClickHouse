@@ -24,7 +24,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.skip(reason="Too flaky :(")
 def test_concurrent_backups(start_cluster):
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     columns = [f"column_{i} UInt64" for i in range(1000)]
@@ -48,6 +47,7 @@ def test_concurrent_backups(start_cluster):
         node,
         "SELECT count() FROM system.backups WHERE status != 'BACKUP_CREATED' and status != 'BACKUP_FAILED'",
         "0",
-        retry_count=100,
+        sleep_time=5,
+        retry_count=40,  # 200 seconds must be enough
     )
     assert node.query("SELECT count() FROM s3_test where not ignore(*)") == "10000\n"

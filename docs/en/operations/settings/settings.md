@@ -966,7 +966,13 @@ Default value: 5000.
 
 See also:
 
--   [Apache Kafka](https://kafka.apache.org/)
+- [Apache Kafka](https://kafka.apache.org/)
+
+## kafka_disable_num_consumers_limit {#kafka-disable-num-consumers-limit}
+
+Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
+
+Default value: false.
 
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
@@ -3242,7 +3248,7 @@ Possible values:
 -   Positive integer.
 -   0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `100000`.
 
 ## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 

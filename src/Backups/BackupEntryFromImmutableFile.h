@@ -4,8 +4,6 @@
 #include <base/defines.h>
 #include <mutex>
 
-namespace Poco { class TemporaryFile; }
-
 namespace DB
 {
 class TemporaryFileOnDisk;
@@ -16,6 +14,8 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class BackupEntryFromImmutableFile : public IBackupEntry
 {
 public:
+
+    /// The constructor is allowed to not set `file_size_` or `checksum_`, in that case it will be calculated from the data.
     BackupEntryFromImmutableFile(
         const DiskPtr & disk_,
         const String & file_path_,
@@ -40,7 +40,6 @@ private:
     mutable std::optional<UInt64> file_size TSA_GUARDED_BY(get_file_size_mutex);
     mutable std::mutex get_file_size_mutex;
     const std::optional<UInt128> checksum;
-    const std::shared_ptr<Poco::TemporaryFile> temporary_file;
     const std::shared_ptr<TemporaryFileOnDisk> temporary_file_on_disk;
 };
 
