@@ -14,7 +14,7 @@ namespace
 {
     /// min, max
     template <template <typename> class Comparator>
-    static IAggregateFunction *
+    IAggregateFunction *
     createAggregateFunctionExtreme(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         assertNoParameters(name, parameters);
