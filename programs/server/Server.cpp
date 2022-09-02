@@ -209,7 +209,7 @@ try
             fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
     }
 }
 catch (...)
