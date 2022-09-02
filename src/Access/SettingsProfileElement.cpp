@@ -18,6 +18,10 @@ namespace
     constexpr const char ALLOW_BACKUP_SETTING_NAME[] = "allow_backup";
 }
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast)
 {

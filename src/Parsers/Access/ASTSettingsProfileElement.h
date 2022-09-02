@@ -17,7 +17,8 @@ public:
     Field value;
     Field min_value;
     Field max_value;
-    enum class ConstraintType {
+    enum class ConstraintType
+    {
         NONE, // default
         WRITABLE,
         CONST, // equals READONLY
