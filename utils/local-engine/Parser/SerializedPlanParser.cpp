@@ -468,7 +468,10 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
             std::string filter_name;
             std::vector<String> required_columns;
             auto actions_dag = parseFunction(query_plan->getCurrentDataStream(), filter.condition(), filter_name, required_columns, nullptr, true);
-            //            actions_dag->removeUnusedActions(query_plan->getCurrentDataStream().header.getNames());
+            auto input = query_plan->getCurrentDataStream().header.getNames();
+            Names input_with_condition(input);
+            input_with_condition.emplace_back(filter_name);
+            actions_dag->removeUnusedActions(input_with_condition);
             auto filter_step = std::make_unique<FilterStep>(query_plan->getCurrentDataStream(), actions_dag, filter_name, true);
             query_plan->addStep(std::move(filter_step));
 
