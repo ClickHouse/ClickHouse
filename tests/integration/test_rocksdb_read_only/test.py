@@ -134,5 +134,3 @@ def test_dirctory_missing_after_stop(start_cluster):
         """DROP TABLE test;
     """
     )
-
-
