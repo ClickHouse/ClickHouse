@@ -22,6 +22,8 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/Chunk.h>
+
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <base/range.h>
@@ -162,8 +164,16 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     data.init(data.chooseMethod(key_columns, key_sizes));
 }
 
-
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
+{
+    Columns cols;
+    cols.reserve(columns.size());
+    for (const auto & column : columns)
+        cols.emplace_back(column.column);
+    return insertFromBlock(cols);
+}
+
+bool Set::insertFromBlock(const Columns & columns)
 {
     std::lock_guard<std::shared_mutex> lock(rwlock);
 
@@ -179,11 +189,11 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
+        materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = columns.at(0).column->size();
+    size_t rows = columns.at(0)->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
