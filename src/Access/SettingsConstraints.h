@@ -140,7 +140,7 @@ private:
     using RangeMap = std::unordered_map<String, Range, StringHash, std::equal_to<>>;
     RangeMap constraints;
 
-    const AccessControl * access_control = nullptr;
+    const AccessControl * access_control;
 };
 
 }

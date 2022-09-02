@@ -26,15 +26,33 @@ The constraints are defined as the following:
       <setting_name_4>
         <readonly/>
       </setting_name_4>
+      <setting_name_5>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <changeable_in_readonly/>
+      </setting_name_5>
     </constraints>
   </user_name>
 </profiles>
 ```
 
 If the user tries to violate the constraints an exception is thrown and the setting isn’t changed.
-There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all.
+There are supported few types of constraints: `min`, `max`, `readonly` (with alias `const`) and `changeable_in_readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` or `const` constraint specifies that the user cannot change the corresponding setting at all. The `changeable_in_readonly` constraint type allows user to change the setting within `min`/`max` range even if `readonly` setting is set to 1, otherwise settings are not allow to be changed in `readonly=1` mode. Note that `changeable_in_readonly` is supported only if `settings_constraints_replace_previous` is enabled:
+``` xml
+<access_control_improvements>
+  <settings_constraints_replace_previous>true<settings_constraints_replace_previous>
+</access_control_improvements>
+```
 
-If there are multiple profiles active for a user, then constraints are merged. Constraints for the same setting are replaced during merge, such that the last constraint is used and all previous are ignored.
+If there are multiple profiles active for a user, then constraints are merged. Merge process depends on `settings_constraints_replace_previous`:
+- **true** (recommended): constraints for the same setting are replaced during merge, such that the last constraint is used and all previous are ignored including fields that are not set in new constraint.
+- **false** (default): constraints for the same setting are merged in a way that every not set type of constraint is taken from previous profile and every set type of constraint is replaced by value from new profile.
+
+Read-only mode is enabled by `readonly` setting (not to confuse with `readonly` constraint type):
+- `readonly=0`: No read-only restrictions.
+- `readonly=1`: Only read queries are allowed and settings cannot be changes unless `changeable_in_readonly` is set.
+- `readonly=2`: Only read queries are allowed, but settings can be changed, except for `readonly` setting itself.
+
 
 **Example:** Let `users.xml` includes lines:
 
@@ -70,38 +88,6 @@ Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not 
 Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be less than 5000000000.
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
 ```
-
-## Allowances in read-only mode {#settings-readonly-allowance}
-Read-only mode is enabled by `readonly` setting:
-- `readonly=0`: No read-only restrictions.
-- `readonly=1`: Only read queries are allowed and settings cannot be changes unless explicitly allowed.
-- `readonly=2`: Only read queries are allowed, but settings can be changed, except for `readonly` setting itself.
-
-In `readonly=0` and `readonly=2` modes settings constraints are applied as usual. But in `readonly=1` by default all settings changes are forbidden and constraints are ignored. But special allowances can be set in the following way:
-``` xml
-<profiles>
-  <user_name>
-    <allow>
-      <setting_name_1>
-        <min>lower_boundary</min>
-      </setting_name_1>
-      <setting_name_2>
-        <max>upper_boundary</max>
-      </setting_name_2>
-      <setting_name_3>
-        <min>lower_boundary</min>
-        <max>upper_boundary</max>
-      </setting_name_3>
-      <setting_name_4>
-        <readonly/>
-      </setting_name_4>
-      <setting_name_5/><!-- allow any value -->
-    </allow>
-  </user_name>
-</profiles>
-```
-
-Constraints and allowances are merged from multiple profiles independently. Previous constraint is not canceled by new allowance, as well as previous allowance is not canceled by new constraint. Instead profile can have one allowance and one constraint for every setting. Allowances are used in `readonly=1` mode, otherwise constraints are used.
 
 **Note:** the `default` profile has special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they’re overridden explicitly for these users.
 

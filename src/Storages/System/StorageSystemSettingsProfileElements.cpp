@@ -106,7 +106,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         bool inserted_readonly = false;
         if (element.is_const && !element.setting_name.empty())
         {
-            column_readonly.push_back(*element.readonly);
+            column_readonly.push_back(*element.is_const);
             column_readonly_null_map.push_back(false);
             inserted_readonly = true;
         }
