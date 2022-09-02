@@ -30,12 +30,15 @@ public:
 
     void setReadUntilEnd() override { in->setReadUntilEnd(); }
 
+    size_t getFileSize() override { return in->getFileSize(); }
+
 private:
     bool nextImpl() override;
 
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     off_t offset = 0;
+
     bool need_seek = false;
 
     Memory<> encrypted_buffer;

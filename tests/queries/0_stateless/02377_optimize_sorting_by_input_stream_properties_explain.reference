@@ -1,0 +1,89 @@
+-- EXPLAIN PLAN sorting for MergeTree w/o sorting key
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
+Sorting (Stream): a ASC
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): a ASC
+Sorting (None)
+Sorting (None)
+-- disable optimization -> sorting order is NOT propagated from subquery -> full sort
+-- QUERY: set optimize_sorting_by_input_stream_properties=0;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
+MergeSortingTransform
+LimitsCheckingTransform
+PartialSortingTransform
+-- enable optimization -> sorting order is propagated from subquery -> merge sort
+-- QUERY: set optimize_sorting_by_input_stream_properties=1;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
+MergeSortingTransform
+-- enable optimization -> there is no sorting order to propagate from subquery -> full sort
+-- QUERY: set optimize_sorting_by_input_stream_properties=1;set max_threads=1;EXPLAIN PIPELINE SELECT c FROM (SELECT c FROM optimize_sorting) ORDER BY c
+MergeSortingTransform
+LimitsCheckingTransform
+PartialSortingTransform
+-- ExpressionStep preserves sort mode
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
+Sorting (Stream): a ASC
+Sorting
+Sorting (Stream): a ASC
+Sorting (Port): a ASC
+Sorting (Port): a ASC
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a+1
+Sorting (None)
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): plus(a, 1) ASC
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC
+-- ExpressionStep breaks sort mode
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a+1 FROM optimize_sorting ORDER BY a+1
+Sorting (Stream): plus(a, 1) ASC
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): plus(a, 1) ASC
+Sorting (None)
+Sorting (Chunk): a ASC
+-- FilterStep preserves sort mode
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting WHERE a > 0
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting WHERE a+1 > 0
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, a+1 FROM optimize_sorting WHERE a+1 > 0
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC
+-- FilterStep breaks sort mode
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a > 0 FROM optimize_sorting WHERE a > 0
+Sorting (None)
+Sorting (None)
+Sorting (Chunk): a ASC
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a+1 FROM optimize_sorting WHERE a+1 > 0
+Sorting (None)
+Sorting (None)
+Sorting (Chunk): a ASC
+-- aliases break sorting order
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM (SELECT sipHash64(a) AS a FROM (SELECT a FROM optimize_sorting ORDER BY a)) ORDER BY a
+Sorting (Stream): a ASC
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): a ASC
+Sorting (None)
+Sorting
+Sorting (Stream): a ASC
+Sorting (Port): a ASC
+Sorting (Port): a ASC
+-- aliases DONT break sorting order
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, b FROM (SELECT x AS a, y AS b FROM (SELECT a AS x, b AS y FROM optimize_sorting) ORDER BY x, y)
+Sorting (Stream): x ASC, y ASC
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): x ASC, y ASC
+Sorting (Chunk): a ASC, b ASC
+Sorting (Chunk): a ASC, b ASC
+-- actions chain breaks sorting order: input(column a)->sipHash64(column a)->alias(sipHash64(column a), a)->plus(alias a, 1)
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, z FROM (SELECT sipHash64(a) AS a, a + 1 AS z FROM (SELECT a FROM optimize_sorting ORDER BY a + 1)) ORDER BY a + 1
+Sorting (None)
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): plus(a, 1) ASC
+Sorting (None)
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): plus(a, 1) ASC
+Sorting (Chunk): a ASC
+Sorting (Chunk): a ASC

@@ -74,7 +74,7 @@ public:
 
                 {
                     char buf[1024] = {0};
-                    const ASN1_INTEGER * sn = cert->cert_info->serialNumber;
+                    const ASN1_INTEGER * sn = X509_get0_serialNumber(cert);
                     BIGNUM * bnsn = ASN1_INTEGER_to_BN(sn, nullptr);
                     SCOPE_EXIT(
                     {
@@ -101,7 +101,7 @@ public:
                     }
                 }
 
-                char * issuer = X509_NAME_oneline(cert->cert_info->issuer, nullptr, 0);
+                char * issuer = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
                 if (issuer)
                 {
                     SCOPE_EXIT(
@@ -130,7 +130,7 @@ public:
                     }
                 }
 
-                char * subject = X509_NAME_oneline(cert->cert_info->subject, nullptr, 0);
+                char * subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
                 if (subject)
                 {
                     SCOPE_EXIT(

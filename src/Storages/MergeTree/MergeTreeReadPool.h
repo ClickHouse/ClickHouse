@@ -73,7 +73,7 @@ public:
         size_t threads_, size_t sum_marks_, size_t min_marks_for_concurrent_read_,
         RangesInDataParts && parts_, const MergeTreeData & data_, const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        const Names & column_names_,
+        const Names & column_names_, const Names & virtual_column_names_,
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
         bool do_not_steal_tasks_ = false);
 
@@ -97,13 +97,19 @@ private:
     const MergeTreeData & data;
     StorageSnapshotPtr storage_snapshot;
     const Names column_names;
+    const Names virtual_column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
-    std::vector<NameSet> per_part_column_name_set;
-    std::vector<NamesAndTypesList> per_part_columns;
-    std::vector<NamesAndTypesList> per_part_pre_columns;
-    std::vector<char> per_part_should_reorder;
-    std::vector<MergeTreeBlockSizePredictorPtr> per_part_size_predictor;
+
+    struct PerPartParams
+    {
+        MergeTreeReadTaskColumns task_columns;
+        NameSet column_name_set;
+        MergeTreeBlockSizePredictorPtr size_predictor;
+    };
+
+    std::vector<PerPartParams> per_part_params;
+
     PrewhereInfoPtr prewhere_info;
 
     struct Part

@@ -28,8 +28,8 @@ public:
     template <typename ConnectionType>
     void load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 
-    /// Older server versions cannot execute the query above.
-    static constexpr int MIN_SERVER_REVISION = 54406;
+    /// Older server versions cannot execute the query loading suggestions.
+    static constexpr int MIN_SERVER_REVISION = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
 
 private:
     void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query);

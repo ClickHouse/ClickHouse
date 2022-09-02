@@ -1,5 +1,3 @@
--- Tags: no-backward-compatibility-check:22.5.1
-
 SELECT
     number
 FROM

@@ -108,7 +108,7 @@ template <>
 const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCartesian";
 
 
-void registerFunctionPolygonsEquals(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsEquals)
 {
     factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>();
 }

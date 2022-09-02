@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/domains/
 sidebar_label: "Домены"
 sidebar_position: 56
 ---

@@ -34,13 +34,14 @@ RUN apt-get update \
 ARG TARGETARCH
 
 # Install MySQL ODBC driver from RHEL rpm
+# For reference https://downloads.mysql.com/archives/c-odbc/ RHEL
 RUN arch=${TARGETARCH:-amd64} \
   && case $arch in \
       amd64) rarch=x86_64 ;; \
       arm64) rarch=aarch64 ;; \
     esac \
   && cd /tmp \
-  && curl -o mysql-odbc.rpm "https://cdn.mysql.com/Downloads/Connector-ODBC/8.0/mysql-connector-odbc-8.0.27-1.el8.${rarch}.rpm" \
+  && curl -o mysql-odbc.rpm "https://cdn.mysql.com/archives/mysql-connector-odbc-8.0/mysql-connector-odbc-8.0.27-1.el8.${rarch}.rpm" \
   && rpm2archive mysql-odbc.rpm \
   && tar xf mysql-odbc.rpm.tgz -C / ./usr/lib64/ \
   && LINK_DIR=$(dpkg -L libodbc1 | grep '^/usr/lib/.*-linux-gnu/odbc$') \

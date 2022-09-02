@@ -107,7 +107,7 @@ using FunctionTrimBoth = FunctionStringToString<FunctionTrimImpl<TrimModeBoth>, 
 
 }
 
-void registerFunctionTrim(FunctionFactory & factory)
+REGISTER_FUNCTION(Trim)
 {
     factory.registerFunction<FunctionTrimLeft>();
     factory.registerFunction<FunctionTrimRight>();

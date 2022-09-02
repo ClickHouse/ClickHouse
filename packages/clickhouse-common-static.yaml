@@ -29,12 +29,14 @@ description: |
 contents:
 - src: root/usr/bin/clickhouse
   dst: /usr/bin/clickhouse
-- src: root/usr/bin/clickhouse-odbc-bridge
-  dst: /usr/bin/clickhouse-odbc-bridge
-- src: root/usr/bin/clickhouse-library-bridge
-  dst: /usr/bin/clickhouse-library-bridge
+- src: root/usr/bin/clickhouse-diagnostics
+  dst: /usr/bin/clickhouse-diagnostics
 - src: root/usr/bin/clickhouse-extract-from-config
   dst: /usr/bin/clickhouse-extract-from-config
+- src: root/usr/bin/clickhouse-library-bridge
+  dst: /usr/bin/clickhouse-library-bridge
+- src: root/usr/bin/clickhouse-odbc-bridge
+  dst: /usr/bin/clickhouse-odbc-bridge
 - src: root/usr/share/bash-completion/completions
   dst: /usr/share/bash-completion/completions
 # docs

@@ -1,4 +1,4 @@
-name: ReleaseWorkflow
+name: PublishedReleaseCI
 # - Gets artifacts from S3
 # - Sends it to JFROG Artifactory
 # - Adds them to the release assets
@@ -15,19 +15,22 @@ jobs:
     - name: Set envs
       run: |
         cat >> "$GITHUB_ENV" << 'EOF'
-        JFROG_API_KEY=${{ secrets.JFROG_KEY_API_PACKAGES }}
+        JFROG_API_KEY=${{ secrets.JFROG_ARTIFACTORY_API_KEY }}
         TEMP_PATH=${{runner.temp}}/release_packages
         REPO_COPY=${{runner.temp}}/release_packages/ClickHouse
         EOF
     - name: Check out repository code
       uses: actions/checkout@v2
+      with:
+        # Always use the most recent script version
+        ref: master
     - name: Download packages and push to Artifactory
       run: |
         rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
         cd "$REPO_COPY"
         python3 ./tests/ci/push_to_artifactory.py --release "${{ github.ref }}" \
-          --commit '${{ github.sha }}' --all
+          --commit '${{ github.sha }}' --artifactory-url "${{ secrets.JFROG_ARTIFACTORY_URL }}" --all
     - name: Upload packages to release assets
       uses: svenstaro/upload-release-action@v2
       with:
