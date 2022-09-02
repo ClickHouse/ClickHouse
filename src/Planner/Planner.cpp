@@ -25,6 +25,7 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -149,6 +150,28 @@ StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions
     }
 
     return {limits, leaf_limits};
+}
+
+/** There are no limits on the maximum size of the result for the subquery.
+  * Since the result of the query is not the result of the entire query.
+  */
+ContextPtr buildSubqueryContext(const ContextPtr & context)
+{
+    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
+      * Because the result of this query is not the result of the entire query.
+      * Constraints work instead
+      *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
+      *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
+      *  which are checked separately (in the Set, Join objects).
+      */
+    auto subquery_context = Context::createCopy(context);
+    Settings subquery_settings = context->getSettings();
+    subquery_settings.max_result_rows = 0;
+    subquery_settings.max_result_bytes = 0;
+    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
+    subquery_settings.extremes = false;
+    subquery_context->setSettings(subquery_settings);
+    return subquery_context;
 }
 
 QueryTreeNodes extractAggregateFunctionNodes(const QueryTreeNodePtr & query_node)
@@ -364,7 +387,8 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     else if (query_node || union_node)
     {
         auto subquery_options = select_query_options.subquery();
-        Planner subquery_planner(table_expression, subquery_options, planner_context->getQueryContext(), planner_context->getGlobalPlannerContext());
+        auto subquery_context = buildSubqueryContext(planner_context->getQueryContext());
+        Planner subquery_planner(table_expression, subquery_options, std::move(subquery_context), planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
         query_plan = std::move(subquery_planner).extractQueryPlan();
     }
@@ -750,26 +774,12 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQ
 
     for (auto [key, subquery_node_for_set] : subquery_node_to_sets)
     {
-        /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
-          * Because the result of this query is not the result of the entire query.
-          * Constraints work instead
-          *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-          *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
-          *  which are checked separately (in the Set, Join objects).
-          */
-        auto subquery_context = Context::createCopy(planner_context->getQueryContext());
-        Settings subquery_settings = planner_context->getQueryContext()->getSettings();
-        subquery_settings.max_result_rows = 0;
-        subquery_settings.max_result_bytes = 0;
-        /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
-        subquery_settings.extremes = false;
-        subquery_context->setSettings(subquery_settings);
-
+        auto subquery_context = buildSubqueryContext(planner_context->getQueryContext());
         auto subquery_options = select_query_options.subquery();
         Planner subquery_planner(
             subquery_node_for_set.subquery_node,
             subquery_options,
-            planner_context->getQueryContext(),
+            std::move(subquery_context),
             planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
@@ -790,8 +800,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQ
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     const SelectQueryOptions & select_query_options_,
     ContextPtr context_)
-    : WithContext(context_)
-    , query_tree(query_tree_)
+    : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(std::make_shared<PlannerContext>(context_, std::make_shared<GlobalPlannerContext>()))
 {
@@ -807,8 +816,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     const SelectQueryOptions & select_query_options_,
     ContextPtr context_,
     GlobalPlannerContextPtr global_planner_context_)
-    : WithContext(context_)
-    , query_tree(query_tree_)
+    : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(std::make_shared<PlannerContext>(context_, std::move(global_planner_context_)))
 {
@@ -824,7 +832,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    auto current_context = getContext();
+    auto query_context = planner_context->getQueryContext();
 
     if (auto * union_query_tree = query_tree->as<UnionNode>())
     {
@@ -842,7 +850,7 @@ void Planner::buildQueryPlanIfNeeded()
 
         for (auto & query_node : union_query_tree->getQueries().getNodes())
         {
-            Planner query_planner(query_node, select_query_options, current_context);
+            Planner query_planner(query_node, select_query_options, query_context);
             query_planner.buildQueryPlanIfNeeded();
             auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
             query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
@@ -872,7 +880,7 @@ void Planner::buildQueryPlanIfNeeded()
             query_plans_streams.push_back(query_node_plan->getCurrentDataStream());
         }
 
-        const auto & settings = current_context->getSettingsRef();
+        const auto & settings = query_context->getSettingsRef();
         auto max_threads = settings.max_threads;
 
         if (union_mode == SelectUnionMode::ALL || union_mode == SelectUnionMode::DISTINCT)
@@ -916,7 +924,7 @@ void Planner::buildQueryPlanIfNeeded()
     select_query_info.query = select_query_info.original_query;
 
     StorageLimitsList storage_limits;
-    storage_limits.push_back(getStorageLimits(*current_context, select_query_options));
+    storage_limits.push_back(getStorageLimits(*query_context, select_query_options));
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
 
     CollectSourceColumnsVisitor::Data data {*planner_context};
@@ -1262,10 +1270,16 @@ void Planner::buildQueryPlanIfNeeded()
 
         if (!fill_description.empty())
         {
-            InterpolateDescriptionPtr interpolate_descr = nullptr;
-            auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_descr);
+            InterpolateDescriptionPtr interpolate_description = nullptr;
+            auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_description);
             query_plan.addStep(std::move(filling_step));
         }
+    }
+
+    if (query_context->getSettingsRef().extremes)
+    {
+        auto extremes_step = std::make_unique<ExtremesStep>(query_plan.getCurrentDataStream());
+        query_plan.addStep(std::move(extremes_step));
     }
 
     UInt64 limit_offset = 0;

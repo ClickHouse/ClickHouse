@@ -16,7 +16,7 @@ using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
-class Planner : public WithContext
+class Planner
 {
 public:
     /// Initialize planner with query tree after analysis phase
