@@ -367,6 +367,10 @@ try
 {
     UseSSL use_ssl;
     ThreadStatus thread_status;
+    SCOPE_EXIT_SAFE({
+        if (connection)
+            connection.reset();
+    });
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 

@@ -126,7 +126,6 @@ using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
 struct WriteSettings;
-class Threadpool;
 
 class IInputFormat;
 class IOutputFormat;
