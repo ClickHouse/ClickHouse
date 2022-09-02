@@ -151,4 +151,3 @@ Management queries:
 
     By default, SQL-driven access control and account management is disabled for all users. You need to configure at least one user in the `users.xml` configuration file and set the value of the [access_management](../operations/settings/settings-users.md#access_management-user-setting) setting to 1.
 
-[Original article](https://clickhouse.com/docs/en/operations/access_rights/) <!--hide-->

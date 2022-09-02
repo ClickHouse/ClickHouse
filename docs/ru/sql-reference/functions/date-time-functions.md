@@ -1017,7 +1017,7 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 **Синтаксис**
 
 ``` sql
-formatDateTime(Time, Format\[, Timezone\])
+formatDateTime(Time, Format[, Timezone])
 ```
 
 **Возвращаемое значение**

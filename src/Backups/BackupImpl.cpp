@@ -537,7 +537,7 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
-    return std::pair(info->size, info->checksum);
+    return {info->size, info->checksum};
 }
 
 BackupEntryPtr BackupImpl::readFile(const String & file_name) const
@@ -625,7 +625,7 @@ CheckBackupResult checkBaseBackupForFile(const SizeAndChecksum & base_backup_inf
 {
     /// We cannot reuse base backup because our file is smaller
     /// than file stored in previous backup
-    if (new_entry_info.size > base_backup_info.first)
+    if (new_entry_info.size < base_backup_info.first)
         return CheckBackupResult::HasNothing;
 
     if (base_backup_info.first == new_entry_info.size)
@@ -682,8 +682,6 @@ ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(BackupEntryPtr entry, si
 
 void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 {
-
-    std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
 
@@ -802,7 +800,12 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     /// or have only prefix of it in previous backup. Let's go long path.
 
     info.data_file_name = info.file_name;
-    info.archive_suffix = current_archive_suffix;
+
+    if (use_archives)
+    {
+        std::lock_guard lock{mutex};
+        info.archive_suffix = current_archive_suffix;
+    }
 
     bool is_data_file_required;
     coordination->addFileInfo(info, is_data_file_required);
@@ -818,9 +821,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     /// if source and destination are compatible
     if (!use_archives && info.base_size == 0 && writer->supportNativeCopy(reader_description))
     {
-
+        /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", adjusted_path);
-        /// Should be much faster than writing data through server
+
+        /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
+
         writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.data_file_name);
     }
     else
@@ -838,6 +843,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         if (use_archives)
         {
             LOG_TRACE(log, "Adding file {} to archive", adjusted_path);
+
+            /// An archive must be written strictly in one thread, so it's correct to lock the mutex for all the time we're writing the file
+            /// to the archive.
+            std::lock_guard lock{mutex};
+
             String archive_suffix = current_archive_suffix;
             bool next_suffix = false;
             if (current_archive_suffix.empty() && is_internal_backup)
@@ -859,6 +869,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         }
         else
         {
+            /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
             writer->copyFileThroughBuffer(std::move(read_buffer), info.data_file_name);
         }
     }
