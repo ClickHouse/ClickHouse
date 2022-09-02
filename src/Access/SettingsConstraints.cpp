@@ -66,7 +66,7 @@ void SettingsConstraints::get(const Settings & current_settings, std::string_vie
 
 void SettingsConstraints::merge(const SettingsConstraints & other)
 {
-    if (access_control.doesSettingsConstraintsReplacePrevious())
+    if (access_control->doesSettingsConstraintsReplacePrevious())
     {
         for (const auto & [other_name, other_constraint] : other.constraints)
             constraints[other_name] = other_constraint;

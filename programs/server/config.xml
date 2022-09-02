@@ -644,7 +644,8 @@
         <!-- By default, for backward compatibility a settings profile constraint for a specific setting inherit every not set field from
              previous profile. You can change this behaviour by setting this to true.
              If it's set to true then if settings profile has a constraint for a specific setting, then this constraint completely cancels all
-             actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint. -->
+             actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
+             Also it enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
     </access_control_improvements>
 

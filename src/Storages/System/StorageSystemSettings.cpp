@@ -41,8 +41,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
 
         Field min, max;
         bool is_const = false;
-        bool changeable_in_readonly = false;
-        constraints.get(settings, setting_name, min, max, is_const, changeable_in_readonly);
+        constraints.get(settings, setting_name, min, max, is_const);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -52,7 +51,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
 
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(read_only);
+        res_columns[6]->insert(is_const);
         res_columns[7]->insert(setting.getTypeName());
     }
 }

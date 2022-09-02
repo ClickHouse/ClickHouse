@@ -425,8 +425,7 @@ namespace
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
                                                      const String & path_to_constraints,
-                                                     const AccessControl & access_control,
-                                                     SettingsProfileElement::RangeKind kind)
+                                                     const AccessControl & access_control)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -438,7 +437,6 @@ namespace
 
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
-            profile_element.kind = kind;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
@@ -449,11 +447,21 @@ namespace
                     profile_element.min_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
                     profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
-                else if (constraint_type == "readonly")
-                    profile_element.readonly = true;
+                else if (constraint_type == "readonly" || constraint_type == "const")
+                    profile_element.is_const = true;
+                else if (constraint_type == "changeable_in_readonly")
+                {
+                    if (access_control.doesSettingsConstraintsReplacePrevious())
+                        profile_element.changeable_in_readonly = true;
+                    else
+                        throw Exception("Setting changeable_in_readonly for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
+                }
                 else
                     throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
+            if (profile_element.is_const && profile_element.changeable_in_readonly)
+                throw Exception("Both settings changeable_in_readonly and const/readonly cannot be used for " + setting_name, ErrorCodes::NOT_IMPLEMENTED);
+
             profile_elements.push_back(std::move(profile_element));
         }
 
@@ -489,13 +497,7 @@ namespace
 
             if (key == "constraints" || key.starts_with("constraints["))
             {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, access_control, SettingsProfileElement::RangeKind::Constrain));
-                continue;
-            }
-
-            if (key == "allow" || key.starts_with("allow["))
-            {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, access_control, SettingsProfileElement::RangeKind::Allow));
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, access_control));
                 continue;
             }
 

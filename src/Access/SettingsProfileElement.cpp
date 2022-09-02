@@ -69,6 +69,8 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
                 is_const.emplace(true);
                 break;
             case ASTSettingsProfileElement::ConstraintType::CHANGEABLE_IN_READONLY:
+                if (!access_control->doesSettingsConstraintsReplacePrevious())
+                    throw Exception("CHANGEABLE_IN_READONLY for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
                 is_const.reset();
                 changeable_in_readonly = true;
                 break;
@@ -96,7 +98,12 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->readonly = readonly;
+    if (changeable_in_readonly)
+        ast->type = ASTSettingsProfileElement::ConstraintType::CHANGEABLE_IN_READONLY;
+    if (is_const.has_value())
+        ast->type = *is_const ? ASTSettingsProfileElement::ConstraintType::CONST : ASTSettingsProfileElement::ConstraintType::WRITABLE;
+    else
+        ast->type = ASTSettingsProfileElement::ConstraintType::NONE;
 
     return ast;
 }
@@ -117,7 +124,12 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithName
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->readonly = readonly;
+    if (changeable_in_readonly)
+        ast->type = ASTSettingsProfileElement::ConstraintType::CHANGEABLE_IN_READONLY;
+    if (is_const.has_value())
+        ast->type = *is_const ? ASTSettingsProfileElement::ConstraintType::CONST : ASTSettingsProfileElement::ConstraintType::WRITABLE;
+    else
+        ast->type = ASTSettingsProfileElement::ConstraintType::NONE;
 
     return ast;
 }
