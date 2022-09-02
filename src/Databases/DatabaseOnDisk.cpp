@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DDLTask.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -22,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include <Common/atomicRename.h>
 
 namespace fs = std::filesystem;
 
@@ -160,7 +162,6 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.getTable());
 
@@ -213,14 +214,7 @@ void DatabaseOnDisk::createTable(
 
     {
         statement = getObjectDefinitionFromCreateQuery(query);
-
-        /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (settings.fsync_metadata)
-            out.sync();
-        out.close();
+        writeTmpMetadataFile(local_context, table_metadata_tmp_path, statement);
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
@@ -268,11 +262,13 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const String & table_name)
 {
-    auto table = detachTable(query_context, table_name);
-
     fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
     {
+        auto txn = query_context->getZooKeeperMetadataTransaction();
+        if (txn && !query_context->isInternalSubquery())
+            txn->commit();      /// Commit point (a sort of) for Replicated database
+
         FS::createFile(detached_permanently_flag);
     }
     catch (Exception & e)
@@ -280,6 +276,9 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
         e.addMessage("while trying to set permanently detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
         throw;
     }
+
+    auto table = detachTable(query_context, table_name);
+
 }
 
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
@@ -763,14 +762,20 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
 
-    WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-    writeString(statement, out);
+    writeTmpMetadataFile(query_context, metadata_file_tmp_path, statement);
 
+    renameNoReplace(metadata_file_tmp_path, metadata_file_path);
+}
+
+void DatabaseOnDisk::writeTmpMetadataFile(const ContextPtr & local_context, const String & tmp_path, const String & statement)
+{
+    /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
+    WriteBufferFromFile out(tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+    writeString(statement, out);
     out.next();
-    if (getContext()->getSettingsRef().fsync_metadata)
+    if (local_context->getSettingsRef().fsync_metadata)
         out.sync();
     out.close();
-
-    fs::rename(metadata_file_tmp_path, metadata_file_path);
 }
+
 }

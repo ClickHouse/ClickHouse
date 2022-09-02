@@ -59,6 +59,11 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    void setSkipStartupTable(bool skip_startup_table_)
+    {
+        skip_startup_table = skip_startup_table_;
+    }
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
@@ -110,6 +115,7 @@ private:
     bool internal = false;
     bool force_attach = false;
     bool load_database_without_tables = false;
+    bool skip_startup_table = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

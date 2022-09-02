@@ -88,6 +88,8 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
     bool lost_according_to_digest = database->db_settings.check_consistency && local_digest != digest;
+    LOG_TRACE(log, "Initializing database replication: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
+                our_log_ptr, max_log_ptr, local_digest, digest);
 
     if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
     {

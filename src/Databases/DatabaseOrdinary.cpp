@@ -312,14 +312,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
-    {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (local_context->getSettingsRef().fsync_metadata)
-            out.sync();
-        out.close();
-    }
+    writeTmpMetadataFile(local_context, table_metadata_tmp_path, statement);
 
     TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));

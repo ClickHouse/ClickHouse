@@ -389,12 +389,17 @@ Chunk DDLQueryStatusSource::generate()
 
             constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
                                                 "There are {} unfinished hosts ({} of them are currently active), "
-                                                "they are going to execute the query in background";
+                                                "they are going to execute the query in background. List of unfinished hosts: {}";
+            Strings unfinished_hosts;
+            for (const auto & host : waiting_hosts)
+                if (!finished_hosts.contains(host))
+                    unfinished_hosts.emplace_back(host);
+
             if (throw_on_timeout)
             {
                 if (!first_exception)
                     first_exception = std::make_unique<Exception>(
-                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
+                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts, fmt::join(unfinished_hosts, ", ")),
                         ErrorCodes::TIMEOUT_EXCEEDED);
 
                 /// For Replicated database print a list of unfinished hosts as well. Will return empty block on next iteration.
@@ -403,7 +408,7 @@ Chunk DDLQueryStatusSource::generate()
                 return {};
             }
 
-            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts, fmt::join(unfinished_hosts, ", "));
 
             return generateChunkWithUnfinishedHosts();
         }

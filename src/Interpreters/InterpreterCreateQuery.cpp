@@ -1356,7 +1356,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->getName());
     }
 
-    res->startup();
+    if (!skip_startup_table)
+        res->startup();
     return true;
 }
 

@@ -97,6 +97,8 @@ protected:
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
 
+    void writeTmpMetadataFile(const ContextPtr & local_context, const String & tmp_path, const String & statement);
+
     const String metadata_path;
     const String data_path;
 };

@@ -983,3 +983,50 @@ def test_recover_digest_mismatch(started_cluster):
             )
 
         assert_eq_with_retry(dummy_node, query, expected)
+
+
+def test_detach_permanently_and_recovery(started_cluster):
+    main_node.query(
+        "CREATE DATABASE detach_permanently ENGINE = Replicated('/clickhouse/databases/detach_permanently', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE detach_permanently ENGINE = Replicated('/clickhouse/databases/detach_permanently', 'shard1', 'replica2');"
+    )
+
+    main_node.query("CREATE TABLE detach_permanently.` table . with % weird / name ` (n INT) ENGINE=Memory")
+    main_node.query("CREATE TABLE detach_permanently.t1 (n INT, PRIMARY KEY n) ENGINE=ReplicatedMergeTree")
+    dummy_node.query("CREATE TABLE detach_permanently.t2 AS detach_permanently.t1")
+    dummy_node.query("INSERT INTO detach_permanently.t1 VALUES (42)")
+    main_node.query("INSERT INTO detach_permanently.t2 VALUES (24)")
+    dummy_node.query("DETACH TABLE detach_permanently.t1 PERMANENTLY SYNC")
+    main_node.query("DETACH TABLE detach_permanently.t2 PERMANENTLY SYNC")
+
+    main_node.stop_clickhouse()
+    main_node.exec_in_container(["bash", "-c", "rm -rf /var/lib/clickhouse/store"])
+    dummy_node.query("DETACH TABLE detach_permanently.` table . with % weird / name ` PERMANENTLY SYNC", settings={"distributed_ddl_task_timeout": 0})
+    main_node.start_clickhouse()
+
+    competing_node.query("CREATE DATABASE detach_permanently ENGINE = Replicated('/clickhouse/databases/detach_permanently', 'shard1', 'replica3');")
+
+    dummy_node.query("ATTACH TABLE detach_permanently.t2", settings={"distributed_ddl_task_timeout": 0})
+    competing_node.query("ATTACH TABLE detach_permanently.t1", settings={"distributed_ddl_task_timeout": 0})
+
+    dummy_node.query(
+        "SYSTEM DROP REPLICA '1' FROM DATABASE detach_permanently"
+    )
+
+    competing_node.query("ATTACH TABLE detach_permanently.` table . with % weird / name `")
+
+    competing_node.query_with_retry("SYSTEM SYNC REPLICA detach_permanently.t1")
+    competing_node.query_with_retry("SYSTEM SYNC REPLICA detach_permanently.t2")
+
+    assert "42\n" == main_node.query("SELECT * FROM detach_permanently.t1")
+    assert "42\n" == dummy_node.query("SELECT * FROM detach_permanently.t1")
+    assert "42\n" == competing_node.query("SELECT * FROM detach_permanently.t1")
+    assert "24\n" == main_node.query("SELECT * FROM detach_permanently.t2")
+    assert "24\n" == dummy_node.query("SELECT * FROM detach_permanently.t2")
+    assert "24\n" == competing_node.query("SELECT * FROM detach_permanently.t2")
+
+    assert " table . with % weird / name \nt1\nt2\n" == main_node.query("SELECT name FROM system.tables WHERE database='detach_permanently' ORDER BY name")
+    assert " table . with % weird / name \nt1\nt2\n" == dummy_node.query("SELECT name FROM system.tables WHERE database='detach_permanently' ORDER BY name")
+    assert " table . with % weird / name \nt1\nt2\n" == competing_node.query("SELECT name FROM system.tables WHERE database='detach_permanently' ORDER BY name")
