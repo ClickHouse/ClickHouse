@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/table-functions/hdfs
 sidebar_position: 45
 sidebar_label: hdfs
 ---

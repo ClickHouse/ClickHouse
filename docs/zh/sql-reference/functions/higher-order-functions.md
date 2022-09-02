@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/higher-order-functions
+---
 # 高阶函数 {#gao-jie-han-shu}
 
 ## `->` 运算符, lambda(params, expr) 函数 {#yun-suan-fu-lambdaparams-expr-han-shu}
