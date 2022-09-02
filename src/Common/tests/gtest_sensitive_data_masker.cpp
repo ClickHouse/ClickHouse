@@ -101,56 +101,6 @@ TEST(Common, SensitiveDataMasker)
     EXPECT_EQ(maskerbad.rulesCount(), 0);
     EXPECT_EQ(maskerbad.wipeSensitiveData(x), 0);
 
-    {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam(R"END(<?xml version="1.0"?>
-<clickhouse>
-    <query_masking_rules>
-        <rule>
-            <name>hide SSN</name><!-- by default: it will use xml path, like query_masking_rules.rule[1] -->
-            <regexp>[0-9]{3}-[0-9]{2}-[0-9]{4}</regexp><!-- mandatory -->
-            <replace>000-00-0000</replace><!-- by default - six asterisks (******) -->
-        </rule>
-        <rule>
-            <name>hide root password</name>
-            <regexp>qwerty123</regexp>
-        </rule>
-        <rule>
-            <regexp>(?i)Ivan</regexp>
-            <replace>John</replace>
-        </rule>
-        <rule>
-            <regexp>(?i)Petrov</regexp>
-            <replace>Doe</replace>
-        </rule>
-        <rule>
-            <name>hide email</name>
-            <regexp>(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}</regexp>
-            <replace>hidden@hidden.test</replace>
-        </rule>
-        <rule>
-            <name>remove selects to bad_words table</name>
-            <regexp>^.*bad_words.*$</regexp>
-            <replace>[QUERY IS CENSORED]</replace>
-        </rule>
-    </query_masking_rules>
-</clickhouse>)END");
-
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
-        DB::SensitiveDataMasker masker_xml_based(*xml_config, "query_masking_rules");
-        std::string top_secret = "The e-mail of IVAN PETROV is kotik1902@sdsdf.test, and the password is qwerty123";
-        EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 4);
-        EXPECT_EQ(top_secret, "The e-mail of John Doe is hidden@hidden.test, and the password is ******");
-
-        top_secret = "SELECT * FROM bad_words";
-        EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 1);
-        EXPECT_EQ(top_secret, "[QUERY IS CENSORED]");
-
-#ifndef NDEBUG
-        masker_xml_based.printStats();
-#endif
-    }
-
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -227,5 +177,57 @@ TEST(Common, SensitiveDataMasker)
         );
         EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }
+
+    {
+        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            xml_isteam(R"END(<?xml version="1.0"?>
+<clickhouse>
+    <query_masking_rules>
+        <rule>
+            <name>hide SSN</name><!-- by default: it will use xml path, like query_masking_rules.rule[1] -->
+            <regexp>[0-9]{3}-[0-9]{2}-[0-9]{4}</regexp><!-- mandatory -->
+            <replace>000-00-0000</replace><!-- by default - six asterisks (******) -->
+        </rule>
+        <rule>
+            <name>hide root password</name>
+            <regexp>qwerty123</regexp>
+        </rule>
+        <rule>
+            <regexp>(?i)Ivan</regexp>
+            <replace>John</replace>
+        </rule>
+        <rule>
+            <regexp>(?i)Petrov</regexp>
+            <replace>Doe</replace>
+        </rule>
+        <rule>
+            <name>hide email</name>
+            <regexp>(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}</regexp>
+            <replace>hidden@hidden.test</replace>
+        </rule>
+        <rule>
+            <name>remove selects to bad_words table</name>
+            <regexp>^.*bad_words.*$</regexp>
+            <replace>[QUERY IS CENSORED]</replace>
+        </rule>
+    </query_masking_rules>
+</clickhouse>)END");
+
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
+        DB::SensitiveDataMasker masker_xml_based(*xml_config, "query_masking_rules");
+        std::string top_secret = "The e-mail of IVAN PETROV is kotik1902@sdsdf.test, and the password is qwerty123";
+        EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 4);
+        EXPECT_EQ(top_secret, "The e-mail of John Doe is hidden@hidden.test, and the password is ******");
+
+        top_secret = "SELECT * FROM bad_words";
+        EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 1);
+        EXPECT_EQ(top_secret, "[QUERY IS CENSORED]");
+
+#ifndef NDEBUG
+        masker_xml_based.printStats();
+#endif
+    }
+
+
 
 }
