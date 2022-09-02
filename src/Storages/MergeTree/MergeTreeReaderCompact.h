@@ -39,6 +39,7 @@ public:
 
 private:
     bool isContinuousReading(size_t mark, size_t column_position);
+    void fillColumnPositions();
 
     ReadBuffer * data_buffer;
     CompressedReadBufferBase * compressed_data_buffer;

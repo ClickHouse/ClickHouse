@@ -204,17 +204,40 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     }
 }
 
-IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const String & column_name) const
+IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
-    String table_name = Nested::extractTableName(column_name);
+    auto get_offset_streams = [](const auto & serialization, const auto & name_in_storage)
+    {
+        NameSet offset_streams;
+        serialization->enumerateStreams([&](const auto & subpath)
+        {
+            if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
+                return;
+
+            auto subname = ISerialization::getSubcolumnNameForStream(subpath);
+            auto full_name = Nested::concatenateName(name_in_storage, subname);
+            offset_streams.insert(full_name);
+        });
+
+        return offset_streams;
+    };
+
+    auto required_name_in_storage = Nested::extractTableName(required_column.getNameInStorage());
+    auto required_offset_streams = get_offset_streams(getSerializationInPart(required_column), required_name_in_storage);
+
     for (const auto & part_column : data_part->getColumns())
     {
-        if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
-        {
-            auto position = data_part->getColumnPosition(part_column.getNameInStorage());
-            if (position && Nested::extractTableName(part_column.name) == table_name)
-                return position;
-        }
+        auto name_in_storage = Nested::extractTableName(part_column.name);
+        if (name_in_storage != required_name_in_storage)
+            continue;
+
+        auto offset_streams = get_offset_streams(data_part->getSerialization(part_column.name), name_in_storage);
+
+        bool has_all_offsets = std::all_of(required_offset_streams.begin(), required_offset_streams.end(),
+            [&](const auto & stream_name) { return offset_streams.contains(stream_name); });
+
+        if (has_all_offsets)
+            return data_part->getColumnPosition(part_column.name);
     }
 
     return {};

@@ -46,37 +46,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 {
     try
     {
-        size_t columns_num = columns_to_read.size();
-
-        column_positions.resize(columns_num);
-        read_only_offsets.resize(columns_num);
-
-        for (size_t i = 0; i < columns_num; ++i)
-        {
-            const auto & column_to_read = columns_to_read[i];
-
-            auto position = data_part->getColumnPosition(column_to_read.getNameInStorage());
-            bool is_array = isArray(column_to_read.type);
-
-            if (column_to_read.isSubcolumn())
-            {
-                auto storage_column_from_part = getColumnInPart(
-                    {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
-
-                auto subcolumn_name = column_to_read.getSubcolumnName();
-                if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
-                    position.reset();
-            }
-            else if (!position && is_array)
-            {
-                /// If array of Nested column is missing in part,
-                /// we have to read its offsets if they exist.
-                position = findColumnForOffsets(column_to_read.name);
-                read_only_offsets[i] = (position != std::nullopt);
-            }
-
-            column_positions[i] = std::move(position);
-        }
+        fillColumnPositions();
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
         auto buffer_size = getReadBufferSize(data_part, marks_loader, column_positions, all_mark_ranges);
@@ -136,6 +106,42 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     {
         storage.reportBrokenPart(data_part);
         throw;
+    }
+}
+
+void MergeTreeReaderCompact::fillColumnPositions()
+{
+    size_t columns_num = columns_to_read.size();
+
+    column_positions.resize(columns_num);
+    read_only_offsets.resize(columns_num);
+
+    for (size_t i = 0; i < columns_num; ++i)
+    {
+        const auto & column_to_read = columns_to_read[i];
+
+        auto position = data_part->getColumnPosition(column_to_read.getNameInStorage());
+        bool is_array = isArray(column_to_read.type);
+
+        if (column_to_read.isSubcolumn())
+        {
+            auto storage_column_from_part = getColumnInPart(
+                {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
+
+            auto subcolumn_name = column_to_read.getSubcolumnName();
+            if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
+                position.reset();
+        }
+
+        if (!position && is_array)
+        {
+            /// If array of Nested column is missing in part,
+            /// we have to read its offsets if they exist.
+            position = findColumnForOffsets(column_to_read);
+            read_only_offsets[i] = (position != std::nullopt);
+        }
+
+        column_positions[i] = std::move(position);
     }
 }
 
