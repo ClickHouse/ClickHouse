@@ -17,7 +17,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=[],
+    main_configs=['configs/enable_keeper_map.xml'],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -34,7 +34,6 @@ def started_cluster():
 
 
 def get_genuine_zk():
-    print("Zoo1", cluster.get_instance_ip("zoo1"))
     return cluster.get_kazoo_client("zoo1")
 
 
@@ -58,7 +57,7 @@ def test_create_keeper_map(started_cluster):
     zk_client = get_genuine_zk()
 
     def assert_children_size(expected_size):
-        assert len(zk_client.get_children("/test1")) == expected_size
+        assert len(zk_client.get_children("/test_keeper_map/test1")) == expected_size
 
     assert_children_size(1)
 
@@ -91,7 +90,6 @@ def create_drop_loop(index, stop_event):
         if stop_event.is_set():
             return
 
-        stdout.write(f"Trying with {i} for {index}\n")
         node.query(
             f"CREATE TABLE {table_name} (key UInt64, value UInt64) ENGINE = KeeperMap('/test') PRIMARY KEY(key);"
         )
@@ -127,7 +125,8 @@ def test_create_drop_keeper_map_concurrent(started_cluster):
     pool.close()
 
     client = get_genuine_zk()
-    assert len(client.get_children("/test")) == 0
+    assert len(client.get_children("/test_keeper_map/test")) == 0
+    client.stop()
 
 
 def test_keeper_map_without_zk(started_cluster):
@@ -162,7 +161,7 @@ def test_keeper_map_without_zk(started_cluster):
     node.query("SELECT * FROM test_keeper_map")
 
     client = get_genuine_zk()
-    remove_children(client, "/test1")
+    remove_children(client, "/test_keeper_map/test1")
     node.restart_clickhouse(60)
     error = node.query_and_get_error("SELECT * FROM test_keeper_map")
     assert "Failed to activate table because of invalid metadata in ZooKeeper" in error
