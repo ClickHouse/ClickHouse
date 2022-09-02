@@ -25,7 +25,7 @@ def started_cluster():
 def test_empty_parts_alter_delete(started_cluster):
     node1.query(
         "CREATE TABLE empty_parts_delete (d Date, key UInt64, value String) \
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/empty_parts_delete', 'r1') PARTITION BY toYYYYMM(d) ORDER BY key"
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/empty_parts_delete', 'r1', d, key, 8192)"
     )
 
     node1.query("INSERT INTO empty_parts_delete VALUES (toDate('2020-10-10'), 1, 'a')")
@@ -44,7 +44,7 @@ def test_empty_parts_alter_delete(started_cluster):
 def test_empty_parts_summing(started_cluster):
     node1.query(
         "CREATE TABLE empty_parts_summing (d Date, key UInt64, value Int64) \
-        ENGINE = ReplicatedSummingMergeTree('/clickhouse/tables/empty_parts_summing', 'r1') PARTITION BY toYYYYMM(d) ORDER BY key"
+        ENGINE = ReplicatedSummingMergeTree('/clickhouse/tables/empty_parts_summing', 'r1', d, key, 8192)"
     )
 
     node1.query("INSERT INTO empty_parts_summing VALUES (toDate('2020-10-10'), 1, 1)")

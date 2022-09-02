@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/
 sidebar_label: "Агрегатные функции"
 sidebar_position: 33
 ---

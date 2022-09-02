@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Core/SettingsFields.h>
-#include <Core/Joins.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
-
 enum class LoadBalancing
 {
     /// among replicas with a minimum number of errors selected randomly
@@ -28,9 +26,26 @@ enum class LoadBalancing
 
 DECLARE_SETTING_ENUM(LoadBalancing)
 
+
+enum class JoinStrictness
+{
+    Unspecified = 0, /// Query JOIN without strictness will throw Exception.
+    ALL, /// Query JOIN without strictness -> ALL JOIN ...
+    ANY, /// Query JOIN without strictness -> ANY JOIN ...
+};
+
 DECLARE_SETTING_ENUM(JoinStrictness)
 
-DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+enum class JoinAlgorithm
+{
+    AUTO = 0,
+    HASH,
+    PARTIAL_MERGE,
+    PREFER_PARTIAL_MERGE,
+    PARALLEL_HASH,
+};
+
+DECLARE_SETTING_ENUM(JoinAlgorithm)
 
 
 /// Which rows should be included in TOTALS.
@@ -130,14 +145,14 @@ enum class MySQLDataTypesSupport
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
 
-enum class SetOperationMode
+enum class UnionMode
 {
-    Unspecified = 0, // Query UNION / EXCEPT / INTERSECT without SetOperationMode will throw exception
-    ALL, // Query UNION / EXCEPT / INTERSECT without SetOperationMode -> SELECT ... UNION / EXCEPT / INTERSECT ALL SELECT ...
-    DISTINCT // Query UNION / EXCEPT / INTERSECT without SetOperationMode -> SELECT ... UNION / EXCEPT / INTERSECT DISTINCT SELECT ...
+    Unspecified = 0, // Query UNION without UnionMode will throw exception
+    ALL, // Query UNION without UnionMode -> SELECT ... UNION ALL SELECT ...
+    DISTINCT // Query UNION without UnionMode -> SELECT ... UNION DISTINCT SELECT ...
 };
 
-DECLARE_SETTING_ENUM(SetOperationMode)
+DECLARE_SETTING_ENUM(UnionMode)
 
 enum class DistributedDDLOutputMode
 {
@@ -182,5 +197,4 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparin
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
-
 }

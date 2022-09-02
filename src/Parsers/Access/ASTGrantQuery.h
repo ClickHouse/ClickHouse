@@ -34,6 +34,6 @@ public:
     void replaceEmptyDatabase(const String & current_database);
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
-    QueryKind getQueryKind() const override { return is_revoke ? QueryKind::Revoke : QueryKind::Grant; }
+    virtual QueryKind getQueryKind() const override { return is_revoke ? QueryKind::Revoke : QueryKind::Grant; }
 };
 }

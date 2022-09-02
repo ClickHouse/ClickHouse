@@ -3,7 +3,6 @@
 #include <base/extended_types.h>
 #include <base/defines.h>
 
-// NOLINTBEGIN(google-runtime-int)
 
 namespace common
 {
@@ -207,5 +206,3 @@ namespace common
         return false;
     }
 }
-
-// NOLINTEND(google-runtime-int)

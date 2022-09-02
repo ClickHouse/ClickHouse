@@ -99,7 +99,7 @@ template <>
 const char * FunctionPolygonPerimeter<SphericalPoint>::name = "polygonPerimeterSpherical";
 
 
-REGISTER_FUNCTION(PolygonPerimeter)
+void registerFunctionPolygonPerimeter(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonPerimeter<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonPerimeter<SphericalPoint>>();

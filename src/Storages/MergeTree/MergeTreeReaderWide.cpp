@@ -4,7 +4,6 @@
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -48,8 +47,12 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 {
     try
     {
-        for (size_t i = 0; i < columns_to_read.size(); ++i)
-            addStreams(columns_to_read[i], serializations[i], profile_callback_, clock_type_);
+        disk = data_part->volume->getDisk();
+        for (const NameAndTypePair & column : columns)
+        {
+            auto column_from_part = getColumnFromPart(column);
+            addStreams(column_from_part, profile_callback_, clock_type_);
+        }
     }
     catch (...)
     {
@@ -58,59 +61,64 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
+
 size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
     size_t read_rows = 0;
     try
     {
-        size_t num_columns = res_columns.size();
+        size_t num_columns = columns.size();
         checkNumberOfColumns(num_columns);
-
-        if (num_columns == 0)
-            return max_rows_to_read;
 
         std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         std::unordered_set<std::string> prefetched_streams;
-        if (data_part->data_part_storage->isStoredOnRemoteDisk() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
+        if (disk->isRemote() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
         {
             /// Request reading of data in advance,
             /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
-            for (size_t pos = 0; pos < num_columns; ++pos)
+            auto name_and_type = columns.begin();
+            for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
             {
+                auto column_from_part = getColumnFromPart(*name_and_type);
                 try
                 {
-                    auto & cache = caches[columns_to_read[pos].getNameInStorage()];
-                    prefetch(columns_to_read[pos], serializations[pos], from_mark, continue_reading, current_task_last_mark, cache, prefetched_streams);
+                    auto & cache = caches[column_from_part.getNameInStorage()];
+                    prefetch(column_from_part, from_mark, continue_reading, current_task_last_mark, cache, prefetched_streams);
                 }
                 catch (Exception & e)
                 {
                     /// Better diagnostics.
-                    e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
+                    e.addMessage("(while reading column " + column_from_part.name + ")");
                     throw;
                 }
             }
         }
 
-        for (size_t pos = 0; pos < num_columns; ++pos)
+        auto name_and_type = columns.begin();
+
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            const auto & column_to_read = columns_to_read[pos];
+            auto column_from_part = getColumnFromPart(*name_and_type);
+            const auto & [name, type] = column_from_part;
 
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
+            {
+                auto serialization = data_part->getSerialization(column_from_part);
+                res_columns[pos] = type->createColumn(*serialization);
+            }
 
             auto & column = res_columns[pos];
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_to_read.getNameInStorage()];
+                auto & cache = caches[column_from_part.getNameInStorage()];
 
                 readData(
-                    column_to_read, serializations[pos], column,
-                    from_mark, continue_reading, current_task_last_mark,
+                    column_from_part, column, from_mark, continue_reading, current_task_last_mark,
                     max_rows_to_read, cache, /* was_prefetched =*/ !prefetched_streams.empty());
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
@@ -121,7 +129,7 @@ size_t MergeTreeReaderWide::readRows(
             catch (Exception & e)
             {
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + column_to_read.name + ")");
+                e.addMessage("(while reading column " + name + ")");
                 throw;
             }
 
@@ -139,7 +147,7 @@ size_t MergeTreeReaderWide::readRows(
             storage.reportBrokenPart(data_part);
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + " "
+        e.addMessage("(while reading from part " + data_part->getFullPath() + " "
                      "from mark " + toString(from_mark) + " "
                      "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
@@ -154,11 +162,8 @@ size_t MergeTreeReaderWide::readRows(
     return read_rows;
 }
 
-void MergeTreeReaderWide::addStreams(
-    const NameAndTypePair & name_and_type,
-    const SerializationPtr & serialization,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback,
-    clockid_t clock_type)
+void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
@@ -178,14 +183,14 @@ void MergeTreeReaderWide::addStreams(
         bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part->data_part_storage, stream_name, DATA_FILE_EXTENSION,
+            disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
             data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
             profile_callback, clock_type, is_lc_dict));
     };
 
-    serialization->enumerateStreams(callback);
+    data_part->getSerialization(name_and_type)->enumerateStreams(callback);
 }
 
 
@@ -239,13 +244,13 @@ void MergeTreeReaderWide::deserializePrefix(
 
 void MergeTreeReaderWide::prefetch(
     const NameAndTypePair & name_and_type,
-    const SerializationPtr & serialization,
     size_t from_mark,
     bool continue_reading,
     size_t current_task_last_mark,
     ISerialization::SubstreamsCache & cache,
     std::unordered_set<std::string> & prefetched_streams)
 {
+    auto serialization = data_part->getSerialization(name_and_type);
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
@@ -265,13 +270,16 @@ void MergeTreeReaderWide::prefetch(
 
 
 void MergeTreeReaderWide::readData(
-    const NameAndTypePair & name_and_type, const SerializationPtr & serialization, ColumnPtr & column,
+    const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t from_mark, bool continue_reading, size_t current_task_last_mark,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache, bool was_prefetched)
 {
     double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
+
+    const auto & name = name_and_type.name;
+    auto serialization = data_part->getSerialization(name_and_type);
 
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
@@ -284,7 +292,7 @@ void MergeTreeReaderWide::readData(
             seek_to_mark, current_task_last_mark, cache);
     };
     deserialize_settings.continuous_reading = continue_reading;
-    auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
+    auto & deserialize_state = deserialize_binary_bulk_state_map[name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);

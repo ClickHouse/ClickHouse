@@ -3,25 +3,12 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
-#include <cerrno>
-#include <iomanip>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 #include <memory>
 #include <iostream>
-
-#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
-#   include <machine/endian.h>
-#else
-#   include <endian.h>
-#endif
-
-#if defined OS_DARWIN
-#   include <libkern/OSByteOrder.h>
-    // define 64 bit macros
-#   define htole64(x) OSSwapHostToLittleInt64(x)
-#endif
 
 #include "types.h"
 
@@ -77,10 +64,9 @@ int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offse
 }
 
 /// compress data from opened file into output file
-int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in, uint64_t & compressed_size)
+int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in)
 {
     off_t in_offset = 0;
-    compressed_size = 0;
 
     /// mmap files
     char * input = static_cast<char*>(mmap(nullptr, info_in.st_size, PROT_READ, MAP_PRIVATE, in_fd, 0));
@@ -105,14 +91,12 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (ZSTD_isError(check_result))
     {
         std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
     if (ZSTD_isError(check_result))
     {
         std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
 
@@ -133,17 +117,13 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (output == MAP_FAILED)
     {
         perror(nullptr);
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
     if (-1 == lseek(out_fd, 0, SEEK_END))
     {
         perror(nullptr);
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
-
-    uint64_t total_size = 0;
 
     /// Compress data
     while (in_offset < info_in.st_size)
@@ -162,7 +142,6 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
                 perror(nullptr);
             if (0 != munmap(output, 2 * max_block_size))
                 perror(nullptr);
-            ZSTD_freeCCtx(cctx);
             return 1;
         }
 
@@ -170,35 +149,24 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         if (current_block_size != write_data(out_fd, output, current_block_size))
         {
             perror(nullptr);
-            ZSTD_freeCCtx(cctx);
             return 1;
         }
         pointer += current_block_size;
         printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / size * 100);
-        total_size += size;
-        compressed_size += current_block_size;
         current_block_size = 0;
     }
-    std::cout <<
-        "Compressed size: " << compressed_size <<
-        ", compression rate: " << std::fixed << std::setprecision(2) <<
-        static_cast<float>(compressed_size) / total_size * 100 << "%"
-        << std::endl;
 
     if (0 != munmap(input, info_in.st_size) ||
         0 != munmap(output, 2 * max_block_size))
     {
         perror(nullptr);
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
-
-    ZSTD_freeCCtx(cctx);
     return 0;
 }
 
 /// Save Metadata at the end of file
-int saveMetaData(const char* filenames[], int count, int output_fd, const MetaData& metadata,
+int saveMetaData(char* filenames[], int count, int output_fd, const MetaData& metadata,
                  FileData* files_data, size_t pointer, size_t sum_file_size)
 {
     /// Allocate memory for metadata
@@ -239,36 +207,21 @@ int saveMetaData(const char* filenames[], int count, int output_fd, const MetaDa
 }
 
 /// Fills metadata and calls compression function for each file
-int compressFiles(const char* out_name, const char* exec, char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
+int compressFiles(char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
 {
     MetaData metadata;
     size_t sum_file_size = 0;
-    int is_exec = exec && *exec ? 1 : 0;
-    metadata.number_of_files = htole64(count + is_exec);
+    metadata.number_of_files = count;
     off_t pointer = info_out.st_size;
 
-    uint64_t total_size = 0;
-    uint64_t total_compressed_size = 0;
-
     /// Store information about each file and compress it
-    FileData* files_data = new FileData[count + is_exec];
-    const char * names[count + is_exec];
-    for (int i = 0; i <= count; ++i)
+    FileData* files_data = new FileData[count];
+    char * names[count];
+    for (int i = 0; i < count; ++i)
     {
-        const char* filename = nullptr;
-        if (i == count)
-        {
-            if (!is_exec)
-                continue;
-            filename = exec;
-            files_data[i].exec = true;
-        }
-        else
-            filename = filenames[i];
+        printf("Compressing: %s\n", filenames[i]);
 
-        printf("Compressing: %s\n", filename);
-
-        int input_fd = open(filename, O_RDONLY);
+        int input_fd = open(filenames[i], O_RDONLY);
         if (input_fd == -1)
         {
             perror(nullptr);
@@ -279,17 +232,13 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         /// Remember information about file name
         /// This should be made after the file is opened
         /// because filename should be extracted from path
-        names[i] = strrchr(filename, '/');
+        names[i] = strrchr(filenames[i], '/');
         if (names[i])
             ++names[i];
         else
-            names[i] = filename;
-        size_t nlen = strlen(names[i]) + 1;
-        files_data[i].name_length = htole64(nlen);
-        sum_file_size += nlen;
-        /// if no --exec is specified nor it's empty - file which is matching output name is executable
-        if (!is_exec && !exec && strcmp(names[i], out_name) == 0)
-            files_data[i].exec = true;
+            names[i] = filenames[i];
+        files_data[i].name_length = strlen(names[i]) + 1;
+        sum_file_size += files_data[i].name_length;
 
         /// read data about input file
         struct stat info_in;
@@ -307,28 +256,23 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         }
 
         std::cout << "Size: " << info_in.st_size << std::endl;
-        total_size += info_in.st_size;
 
         /// Save umask
-        files_data[i].umask = htole64(info_in.st_mode);
+        files_data[i].umask = info_in.st_mode;
 
         /// Remember information about uncompressed size of file and
         /// start of it's compression version
-        files_data[i].uncompressed_size = htole64(info_in.st_size);
-        files_data[i].start = htole64(pointer);
-
-        uint64_t compressed_size = 0;
+        files_data[i].uncompressed_size = info_in.st_size;
+        files_data[i].start = pointer;
 
         /// Compressed data will be added to the end of file
         /// It will allow to create self extracting executable from file
-        if (0 != compress(input_fd, output_fd, level, pointer, info_in, compressed_size))
+        if (0 != compress(input_fd, output_fd, level, pointer, info_in))
         {
             perror(nullptr);
             delete [] files_data;
             return 1;
         }
-
-        total_compressed_size += compressed_size;
 
         /// This error is less important, than others.
         /// If file cannot be closed, in some cases it will lead to
@@ -336,54 +280,23 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         if (0 != close(input_fd))
             perror(nullptr);
 
-        files_data[i].end = htole64(pointer);
+        files_data[i].end = pointer;
     }
 
     /// save location of files information
-    metadata.start_of_files_data = htole64(pointer);
+    metadata.start_of_files_data = pointer;
 
-    if (0 != saveMetaData(names, count + is_exec, output_fd, metadata, files_data, pointer, sum_file_size))
+    if (0 != saveMetaData(names, count, output_fd, metadata, files_data, pointer, sum_file_size))
     {
         delete [] files_data;
         return 1;
     }
 
-    std::cout << "Compression rate: " << std::fixed << std::setprecision(2) <<
-        static_cast<float>(total_compressed_size) / total_size * 100 << "%"
-        << std::endl;
-
     delete [] files_data;
     return 0;
 }
 
-int copy_decompressor(int input_fd, int decompressor_size, int output_fd)
-{
-    const ssize_t buf_size = 1ul<<19;
-    auto buf_memory = std::make_unique<char[]>(buf_size);
-    char * buf = buf_memory.get();
-
-    while (decompressor_size > 0)
-    {
-        ssize_t read_size = decompressor_size > buf_size ? buf_size : decompressor_size;
-        ssize_t n = read_data(input_fd, buf, read_size);
-        if (n < read_size)
-        {
-            perror(nullptr);
-            return 1;
-        }
-        decompressor_size -= n;
-
-        if (n != write_data(output_fd, buf, n))
-        {
-            perror(nullptr);
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-int copy_decompressor_self(const char *self, int output_fd)
+int copy_decompressor(const char *self, int output_fd)
 {
     int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
@@ -410,14 +323,7 @@ int copy_decompressor_self(const char *self, int output_fd)
         return 1;
     }
 
-    char * end = nullptr;
-    int decompressor_size = strtol(size_str, &end, 10);
-    if (*end != 0)
-    {
-        std::cerr << "Error: unable to extract decompressor" << std::endl;
-        close(input_fd);
-        return 1;
-    }
+    int decompressor_size = atoi(size_str);
 
     if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
     {
@@ -426,79 +332,44 @@ int copy_decompressor_self(const char *self, int output_fd)
         return 1;
     }
 
-    int ret = copy_decompressor(input_fd, decompressor_size, output_fd);
+    auto buf_memory = std::make_unique<char[]>(1ul<<19);
+    char * buf = buf_memory.get();
+    ssize_t n = 0;
+    do
+    {
+        n = read(input_fd, buf, sizeof(buf));
+
+        if (0 == n)
+            break;
+
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            perror(nullptr);
+            close(input_fd);
+            return 1;
+        }
+
+        if (n != write_data(output_fd, buf, n))
+        {
+            perror(nullptr);
+            close(input_fd);
+            return 1;
+        }
+    } while (true);
+
     close(input_fd);
-    return ret;
-}
-
-int copy_decompressor_file(const char *path, int output_fd)
-{
-    struct stat info_in;
-    if (stat(path, &info_in) != 0)
-    {
-        std::cerr << "Error: decompressor file [" << path << "]." << std::endl;
-        perror(nullptr);
-        return 1;
-    }
-
-    if (!S_ISREG(info_in.st_mode))
-    {
-        std::cerr << "Error: decompressor path [" << path << "] is not a file." << std::endl;
-        return 1;
-    }
-
-    int input_fd = open(path, O_RDONLY);
-    if (input_fd == -1)
-    {
-        perror(nullptr);
-        return 1;
-    }
-
-    int ret = copy_decompressor(input_fd, info_in.st_size, output_fd);
-    close(input_fd);
-    return ret;
+    return 0;
 }
 
 inline void usage(FILE * out, const char * name)
 {
-    (void)fprintf(out,
-        "%s [--level=<level>] [--decompressor=<path>] [--exec=<path>] <output_file> [<input_file> [... <input_file>]]\n"
+    fprintf(out,
+        "%s [--level=<level>] <output_file> <input_file> [... <input_file>]\n"
         "\t--level - compression level, max is %d, negative - prefer speed over compression\n"
-        "\t          default is 5\n"
-        "\t--decompressor - path to decompressor\n"
-        "\t--exec - path to an input file to execute after decompression, if omitted then\n"
-        "\t         an <input_file> having the same name as <output_file> becomes such executable.\n"
-        "\t         This executable upon decompression will substitute started compressed preserving compressed name.\n"
-        "\t         If no <path> is specified - nothing will be run - only decompression will be performed.\n",
+        "\t          default is 5\n",
         name, ZSTD_maxCLevel());
-}
-
-const char * get_param(int argc, char * const argv[], const char * name)
-{
-    if (nullptr == name || name[0] == 0)
-        return nullptr;
-
-    for (int i = 1; i < argc; ++i)
-    {
-        const char * arg = argv[i];
-        if (arg[0] != '-' || arg[1] != '-')
-            return nullptr;
-
-        size_t arg_len = strlen(arg);
-        size_t name_len = strlen(name);
-
-        const char * eq = strchr(arg + 2, '=');
-        if (nullptr == eq)
-            eq = arg + arg_len;
-
-        if (name_len != static_cast<size_t>(eq - arg - 2))
-            continue;
-
-        if (0 == memcmp(name, arg + 2, name_len))
-            return *eq == 0 ? eq : eq + 1;
-    }
-
-    return nullptr;
 }
 
 int main(int argc, char* argv[])
@@ -513,38 +384,13 @@ int main(int argc, char* argv[])
 
     /// Set compression level
     int level = 5;
-    const char * p = get_param(argc, argv, "level");
-    if (p != nullptr)
+    if (0 == memcmp(argv[1], "--level=", 8))
     {
-        if (p[0] != 0)
-        {
-            char * end = nullptr;
-            level = strtol(p, &end, 10);
-            if (*end != 0)
-            {
-                std::cerr << "Error: level [" << p << "] is not valid" << std::endl;
-                usage(stderr, argv[0]);
-                return 1;
-            }
-        }
+        level = atoi(argv[1] + 8);
         ++start_of_files;
     }
 
-    /// Set decompressor
-    const char * decompressor = get_param(argc, argv, "decompressor");
-    if (decompressor != nullptr)
-    {
-        if (decompressor[0] == 0)
-            decompressor = nullptr;
-        ++start_of_files;
-    }
-
-    /// Specified executable
-    const char * exec = get_param(argc, argv, "exec");
-    if (exec != nullptr)
-        ++start_of_files;
-
-    if (argc < start_of_files + (exec == nullptr || *exec == 0 ? 1 : 0))
+    if (argc < start_of_files + 1)
     {
         usage(stderr, argv[0]);
         return 1;
@@ -563,24 +409,10 @@ int main(int argc, char* argv[])
         perror(nullptr);
         return 1;
     }
-
-    const char* out_name = strrchr(argv[start_of_files], '/');
-    if (out_name)
-        ++out_name;
-    else
-        out_name = argv[start_of_files];
     ++start_of_files;
 
-    if (decompressor != nullptr)
-    {
-        if (copy_decompressor_file(decompressor, output_fd))
-            return 1;
-    }
-    else
-    {
-        if (copy_decompressor_self(argv[0], output_fd))
-            return 1;
-    }
+    if (copy_decompressor(argv[0], output_fd))
+        return 1;
 
     if (0 != fstat(output_fd, &info_out))
     {
@@ -589,7 +421,7 @@ int main(int argc, char* argv[])
     }
 
     std::cout << "Compression with level: " << level << std::endl;
-    if (0 != compressFiles(out_name, exec, &argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
+    if (0 != compressFiles(&argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
     {
         printf("Compression failed.\n");
         close(output_fd);

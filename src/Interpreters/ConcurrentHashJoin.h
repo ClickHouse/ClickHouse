@@ -62,10 +62,13 @@ private:
     size_t slots;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
-    std::mutex totals_mutex;
+    std::mutex finished_add_joined_blocks_tasks_mutex;
+    std::condition_variable finished_add_joined_blocks_tasks_cond;
+    std::atomic<UInt32> finished_add_joined_blocks_tasks = 0;
+
+    mutable std::mutex totals_mutex;
     Block totals;
 
-    IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 
 };

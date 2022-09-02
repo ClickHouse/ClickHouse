@@ -18,8 +18,6 @@ struct User;
 class Credentials;
 class ExternalAuthenticators;
 enum class AuthenticationType;
-class BackupEntriesCollector;
-class RestorerFromBackup;
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
@@ -103,16 +101,6 @@ public:
     std::optional<String> tryReadName(const UUID & id) const;
     Strings tryReadNames(const std::vector<UUID> & ids) const;
 
-    std::pair<String, AccessEntityType> readNameWithType(const UUID & id) const;
-    std::optional<std::pair<String, AccessEntityType>> readNameWithType(const UUID & id, bool throw_if_not_exists) const;
-    std::optional<std::pair<String, AccessEntityType>> tryReadNameWithType(const UUID & id) const;
-
-    /// Reads all entities and returns them with their IDs.
-    template <typename EntityClassT>
-    std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> readAllWithIDs() const;
-
-    std::vector<std::pair<UUID, AccessEntityPtr>> readAllWithIDs(AccessEntityType type) const;
-
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
@@ -155,19 +143,11 @@ public:
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool allow_no_password, bool allow_plaintext_password) const;
     std::optional<UUID> authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
 
-    /// Returns true if this storage can be stored to or restored from a backup.
-    virtual bool isBackupAllowed() const { return false; }
-    virtual bool isRestoreAllowed() const { return isBackupAllowed() && !isReadOnly(); }
-
-    /// Makes a backup of this access storage.
-    virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
-    virtual void restoreFromBackup(RestorerFromBackup & restorer);
-
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
-    virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
+    virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
     virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
@@ -190,8 +170,6 @@ protected:
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
     [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
-    [[noreturn]] void throwBackupNotAllowed() const;
-    [[noreturn]] void throwRestoreNotAllowed() const;
 
 private:
     const String storage_name;
@@ -240,17 +218,4 @@ std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const String & name)
 {
     return read<EntityClassT>(name, false);
 }
-
-template <typename EntityClassT>
-std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage::readAllWithIDs() const
-{
-    std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> entities;
-    for (const auto & id : findAll<EntityClassT>())
-    {
-        if (auto entity = tryRead<EntityClassT>(id))
-            entities.emplace_back(id, entity);
-    }
-    return entities;
-}
-
 }

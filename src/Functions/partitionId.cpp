@@ -63,7 +63,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(PartitionId)
+void registerFunctionPartitionId(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPartitionId>();
 }

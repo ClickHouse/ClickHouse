@@ -4,7 +4,6 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <re2/re2.h>
 
 namespace CurrentMetrics
@@ -29,31 +28,29 @@ friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & object_storage_root_path_,
+        const String & remote_fs_root_path_,
         const String & log_name,
-        MetadataStoragePtr metadata_storage_,
-        ObjectStoragePtr object_storage_,
+        MetadataStoragePtr && metadata_storage_,
+        ObjectStoragePtr && object_storage_,
+        DiskType disk_type_,
         bool send_metadata_,
-        uint64_t thread_pool_size_);
+        uint64_t thread_pool_size);
 
-    /// Create fake transaction
-    DiskTransactionPtr createTransaction() override;
-
-    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
+    DiskType getType() const override { return disk_type; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
-    bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
+    bool supportParallelWrite() const override { return true; }
 
     const String & getName() const override { return name; }
 
     const String & getPath() const override { return metadata_storage->getPath(); }
 
-    StoredObjects getStorageObjects(const String & local_path) const override;
+    std::vector<String> getRemotePaths(const String & local_path) const override;
 
-    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
-    const std::string & getCacheBasePath() const override
+    std::string getCacheBasePath() const override
     {
         return object_storage->getCacheBasePath();
     }
@@ -92,6 +89,8 @@ public:
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
+    void removeFromRemoteFS(const std::vector<String> & paths);
+
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
@@ -103,6 +102,7 @@ public:
 
     String getUniqueId(const String & path) const override;
 
+    bool checkObjectExists(const String & path) const;
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
@@ -152,8 +152,6 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
-
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
@@ -163,49 +161,12 @@ public:
     void syncRevision(UInt64 revision) override;
 
     UInt64 getRevision() const override;
-
-    DiskObjectStoragePtr createDiskObjectStorage() override;
-
-    bool supportsCache() const override;
-
-    /// Is object storage read only?
-    /// For example: WebObjectStorage is read only as it allows to read from a web server
-    /// with static files, so only read-only operations are allowed for this storage.
-    bool isReadOnly() const override;
-
-    /// Add a cache layer.
-    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
-    /// There can be any number of cache layers:
-    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
-
-    /// Get structure of object storage this disk works with. Examples:
-    /// DiskObjectStorage(S3ObjectStorage)
-    /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
-    /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
-    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
-
-    /// Get names of all cache layers. Name is how cache is defined in configuration file.
-    NameSet getCacheLayersNames() const override;
-
-    static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
-
-    bool supportsStat() const override { return metadata_storage->supportsStat(); }
-    struct stat stat(const String & path) const override;
-
-    bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
-    void chmod(const String & path, mode_t mode) override;
-
 private:
-
-    /// Create actual disk object storage transaction for operations
-    /// execution.
-    DiskTransactionPtr createObjectStorageTransaction();
-
     const String name;
-    const String object_storage_root_path;
+    const String remote_fs_root_path;
     Poco::Logger * log;
 
+    const DiskType disk_type;
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 
@@ -213,15 +174,16 @@ private:
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
+    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
+
+    void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
+
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
     const bool send_metadata;
-    size_t threadpool_size;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
-
-using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 class DiskObjectStorageReservation final : public IReservation
 {
@@ -245,7 +207,7 @@ public:
     ~DiskObjectStorageReservation() override;
 
 private:
-    DiskObjectStoragePtr disk;
+    std::shared_ptr<DiskObjectStorage> disk;
     UInt64 size;
     UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;

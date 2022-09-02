@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime
 sidebar_position: 42
 sidebar_label: Dictionary Updates
 ---

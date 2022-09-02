@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/settings/permissions-for-queries
 sidebar_position: 58
 sidebar_label: Permissions for Queries
 ---

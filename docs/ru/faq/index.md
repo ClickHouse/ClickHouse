@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/
 sidebar_label: F.A.Q.
 sidebar_position: 76
 ---
@@ -40,6 +39,6 @@ Question candidates:
 - How to kill a process (query) in ClickHouse?
 - How to implement pivot (like in pandas)?
 - How to remove the default ClickHouse user through users.d?
-- Importing MySQL dump to ClickHouse
+- Importing MySQL dump to Clickhouse
 - Window function workarounds (row\_number, lag/lead, running diff/sum/average)
 ##}

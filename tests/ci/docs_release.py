@@ -18,7 +18,7 @@ from commit_status_helper import get_commit
 from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
-NAME = "Docs Release"
+NAME = "Docs Release (actions)"
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
     pr_info = PRInfo()
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -106,7 +106,7 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
 
     report_url = upload_results(
         s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME

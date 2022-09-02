@@ -16,18 +16,9 @@ namespace ErrorCodes
 {
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_DISK;
-    extern const int LOGICAL_ERROR;
 }
 
-
-void DiskSelector::assertInitialized() const
-{
-    if (!is_initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskSelector not initialized");
-}
-
-
-void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -55,16 +46,12 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
             std::make_shared<DiskLocal>(
                 default_disk_name, context->getPath(), 0, context, config.getUInt("local_disk_check_period_ms", 0)));
     }
-
-    is_initialized = true;
 }
 
 
 DiskSelectorPtr DiskSelector::updateFromConfig(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context) const
 {
-    assertInitialized();
-
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
@@ -123,33 +110,10 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 
 DiskPtr DiskSelector::get(const String & name) const
 {
-    assertInitialized();
     auto it = disks.find(name);
     if (it == disks.end())
         throw Exception("Unknown disk " + name, ErrorCodes::UNKNOWN_DISK);
     return it->second;
-}
-
-
-const DisksMap & DiskSelector::getDisksMap() const
-{
-    assertInitialized();
-    return disks;
-}
-
-
-void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
-{
-    assertInitialized();
-    disks.emplace(name, disk);
-}
-
-
-void DiskSelector::shutdown()
-{
-    assertInitialized();
-    for (auto & e : disks)
-        e.second->shutdown();
 }
 
 }

@@ -20,7 +20,6 @@ CamelCase
 CapnProto
 CentOS
 ClickHouse
-ClickHouse's
 Config
 Contrib
 Ctrl
@@ -108,11 +107,6 @@ PrettyCompactNoEscapes
 PrettyNoEscapes
 PrettySpace
 PrettySpaceNoEscapes
-PrettyCompactNoEscapesMonoBlock
-PrettyMonoBlock
-PrettyNoEscapesMonoBlock
-PrettySpaceMonoBlock
-PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
@@ -127,7 +121,6 @@ SATA
 SERIALIZABLE
 SIMD
 SMALLINT
-SQLInsert
 SQLSTATE
 SSSE
 Schemas
@@ -379,11 +372,6 @@ prettycompactnoescapes
 prettynoescapes
 prettyspace
 prettyspacenoescapes
-prettycompactnoescapesmonoblock
-prettymonoblock
-prettynoescapesmonoblock
-prettyspacemonoblock
-prettyspacenoescapesmonoblock
 prlimit
 prometheus
 proto
@@ -406,7 +394,6 @@ requestor
 resultset
 rethrow
 risc
-riscv
 ro
 rocksdb
 rowNumberInBlock
@@ -424,7 +411,6 @@ simdjson
 skippingerrors
 sparsehash
 sql
-sqlinsert
 src
 stacktraces
 statbox
@@ -476,13 +462,11 @@ unencrypted
 unixodbc
 url
 userspace
-userver
 utils
 uuid
 variadic
 varint
 vectorized
-vectorscan
 wchc
 wchs
 webpage

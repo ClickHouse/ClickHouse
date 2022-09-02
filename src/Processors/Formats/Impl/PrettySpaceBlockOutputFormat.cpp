@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
+void PrettySpaceBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
     UInt64 max_rows = format_settings.pretty.max_rows;
 
@@ -100,8 +100,6 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
 void PrettySpaceBlockOutputFormat::writeSuffix()
 {
-    writeMonoChunkIfNeeded();
-
     if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("\nShowed first ", out);
@@ -113,7 +111,29 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 
 void registerOutputFormatPrettySpace(FormatFactory & factory)
 {
-    registerPrettyFormatWithNoEscapesAndMonoBlock<PrettySpaceBlockOutputFormat>(factory, "PrettySpace");
+    factory.registerOutputFormat("PrettySpace", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams &,
+        const FormatSettings & format_settings)
+    {
+        return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
+    });
+
+    factory.markOutputFormatSupportsParallelFormatting("PrettySpace");
+
+    factory.registerOutputFormat("PrettySpaceNoEscapes", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams &,
+        const FormatSettings & format_settings)
+    {
+        FormatSettings changed_settings = format_settings;
+        changed_settings.pretty.color = false;
+        return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, changed_settings);
+    });
+
+    factory.markOutputFormatSupportsParallelFormatting("PrettySpaceNoEscapes");
 }
 
 }

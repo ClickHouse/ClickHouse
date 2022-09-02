@@ -65,7 +65,7 @@ using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, NameExtract>;
 
 }
 
-REGISTER_FUNCTION(Extract)
+void registerFunctionExtract(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionExtract>();
 }

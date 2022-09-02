@@ -96,10 +96,6 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
-if (TARGET ch_contrib::nats_io)
-    add_headers_and_sources(dbms Storages/NATS)
-endif()
-
 add_headers_and_sources(dbms Storages/MeiliSearch)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -130,9 +126,6 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
-add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
-add_headers_and_sources(dbms Disks/ObjectStorages/Web)
-
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)
     add_headers_and_sources(dbms Storages/Hive)
@@ -147,8 +140,8 @@ endif ()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/FunctionsLogical.cpp Functions/indexHint.cpp)
-list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/FunctionsLogical.h Functions/indexHint.h)
+list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
+list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
     AggregateFunctions/IAggregateFunction.cpp
@@ -247,7 +240,6 @@ add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
-add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -350,12 +342,6 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
-if (ENABLE_QPL)
-set_source_files_properties(
-        Compression/CompressionCodecDeflateQpl.cpp
-        PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-endif ()
-
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 
@@ -385,10 +371,6 @@ if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
-if (TARGET ch_contrib::nats_io)
-    dbms_target_link_libraries(PRIVATE ch_contrib::nats_io ch_contrib::uv)
-endif()
-
 if (TARGET ch_contrib::sasl2)
     dbms_target_link_libraries(PRIVATE ch_contrib::sasl2)
 endif()
@@ -411,11 +393,11 @@ dbms_target_link_libraries (
         clickhouse_parsers
         ch_contrib::lz4
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         boost::system
         clickhouse_common_io
-        Poco::MongoDB
 )
 
 if (TARGET ch::mysqlxx)
@@ -457,9 +439,6 @@ if (TARGET ch_contrib::avrocpp)
     dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
 endif ()
 
-set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
-target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
-
 if (TARGET OpenSSL::Crypto)
     dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)
     target_link_libraries (clickhouse_common_io PRIVATE OpenSSL::Crypto)
@@ -492,7 +471,7 @@ if (TARGET ch_contrib::aws_s3)
 endif()
 
 if (TARGET ch_contrib::azure_sdk)
-    dbms_target_link_libraries (PRIVATE ch_contrib::azure_sdk)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::azure_sdk)
 endif()
 
 if (TARGET ch_contrib::s2)
@@ -540,10 +519,6 @@ endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (TARGET ch_contrib::qpl)
-dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
-endif ()
-
 dbms_target_link_libraries(PRIVATE _boost_context)
 
 if (ENABLE_NLP)
@@ -581,7 +556,7 @@ if (ENABLE_TESTS)
 
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
-    clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
+    add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
@@ -615,3 +590,4 @@ if (ENABLE_TESTS)
 
     add_check(unit_tests_dbms)
 endif ()
+

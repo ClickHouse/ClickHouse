@@ -84,7 +84,7 @@ public:
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
-    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
+    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
 
     NamesAndTypesList getVirtuals() const override;
 

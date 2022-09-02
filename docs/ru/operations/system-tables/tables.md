@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/tables
----
 # system.tables {#system-tables}
 
 Содержит метаданные каждой таблицы, о которой знает сервер.
