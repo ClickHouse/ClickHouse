@@ -104,7 +104,7 @@ struct PartitionCommandResultInfo
 
 using PartitionCommandsResultInfo = std::vector<PartitionCommandResultInfo>;
 
-/// Convert partition comands result to Source from single Chunk, which will be
+/// Convert partition commands result to Source from single Chunk, which will be
 /// used to print info to the user. Tries to create narrowest table for given
 /// results. For example, if all commands were FREEZE commands, than
 /// old_part_name column will be absent.
