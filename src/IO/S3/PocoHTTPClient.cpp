@@ -191,7 +191,7 @@ namespace
     }
 }
 
-PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::HttpRequest & request) const
+PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::HttpRequest & request)
 {
     switch (request.GetMethod())
     {
