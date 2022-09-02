@@ -289,7 +289,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     auto client = getClient();
 
-    if (root_path_fs != "/" && !client->exists(root_path))
+    if (root_path != "/" && !client->exists(root_path))
     {
         if (!create_missing_root_path)
         {
