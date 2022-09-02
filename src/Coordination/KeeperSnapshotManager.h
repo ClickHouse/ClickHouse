@@ -26,7 +26,7 @@ enum SnapshotVersion : uint8_t
 
 static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V5;
 
-/// What is stored in binary shapsnot
+/// What is stored in binary snapshot
 struct SnapshotDeserializationResult
 {
     /// Storage

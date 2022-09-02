@@ -530,7 +530,7 @@ void Connection::sendQuery(
         /// Send correct hash only for !INITIAL_QUERY, due to:
         /// - this will avoid extra protocol complexity for simplest cases
         /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/unsecure changes)
+        ///   (since there is no secure/non-secure changes)
         if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         {
 #if USE_SSL
