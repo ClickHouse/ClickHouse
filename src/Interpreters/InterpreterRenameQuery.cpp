@@ -186,11 +186,6 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
         {
             required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.database);
             required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to.database);
-            if (rename.exchange)
-            {
-                required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT , elem.from.database);
-                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.to.database);
-            }
         }
         else
         {
