@@ -1067,6 +1067,9 @@ static InterpolateDescriptionPtr getInterpolateDescription(
 static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
 {
     SortDescription order_descr;
+    if (!query.groupBy())
+        return order_descr;
+
     order_descr.reserve(query.groupBy()->children.size());
 
     for (const auto & elem : query.groupBy()->children)
@@ -2275,34 +2278,37 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         bool optimize_aggregation_in_order = analysis_result.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey();
         bool optimize_join_in_order = !analysis_result.optimize_join_in_order.empty();
 
+        bool optimize_anything_in_order = optimize_read_in_order || optimize_aggregation_in_order || optimize_join_in_order;
+        bool can_use_projection_if_present = !query_info.projection || query_info.projection->complete;
+
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if ((optimize_read_in_order || optimize_aggregation_in_order || optimize_join_in_order)
-            && (!query_info.projection || query_info.projection->complete))
+        if (optimize_anything_in_order && can_use_projection_if_present)
         {
             if (optimize_read_in_order)
             {
-                if (query_info.projection)
+                auto sort_desc = getSortDescription(query, context);
+                if (!sort_desc.empty() && query_info.projection)
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         // TODO Do we need a projection variant for this field?
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, context),
+                        sort_desc,
                         query_info.syntax_analyzer_result);
                 }
-                else
+                else if (!sort_desc.empty())
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, context),
+                        sort_desc,
                         query_info.syntax_analyzer_result);
                 }
             }
             else if (optimize_aggregation_in_order)
             {
-                if (query_info.projection)
+                if (query_info.projection && !query_info.projection->group_by_elements_order_descr.empty())
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
@@ -2310,7 +2316,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         query_info.projection->group_by_elements_order_descr,
                         query_info.syntax_analyzer_result);
                 }
-                else
+                else if (auto desc = getSortDescriptionFromGroupBy(query); !desc.empty())
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
@@ -2330,7 +2336,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     /// Order of sorted columns doesn't matter for JOIN, so we can use any existing order
                     const auto & join_sort = analysis_result.optimize_join_in_order;
                     const auto & storage_sort = metadata_snapshot->getSortingKeyColumns();
-                    if (auto sort_descr = getSortDescriptionFromNames(join_sort, storage_sort); !sort_descr.empty())
+                    auto sort_descr = getSortDescriptionFromNames(join_sort, storage_sort);
+                    if (!sort_descr.empty())
                     {
                         query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                             query,
