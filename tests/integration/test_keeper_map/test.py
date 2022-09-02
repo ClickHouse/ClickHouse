@@ -17,7 +17,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=['configs/enable_keeper_map.xml'],
+    main_configs=["configs/enable_keeper_map.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
