@@ -1046,29 +1046,43 @@ void MergeTreeData::loadDataPartsFromDisk(
                 throw;
 
             broken = true;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while loading part {} on path {}", part->name, part_path));
         }
         catch (...)
         {
             broken = true;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while loading part {} on path {}", part->name, part_path));
         }
 
         /// Ignore broken parts that can appear as a result of hard server restart.
         if (broken)
         {
-            /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
-            size_t size_of_part = data_part_storage->calculateTotalSizeOnDisk();
+            std::optional<size_t> size_of_part;
+            try
+            {
+                /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
+                size_of_part = data_part_storage->calculateTotalSizeOnDisk();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while calculating part size {} on path {}", part->name, part_path));
+            }
+
+            std::string part_size_str = "failed to calculate size";
+            if (size_of_part.has_value())
+                part_size_str = formatReadableSizeWithBinarySuffix(*size_of_part);
+
 
             LOG_ERROR(log,
                 "Detaching broken part {}{} (size: {}). "
                 "If it happened after update, it is likely because of backward incompability. "
                 "You need to resolve this manually",
-                getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
+                getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
             std::lock_guard loading_lock(mutex);
             broken_parts_to_detach.push_back(part);
             ++suspicious_broken_parts;
-            suspicious_broken_parts_bytes += size_of_part;
+            if (size_of_part.has_value())
+                suspicious_broken_parts_bytes += *size_of_part;
             return;
         }
         if (!part->index_granularity_info.is_adaptive)
