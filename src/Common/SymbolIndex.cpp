@@ -393,9 +393,20 @@ void collectSymbolsFromELF(
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
     debug_info_path += ".debug";
 
-    if (std::filesystem::exists(local_debug_info_path))
+    /// NOTE: This is a workaround for current package system.
+    ///
+    /// Since nfpm cannot copy file only if it exists,
+    /// and so in cmake empty .debug file is created instead,
+    /// but if we will try to load empty Elf file, then the CANNOT_PARSE_ELF
+    /// exception will be thrown from the Elf::Elf.
+    auto exists_not_empty = [](const std::filesystem::path & path)
+    {
+        return std::filesystem::exists(path) && !std::filesystem::is_empty(path);
+    };
+
+    if (exists_not_empty(local_debug_info_path))
         object_name = local_debug_info_path;
-    else if (std::filesystem::exists(debug_info_path))
+    else if (exists_not_empty(debug_info_path))
         object_name = debug_info_path;
     else if (build_id.size() >= 2)
     {
@@ -413,7 +424,7 @@ void collectSymbolsFromELF(
 
         std::filesystem::path build_id_debug_info_path(
             fmt::format("/usr/lib/debug/.build-id/{}/{}.debug", build_id_hex.substr(0, 2), build_id_hex.substr(2)));
-        if (std::filesystem::exists(build_id_debug_info_path))
+        if (exists_not_empty(build_id_debug_info_path))
             object_name = build_id_debug_info_path;
         else
             object_name = canonical_path;
