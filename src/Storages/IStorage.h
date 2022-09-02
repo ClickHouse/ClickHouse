@@ -325,6 +325,8 @@ public:
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
+    virtual bool forceQueryWithFinal() const { return false; }
+
 private:
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
