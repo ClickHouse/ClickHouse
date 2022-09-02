@@ -6,7 +6,6 @@ title: "UK Property Price Paid"
 ---
 
 The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
-The size of the dataset in uncompressed form is about 4 GiB and it will take about 270 MiB in ClickHouse.
 
 Source: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads <br/>
 Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
@@ -111,26 +110,6 @@ Result:
 │ 27450499 │
 └──────────┘
 ```
-
-The size of dataset in ClickHouse is just 540 MiB, check it.
-
-Query:
-
-```sql
-SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'uk_price_paid';
-```
-
-Result:
-
-```text
-┌─formatReadableSize(total_bytes)─┐
-│ 545.04 MiB                      │
-└─────────────────────────────────┘
-```
-
-:::note
-The above size is for a replicated table, if you are using this dataset with a single instance the size will be half.
-:::
 
 ## Run Some Queries {#run-queries}
 
