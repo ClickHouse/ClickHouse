@@ -126,7 +126,7 @@ TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const 
 void TemporaryFileStream::write(const Block & block)
 {
     if (!out_writer)
-        throw Exception("Writing has beed finished", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
 
     out_writer->write(block);
     updateAlloc();
