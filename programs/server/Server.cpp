@@ -1960,9 +1960,11 @@ void Server::createServers(
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
 
+/*
             TCPProtocolStackFactory *stack = new TCPProtocolStackFactory(*this);
             stack->append(new TLSHandlerFactory(*this));
             stack->append(new TCPHandlerFactory(*this, false, false));
+            
             return ProtocolServerAdapter(
                 listen_host,
                 port_name,
@@ -1972,6 +1974,18 @@ void Server::createServers(
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
+*/
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "secure native protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new TCPProtocolStackFactory(*this, new TLSHandlerFactory(*this), new TCPHandlerFactory(*this, false, false)),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+
 /*
             return ProtocolServerAdapter(
                 listen_host,

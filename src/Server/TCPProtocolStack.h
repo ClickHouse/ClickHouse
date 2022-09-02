@@ -70,8 +70,9 @@ private:
     };
 
 public:
-    explicit TCPProtocolStackFactory(IServer & server_)
-        : server(server_), log(&Poco::Logger::get("TCPProtocolStackFactory"))
+    template <typename... T>
+    explicit TCPProtocolStackFactory(IServer & server_, T... factory)
+        : server(server_), log(&Poco::Logger::get("TCPProtocolStackFactory")), stack({factory...})
     {
         server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
@@ -102,7 +103,6 @@ class TLSHandler : public TCPConnectionAccessor
 {
     using StreamSocket = Poco::Net::StreamSocket;
     using SecureStreamSocket = Poco::Net::SecureStreamSocket;
-    using TCPServerConnection = Poco::Net::TCPServerConnection;
 public:
     explicit TLSHandler(const StreamSocket & socket) : TCPConnectionAccessor(socket) {}
 
