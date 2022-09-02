@@ -15,7 +15,7 @@ struct MergeTreeDataPartTTLInfo
     time_t max = 0;
 
     /// This TTL was computed on completely expired part. It doesn't make sense
-    /// to select such parts for TTL again. But make sense to recalcuate TTL
+    /// to select such parts for TTL again. But make sense to recalculate TTL
     /// again for merge with multiple parts.
     bool finished = false;
 

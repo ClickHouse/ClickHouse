@@ -751,7 +751,7 @@ void registerStorageKafka(StorageFactory & factory)
         /** Arguments of engine is following:
           * - Kafka broker list
           * - List of topics
-          * - Group ID (may be a constaint expression with a string result)
+          * - Group ID (may be a constraint expression with a string result)
           * - Message format (string)
           * - Row delimiter
           * - Schema (optional, if the format supports it)

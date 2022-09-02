@@ -122,7 +122,7 @@ private:
 
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
-    /// lsn - log sequnce nuumber, like wal offset (64 bit).
+    /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
