@@ -4239,6 +4239,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasGroupBy())
         visitor.visit(query_node_typed.getGroupByNode());
 
+    if (query_node_typed.hasHaving())
+        visitor.visit(query_node_typed.getHaving());
+
     if (query_node_typed.hasOrderBy())
         visitor.visit(query_node_typed.getOrderByNode());
 
@@ -4311,6 +4314,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasGroupBy())
         resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (query_node_typed.hasHaving())
+        resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasOrderBy())
         resolveSortColumnsNodeList(query_node_typed.getOrderByNode(), scope);
@@ -4430,8 +4436,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
 
     QueryTreeNodes aggregate_function_nodes;
+
+    if (query_node_typed.hasHaving())
+        collectAggregateFunctionNodes(query_node_typed.getHaving(), aggregate_function_nodes);
+
+    if (query_node_typed.hasOrderBy())
+        collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
+
     collectAggregateFunctionNodes(query_node_typed.getProjectionNode(), aggregate_function_nodes);
-    collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
 
     for (auto & aggregate_function_node : aggregate_function_nodes)
     {

@@ -63,7 +63,34 @@ String QueryNode::getName() const
     }
 
     if (hasGroupBy())
+    {
+        buffer << " GROUP BY ";
         buffer << getGroupBy().getName();
+    }
+
+    if (hasHaving())
+    {
+        buffer << " HAVING ";
+        buffer << getHaving()->getName();
+    }
+
+    if (hasOrderBy())
+    {
+        buffer << " ORDER BY ";
+        buffer << getOrderByNode()->getName();
+    }
+
+    if (hasLimit())
+    {
+        buffer << " LIMIT ";
+        buffer << getLimit()->getName();
+    }
+
+    if (hasOffset())
+    {
+        buffer << " OFFSET ";
+        buffer << getOffset()->getName();
+    }
 
     return buffer.str();
 }
@@ -136,6 +163,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "GROUP BY\n";
         getGroupBy().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasHaving())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "HAVING\n";
+        getHaving()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (hasOrderBy())
@@ -219,6 +252,9 @@ ASTPtr QueryNode::toASTImpl() const
 
     if (hasGroupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST());
+
+    if (hasHaving())
+        select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST());
 
     if (hasOrderBy())
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST());
