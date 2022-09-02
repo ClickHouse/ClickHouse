@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/mutations
+---
 # system.mutations {#system_tables-mutations}
 
 Таблица содержит информацию о ходе выполнения [мутаций](../../sql-reference/statements/alter/index.md#mutations) таблиц семейства MergeTree. Каждой команде мутации соответствует одна строка таблицы.

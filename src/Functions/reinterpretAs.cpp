@@ -301,7 +301,7 @@ private:
         ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * rows);
 
-        memcpy(data_to.data(), src.getRawData().data, data_to.size());
+        memcpy(data_to.data(), src.getRawData().data(), data_to.size());
     }
 
     static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)

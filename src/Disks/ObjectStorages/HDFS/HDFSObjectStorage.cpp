@@ -35,7 +35,7 @@ void HDFSObjectStorage::startup()
 
 std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    return getRandomASCIIString(32);
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const

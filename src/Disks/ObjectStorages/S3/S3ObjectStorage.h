@@ -49,14 +49,22 @@ public:
         String version_id_,
         const S3Capabilities & s3_capabilities_,
         String bucket_,
-        FileCachePtr cache_)
+        String connection_string)
         : bucket(bucket_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
-        , cache(cache_)
     {
+        data_source_description.type = DataSourceType::S3;
+        data_source_description.description = connection_string;
+        data_source_description.is_cached = false;
+        data_source_description.is_encrypted = false;
+    }
+
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return data_source_description;
     }
 
     std::string getName() const override { return "S3ObjectStorage"; }
@@ -136,15 +144,9 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool supportsCache() const override { return true; }
-
-    void removeCacheIfExists(const std::string & path_key) override;
-
-    String getCacheBasePath() const override;
+    bool supportParallelWrite() const override { return true; }
 
 private:
-    ReadSettings patchSettings(const ReadSettings & read_settings) const;
-
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
     void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);
@@ -178,7 +180,7 @@ private:
 
     const String version_id;
 
-    FileCachePtr cache;
+    DataSourceDescription data_source_description;
 };
 
 }
