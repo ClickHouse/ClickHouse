@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/special/set
+---
 # 集合 {#set}
 
 始终存在于 RAM 中的数据集。它适用于IN运算符的右侧（请参见 «IN运算符» 部分）。

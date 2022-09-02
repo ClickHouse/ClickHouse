@@ -1,9 +1,10 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Common/checkStackSize.h>
-#include <Common/getRandomASCIIString.h>
 #include <ranges>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
+
 
 namespace DB
 {
@@ -642,9 +643,11 @@ void DiskObjectStorageTransaction::commit()
         {
             operations_to_execute[i]->execute(metadata_transaction);
         }
-        catch (Exception & ex)
+        catch (...)
         {
-            ex.addMessage(fmt::format("While executing operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
+            tryLogCurrentException(
+                &Poco::Logger::get("DiskObjectStorageTransaction"),
+                fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
             {
@@ -652,9 +655,12 @@ void DiskObjectStorageTransaction::commit()
                 {
                     operations_to_execute[j]->undo();
                 }
-                catch (Exception & rollback_ex)
+                catch (...)
                 {
-                    rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
+                    tryLogCurrentException(
+                        &Poco::Logger::get("DiskObjectStorageTransaction"),
+                        fmt::format("An error occurred while undoing transaction's operation #{}", i));
+
                     throw;
                 }
             }

@@ -1,4 +1,8 @@
+---
+slug: /zh/faq/terms_translation_zh
+---
 # 术语翻译约定
+
 本文档用来维护从英文翻译成中文的术语集。
 
 

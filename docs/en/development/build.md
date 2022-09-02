@@ -1,10 +1,11 @@
 ---
+slug: /en/development/build
 sidebar_position: 64
 sidebar_label: Build on Linux
+title: How to Build ClickHouse on Linux
 description: How to build ClickHouse on Linux
 ---
 
-# How to Build ClickHouse on Linux
 
 Supported platforms:
 

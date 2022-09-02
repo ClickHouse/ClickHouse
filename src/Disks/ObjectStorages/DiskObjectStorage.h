@@ -2,7 +2,6 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/FileCache_fwd.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -34,14 +33,13 @@ public:
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
-        DiskType disk_type_,
         bool send_metadata_,
         uint64_t thread_pool_size_);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    DiskType getType() const override { return disk_type; }
+    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
 
     bool supportZeroCopyReplication() const override { return true; }
 
@@ -158,6 +156,8 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
@@ -210,7 +210,6 @@ private:
     const String object_storage_root_path;
     Poco::Logger * log;
 
-    const DiskType disk_type;
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 
