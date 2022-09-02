@@ -913,6 +913,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
     if (function_name == "alias")
     {
         result_name = args[0]->result_name;
+        actions_dag->addOrReplaceInIndex(*args[0]);
         result_node = &actions_dag->addAlias(actions_dag->findInIndex(result_name), result_name);
     }
     else
