@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/other-functions
 sidebar_position: 66
 sidebar_label: "Прочие функции"
 ---
@@ -2020,9 +2021,10 @@ countDigits(x)
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-     :::note "Примечание"
+:::note "Примечание"
     Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
-    :::
+:::
+ 
 **Пример**
 
 Запрос:

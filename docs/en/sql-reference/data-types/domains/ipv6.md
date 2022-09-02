@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/domains/ipv6
 sidebar_position: 60
 sidebar_label: IPv6
 ---

@@ -130,7 +130,7 @@ private:
     std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
     String lock_file_name;
-    size_t num_files_written = 0;
+    std::atomic<size_t> num_files_written = 0;
     bool writing_finalized = false;
     const Poco::Logger * log;
 };

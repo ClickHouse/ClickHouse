@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/embedded-rocksdb
 sidebar_position: 9
 sidebar_label: EmbeddedRocksDB
 ---
