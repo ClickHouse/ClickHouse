@@ -473,8 +473,7 @@ void WriteBufferFromS3::waitForAllBackGroundTasksUnlocked(std::unique_lock<std::
 {
     if (schedule)
     {
-        bg_tasks_condvar.wait(bg_tasks_lock, [this]() {
-            return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
+        bg_tasks_condvar.wait(bg_tasks_lock, [this]() {return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
 
         /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
         auto & tasks = TSA_SUPPRESS_WARNING_FOR_WRITE(upload_object_tasks);
