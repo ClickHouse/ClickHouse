@@ -38,13 +38,7 @@ def test_read_only(start_cluster):
     INSERT INTO test (key, value) VALUES (0, 'a'), (1, 'b'), (2, 'c');
     """
     )
-    # fail if create multiple tables on the same directory
-    with pytest.raises(QueryRuntimeException):
-        node.query(
-            """
-        CREATE TABLE test_fail (key UInt64, value String) Engine=EmbeddedRocksDB(0, '/var/lib/clickhouse/store/test_rocksdb_read_only', 1) PRIMARY KEY(key);
-        """
-        )
+    # fail if create multiple non-read-only tables on the same directory
     with pytest.raises(QueryRuntimeException):
         node.query(
             """
@@ -57,12 +51,19 @@ def test_read_only(start_cluster):
         CREATE TABLE test_fail (key UInt64, value String) Engine=EmbeddedRocksDB(10, '/var/lib/clickhouse/store/test_rocksdb_read_only') PRIMARY KEY(key);
         """
         )
-    with pytest.raises(QueryRuntimeException):
-        node.query(
-            """
-        CREATE TABLE test_fail (key UInt64, value String) Engine=EmbeddedRocksDB(10, '/var/lib/clickhouse/store/test_rocksdb_read_only', 1) PRIMARY KEY(key);
+    # success if create multiple read-only tables on the same directory
+    node.query(
         """
-        )
+    CREATE TABLE test_1 (key UInt64, value String) Engine=EmbeddedRocksDB(0, '/var/lib/clickhouse/store/test_rocksdb_read_only', 1) PRIMARY KEY(key);
+    DROP TABLE test_1;
+    """
+    )
+    node.query(
+        """
+    CREATE TABLE test_2 (key UInt64, value String) Engine=EmbeddedRocksDB(10, '/var/lib/clickhouse/store/test_rocksdb_read_only', 1) PRIMARY KEY(key);
+    DROP TABLE test_2;
+    """
+    )
     # success if create table on existing directory with no other tables on it
     node.query(
         """
