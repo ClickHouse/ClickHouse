@@ -22,6 +22,7 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -31,6 +32,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortColumnNode.h>
+#include <Analyzer/InterpolateColumnNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -81,6 +83,8 @@ private:
     QueryTreeNodePtr buildSelectExpression(const ASTPtr & select_query, bool is_subquery, const std::string & cte_name) const;
 
     QueryTreeNodePtr buildSortColumnList(const ASTPtr & order_by_expression_list) const;
+
+    QueryTreeNodePtr buildInterpolateColumnList(const ASTPtr & interpolate_expression_list) const;
 
     QueryTreeNodePtr buildExpressionList(const ASTPtr & expression_list) const;
 
@@ -248,6 +252,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_order_by_list)
         current_query_tree->getOrderByNode() = buildSortColumnList(select_order_by_list);
 
+    auto interpolate_list = select_query_typed.interpolate();
+    if (interpolate_list)
+        current_query_tree->getInterpolate() = buildInterpolateColumnList(interpolate_list);
+
     auto select_limit = select_query_typed.limitLength();
     if (select_limit)
         current_query_tree->getLimit() = buildExpression(select_limit);
@@ -291,6 +299,26 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortColumnList(const ASTPtr & order_by_e
             sort_column_node->getFillStep() = buildExpression(order_by_element.fill_step);
 
         list_node->getNodes().push_back(std::move(sort_column_node));
+    }
+
+    return list_node;
+}
+
+QueryTreeNodePtr QueryTreeBuilder::buildInterpolateColumnList(const ASTPtr & interpolate_expression_list) const
+{
+    auto list_node = std::make_shared<ListNode>();
+
+    auto & expression_list_typed = interpolate_expression_list->as<ASTExpressionList &>();
+    list_node->getNodes().reserve(expression_list_typed.children.size());
+
+    for (auto & expression : expression_list_typed.children)
+    {
+        const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
+        auto expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
+        auto interpolate_expression = buildExpression(interpolate_element.expr);
+        auto interpolate_column_node = std::make_shared<InterpolateColumnNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
+
+        list_node->getNodes().push_back(std::move(interpolate_column_node));
     }
 
     return list_node;

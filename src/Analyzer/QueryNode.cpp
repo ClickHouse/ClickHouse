@@ -80,6 +80,12 @@ String QueryNode::getName() const
         buffer << getOrderByNode()->getName();
     }
 
+    if (hasInterpolate())
+    {
+        buffer << " INTERPOLATE";
+        buffer << getInterpolate()->getName();
+    }
+
     if (hasLimit())
     {
         buffer << " LIMIT ";
@@ -181,6 +187,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getOrderBy().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasInterpolate())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "INTERPOLATE\n";
+        getInterpolate()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasLimit())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT\n";
@@ -275,6 +287,9 @@ ASTPtr QueryNode::toASTImpl() const
 
     if (hasOrderBy())
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST());
+
+    if (hasInterpolate())
+        select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, getInterpolate()->toAST());
 
     if (hasLimit())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST());
