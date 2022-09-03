@@ -1,4 +1,6 @@
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -39,10 +41,14 @@ std::pair<const char *, MatchResult> feedAttributes(const char * begin, const ch
     return {end, MatchResult::NOT_MATCH};
 }
 
-template <bool only_first_match>
-size_t extract(const char * __restrict src, size_t size, char * __restrict dst, SelectorMatchingVM & vm)
+template <bool only_first_match, typename F>
+size_t extract(
+    const char * __restrict src,
+    size_t size,
+    char * __restrict dst,
+    SelectorMatchingVM & vm,
+    F && copy_match)
 {
-    vm.reset();
     TagScanner tag_scanner;
 
     const char * end = src + size;
@@ -61,9 +67,8 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst, 
         {
             if (cur_match_result == MatchResult::MATCH && match_start != nullptr)
             {
-                size_t bytes_to_copy = end - match_start;
-                memcpy(dst, match_start, bytes_to_copy);
-                dst += bytes_to_copy;
+                dst = copy_match(dst, match_start, end - match_start);
+                return dst - dst_begin;
             }
             break;
         }
@@ -90,12 +95,7 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst, 
                 {
                     if (prev_match_result == MatchResult::MATCH && match_start != nullptr)
                     {
-                        if (dst != dst_begin)
-                            *dst++ = '\n';
-
-                        size_t bytes_to_copy = next - match_start + 1;
-                        memcpy(dst, match_start, bytes_to_copy);
-                        dst += bytes_to_copy;
+                        dst = copy_match(dst, match_start, next - match_start + 1);
                         if constexpr (only_first_match)
                             return dst - dst_begin;
                     }
@@ -125,17 +125,105 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        FunctionArgumentDescriptors args{
+            {"document", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
+            {"selector", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
-        if (!isStringOrFixedString(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if constexpr (only_first_match)
+            return std::make_shared<DataTypeString>();
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    }
 
-        return arguments[0];
+    ColumnPtr executeOne(const ColumnString * src_column, size_t rows, SelectorMatchingVM & vm) const
+    {
+        const ColumnString::Chars & src_chars = src_column->getChars();
+        const ColumnString::Offsets & src_offsets = src_column->getOffsets();
+
+        auto res = ColumnString::create();
+
+        ColumnString::Chars & res_chars = res->getChars();
+        ColumnString::Offsets & res_offsets = res->getOffsets();
+
+        res_chars.resize(src_chars.size());
+        res_offsets.resize(src_offsets.size());
+
+        ColumnString::Offset src_offset = 0;
+        ColumnString::Offset res_offset = 0;
+
+        for (size_t i = 0; i < rows; ++i)
+        {
+            vm.reset();
+            auto next_src_offset = src_offsets[i];
+
+            res_offset += extract<only_first_match>(
+                reinterpret_cast<const char *>(&src_chars[src_offset]),
+                next_src_offset - src_offset - 1,
+                reinterpret_cast<char *>(&res_chars[res_offset]),
+                vm,
+                [](char * dst, const char * src, size_t n){
+                    memcpy(dst, src, n);
+                    return dst + n;
+                });
+
+            res_chars[res_offset] = 0;
+            ++res_offset;
+            res_offsets[i] = res_offset;
+
+            src_offset = next_src_offset;
+        }
+
+        res_chars.resize(res_offset);
+        return res;
+    }
+
+    ColumnPtr executeAll(const ColumnString * src_column, size_t rows, SelectorMatchingVM & vm) const
+    {
+        const ColumnString::Chars & src_chars = src_column->getChars();
+        const ColumnString::Offsets & src_offsets = src_column->getOffsets();
+
+        auto res = ColumnArray::create(ColumnString::create());
+        ColumnString & res_strings = typeid_cast<ColumnString &>(res->getData());
+
+        ColumnArray::Offsets & res_offsets = res->getOffsets();
+        ColumnString::Chars & res_strings_chars = res_strings.getChars();
+        ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
+
+        ColumnString::Offset src_offset = 0;
+        ColumnString::Offset res_offset = 0;
+
+        res_strings_chars.resize(src_chars.size());
+        res_offsets.resize(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            vm.reset();
+            auto next_src_offset = src_offsets[i];
+
+            res_offset += extract<only_first_match>(
+                reinterpret_cast<const char *>(&src_chars[src_offset]),
+                next_src_offset - src_offset - 1,
+                reinterpret_cast<char *>(&res_strings_chars[res_offset]),
+                vm,
+                [&res_strings_offsets, &res_strings_chars, offset = 0ul](char * dst, const char * src, size_t n) mutable
+                {
+                    memcpy(dst, src, n);
+                    offset += n;
+                    res_strings_chars[offset] = 0;
+                    ++offset;
+                    res_strings_offsets.push_back(offset);
+                    return dst + n + 1;
+                });
+
+            ++res_offset;
+            res_offsets[i] = res_strings_offsets.size();
+
+            src_offset = next_src_offset;
+        }
+
+        return res;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
@@ -151,39 +239,7 @@ public:
         String selector = selector_column->getValue<String>();
         SelectorMatchingVM vm = SelectorMatchingVM::parseSelector(selector.data(), selector.data() + selector.size());
 
-        const ColumnString::Chars & src_chars = src->getChars();
-        const ColumnString::Offsets & src_offsets = src->getOffsets();
-
-        auto res = ColumnString::create();
-
-        ColumnString::Chars & res_chars = res->getChars();
-        ColumnString::Offsets & res_offsets = res->getOffsets();
-
-        res_chars.resize(src_chars.size());
-        res_offsets.resize(src_offsets.size());
-
-        ColumnString::Offset src_offset = 0;
-        ColumnString::Offset res_offset = 0;
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            auto next_src_offset = src_offsets[i];
-
-            res_offset += extract<only_first_match>(
-                reinterpret_cast<const char *>(&src_chars[src_offset]),
-                next_src_offset - src_offset - 1,
-                reinterpret_cast<char *>(&res_chars[res_offset]),
-                vm);
-
-            res_chars[res_offset] = 0;
-            ++res_offset;
-            res_offsets[i] = res_offset;
-
-            src_offset = next_src_offset;
-        }
-
-        res_chars.resize(res_offset);
-        return res;
+        return only_first_match ? executeOne(src, rows, vm) : executeAll(src, rows, vm);
     }
 };
 
