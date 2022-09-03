@@ -29,6 +29,7 @@ QueryNode::QueryNode()
     children[projection_child_index] = std::make_shared<ListNode>();
     children[group_by_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
+    children[limit_by_child_index] = std::make_shared<ListNode>();
 }
 
 String QueryNode::getName() const
@@ -82,8 +83,26 @@ String QueryNode::getName() const
 
     if (hasInterpolate())
     {
-        buffer << " INTERPOLATE";
+        buffer << " INTERPOLATE ";
         buffer << getInterpolate()->getName();
+    }
+
+    if (hasLimitByLimit())
+    {
+        buffer << "LIMIT ";
+        buffer << getLimitByLimit()->getName();
+    }
+
+    if (hasLimitByOffset())
+    {
+        buffer << "OFFSET ";
+        buffer << getLimitByOffset()->getName();
+    }
+
+    if (hasLimitBy())
+    {
+        buffer << " BY ";
+        buffer << getLimitBy().getName();
     }
 
     if (hasLimit())
@@ -193,6 +212,24 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getInterpolate()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasLimitByLimit())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT BY LIMIT\n";
+        getLimitByLimit()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasLimitByOffset())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT BY OFFSET\n";
+        getLimitByOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasLimitBy())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT BY\n";
+        getLimitBy().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasLimit())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT\n";
@@ -290,6 +327,15 @@ ASTPtr QueryNode::toASTImpl() const
 
     if (hasInterpolate())
         select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, getInterpolate()->toAST());
+
+    if (hasLimitByLimit())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, getLimitByLimit()->toAST());
+
+    if (hasLimitByOffset())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, getLimitByOffset()->toAST());
+
+    if (hasLimitBy())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, getLimitBy().toAST());
 
     if (hasLimit())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST());

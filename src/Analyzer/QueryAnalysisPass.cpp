@@ -838,6 +838,8 @@ private:
 
     void evaluateScalarSubquery(QueryTreeNodePtr & query_tree_node, size_t subquery_depth);
 
+    static void validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
+
     /// Resolve identifier functions
 
     QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier);
@@ -1065,6 +1067,23 @@ void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node, size_t subqu
         query_node->performConstantFolding(std::move(constant_value));
     else if (union_node)
         union_node->performConstantFolding(std::move(constant_value));
+}
+
+void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
+{
+    const auto limit_offset_constant_value = expression_node->getConstantValueOrNull();
+    if (!limit_offset_constant_value || !isNativeNumber(removeNullable(limit_offset_constant_value->getType())))
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+            "{} expression must be constant with numeric type. Actual {}. In scope {}",
+            expression_description,
+            expression_node->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+
+    Field converted = convertFieldToType(limit_offset_constant_value->getValue(), DataTypeUInt64());
+    if (converted.isNull())
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+            "{} numeric constant expression is not representable as UInt64",
+            expression_description);
 }
 
 /// Resolve identifier functions implementation
@@ -4347,6 +4366,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasInterpolate())
         visitor.visit(query_node_typed.getInterpolate());
 
+    if (query_node_typed.hasLimitByLimit())
+        visitor.visit(query_node_typed.getLimitByLimit());
+
+    if (query_node_typed.hasLimitByOffset())
+        visitor.visit(query_node_typed.getLimitByOffset());
+
+    if (query_node_typed.hasLimitBy())
+        visitor.visit(query_node_typed.getLimitByNode());
+
+    if (query_node_typed.hasLimit())
+        visitor.visit(query_node_typed.getLimit());
+
+    if (query_node_typed.hasOffset())
+        visitor.visit(query_node_typed.getOffset());
+
     /// Register CTE subqueries and remove them from WITH section
 
     auto & with_nodes = query_node_typed.getWith().getNodes();
@@ -4436,38 +4470,31 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasInterpolate())
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
 
+    if (query_node_typed.hasLimitByLimit())
+    {
+        resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        validateLimitOffsetExpression(query_node_typed.getLimitByLimit(), "LIMIT BY LIMIT", scope);
+    }
+
+    if (query_node_typed.hasLimitByOffset())
+    {
+        resolveExpressionNode(query_node_typed.getLimitByOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        validateLimitOffsetExpression(query_node_typed.getLimitByOffset(), "LIMIT BY OFFSET", scope);
+    }
+
+    if (query_node_typed.hasLimitBy())
+        resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
     if (query_node_typed.hasLimit())
     {
         resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        const auto limit_constant_value = query_node_typed.getLimit()->getConstantValueOrNull();
-        if (!limit_constant_value || !isNativeNumber(removeNullable(limit_constant_value->getType())))
-            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-                "Limit expression must be constant with numeric type. Actual {}. In scope {}",
-                query_node_typed.getLimit()->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        Field converted = convertFieldToType(limit_constant_value->getValue(), DataTypeUInt64());
-        if (converted.isNull())
-            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-                "Limit numeric constant expression is not representable as UInt64");
+        validateLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
     }
 
-    if (query_node_typed.getOffset())
+    if (query_node_typed.hasOffset())
     {
         resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        const auto offset_constant_value = query_node_typed.getOffset()->getConstantValueOrNull();
-        if (!offset_constant_value || !isNativeNumber(removeNullable(offset_constant_value->getType())))
-            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-                "Offset expression must be constant with numeric type. Actual {}. In scope {}",
-                query_node_typed.getLimit()->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        Field converted = convertFieldToType(offset_constant_value->getValue(), DataTypeUInt64());
-        if (converted.isNull())
-            throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-                "Offset numeric constant expression is not representable as UInt64");
+        validateLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions

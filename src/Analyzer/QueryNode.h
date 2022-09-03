@@ -275,6 +275,61 @@ public:
         return children[interpolate_child_index];
     }
 
+    bool hasLimitByLimit() const
+    {
+        return children[limit_by_limit_child_index] != nullptr;
+    }
+
+    const QueryTreeNodePtr & getLimitByLimit() const
+    {
+        return children[limit_by_limit_child_index];
+    }
+
+    QueryTreeNodePtr & getLimitByLimit()
+    {
+        return children[limit_by_limit_child_index];
+    }
+
+    bool hasLimitByOffset() const
+    {
+        return children[limit_by_offset_child_index] != nullptr;
+    }
+
+    const QueryTreeNodePtr & getLimitByOffset() const
+    {
+        return children[limit_by_offset_child_index];
+    }
+
+    QueryTreeNodePtr & getLimitByOffset()
+    {
+        return children[limit_by_offset_child_index];
+    }
+
+    bool hasLimitBy() const
+    {
+        return !getLimitBy().getNodes().empty();
+    }
+
+    const ListNode & getLimitBy() const
+    {
+        return children[limit_by_child_index]->as<const ListNode &>();
+    }
+
+    ListNode & getLimitBy()
+    {
+        return children[limit_by_child_index]->as<ListNode &>();
+    }
+
+    const QueryTreeNodePtr & getLimitByNode() const
+    {
+        return children[limit_by_child_index];
+    }
+
+    QueryTreeNodePtr & getLimitByNode()
+    {
+        return children[limit_by_child_index];
+    }
+
     bool hasLimit() const
     {
         return children[limit_child_index] != nullptr;
@@ -375,8 +430,11 @@ private:
     static constexpr size_t having_child_index = 6;
     static constexpr size_t order_by_child_index = 7;
     static constexpr size_t interpolate_child_index = 8;
-    static constexpr size_t limit_child_index = 9;
-    static constexpr size_t offset_child_index = 10;
+    static constexpr size_t limit_by_limit_child_index = 9;
+    static constexpr size_t limit_by_offset_child_index = 10;
+    static constexpr size_t limit_by_child_index = 11;
+    static constexpr size_t limit_child_index = 12;
+    static constexpr size_t offset_child_index = 13;
     static constexpr size_t children_size = offset_child_index + 1;
 };
 
