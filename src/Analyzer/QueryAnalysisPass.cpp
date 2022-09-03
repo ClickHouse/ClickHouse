@@ -67,6 +67,7 @@
 #include <Interpreters/Set.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/grouping.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -96,6 +97,9 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_AN_AGGREGATE;
+    extern const int ILLEGAL_AGGREGATION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -2813,7 +2817,18 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     }
     else if (function_name == "grouping")
     {
-        /// It is responsibility of planner to handle grouping function
+        /// It is responsibility of planner to perform additional handling of grouping function
+        if (function_arguments_size == 0)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "Function GROUPING expects at least one argument");
+        else if (function_arguments_size > 64)
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                "Function GROUPING can have up to 64 arguments, but {} provided",
+                function_arguments_size);
+
+        auto grouping_function = std::make_shared<FunctionGrouping>();
+        auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
+        function_node.resolveAsFunction(std::move(grouping_function_adaptor), std::make_shared<DataTypeUInt64>());
         return;
     }
 
@@ -3440,7 +3455,6 @@ String QueryAnalyzer::calculateProjectionNodeDisplayName(QueryTreeNodePtr & node
         if (resolved_identifier_result.resolved_identifier && resolved_identifier_result.isResolvedFromJoinTree())
         {
             projection_name_from_scope = try_to_get_projection_name_from_scope(node);
-            std::cout << "Projection name from scope " << projection_name_from_scope << std::endl;
 
             if (!projection_name_from_scope.empty())
                 return projection_name_from_scope;
@@ -4136,10 +4150,35 @@ public:
     static void visit(const QueryTreeNodePtr & node, Data & data)
     {
         auto query_tree_node_type = node->getNodeType();
-        if (query_tree_node_type == QueryTreeNodeType::FUNCTION ||
-            query_tree_node_type == QueryTreeNodeType::CONSTANT ||
+        if (query_tree_node_type == QueryTreeNodeType::CONSTANT ||
             query_tree_node_type == QueryTreeNodeType::SORT_COLUMN)
             return;
+
+        auto * function_node = node->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "grouping")
+        {
+            auto & grouping_function_arguments_nodes = function_node->getArguments().getNodes();
+            for (auto & grouping_function_arguments_node : grouping_function_arguments_nodes)
+            {
+                bool found_argument_in_group_by_keys = false;
+
+                for (const auto & group_by_key_node : data.group_by_keys_nodes)
+                {
+                    if (grouping_function_arguments_node->isEqual(*group_by_key_node))
+                    {
+                        found_argument_in_group_by_keys = true;
+                        break;
+                    }
+                }
+
+                if (!found_argument_in_group_by_keys)
+                    throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                        "GROUPING function argument {} is not in GROUP BY",
+                        grouping_function_arguments_node->formatASTForErrorMessage());
+            }
+
+            return;
+        }
 
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
@@ -4188,7 +4227,44 @@ public:
     }
 };
 
-using ValidateGroupByColumnsVisitor = typename ValidateGroupByColumnsMatcher::Visitor;
+using ValidateGroupByColumnsVisitor = ValidateGroupByColumnsMatcher::Visitor;
+
+class ValidateGroupingFunctionNodesMatcher
+{
+public:
+    using Visitor = ConstInDepthQueryTreeVisitor<ValidateGroupingFunctionNodesMatcher, true, false>;
+
+    struct Data
+    {
+        String assert_no_grouping_function_place_message;
+    };
+
+    static void visit(const QueryTreeNodePtr & node, Data & data)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "grouping")
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "GROUPING function {} is found {} in query",
+                function_node->formatASTForErrorMessage(),
+                data.assert_no_grouping_function_place_message);
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    {
+        return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
+    }
+};
+
+using ValidateGroupingFunctionNodesVisitor = ValidateGroupingFunctionNodesMatcher::Visitor;
+
+void assertNoGroupingFunction(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message)
+{
+    ValidateGroupingFunctionNodesVisitor::Data data;
+    data.assert_no_grouping_function_place_message = assert_no_grouping_function_place_message;
+
+    ValidateGroupingFunctionNodesVisitor visitor(data);
+    visitor.visit(node);
+}
 
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
@@ -4442,9 +4518,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * 5. Validate GROUP BY modifiers.
       */
     if (query_node_typed.hasWhere())
+    {
         assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
+        assertNoGroupingFunction(query_node_typed.getWhere(), "in WHERE");
+    }
+
     if (query_node_typed.hasPrewhere())
+    {
         assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
+        assertNoGroupingFunction(query_node_typed.getPrewhere(), "in PREWHERE");
+    }
 
     QueryTreeNodes aggregate_function_nodes;
 
@@ -4459,7 +4542,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     for (auto & aggregate_function_node : aggregate_function_nodes)
     {
         for (auto & aggregate_function_node_child : aggregate_function_node->getChildren())
+        {
             assertNoAggregateFunctionNodes(aggregate_function_node_child, "inside another aggregate function");
+            assertNoGroupingFunction(aggregate_function_node_child, "inside another aggregate function");
+        }
     }
 
     QueryTreeNodes group_by_keys_nodes;
@@ -4487,6 +4573,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
     }
 
+    if (query_node_typed.getGroupBy().getNodes().empty())
+    {
+        if (query_node_typed.hasHaving())
+            assertNoGroupingFunction(query_node_typed.getHaving(), "in HAVING without GROUP BY");
+
+        if (query_node_typed.hasOrderBy())
+            assertNoGroupingFunction(query_node_typed.getOrderByNode(), "in ORDER BY without GROUP BY");
+
+        assertNoGroupingFunction(query_node_typed.getProjectionNode(), "in SELECT without GROUP BY");
+    }
+
     bool has_aggregation = !query_node_typed.getGroupBy().getNodes().empty() || !aggregate_function_nodes.empty();
 
     if (has_aggregation)
@@ -4494,8 +4591,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data {group_by_keys_nodes};
         ValidateGroupByColumnsVisitor validate_group_by_visitor(validate_group_by_visitor_data);
 
+        if (query_node_typed.hasHaving())
+            validate_group_by_visitor.visit(query_node_typed.getHaving());
+
+        if (query_node_typed.hasOrderBy())
+            validate_group_by_visitor.visit(query_node_typed.getOrderByNode());
+
         validate_group_by_visitor.visit(query_node_typed.getProjectionNode());
-        validate_group_by_visitor.visit(query_node_typed.getOrderByNode());
     }
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();

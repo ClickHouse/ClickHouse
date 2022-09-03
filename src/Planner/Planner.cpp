@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -61,6 +60,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerJoins.h>
+#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/ActionsChain.h>
 #include <Planner/PlannerCollectSets.h>
@@ -88,7 +88,6 @@ namespace ErrorCodes
   * TODO: Support RBAC. Support RBAC for ALIAS columns
   * TODO: Support distributed query processing
   * TODO: Support PREWHERE
-  * TODO: Support grouping function
   * TODO: Support ORDER BY
   * TODO: Support WINDOW FUNCTIONS
   * TODO: Support DISTINCT
@@ -959,7 +958,7 @@ void Planner::buildQueryPlanIfNeeded()
     for (auto & aggregate_description : aggregates_descriptions)
         aggregates_columns.emplace_back(nullptr, aggregate_description.function->getReturnType(), aggregate_description.column_name);
 
-    Names aggregate_keys;
+    Names aggregation_keys;
     std::optional<size_t> aggregate_step_index;
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
@@ -987,7 +986,7 @@ void Planner::buildQueryPlanIfNeeded()
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
                     auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, grouping_set_key_node);
-                    aggregate_keys.reserve(expression_dag_nodes.size());
+                    aggregation_keys.reserve(expression_dag_nodes.size());
 
                     for (auto & expression_dag_node : expression_dag_nodes)
                     {
@@ -995,7 +994,7 @@ void Planner::buildQueryPlanIfNeeded()
                         if (group_by_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
                             continue;
 
-                        aggregate_keys.push_back(expression_dag_node->result_name);
+                        aggregation_keys.push_back(expression_dag_node->result_name);
                         group_by_actions_dag->getOutputs().push_back(expression_dag_node);
                         group_by_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
                     }
@@ -1014,7 +1013,7 @@ void Planner::buildQueryPlanIfNeeded()
                         grouping_sets_keys.push_back(key);
                 }
 
-                for (auto & key : aggregate_keys)
+                for (auto & key : aggregation_keys)
                 {
                     if (grouping_sets_used_keys.contains(key))
                         continue;
@@ -1028,14 +1027,14 @@ void Planner::buildQueryPlanIfNeeded()
         else
         {
             auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, query_node.getGroupByNode());
-            aggregate_keys.reserve(expression_dag_nodes.size());
+            aggregation_keys.reserve(expression_dag_nodes.size());
 
             for (auto & expression_dag_node : expression_dag_nodes)
             {
                 if (group_by_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
                     continue;
 
-                aggregate_keys.push_back(expression_dag_node->result_name);
+                aggregation_keys.push_back(expression_dag_node->result_name);
                 group_by_actions_dag->getOutputs().push_back(expression_dag_node);
                 group_by_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
             }
@@ -1070,6 +1069,7 @@ void Planner::buildQueryPlanIfNeeded()
         if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets())
             aggregates_columns.emplace_back(nullptr,  std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
+        resolveGroupingFunctions(query_tree, aggregation_keys, grouping_sets_parameters_list, *planner_context);
         auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions_dag), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
         actions_chain.addStep(std::move(aggregate_step));
         aggregate_step_index = actions_chain.getLastStepIndex();
@@ -1201,7 +1201,7 @@ void Planner::buildQueryPlanIfNeeded()
             settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
 
         Aggregator::Params aggregator_params = Aggregator::Params(
-            aggregate_keys,
+            aggregation_keys,
             aggregates_descriptions,
             aggregate_overflow_row,
             settings.max_rows_to_group_by,
@@ -1210,7 +1210,7 @@ void Planner::buildQueryPlanIfNeeded()
             settings.group_by_two_level_threshold_bytes,
             settings.max_bytes_before_external_group_by,
             settings.empty_result_for_aggregation_by_empty_set
-                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && aggregate_keys.empty()
+                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && aggregation_keys.empty()
                     && query_analyzer_const_aggregation_keys),
             planner_context->getQueryContext()->getTemporaryVolume(),
             settings.max_threads,

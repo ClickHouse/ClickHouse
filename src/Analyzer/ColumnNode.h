@@ -95,11 +95,10 @@ public:
       */
     QueryTreeNodePtr getColumnSource() const;
 
-    /// Get column source weak pointer
-    QueryTreeNodeWeakPtr getColumnSourceWeak() const
-    {
-        return column_source;
-    }
+    /** Get column source.
+      * If column source is not valid null is returned.
+      */
+    QueryTreeNodePtr getColumnSourceOrNull() const;
 
     QueryTreeNodeType getNodeType() const override
     {
