@@ -41,6 +41,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortColumnNode.h>
+#include <Analyzer/InterpolateColumnNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -884,6 +885,8 @@ private:
     void resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
     void resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope);
+
+    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope);
 
     String calculateProjectionNodeDisplayName(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 
@@ -3168,11 +3171,17 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
             /// Lambda must be resolved by caller
             break;
         }
-
         case QueryTreeNodeType::SORT_COLUMN:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Sort column {} is not allowed in expression. In scope {}",
+                node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+        case QueryTreeNodeType::INTERPOLATE_COLUMN:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Interpolate column {} is not allowed in expression. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
@@ -3338,6 +3347,20 @@ void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_n
                     sort_column_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
         }
+    }
+}
+
+/** Resolve interpolate columns nodes list.
+  */
+void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope)
+{
+    auto & sort_columns_node_list_typed = sort_columns_node_list->as<ListNode &>();
+    for (auto & node : sort_columns_node_list_typed.getNodes())
+    {
+        auto & interpolate_column_node = node->as<InterpolateColumnNode &>();
+
+        resolveExpressionNode(interpolate_column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        resolveExpressionNode(interpolate_column_node.getInterpolateExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
 }
 
@@ -4321,6 +4344,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasOrderBy())
         visitor.visit(query_node_typed.getOrderByNode());
 
+    if (query_node_typed.hasInterpolate())
+        visitor.visit(query_node_typed.getInterpolate());
+
     /// Register CTE subqueries and remove them from WITH section
 
     auto & with_nodes = query_node_typed.getWith().getNodes();
@@ -4406,6 +4432,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasOrderBy())
         resolveSortColumnsNodeList(query_node_typed.getOrderByNode(), scope);
+
+    if (query_node_typed.hasInterpolate())
+        resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
 
     if (query_node_typed.hasLimit())
     {

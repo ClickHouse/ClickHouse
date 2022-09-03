@@ -239,8 +239,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     {
         actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
 
-        if (column_node.getColumnSource()->getNodeType() == QueryTreeNodeType::LAMBDA
-            && actions_stack[i].getScopeNode().get() == column_node.getColumnSource().get())
+        auto column_source = column_node.getColumnSourceOrNull();
+        if (column_source &&
+            column_source->getNodeType() == QueryTreeNodeType::LAMBDA &&
+            actions_stack[i].getScopeNode().get() == column_source.get())
         {
             return {column_node_name, i};
         }
@@ -384,24 +386,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
-    if (function_node.getFunctionName() == "grouping")
-    {
-        size_t arguments_size = function_node.getArguments().getNodes().size();
-
-        if (arguments_size == 0)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Function GROUPING expects at least one argument");
-        else if (arguments_size > 64)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Function GROUPING can have up to 64 arguments, but {} provided",
-                arguments_size);
-
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function GROUPING is not supported");
-    }
-    else if (isNameOfInFunction(function_node.getFunctionName()))
-    {
+    if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
-    }
 
     const auto & function_arguments = function_node.getArguments().getNodes();
     size_t function_arguments_size = function_arguments.size();

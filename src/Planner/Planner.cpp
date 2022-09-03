@@ -45,6 +45,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortColumnNode.h>
+#include <Analyzer/InterpolateColumnNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -98,9 +99,10 @@ namespace ErrorCodes
   * TODO: Interpreter resources
   * TODO: Support max streams
   * TODO: Support GROUPINS SETS, const aggregation keys
-  * TODO: Support interpolate, LIMIT BY.
+  * TODO: Support LIMIT BY
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
+  * TODO: Support GROUP BY constant keys
   */
 
 namespace
@@ -1099,15 +1101,24 @@ void Planner::buildQueryPlanIfNeeded()
         auto & actions_dag_outputs = actions_dag->getOutputs();
         actions_dag_outputs.clear();
 
+        std::unordered_set<std::string_view> order_by_actions_dag_outputs_node_names;
+
         /** We add only sort column sort expression in before ORDER BY actions DAG.
           * WITH fill expressions must be constant nodes.
           */
-        auto & order_by_node_list = query_node.getOrderByNode()->as<ListNode &>();
+        auto & order_by_node_list = query_node.getOrderBy();
         for (auto & sort_column_node : order_by_node_list.getNodes())
         {
             auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
-            auto expression_dag_index_nodes = actions_visitor.visit(actions_dag, sort_column_node_typed.getExpression());
-            actions_dag_outputs.insert(actions_dag_outputs.end(), expression_dag_index_nodes.begin(), expression_dag_index_nodes.end());
+            auto expression_dag_nodes = actions_visitor.visit(actions_dag, sort_column_node_typed.getExpression());
+            for (auto & action_dag_node : expression_dag_nodes)
+            {
+                if (order_by_actions_dag_outputs_node_names.contains(action_dag_node->result_name))
+                    continue;
+
+                actions_dag_outputs.push_back(action_dag_node);
+                order_by_actions_dag_outputs_node_names.insert(action_dag_node->result_name);
+            }
         }
 
         auto actions_step_before_order_by = std::make_unique<ActionsChainStep>(std::move(actions_dag));
@@ -1376,16 +1387,69 @@ void Planner::buildQueryPlanIfNeeded()
         sorting_step->setStepDescription("Sorting for ORDER BY");
         query_plan.addStep(std::move(sorting_step));
 
+        NameSet column_names_with_fill;
         SortDescription fill_description;
         for (auto & description : sort_description)
         {
             if (description.with_fill)
+            {
                 fill_description.push_back(description);
+                column_names_with_fill.insert(description.column_name);
+            }
         }
 
         if (!fill_description.empty())
         {
-            InterpolateDescriptionPtr interpolate_description = nullptr;
+            InterpolateDescriptionPtr interpolate_description;
+
+            if (query_node.hasInterpolate())
+            {
+                auto interpolate_actions_dag = std::make_shared<ActionsDAG>();
+
+                auto & interpolate_column_list_node = query_node.getInterpolate()->as<ListNode &>();
+                auto & interpolate_column_list_nodes = interpolate_column_list_node.getNodes();
+                if (interpolate_column_list_nodes.empty())
+                {
+                    auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+                    for (auto & query_plan_column : query_plan_columns)
+                    {
+                        if (column_names_with_fill.contains(query_plan_column.name))
+                            continue;
+
+                        const auto * input_action_node = &interpolate_actions_dag->addInput(query_plan_column);
+                        interpolate_actions_dag->getOutputs().push_back(input_action_node);
+                    }
+                }
+                else
+                {
+                    for (auto & interpolate_column_node : interpolate_column_list_node.getNodes())
+                    {
+                        auto & interpolate_column_node_typed = interpolate_column_node->as<InterpolateColumnNode &>();
+                        auto expression_to_interpolate_expression_nodes = actions_visitor.visit(interpolate_actions_dag, interpolate_column_node_typed.getExpression());
+                        auto interpolate_expression_nodes = actions_visitor.visit(interpolate_actions_dag, interpolate_column_node_typed.getInterpolateExpression());
+
+                        if (expression_to_interpolate_expression_nodes.size() != 1)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
+
+                        if (interpolate_expression_nodes.size() != 1)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
+
+                        const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
+                        const auto & alias_name = expression_to_interpolate->result_name;
+
+                        const auto * interpolate_expression = interpolate_expression_nodes[0];
+                        const auto * alias_node = &interpolate_actions_dag->addAlias(*interpolate_expression, alias_name);
+
+                        interpolate_actions_dag->getOutputs().push_back(alias_node);
+                    }
+
+                    interpolate_actions_dag->removeUnusedActions();
+                }
+
+                Aliases empty_aliases;
+                interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
+            }
+
             auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_description);
             query_plan.addStep(std::move(filling_step));
         }
