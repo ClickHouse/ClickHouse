@@ -99,11 +99,9 @@ namespace ErrorCodes
   * TODO: UNION storage limits
   * TODO: Interpreter resources
   * TODO: Support max streams
-  * TODO: Support GROUPINS SETS, const aggregation keys
-  * TODO: Support LIMIT BY
+  * TODO: Support GROUP BY constant keys
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
-  * TODO: Support GROUP BY constant keys
   */
 
 namespace
