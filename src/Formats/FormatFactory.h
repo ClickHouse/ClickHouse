@@ -100,6 +100,13 @@ private:
     using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
 
+    /// Some formats can extract different schemas from the same source depending on
+    /// some settings. To process this case in schema cache we should add some additional
+    /// information to a cache key. This getter should return some string with information
+    /// about such settings. For example, for Protobuf format it's the path to the schema
+    /// and the name of the message.
+    using AdditionalInfoForSchemaCacheGetter = std::function<String(const FormatSettings & settings)>;
+
     struct Creators
     {
         InputCreator input_creator;
@@ -111,6 +118,7 @@ private:
         bool supports_subset_of_columns{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
+        AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -201,6 +209,9 @@ public:
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
+
+    void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
+    String getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     const FormatsDictionary & getAllFormats() const
     {

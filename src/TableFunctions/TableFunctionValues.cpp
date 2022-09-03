@@ -11,7 +11,7 @@
 
 #include <TableFunctions/TableFunctionValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -147,7 +147,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
 void registerTableFunctionValues(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionValues>(TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionValues>({}, TableFunctionFactory::CaseInsensitive);
 }
 
 }

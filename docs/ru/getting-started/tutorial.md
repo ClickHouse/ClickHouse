@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/tutorial
 sidebar_position: 12
 sidebar_label: Tutorial
 ---
