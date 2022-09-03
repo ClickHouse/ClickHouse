@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/distribution_queue
+---
 # system.distribution_queue {#system_tables-distribution_queue}
 
 包含关于队列中要发送到分片的本地文件的信息. 这些本地文件包含通过以异步模式将新数据插入到Distributed表中而创建的新部分.

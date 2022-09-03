@@ -9,6 +9,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -29,12 +30,17 @@ AzureObjectStorage::AzureObjectStorage(
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
+    , log(&Poco::Logger::get("AzureObjectStorage"))
 {
+    data_source_description.type = DataSourceType::AzureBlobStorage;
+    data_source_description.description = client.get()->GetUrl();
+    data_source_description.is_cached = false;
+    data_source_description.is_encrypted = false;
 }
 
 std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    return getRandomASCIIString(32);
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -123,6 +129,8 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     if (mode != WriteMode::Rewrite)
         throw Exception("Azure storage doesn't support append", ErrorCodes::UNSUPPORTED_METHOD);
 
+    LOG_TEST(log, "Writing file: {}", object.absolute_path);
+
     auto buffer = std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.absolute_path,
@@ -151,6 +159,7 @@ void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithS
 void AzureObjectStorage::removeObject(const StoredObject & object)
 {
     const auto & path = object.absolute_path;
+    LOG_TEST(log, "Removing single object: {}", path);
     auto client_ptr = client.get();
     auto delete_info = client_ptr->DeleteBlob(path);
     if (!delete_info.Value.Deleted)
@@ -162,6 +171,7 @@ void AzureObjectStorage::removeObjects(const StoredObjects & objects)
     auto client_ptr = client.get();
     for (const auto & object : objects)
     {
+        LOG_TEST(log, "Removing object: {} (total: {})", object.absolute_path, objects.size());
         auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
         if (!delete_info.Value.Deleted)
             throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", object.absolute_path);

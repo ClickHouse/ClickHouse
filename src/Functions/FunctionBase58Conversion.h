@@ -48,7 +48,7 @@ struct Base58Encode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t srclen = src_offsets[row] - src_offset_prev;
-            auto encoded_size = encodeBase58(src, dst_pos);
+            auto encoded_size = encodeBase58(src, srclen, dst_pos);
 
             src += srclen;
             dst_pos += encoded_size;
@@ -90,7 +90,7 @@ struct Base58Decode
         {
             size_t srclen = src_offsets[row] - src_offset_prev;
 
-            auto decoded_size = decodeBase58(src, dst_pos);
+            auto decoded_size = decodeBase58(src, srclen, dst_pos);
             if (!decoded_size)
                 throw Exception("Invalid Base58 value, cannot be decoded", ErrorCodes::BAD_ARGUMENTS);
 

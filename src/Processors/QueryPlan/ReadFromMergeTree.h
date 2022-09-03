@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -154,6 +155,15 @@ public:
     void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
 
 private:
+    int getSortDirection() const
+    {
+        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
+        if (order_info)
+            return order_info->direction;
+
+        return 1;
+    }
+
     const MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
