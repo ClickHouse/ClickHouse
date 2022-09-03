@@ -260,6 +260,21 @@ public:
         return children[order_by_child_index];
     }
 
+    bool hasInterpolate() const
+    {
+        return getInterpolate() != nullptr;
+    }
+
+    const QueryTreeNodePtr & getInterpolate() const
+    {
+        return children[interpolate_child_index];
+    }
+
+    QueryTreeNodePtr & getInterpolate()
+    {
+        return children[interpolate_child_index];
+    }
+
     bool hasLimit() const
     {
         return children[limit_child_index] != nullptr;
@@ -359,8 +374,9 @@ private:
     static constexpr size_t group_by_child_index = 5;
     static constexpr size_t having_child_index = 6;
     static constexpr size_t order_by_child_index = 7;
-    static constexpr size_t limit_child_index = 8;
-    static constexpr size_t offset_child_index = 9;
+    static constexpr size_t interpolate_child_index = 8;
+    static constexpr size_t limit_child_index = 9;
+    static constexpr size_t offset_child_index = 10;
     static constexpr size_t children_size = offset_child_index + 1;
 };
 
