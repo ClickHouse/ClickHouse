@@ -301,7 +301,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortColumnList(const ASTPtr & order_by_e
 
         const auto & sort_expression_ast = order_by_element.children.at(0);
         auto sort_expression = buildExpression(sort_expression_ast);
-        auto sort_column_node = std::make_shared<SortColumnNode>(std::move(sort_expression), sort_direction, nulls_sort_direction, std::move(collator));
+        auto sort_column_node = std::make_shared<SortColumnNode>(std::move(sort_expression),
+            sort_direction,
+            nulls_sort_direction,
+            std::move(collator),
+            order_by_element.with_fill);
 
         if (order_by_element.fill_from)
             sort_column_node->getFillFrom() = buildExpression(order_by_element.fill_from);
