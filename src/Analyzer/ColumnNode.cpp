@@ -43,6 +43,15 @@ QueryTreeNodePtr ColumnNode::getColumnSource() const
     return lock;
 }
 
+QueryTreeNodePtr ColumnNode::getColumnSourceOrNull() const
+{
+    auto lock = column_source.lock();
+    if (!lock)
+        return nullptr;
+
+    return lock;
+}
+
 void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "COLUMN id: " << state.getNodeId(this);
