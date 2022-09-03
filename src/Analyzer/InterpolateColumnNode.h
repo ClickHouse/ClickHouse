@@ -7,7 +7,9 @@ namespace DB
 {
 
 /** Interpolate column node represents single column interpolation in INTERPOLATE section that part of ORDER BY in query tree.
-  * Example: SELECT * FROM test_table ORDER BY sort_column_1, sort_column_2;
+  * Example: SELECT * FROM test_table ORDER BY id WITH FILL INTERPOLATE value AS value + 1;
+  * value - expression to interpolate.
+  * value + 1 - interpolate expression.
   */
 class InterpolateColumnNode;
 using InterpolateColumnNodePtr = std::shared_ptr<InterpolateColumnNode>;

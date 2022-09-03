@@ -30,7 +30,8 @@ public:
     explicit SortColumnNode(QueryTreeNodePtr expression_,
         SortDirection sort_direction_ = SortDirection::ASCENDING,
         std::optional<SortDirection> nulls_sort_direction_ = {},
-        std::shared_ptr<Collator> collator_ = nullptr);
+        std::shared_ptr<Collator> collator_ = nullptr,
+        bool with_fill = false);
 
     /// Get sort expression
     const QueryTreeNodePtr & getExpression() const
@@ -45,9 +46,9 @@ public:
     }
 
     /// Has with fill
-    bool hasWithFill() const
+    bool withFill() const
     {
-        return hasFillFrom() || hasFillStep() || hasFillTo();
+        return with_fill;
     }
 
     /// Has fill from
@@ -147,6 +148,7 @@ private:
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;
+    bool with_fill = false;
 };
 
 }

@@ -24,10 +24,12 @@ const char * toString(SortDirection sort_direction)
 SortColumnNode::SortColumnNode(QueryTreeNodePtr expression_,
     SortDirection sort_direction_,
     std::optional<SortDirection> nulls_sort_direction_,
-    std::shared_ptr<Collator> collator_)
+    std::shared_ptr<Collator> collator_,
+    bool with_fill_)
     : sort_direction(sort_direction_)
     , nulls_sort_direction(nulls_sort_direction_)
     , collator(std::move(collator_))
+    , with_fill(with_fill_)
 {
     children.resize(children_size);
     children[sort_expression_child_index] = std::move(expression_);
@@ -50,7 +52,7 @@ String SortColumnNode::getName() const
             result += " NULLS LAST";
     }
 
-    if (hasWithFill())
+    if (with_fill)
         result += " WITH FILL";
 
     if (hasFillFrom())
@@ -75,6 +77,8 @@ void SortColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_sta
 
     if (collator)
         buffer << ", collator: " << collator->getLocale();
+
+    buffer << ", with_fill: " << with_fill;
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -102,7 +106,8 @@ bool SortColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const SortColumnNode &>(rhs);
     if (sort_direction != rhs_typed.sort_direction ||
-        nulls_sort_direction != rhs_typed.nulls_sort_direction)
+        nulls_sort_direction != rhs_typed.nulls_sort_direction ||
+        with_fill != rhs_typed.with_fill)
         return false;
 
     if (!collator && !rhs_typed.collator)
@@ -119,6 +124,7 @@ void SortColumnNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(sort_direction);
     hash_state.update(nulls_sort_direction);
+    hash_state.update(with_fill);
 
     if (collator)
     {
@@ -141,7 +147,7 @@ ASTPtr SortColumnNode::toASTImpl() const
     if (collator)
         result->collation = std::make_shared<ASTLiteral>(Field(collator->getLocale()));
 
-    result->with_fill = hasWithFill();
+    result->with_fill = with_fill;
     result->fill_from = hasFillFrom() ? getFillFrom()->toAST() : nullptr;
     result->fill_to = hasFillTo() ? getFillTo()->toAST() : nullptr;
     result->fill_step = hasFillStep() ? getFillStep()->toAST() : nullptr;
@@ -152,7 +158,7 @@ ASTPtr SortColumnNode::toASTImpl() const
 
 QueryTreeNodePtr SortColumnNode::cloneImpl() const
 {
-    return std::make_shared<SortColumnNode>(nullptr, sort_direction, nulls_sort_direction, collator);
+    return std::make_shared<SortColumnNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
 }
 
 }
