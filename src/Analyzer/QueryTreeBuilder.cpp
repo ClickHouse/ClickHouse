@@ -256,6 +256,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (interpolate_list)
         current_query_tree->getInterpolate() = buildInterpolateColumnList(interpolate_list);
 
+    auto select_limit_by_limit = select_query_typed.limitByLength();
+    if (select_limit_by_limit)
+        current_query_tree->getLimitByLimit() = buildExpression(select_limit_by_limit);
+
+    auto select_limit_by_offset = select_query_typed.limitOffset();
+    if (select_limit_by_offset)
+        current_query_tree->getLimitByOffset() = buildExpression(select_limit_by_offset);
+
+    auto select_limit_by = select_query_typed.limitBy();
+    if (select_limit_by)
+        current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by);
+
     auto select_limit = select_query_typed.limitLength();
     if (select_limit)
         current_query_tree->getLimit() = buildExpression(select_limit);

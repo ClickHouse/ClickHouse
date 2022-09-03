@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -1126,6 +1127,24 @@ void Planner::buildQueryPlanIfNeeded()
         before_order_by_step_index = actions_chain.getLastStepIndex();
     }
 
+    std::optional<size_t> before_limit_by_step_index;
+    Names limit_by_columns_names;
+
+    if (query_node.hasLimitBy())
+    {
+        chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+        const auto & limit_by_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+        auto limit_by_actions = convertExpressionNodeIntoDAG(query_node.getLimitByNode(), limit_by_input, planner_context);
+
+        limit_by_columns_names.reserve(limit_by_actions->getOutputs().size());
+        for (auto & output_node : limit_by_actions->getOutputs())
+            limit_by_columns_names.push_back(output_node->result_name);
+
+        auto actions_step_before_limit_by = std::make_unique<ActionsChainStep>(std::move(limit_by_actions));
+        actions_chain.addStep(std::move(actions_step_before_limit_by));
+        before_limit_by_step_index = actions_chain.getLastStepIndex();
+    }
+
     chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
     auto projection_actions = convertExpressionNodeIntoDAG(query_node.getProjectionNode(), projection_input, planner_context);
@@ -1353,13 +1372,14 @@ void Planner::buildQueryPlanIfNeeded()
 
     if (before_order_by_step_index)
     {
-        auto & aggregate_actions_chain_node = actions_chain.at(*before_order_by_step_index);
+        auto & before_order_by_actions_chain_node = actions_chain.at(*before_order_by_step_index);
         auto expression_step_before_order_by = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(),
-            aggregate_actions_chain_node->getActions());
+            before_order_by_actions_chain_node->getActions());
         expression_step_before_order_by->setStepDescription("Before ORDER BY");
         query_plan.addStep(std::move(expression_step_before_order_by));
     }
 
+    QueryPlanStepPtr filling_step;
     SortDescription sort_description;
 
     if (query_node.hasOrderBy())
@@ -1450,10 +1470,37 @@ void Planner::buildQueryPlanIfNeeded()
                 interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
             }
 
-            auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_description);
-            query_plan.addStep(std::move(filling_step));
+            filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_description);
         }
     }
+
+    if (before_limit_by_step_index)
+    {
+        auto & before_limit_by_actions_chain_node = actions_chain.at(*before_limit_by_step_index);
+        auto expression_step_before_limit_by = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(),
+            before_limit_by_actions_chain_node->getActions());
+        expression_step_before_limit_by->setStepDescription("Before LIMIT BY");
+        query_plan.addStep(std::move(expression_step_before_limit_by));
+    }
+
+    if (query_node.hasLimitByLimit() && query_node.hasLimitBy())
+    {
+        /// Constness of LIMIT BY limit is validated during query analysis stage
+        UInt64 limit_by_limit = query_node.getLimitByLimit()->getConstantValue().getValue().safeGet<UInt64>();
+        UInt64 limit_by_offset = 0;
+
+        if (query_node.hasLimitByOffset())
+        {
+            /// Constness of LIMIT BY offset is validated during query analysis stage
+            limit_by_offset = query_node.getLimitByOffset()->getConstantValue().getValue().safeGet<UInt64>();
+        }
+
+        auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentDataStream(), limit_by_limit, limit_by_offset, limit_by_columns_names);
+        query_plan.addStep(std::move(limit_by_step));
+    }
+
+    if (filling_step)
+        query_plan.addStep(std::move(filling_step));
 
     if (query_context->getSettingsRef().extremes)
     {
@@ -1464,7 +1511,7 @@ void Planner::buildQueryPlanIfNeeded()
     UInt64 limit_offset = 0;
     if (query_node.hasOffset())
     {
-        /// Validated during query analysis stage
+        /// Constness of offset is validated during query analysis stage
         limit_offset = query_node.getOffset()->getConstantValue().getValue().safeGet<UInt64>();
     }
 
@@ -1474,7 +1521,7 @@ void Planner::buildQueryPlanIfNeeded()
         bool always_read_till_end = settings.exact_rows_before_limit;
         bool limit_with_ties = query_node.isLimitWithTies();
 
-        /// Validated during query analysis stage
+        /// Constness of limit is validated during query analysis stage
         UInt64 limit_length = query_node.getLimit()->getConstantValue().getValue().safeGet<UInt64>();
 
         SortDescription limit_with_ties_sort_description;
