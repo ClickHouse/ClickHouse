@@ -440,8 +440,8 @@ mapApply(func, map)
   
 **Parameters**
   
--   `func`  - [Lamda function](../../sql-reference/functions.md#higher-order-functions---operator-and-lambdaparams-expr-function).
--   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
@@ -480,8 +480,8 @@ mapFilter(func, map)
   
 **Parameters**
 
--   `func`  - [Lamda function](../../sql-reference/functions.md#higher-order-functions---operator-and-lambdaparams-expr-function).
--   `map` — Map. [Map](../../sql-reference/data-types/map.md).  
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `map` — [Map](../../sql-reference/data-types/map.md).  
 
 **Returned value**
 
@@ -522,8 +522,8 @@ mapUpdate(map1, map2)
   
 **Parameters**
 
--   `map1` — Map. [Map](../../sql-reference/data-types/map.md).
--   `map2` — Map. [Map](../../sql-reference/data-types/map.md).
+-   `map1` [Map](../../sql-reference/data-types/map.md).
+-   `map2` [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
