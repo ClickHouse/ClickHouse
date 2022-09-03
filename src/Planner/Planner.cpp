@@ -99,7 +99,6 @@ namespace ErrorCodes
   * TODO: UNION storage limits
   * TODO: Interpreter resources
   * TODO: Support max streams
-  * TODO: Support GROUP BY constant keys
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
   */
@@ -973,6 +972,7 @@ void Planner::buildQueryPlanIfNeeded()
 
     PlannerActionsVisitor actions_visitor(planner_context);
     GroupingSetsParamsList grouping_sets_parameters_list;
+    bool group_by_with_constant_keys = false;
 
     if (query_node.hasGroupBy())
     {
@@ -986,6 +986,8 @@ void Planner::buildQueryPlanIfNeeded()
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
+                    group_by_with_constant_keys |= grouping_set_key_node->hasConstantValue();
+
                     auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, grouping_set_key_node);
                     aggregation_keys.reserve(expression_dag_nodes.size());
 
@@ -1027,6 +1029,9 @@ void Planner::buildQueryPlanIfNeeded()
         }
         else
         {
+            for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
+                group_by_with_constant_keys |= group_by_key_node->hasConstantValue();
+
             auto expression_dag_nodes = actions_visitor.visit(group_by_actions_dag, query_node.getGroupByNode());
             aggregation_keys.reserve(expression_dag_nodes.size());
 
@@ -1214,7 +1219,6 @@ void Planner::buildQueryPlanIfNeeded()
         }
 
         const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-        bool query_analyzer_const_aggregation_keys = false;
 
         const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
             select_query_info.query,
@@ -1239,7 +1243,7 @@ void Planner::buildQueryPlanIfNeeded()
             settings.max_bytes_before_external_group_by,
             settings.empty_result_for_aggregation_by_empty_set
                 || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && aggregation_keys.empty()
-                    && query_analyzer_const_aggregation_keys),
+                    && group_by_with_constant_keys),
             planner_context->getQueryContext()->getTemporaryVolume(),
             settings.max_threads,
             settings.min_free_disk_space_for_temporary_data,
