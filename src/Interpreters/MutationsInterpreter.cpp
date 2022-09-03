@@ -222,6 +222,8 @@ bool isStorageTouchedByMutations(
 
     context_copy->setSetting("max_streams_to_max_threads_ratio", 1);
     context_copy->setSetting("max_threads", 1);
+    context_copy->setSetting("query_cache_active_usage", false);
+    context_copy->setSetting("query_cache_passive_usage", false);
 
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
@@ -1092,3 +1094,4 @@ void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
 }
 
 }
+
