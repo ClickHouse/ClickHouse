@@ -133,10 +133,10 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
         return true;
 
     auto max_log =  DDLTask::getLogEntryName(max_log_ptr);
-    LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
 
     {
         std::unique_lock lock{mutex};
+        LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
         {
             return zookeeper->expired() || current_task == max_log || stop_flag;
@@ -145,8 +145,6 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
         if (!processed)
             return false;
     }
-
-    LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
 
     /// Lets now wait for max_log_ptr to be processed
     Coordination::Stat stat;

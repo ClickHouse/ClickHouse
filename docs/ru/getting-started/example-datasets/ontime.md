@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/example-datasets/ontime
 sidebar_position: 21
 sidebar_label: OnTime
 ---

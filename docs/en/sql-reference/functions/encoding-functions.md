@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/encoding-functions
 sidebar_position: 52
 sidebar_label: Encoding
 ---
