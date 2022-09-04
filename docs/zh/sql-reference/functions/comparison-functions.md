@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/functions/comparison-functions
 sidebar_position: 36
 sidebar_label: 比较函数
 ---
