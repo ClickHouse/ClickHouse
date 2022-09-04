@@ -438,24 +438,24 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
     if (schedule)
     {
         std::unique_lock lock(bg_tasks_mutex);
+
         /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
         auto & tasks = TSA_SUPPRESS_WARNING_FOR_WRITE(upload_object_tasks);
+
+        while (!tasks.empty() && tasks.front().is_finished)
         {
-            while (!tasks.empty() && tasks.front().is_finished)
+            auto & task = tasks.front();
+            auto exception = task.exception;
+            auto tag = std::move(task.tag);
+            tasks.pop_front();
+
+            if (exception)
             {
-                auto & task = tasks.front();
-                auto exception = task.exception;
-                auto tag = std::move(task.tag);
-                tasks.pop_front();
-
-                if (exception)
-                {
-                    waitForAllBackGroundTasksUnlocked(lock);
-                    std::rethrow_exception(exception);
-                }
-
-                TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags).push_back(tag);
+                waitForAllBackGroundTasksUnlocked(lock);
+                std::rethrow_exception(exception);
             }
+
+            TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags).push_back(tag);
         }
     }
 }
@@ -490,12 +490,11 @@ void WriteBufferFromS3::waitForAllBackGroundTasksUnlocked(std::unique_lock<std::
             tasks.pop_front();
         }
 
-        const auto & task = put_object_task;
-        if (task)
+        if (put_object_task)
         {
-            bg_tasks_condvar.wait(bg_tasks_lock, [&task]() { return task->is_finished; });
-            if (task->exception)
-                std::rethrow_exception(task->exception);
+            bg_tasks_condvar.wait(bg_tasks_lock, [this]() { return put_object_task->is_finished; });
+            if (put_object_task->exception)
+                std::rethrow_exception(put_object_task->exception);
         }
     }
 }
