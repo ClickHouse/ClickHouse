@@ -267,7 +267,7 @@ Result:
 └────────────────┘
 ```
 
-:::Attention
+:::note
 The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is `Date` or `DateTime`.
 Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
 In case argument is out of normal range:
