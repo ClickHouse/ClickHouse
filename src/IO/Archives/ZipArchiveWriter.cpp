@@ -3,6 +3,7 @@
 #if USE_MINIZIP
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/quoteString.h>
+#include <base/errnoToString.h>
 #include <zip.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -380,10 +381,10 @@ void ZipArchiveWriter::checkResult(int code) const
     if (code >= ZIP_OK)
         return;
 
-    String message = "Code= ";
+    String message = "Code = ";
     switch (code)
     {
-        case ZIP_ERRNO: message += "ERRNO, errno= " + String{strerror(errno)}; break;
+        case ZIP_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
         case ZIP_PARAMERROR: message += "PARAMERROR"; break;
         case ZIP_BADZIPFILE: message += "BADZIPFILE"; break;
         case ZIP_INTERNALERROR: message += "INTERNALERROR"; break;
