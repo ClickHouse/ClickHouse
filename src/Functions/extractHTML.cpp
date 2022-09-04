@@ -123,6 +123,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -230,11 +231,19 @@ public:
     {
         const ColumnString * src = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!src)
-            throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "First argument for function {} must be string, got {}",
+                getName(),
+                arguments[0].column->getName());
 
-        const ColumnConst * selector_column = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
+        const ColumnConst * selector_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!selector_column)
-            throw Exception("Second argument for function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Second argument for function {} must be constant, got {}",
+                getName(),
+                arguments[1].column->getName());
 
         String selector = selector_column->getValue<String>();
         SelectorMatchingVM vm = SelectorMatchingVM::parseSelector(selector.data(), selector.data() + selector.size());
