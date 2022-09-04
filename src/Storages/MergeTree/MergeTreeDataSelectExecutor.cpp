@@ -313,6 +313,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.min_free_disk_space_for_temporary_data,
                 settings.compile_aggregate_expressions,
                 settings.min_count_to_compile_aggregate_expression,
+                settings.max_block_size,
                 only_merge);
 
             return std::make_pair(params, only_merge);
