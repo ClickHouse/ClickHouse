@@ -15,7 +15,7 @@ Usage examples:
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
 ``` sql
-ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)
+ENGINE = GenerateRandom([random_seed] [,max_string_length] [,max_array_length])
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
