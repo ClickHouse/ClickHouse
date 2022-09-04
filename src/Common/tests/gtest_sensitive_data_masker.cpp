@@ -103,7 +103,7 @@ TEST(Common, SensitiveDataMasker)
 
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule>
             <name>hide SSN</name><!-- by default: it will use xml path, like query_masking_rules.rule[1] -->
@@ -153,7 +153,7 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule>
             <name>test</name>
@@ -166,7 +166,7 @@ TEST(Common, SensitiveDataMasker)
     </query_masking_rules>
 </clickhouse>)END");
 
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
@@ -182,13 +182,13 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name></rule>
     </query_masking_rules>
 </clickhouse>)END");
 
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
@@ -204,13 +204,13 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
     </query_masking_rules>
 </clickhouse>)END");
 
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
