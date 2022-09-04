@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/create/role
 sidebar_position: 40
 sidebar_label: ROLE
+title: "CREATE ROLE"
 ---
-
-# CREATE ROLE
 
 Creates new [roles](../../../operations/access-rights.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
 

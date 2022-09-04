@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/install
 sidebar_position: 11
 sidebar_label: 安装部署
 ---
