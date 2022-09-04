@@ -83,5 +83,8 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
         --yes --no-install-recommends \
     && apt-get clean
 
+# for external_symbolizer_path
+RUN ln -s /usr/bin/llvm-symbolizer-15 /usr/bin/llvm-symbolizer
+
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]
