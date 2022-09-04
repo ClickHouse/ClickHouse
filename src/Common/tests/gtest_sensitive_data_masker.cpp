@@ -227,7 +227,4 @@ TEST(Common, SensitiveDataMasker)
         masker_xml_based.printStats();
 #endif
     }
-
-
-
 }
