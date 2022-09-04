@@ -9,6 +9,11 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+ConcatSeekableReadBuffer::BufferInfo::BufferInfo(BufferInfo && src) noexcept
+    : in(std::exchange(src.in, nullptr)), own_in(std::exchange(src.own_in, false)), size(std::exchange(src.size, 0))
+{
+}
+
 ConcatSeekableReadBuffer::BufferInfo::~BufferInfo()
 {
     if (own_in)

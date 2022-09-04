@@ -497,7 +497,7 @@ private:
     /// last index of offsets that was not processed
     size_t last;
 
-    /// limit for adding to hashtable. In worst case with case insentive search, the table will be filled at most as half
+    /// limit for adding to hashtable. In worst case with case insensitive search, the table will be filled at most as half
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:
