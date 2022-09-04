@@ -201,7 +201,7 @@ public:
     /// Also, calculate _sample_factor if needed.
     /// Also, update key condition with selected sampling range.
     static MergeTreeDataSelectSamplingData getSampling(
-        const ASTSelectQuery & select,
+        const SelectQueryInfo & select_query_info,
         NamesAndTypesList available_real_columns,
         const MergeTreeData::DataPartsVector & parts,
         KeyCondition & key_condition,

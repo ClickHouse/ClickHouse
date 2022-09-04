@@ -145,6 +145,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", constant_value_type: " << constant_value->getType()->getName();
     }
 
+    if (table_expression_modifiers)
+    {
+        buffer << ", ";
+        table_expression_modifiers->dump(buffer);
+    }
+
     if (hasWith())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "WITH\n";
@@ -246,11 +252,19 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
+
     if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
         return false;
     else if (constant_value && !rhs_typed.constant_value)
         return false;
     else if (!constant_value && rhs_typed.constant_value)
+        return false;
+
+    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
+        return false;
+    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
+        return false;
+    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
         return false;
 
     return is_subquery == rhs_typed.is_subquery &&
@@ -289,6 +303,9 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
         state.update(constant_value_type_name.size());
         state.update(constant_value_type_name);
     }
+
+    if (table_expression_modifiers)
+        table_expression_modifiers->updateTreeHash(state);
 }
 
 ASTPtr QueryNode::toASTImpl() const
@@ -380,6 +397,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->constant_value = constant_value;
+    result_query_node->table_expression_modifiers = table_expression_modifiers;
 
     return result_query_node;
 }

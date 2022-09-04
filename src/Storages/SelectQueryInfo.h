@@ -7,6 +7,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Analyzer/TableExpressionModifiers.h>
 
 #include <memory>
 
@@ -176,6 +177,9 @@ struct SelectQueryInfo
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
+
+    /// Table expression modifiers for storage
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 

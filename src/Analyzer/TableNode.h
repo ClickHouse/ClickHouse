@@ -8,6 +8,7 @@
 #include <Interpreters/StorageID.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
 
 namespace DB
 {
@@ -61,6 +62,24 @@ public:
         return std::move(storage_lock);
     }
 
+    /// Return true if table node has table expression modifiers, false otherwise
+    bool hasTableExpressionModifiers() const
+    {
+        return table_expression_modifiers.has_value();
+    }
+
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    {
+        return table_expression_modifiers;
+    }
+
+    /// Set table expression modifiers
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+    {
+        table_expression_modifiers = std::move(table_expression_modifiers_value);
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;
@@ -86,6 +105,7 @@ private:
     StorageID storage_id;
     TableLockHolder storage_lock;
     StorageSnapshotPtr storage_snapshot;
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
 };
 
 }

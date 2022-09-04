@@ -101,6 +101,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_AGGREGATION;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int ILLEGAL_FINAL;
+    extern const int SAMPLING_NOT_SUPPORTED;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -190,7 +192,6 @@ namespace ErrorCodes
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
   * TODO: JOIN support SELF JOIN with MergeTree. JOIN support matchers.
   * TODO: WINDOW functions
-  * TODO: Table expression modifiers final, sample_size, sample_offset
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
   */
 
@@ -840,6 +841,8 @@ private:
 
     static void validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
+    static void validateTableExpressionModifiers(QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+
     /// Resolve identifier functions
 
     QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier);
@@ -1084,6 +1087,66 @@ void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
             "{} numeric constant expression is not representable as UInt64",
             expression_description);
+}
+
+void QueryAnalyzer::validateTableExpressionModifiers(QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+{
+    auto * table_node = table_expression_node->as<TableNode>();
+    auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+    auto * query_node = table_expression_node->as<QueryNode>();
+    auto * union_node = table_expression_node->as<UnionNode>();
+
+    if (!table_node && !table_function_node && !query_node && !union_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Unexpected table expression. Expected table, table function, query or union node. Actual {}",
+        table_expression_node->formatASTForErrorMessage(),
+        scope.scope_node->formatASTForErrorMessage());
+
+    if (query_node || union_node)
+    {
+        auto table_expression_modifiers = query_node ? query_node->getTableExpressionModifiers() : union_node->getTableExpressionModifiers();
+
+        if (table_expression_modifiers.has_value())
+        {
+            String table_expression_modifiers_error_message;
+
+            if (table_expression_modifiers->hasFinal())
+            {
+                table_expression_modifiers_error_message += "FINAL";
+
+                if (table_expression_modifiers->hasSampleSizeRatio())
+                    table_expression_modifiers_error_message += ", SAMPLE";
+            }
+            else if (table_expression_modifiers->hasSampleSizeRatio())
+            {
+                table_expression_modifiers_error_message += "SAMPLE";
+            }
+
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Table expresion modifiers {} are not supported for subquery {}. In scope {}",
+                table_expression_modifiers_error_message,
+                table_expression_node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+    }
+    else if (table_node || table_function_node)
+    {
+        auto table_expression_modifiers = table_node ? table_node->getTableExpressionModifiers() : table_function_node->getTableExpressionModifiers();
+
+        if (table_expression_modifiers.has_value())
+        {
+            const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+            if (table_expression_modifiers->hasFinal() && !storage->supportsFinal())
+                throw Exception(ErrorCodes::ILLEGAL_FINAL,
+                    "Storage {} doesn't support FINAL",
+                    storage->getName());
+
+            if (table_expression_modifiers->hasSampleSizeRatio() && !storage->supportsSampling())
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                    "Storage {} doesn't support sampling",
+                    storage->getStorageID().getFullNameNotQuoted());
+        }
+    }
 }
 
 /// Resolve identifier functions implementation
@@ -2293,7 +2356,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unqualified matcher {} resolve unexpected table expression. In scope {}",
                 matcher_node_typed.formatASTForErrorMessage(),
-                scope_query_node->getJoinTree()->formatASTForErrorMessage());
+                scope_query_node->formatASTForErrorMessage());
         }
 
         for (auto & table_expression_column : table_expression_columns)
@@ -3739,10 +3802,38 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         scope.scope_node->formatASTForErrorMessage());
 
                 resolved_identifier = resolved_identifier->clone();
-                bool resolved_as_cte = resolved_identifier->as<QueryNode>() && resolved_identifier->as<QueryNode>()->isCTE();
 
-                if (resolved_as_cte)
-                    resolved_identifier->as<QueryNode &>().setIsCTE(false);
+                auto table_expression_modifiers = from_table_identifier.getTableExpressionModifiers();
+
+                if (auto * resolved_identifier_query_node = resolved_identifier->as<QueryNode>())
+                {
+                    resolved_identifier_query_node->setIsCTE(false);
+                    if (table_expression_modifiers.has_value())
+                        resolved_identifier_query_node->setTableExpressionModifiers(*table_expression_modifiers);
+                }
+                else if (auto * resolved_identifier_union_node = resolved_identifier->as<UnionNode>())
+                {
+                    resolved_identifier_union_node->setIsCTE(false);
+                    if (table_expression_modifiers.has_value())
+                        resolved_identifier_union_node->setTableExpressionModifiers(*table_expression_modifiers);
+                }
+                else if (auto * resolved_identifier_table_node = resolved_identifier->as<TableNode>())
+                {
+                    if (table_expression_modifiers.has_value())
+                        resolved_identifier_table_node->setTableExpressionModifiers(*table_expression_modifiers);
+                }
+                else if (auto * resolved_identifier_table_function_node = resolved_identifier->as<TableFunctionNode>();)
+                {
+                    if (table_expression_modifiers.has_value())
+                        resolved_identifier_table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Identifier in JOIN TREE {} resolve unexpected table expression. In scope {}",
+                        from_table_identifier.getIdentifier().getFullName(),
+                        scope.scope_node->formatASTForErrorMessage());
+                }
 
                 auto current_join_tree_node_alias = current_join_tree_node->getAlias();
                 resolved_identifier->setAlias(current_join_tree_node_alias);
@@ -3851,7 +3942,7 @@ void QueryAnalyzer::initializeTableExpressionColumns(QueryTreeNodePtr & table_ex
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+        auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals());
         const auto & columns_description = storage_snapshot->metadata->getColumns();
 
         std::vector<std::pair<std::string, ColumnNodePtr>> alias_columns_to_resolve;
@@ -3953,17 +4044,17 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     switch (from_node_type)
     {
         case QueryTreeNodeType::QUERY:
-        {
-            IdentifierResolveScope subquery_scope(join_tree_node, &scope);
-            subquery_scope.subquery_depth = scope.subquery_depth + 1;
-            resolveQuery(join_tree_node, subquery_scope);
-            break;
-        }
+            [[fallthrough]];
         case QueryTreeNodeType::UNION:
         {
             IdentifierResolveScope subquery_scope(join_tree_node, &scope);
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
-            resolveUnion(join_tree_node, subquery_scope);
+
+            if (from_node_type == QueryTreeNodeType::QUERY)
+                resolveQuery(join_tree_node, subquery_scope);
+            else if (from_node_type == QueryTreeNodeType::UNION)
+                resolveUnion(join_tree_node, subquery_scope);
+
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -4173,7 +4264,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         join_tree_node_type == QueryTreeNodeType::UNION ||
         join_tree_node_type == QueryTreeNodeType::TABLE ||
         join_tree_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    {
+        validateTableExpressionModifiers(join_tree_node, scope);
         initializeTableExpressionColumns(join_tree_node, scope);
+    }
 
     add_table_expression_alias_into_scope(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());

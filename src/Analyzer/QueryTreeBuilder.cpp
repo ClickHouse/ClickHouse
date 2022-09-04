@@ -23,6 +23,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTSampleRatio.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -204,8 +205,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsGroupByWithCube(select_query_typed.group_by_with_cube);
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
-    current_query_tree->getJoinTree() = buildJoinTree(select_query_typed.tables());
     current_query_tree->setOriginalAST(select_query);
+
+    current_query_tree->getJoinTree() = buildJoinTree(select_query_typed.tables());
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
@@ -542,17 +544,44 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
         if (table_element.table_expression)
         {
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
+            std::optional<TableExpressionModifiers> table_expression_modifiers;
+
+            if (table_expression.final || table_expression.sample_size)
+            {
+                bool has_final = table_expression.final;
+                std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
+                std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+
+                if (table_expression.sample_size)
+                {
+                    auto & ast_sample_size_ratio = table_expression.sample_size->as<ASTSampleRatio &>();
+                    sample_size_ratio = ast_sample_size_ratio.ratio;
+
+                    if (table_expression.sample_offset)
+                    {
+                        auto & ast_sample_offset_ratio = table_expression.sample_offset->as<ASTSampleRatio &>();
+                        sample_offset_ratio = ast_sample_offset_ratio.ratio;
+                    }
+                }
+
+                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio);
+            }
 
             if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);
-                auto node = std::make_shared<IdentifierNode>(storage_identifier);
+                QueryTreeNodePtr table_identifier_node;
 
-                node->setAlias(table_identifier_typed.tryGetAlias());
-                node->setOriginalAST(table_element.table_expression);
+                if (table_expression_modifiers)
+                    table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier, *table_expression_modifiers);
+                else
+                    table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier);
 
-                table_expressions.push_back(std::move(node));
+                table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());
+                table_identifier_node->setOriginalAST(table_element.table_expression);
+
+                table_expressions.push_back(std::move(table_identifier_node));
             }
             else if (table_expression.subquery)
             {
@@ -560,9 +589,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 const auto & select_with_union_query = subquery_expression.children[0];
 
                 auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/);
-
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
+
+                if (table_expression_modifiers)
+                {
+                    if (auto * query_node = node->as<QueryNode>())
+                        query_node->setTableExpressionModifiers(*table_expression_modifiers);
+                    else if (auto * union_node = node->as<UnionNode>())
+                        union_node->setTableExpressionModifiers(*table_expression_modifiers);
+                    else
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected table expression subquery node. Expected union or query. Actual {}",
+                            node->formatASTForErrorMessage());
+                }
 
                 table_expressions.push_back(std::move(node));
             }
@@ -584,6 +624,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                     }
                 }
 
+                if (table_expression_modifiers)
+                    node->setTableExpressionModifiers(*table_expression_modifiers);
                 node->setAlias(table_function_expression.tryGetAlias());
                 node->setOriginalAST(table_expression.table_function);
 
