@@ -137,7 +137,7 @@ public:
 
 }
 
-void registerFunctionH3KRing(FunctionFactory & factory)
+REGISTER_FUNCTION(H3KRing)
 {
     factory.registerFunction<FunctionH3KRing>();
 }

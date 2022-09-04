@@ -388,11 +388,11 @@ public:
         return res;
     }
 
-    void modifyFlags(const ModifyFlagsFunction & function, bool & flags_added, bool & flags_removed)
+    void modifyFlags(const ModifyFlagsFunction & function, bool grant_option, bool & flags_added, bool & flags_removed)
     {
         flags_added = false;
         flags_removed = false;
-        modifyFlagsRec(function, flags_added, flags_removed);
+        modifyFlagsRec(function, grant_option, flags_added, flags_removed);
         if (flags_added || flags_removed)
             optimizeTree();
     }
@@ -669,11 +669,11 @@ private:
     }
 
     template <typename ... ParentNames>
-    void modifyFlagsRec(const ModifyFlagsFunction & function, bool & flags_added, bool & flags_removed, const ParentNames & ... parent_names)
+    void modifyFlagsRec(const ModifyFlagsFunction & function, bool grant_option, bool & flags_added, bool & flags_removed, const ParentNames & ... parent_names)
     {
-        auto invoke = [&function](const AccessFlags & flags_, const AccessFlags & min_flags_with_children_, const AccessFlags & max_flags_with_children_, std::string_view database_ = {}, std::string_view table_ = {}, std::string_view column_ = {}) -> AccessFlags
+        auto invoke = [function, grant_option](const AccessFlags & flags_, const AccessFlags & min_flags_with_children_, const AccessFlags & max_flags_with_children_, std::string_view database_ = {}, std::string_view table_ = {}, std::string_view column_ = {}) -> AccessFlags
         {
-            return function(flags_, min_flags_with_children_, max_flags_with_children_, database_, table_, column_);
+            return function(flags_, min_flags_with_children_, max_flags_with_children_, database_, table_, column_, grant_option);
         };
 
         if constexpr (sizeof...(ParentNames) < 3)
@@ -683,7 +683,7 @@ private:
                 for (auto & child : *children | boost::adaptors::map_values)
                 {
                     const String & child_name = *child.node_name;
-                    child.modifyFlagsRec(function, flags_added, flags_removed, parent_names..., child_name);
+                    child.modifyFlagsRec(function, grant_option, flags_added, flags_removed, parent_names..., child_name);
                 }
             }
         }
@@ -1062,24 +1062,21 @@ void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
 {
     if (!root)
         return;
+
     bool flags_added, flags_removed;
-    root->modifyFlags(function, flags_added, flags_removed);
+    root->modifyFlags(function, false, flags_added, flags_removed);
     if (flags_removed && root_with_grant_option)
         root_with_grant_option->makeIntersection(*root);
-}
 
-
-void AccessRights::modifyFlagsWithGrantOption(const ModifyFlagsFunction & function)
-{
-    if (!root_with_grant_option)
-        return;
-    bool flags_added, flags_removed;
-    root_with_grant_option->modifyFlags(function, flags_added, flags_removed);
-    if (flags_added)
+    if (root_with_grant_option)
     {
-        if (!root)
-            root = std::make_unique<Node>();
-        root->makeUnion(*root_with_grant_option);
+        root_with_grant_option->modifyFlags(function, true, flags_added, flags_removed);
+        if (flags_added)
+        {
+            if (!root)
+                root = std::make_unique<Node>();
+            root->makeUnion(*root_with_grant_option);
+        }
     }
 }
 

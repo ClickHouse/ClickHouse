@@ -251,7 +251,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = std::string_view{(*arguments[j + 1].column).getDataAt(row)};
+                    key = (*arguments[j + 1].column).getDataAt(row).toView();
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -813,8 +813,8 @@ struct JSONExtractTree
             auto from_col = dictionary_type->createColumn();
             if (impl->insertResultToColumn(*from_col, element))
             {
-                StringRef value = from_col->getDataAt(0);
-                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data, value.size);
+                std::string_view value = from_col->getDataAt(0).toView();
+                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data(), value.size());
                 return true;
             }
             return false;
@@ -1443,7 +1443,7 @@ public:
     }
 };
 
-void registerFunctionsJSON(FunctionFactory & factory)
+REGISTER_FUNCTION(JSON)
 {
     factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>();

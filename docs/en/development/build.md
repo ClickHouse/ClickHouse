@@ -1,10 +1,11 @@
 ---
+slug: /en/development/build
 sidebar_position: 64
 sidebar_label: Build on Linux
+title: How to Build ClickHouse on Linux
 description: How to build ClickHouse on Linux
 ---
 
-# How to Build ClickHouse on Linux
 
 Supported platforms:
 
@@ -75,7 +76,7 @@ This will create the `programs/clickhouse` executable, which can be used with `c
 The build requires the following components:
 
 -   Git (is used only to checkout the sources, it’s not needed for the build)
--   CMake 3.14 or newer
+-   CMake 3.15 or newer
 -   Ninja
 -   C++ compiler: clang-14 or newer
 -   Linker: lld
@@ -133,28 +134,6 @@ chmod +x cmake-3.22.2-linux-x86_64.sh
 ./cmake-3.22.2-linux-x86_64.sh
 export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
 hash cmake
-```
-
-## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
-
-### Install Git {#install-git}
-
-``` bash
-sudo apt-get update
-sudo apt-get install git python debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
-```
-
-### Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
-
-``` bash
-git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
-cd ClickHouse
-```
-
-### Run Release Script {#run-release-script}
-
-``` bash
-./release
 ```
 
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}

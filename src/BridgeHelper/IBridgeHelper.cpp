@@ -18,22 +18,6 @@ namespace ErrorCodes
 }
 
 
-Poco::URI IBridgeHelper::getMainURI() const
-{
-    auto uri = createBaseURI();
-    uri.setPath(MAIN_HANDLER);
-    return uri;
-}
-
-
-Poco::URI IBridgeHelper::getPingURI() const
-{
-    auto uri = createBaseURI();
-    uri.setPath(PING_HANDLER);
-    return uri;
-}
-
-
 void IBridgeHelper::startBridgeSync()
 {
     if (!bridgeHandShake())

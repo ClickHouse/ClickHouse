@@ -16,7 +16,7 @@ public:
     MergingSortedAlgorithm(
         Block header_,
         size_t num_inputs,
-        SortDescription description_,
+        const SortDescription & description_,
         size_t max_block_size,
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
@@ -38,7 +38,7 @@ private:
 
     /// Settings
     SortDescription description;
-    UInt64 limit;
+    const UInt64 limit;
     bool has_collation = false;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)

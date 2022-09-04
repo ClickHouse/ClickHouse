@@ -12,16 +12,16 @@ namespace ErrorCodes
 {
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
-static TableLockHolder getLockForOrdinary(const StoragePtr & storage)
+static void checkNotOrdinaryDatabase(const StoragePtr & storage)
 {
     if (storage->getStorageID().uuid != UUIDHelpers::Nil)
-        return {};
+        return;
 
-    /// Maybe we should just throw an exception and do not support Ordinary database?
-    auto default_timeout = std::chrono::milliseconds(10 * 1000);
-    return storage->lockForShare(RWLockImpl::NO_QUERY, default_timeout);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table {} belongs to database with Ordinary engine. "
+                    "This engine is deprecated and is not supported in transactions.", storage->getStorageID().getNameForLogs());
 }
 
 MergeTreeTransaction::MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id, std::list<CSN>::iterator snapshot_it_)
@@ -131,18 +131,16 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
 
 void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part)
 {
-    auto maybe_lock = getLockForOrdinary(storage);
+    checkNotOrdinaryDatabase(storage);
     std::lock_guard lock{mutex};
     checkIsNotCancelled();
     storages.insert(storage);
-    if (maybe_lock)
-        table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
     creating_parts.push_back(new_part);
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context)
 {
-    auto maybe_lock = getLockForOrdinary(storage);
+    checkNotOrdinaryDatabase(storage);
 
     {
         std::lock_guard lock{mutex};
@@ -151,8 +149,6 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         part_to_remove->version.lockRemovalTID(tid, context);
         NOEXCEPT_SCOPE({
             storages.insert(storage);
-            if (maybe_lock)
-                table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
             removing_parts.push_back(part_to_remove);
         });
     }
@@ -162,12 +158,10 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
 {
-    auto maybe_lock = getLockForOrdinary(table);
+    checkNotOrdinaryDatabase(table);
     std::lock_guard lock{mutex};
     checkIsNotCancelled();
     storages.insert(table);
-    if (maybe_lock)
-        table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
     mutations.emplace_back(table, mutation_id);
 }
 
@@ -216,6 +210,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
     /// and we will be able to remove old entries from transaction log in ZK.
     /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
@@ -251,6 +246,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
 bool MergeTreeTransaction::rollback() noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     CSN expected = Tx::UnknownCSN;
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
 

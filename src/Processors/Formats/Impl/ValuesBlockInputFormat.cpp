@@ -567,7 +567,7 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_), buf(in_), format_settings(format_settings_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
 }
 
@@ -633,6 +633,10 @@ void registerValuesSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<ValuesSchemaReader>(buf, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
     });
 }
 

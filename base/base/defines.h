@@ -93,13 +93,19 @@
 #    define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED __attribute__((__always_inline__, __no_sanitize__("undefined")))
-#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
 #else  /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
 #    define NO_SANITIZE_UNDEFINED
 #    define NO_SANITIZE_ADDRESS
 #    define NO_SANITIZE_THREAD
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
+
+#if defined(__clang__) && defined(__clang_major__) && __clang_major__ >= 14
+#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
+#else
+#    define DISABLE_SANITIZER_INSTRUMENTATION
+#endif
+
 
 #if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
@@ -137,8 +143,8 @@
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
 /// Consider adding a comment before using these macros.
-#   define TSA_SUPPRESS_WARNING_FOR_READ(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }()
-#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }()
+#   define TSA_SUPPRESS_WARNING_FOR_READ(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }())
+#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }())
 
 /// This macro is useful when only one thread writes to a member
 /// and you want to read this member from the same thread without locking a mutex.

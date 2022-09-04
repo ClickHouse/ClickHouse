@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <profiles>
+        <default>
+            <prefer_localhost_replica>false</prefer_localhost_replica>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
+</clickhouse>

@@ -112,7 +112,7 @@ template <>
 const char * FunctionPolygonsWithin<SphericalPoint>::name = "polygonsWithinSpherical";
 
 
-void registerFunctionPolygonsWithin(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsWithin)
 {
     factory.registerFunction<FunctionPolygonsWithin<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsWithin<SphericalPoint>>();

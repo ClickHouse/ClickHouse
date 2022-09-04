@@ -13,7 +13,7 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class RollupStep : public ITransformingStep
 {
 public:
-    RollupStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_);
+    RollupStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_, bool use_nulls_);
 
     String getName() const override { return "Rollup"; }
 
@@ -25,6 +25,7 @@ private:
     Aggregator::Params params;
     size_t keys_size;
     bool final;
+    bool use_nulls;
 };
 
 }

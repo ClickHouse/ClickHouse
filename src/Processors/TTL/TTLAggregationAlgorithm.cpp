@@ -1,4 +1,5 @@
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -37,7 +38,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
-        settings.min_count_to_compile_aggregate_expression);
+        settings.min_count_to_compile_aggregate_expression,
+        settings.max_block_size);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

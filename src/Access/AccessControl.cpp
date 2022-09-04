@@ -79,7 +79,7 @@ public:
             /// No user, probably the user has been dropped while it was in the cache.
             cache.remove(params);
         }
-        auto res = std::shared_ptr<ContextAccess>(new ContextAccess(access_control, params));
+        auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
         return res;
@@ -165,13 +165,12 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
 
-    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool(
-        "access_control_improvements.users_without_row_policies_can_read_rows",
-        false /* false because we need to be compatible with earlier access configurations */));
-
-    setOnClusterQueriesRequireClusterGrant(config_.getBool(
-        "access_control_improvements.on_cluster_queries_require_cluster_grant",
-        false /* false because we need to be compatible with earlier access configurations */));
+    /// Optional improvements in access control system.
+    /// The default values are false because we need to be compatible with earlier access configurations
+    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", false));
+    setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", false));
+    setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
+    setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 }

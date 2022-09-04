@@ -10,20 +10,23 @@
 #include <type_traits>
 
 
-#define DATE_LUT_MIN_YEAR 1925 /// 1925 since wast majority of timezones changed to 15-minute aligned offsets somewhere in 1924 or earlier.
-#define DATE_LUT_MAX_YEAR 2283 /// Last supported year (complete)
+#define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
+#define DATE_LUT_MAX_YEAR 2299 /// Last supported year (complete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
-#define DATE_LUT_SIZE 0x20000
+#define DATE_LUT_SIZE 0x23AB1
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM 0xFFFF
+
+#define DAYNUM_OFFSET_EPOCH 25567
+
 /// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
-#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - 16436)
+#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - DAYNUM_OFFSET_EPOCH)
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
-#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366 * 86400)
+#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
 
 
 #if defined(__PPC__)
@@ -64,62 +67,78 @@ private:
     // Same as above but select different function overloads for zero saturation.
     STRONG_TYPEDEF(UInt32, LUTIndexWithSaturation)
 
+    static inline LUTIndex normalizeLUTIndex(UInt32 index)
+    {
+        if (index >= DATE_LUT_SIZE)
+            return LUTIndex(DATE_LUT_SIZE - 1);
+        return LUTIndex{index};
+    }
+
+    static inline LUTIndex normalizeLUTIndex(Int64 index)
+    {
+        if (unlikely(index < 0))
+            return LUTIndex(0);
+        if (index >= DATE_LUT_SIZE)
+            return LUTIndex(DATE_LUT_SIZE - 1);
+        return LUTIndex{index};
+    }
+
     template <typename T>
     friend inline LUTIndex operator+(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() + UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(index.toUnderType() + UInt32(v));
     }
 
     template <typename T>
     friend inline LUTIndex operator+(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v + index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(v + index.toUnderType()));
     }
 
     friend inline LUTIndex operator+(const LUTIndex & index, const LUTIndex & v)
     {
-        return LUTIndex{(index.toUnderType() + v.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<UInt32>(index.toUnderType() + v.toUnderType()));
     }
 
     template <typename T>
     friend inline LUTIndex operator-(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() - UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - UInt32(v)));
     }
 
     template <typename T>
     friend inline LUTIndex operator-(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v - index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(v - index.toUnderType()));
     }
 
     friend inline LUTIndex operator-(const LUTIndex & index, const LUTIndex & v)
     {
-        return LUTIndex{(index.toUnderType() - v.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - v.toUnderType()));
     }
 
     template <typename T>
     friend inline LUTIndex operator*(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() * UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(index.toUnderType() * UInt32(v));
     }
 
     template <typename T>
     friend inline LUTIndex operator*(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v * index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(v * index.toUnderType());
     }
 
     template <typename T>
     friend inline LUTIndex operator/(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() / UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(index.toUnderType() / UInt32(v));
     }
 
     template <typename T>
     friend inline LUTIndex operator/(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(UInt32(v) / index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(UInt32(v) / index.toUnderType());
     }
 
 public:
@@ -168,14 +187,9 @@ public:
     static_assert(sizeof(Values) == 16);
 
 private:
-
-    /// Mask is all-ones to allow efficient protection against overflow.
-    static constexpr UInt32 date_lut_mask = 0x1ffff;
-    static_assert(date_lut_mask == DATE_LUT_SIZE - 1);
-
     /// Offset to epoch in days (ExtendedDayNum) of the first day in LUT.
     /// "epoch" is the Unix Epoch (starts at unix timestamp zero)
-    static constexpr UInt32 daynum_offset_epoch = 16436;
+    static constexpr UInt32 daynum_offset_epoch = 25567;
     static_assert(daynum_offset_epoch == (1970 - DATE_LUT_MIN_YEAR) * 365 + (1970 - DATE_LUT_MIN_YEAR / 4 * 4) / 4);
 
     /// Lookup table is indexed by LUTIndex.
@@ -232,12 +246,12 @@ private:
 
     static inline LUTIndex toLUTIndex(DayNum d)
     {
-        return LUTIndex{(d + daynum_offset_epoch) & date_lut_mask};
+        return normalizeLUTIndex(d + daynum_offset_epoch);
     }
 
     static inline LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return LUTIndex{static_cast<UInt32>(d + daynum_offset_epoch) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<UInt32>(d + daynum_offset_epoch));
     }
 
     inline LUTIndex toLUTIndex(Time t) const
@@ -1062,7 +1076,7 @@ public:
 
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
-        /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
+        /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2299-12-31)
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 

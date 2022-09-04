@@ -9,6 +9,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/Keeper4LWInfo.h>
+#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ private:
     struct KeeperRaftServer;
     nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
-    nuraft::ptr<nuraft::rpc_listener> asio_listener;
+    std::vector<nuraft::ptr<nuraft::rpc_listener>> asio_listeners;
     // because some actions can be applied
     // when we are sure that there are no requests currently being
     // processed (e.g. recovery) we do all write actions
@@ -51,7 +52,7 @@ private:
 
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
     /// Allows to avoid race conditions.
-    void launchRaftServer(bool enable_ipv6);
+    void launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6);
 
     void shutdownRaftServer();
 
@@ -60,6 +61,10 @@ private:
     void enterRecoveryMode(nuraft::raft_params & params);
 
     std::atomic_bool is_recovering = false;
+
+    std::shared_ptr<KeeperContext> keeper_context;
+
+    const bool create_snapshot_on_exit;
 
 public:
     KeeperServer(

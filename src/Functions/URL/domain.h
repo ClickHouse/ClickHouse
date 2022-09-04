@@ -8,22 +8,22 @@
 namespace DB
 {
 
-inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
+inline std::string_view checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
     if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1)
-        return StringRef{};
+        return std::string_view{};
 
     auto after_dot = *(dot_pos + 1);
     if (after_dot == ':' || after_dot == '/' || after_dot == '?' || after_dot == '#')
-        return StringRef{};
+        return std::string_view{};
 
-    return StringRef(start_of_host, pos - start_of_host);
+    return std::string_view(start_of_host, pos - start_of_host);
 }
 
 /// Extracts host from given url.
 ///
-/// @return empty StringRef if the host is not valid (i.e. it does not have dot, or there no symbol after dot).
-inline StringRef getURLHost(const char * data, size_t size)
+/// @return empty string view if the host is not valid (i.e. it does not have dot, or there no symbol after dot).
+inline std::string_view getURLHost(const char * data, size_t size)
 {
     Pos pos = data;
     Pos end = data + size;
@@ -61,7 +61,7 @@ inline StringRef getURLHost(const char * data, size_t size)
                 case ';':
                 case '=':
                 case '&':
-                    return StringRef{};
+                    return std::string_view{};
                 default:
                     goto exloop;
                 }
@@ -106,7 +106,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case ';':
         case '=':
         case '&':
-            return StringRef{};
+            return std::string_view{};
         }
     }
 
@@ -120,20 +120,20 @@ struct ExtractDomain
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
-        StringRef host = getURLHost(data, size);
+        std::string_view host = getURLHost(data, size);
 
-        if (host.size == 0)
+        if (host.empty())
         {
             res_data = data;
             res_size = 0;
         }
         else
         {
-            if (without_www && host.size > 4 && !strncmp(host.data, "www.", 4))
-                host = { host.data + 4, host.size - 4 };
+            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))
+                host = { host.data() + 4, host.size() - 4 };
 
-            res_data = host.data;
-            res_size = host.size;
+            res_data = host.data();
+            res_size = host.size();
         }
     }
 };

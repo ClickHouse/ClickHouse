@@ -19,6 +19,7 @@
             </networks>
             <allow_databases>
                 <database>default</database>
+                <database>system</database>
             </allow_databases>
         </test_allow>
     </users>

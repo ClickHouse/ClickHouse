@@ -3,7 +3,7 @@ set -x -e
 
 exec &> >(ts)
 
-cache_status () {
+ccache_status () {
     ccache --show-config ||:
     ccache --show-stats ||:
 }
@@ -29,29 +29,33 @@ env
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
-  if [ -z "$SANITIZER" ]; then
-    # We need to check if clickhouse-diagnostics is fine and build it
-    (
-      cd /build/programs/diagnostics
-      make test-no-docker
-      GOARCH="${DEB_ARCH}" CGO_ENABLED=0 make VERSION="$VERSION_STRING" build
-      mv clickhouse-diagnostics ..
-    )
-  else
-    echo -e "#!/bin/sh\necho 'Not implemented for this type of package'" > /build/programs/clickhouse-diagnostics
-    chmod +x /build/programs/clickhouse-diagnostics
+  # NOTE: this is for backward compatibility with previous releases,
+  # that does not diagnostics tool (only script).
+  if [ -d /build/programs/diagnostics ]; then
+    if [ -z "$SANITIZER" ]; then
+      # We need to check if clickhouse-diagnostics is fine and build it
+      (
+        cd /build/programs/diagnostics
+        make test-no-docker
+        GOARCH="${DEB_ARCH}" CGO_ENABLED=0 make VERSION="$VERSION_STRING" build
+        mv clickhouse-diagnostics ..
+      )
+    else
+      echo -e "#!/bin/sh\necho 'Not implemented for this type of package'" > /build/programs/clickhouse-diagnostics
+      chmod +x /build/programs/clickhouse-diagnostics
+    fi
   fi
 fi
 
 
-cache_status
+ccache_status
 # clear cache stats
 ccache --zero-stats ||:
 
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
 then
     # build keeper with musl separately
-    cmake --debug-trycompile --verbose=1 -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
     # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
     ninja $NINJA_FLAGS clickhouse-keeper
 
@@ -66,10 +70,10 @@ then
     rm -f CMakeCache.txt
 
     # Build the rest of binaries
-    cmake --debug-trycompile --verbose=1 -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 else
     # Build everything
-    cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
@@ -84,11 +88,11 @@ fi
 
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-$SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
+$SCAN_WRAPPER ninja $NINJA_FLAGS $BUILD_TARGET
 
 ls -la ./programs
 
-cache_status
+ccache_status
 
 if [ -n "$MAKE_DEB" ]; then
   # No quotes because I want it to expand to nothing if empty.
@@ -100,6 +104,7 @@ if [ -n "$MAKE_DEB" ]; then
 fi
 
 mv ./programs/clickhouse* /output
+[ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
@@ -174,7 +179,8 @@ then
     mv "coverity-scan.tgz" /output
 fi
 
-cache_status
+ccache_status
+ccache --evict-older-than 1d
 
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then

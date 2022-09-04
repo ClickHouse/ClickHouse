@@ -31,6 +31,7 @@ namespace ErrorCodes
 
 namespace
 {
+
 ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_comment("COMMENT");
@@ -41,7 +42,9 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
     return comment;
 }
+
 }
+
 
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -584,7 +587,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         auto storage_parse_result = storage_p.parse(pos, storage, expected);
 
-        if (storage_parse_result && need_parse_as_select())
+        if ((storage_parse_result || is_temporary) && need_parse_as_select())
         {
             if (!select_p.parse(pos, select, expected))
                 return false;

@@ -2,7 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 import redis
 
-cluster = ClickHouseCluster(__file__, name="long")
+cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance("node", with_redis=True)
 

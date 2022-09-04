@@ -29,6 +29,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -46,13 +48,13 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & elem = arguments[0];
-        return ColumnUInt8::create(input_rows_count, isColumnNullable(*elem.column));
+        return ColumnUInt8::create(input_rows_count, isColumnNullable(*elem.column) || elem.type->isLowCardinalityNullable());
     }
 };
 
 }
 
-void registerFunctionIsNullable(FunctionFactory & factory)
+REGISTER_FUNCTION(IsNullable)
 {
     factory.registerFunction<FunctionIsNullable>();
 }

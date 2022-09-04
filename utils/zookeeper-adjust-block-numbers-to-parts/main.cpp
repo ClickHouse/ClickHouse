@@ -179,8 +179,8 @@ void setCurrentBlockNumber(zkutil::ZooKeeper & zk, const std::string & path, Int
             if (number != current_block_number)
             {
                 char suffix[11] = "";
-                sprintf(suffix, "%010lld", current_block_number);
-                std::string expected_path = block_prefix + suffix;
+                size_t size = sprintf(suffix, "%010lld", current_block_number);
+                std::string expected_path = block_prefix + std::string(suffix, size);
                 std::cerr << "\t" << path_created << ": Ephemeral node has been created with an unexpected path (expected something like "
                           << expected_path << ")." << std::endl;
                 return false;
