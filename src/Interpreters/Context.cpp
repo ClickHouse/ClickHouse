@@ -93,6 +93,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <filesystem>
+#include <re2/re2.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -708,7 +709,10 @@ void Context::setUserDefinedPath(const String & path)
 void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
-    shared->addWarningMessage(msg);
+    auto suppress_re = getConfigRef().getString("warning_supress_regexp", "");
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -1331,29 +1335,6 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != UUID())
-    {
-        // Use the OpenTelemetry trace context we received from the client, and
-        // create a new span for the query.
-        query_trace_context = client_info.client_trace_context;
-        query_trace_context.span_id = thread_local_rng();
-    }
-    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        // If this is an initial query without any parent OpenTelemetry trace, we
-        // might start the trace ourselves, with some configurable probability.
-        std::bernoulli_distribution should_start_trace{
-            settings.opentelemetry_start_trace_probability};
-
-        if (should_start_trace(thread_local_rng))
-        {
-            // Use the randomly generated default query id as the new trace id.
-            query_trace_context.trace_id = random.uuid;
-            query_trace_context.span_id = thread_local_rng();
-            // Mark this trace as sampled in the flags.
-            query_trace_context.trace_flags = 1;
-        }
-    }
 
     String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
