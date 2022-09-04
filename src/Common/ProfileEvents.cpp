@@ -147,6 +147,7 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
+    M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \

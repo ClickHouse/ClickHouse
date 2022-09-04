@@ -9,14 +9,10 @@
 
 #include <utility>
 
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundLoadingMarksTasks;
-}
-
 namespace ProfileEvents
 {
     extern const Event WaitMarksLoadMicroseconds;
+    extern const Event BackgroundLoadingMarksTasks;
 }
 
 namespace DB
@@ -196,7 +192,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
                CurrentThread::detachQuery();
         });
 
-        CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundLoadingMarksTasks};
+        ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
         return loadMarks();
     });
 
