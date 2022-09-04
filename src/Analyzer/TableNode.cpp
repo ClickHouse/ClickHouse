@@ -31,11 +31,25 @@ void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", alias: " << getAlias();
 
     buffer << ", table_name: " << storage_id.getFullNameNotQuoted();
+
+    if (table_expression_modifiers)
+    {
+        buffer << ", ";
+        table_expression_modifiers->dump(buffer);
+    }
 }
 
 bool TableNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
+
+    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
+        return false;
+    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
+        return false;
+    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
+        return false;
+
     return storage_id == rhs_typed.storage_id;
 }
 
@@ -44,6 +58,9 @@ void TableNode::updateTreeHashImpl(HashState & state) const
     auto full_name = storage_id.getFullNameNotQuoted();
     state.update(full_name.size());
     state.update(full_name);
+
+    if (table_expression_modifiers)
+        table_expression_modifiers->updateTreeHash(state);
 }
 
 String TableNode::getName() const
@@ -64,6 +81,7 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     result_table_node->storage_id = storage_id;
     result_table_node->storage_lock = storage_lock;
     result_table_node->storage_snapshot = storage_snapshot;
+    result_table_node->table_expression_modifiers = table_expression_modifiers;
 
     return result_table_node;
 }

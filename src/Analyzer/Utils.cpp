@@ -10,6 +10,9 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 
 namespace DB
 {
@@ -74,14 +77,52 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     auto result_table_expression = std::make_shared<ASTTableExpression>();
     result_table_expression->children.push_back(table_expression_node_ast);
 
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+    {
+        if (auto * query_node = table_expression_node->as<QueryNode>())
+            table_expression_modifiers = query_node->getTableExpressionModifiers();
+        else if (auto * union_node = table_expression_node->as<UnionNode>())
+            table_expression_modifiers = union_node->getTableExpressionModifiers();
+
         result_table_expression->subquery = result_table_expression->children.back();
+    }
     else if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::IDENTIFIER)
+    {
+        if (auto * table_node = table_expression_node->as<TableNode>())
+            table_expression_modifiers = table_node->getTableExpressionModifiers();
+        else if (auto * identifier_node = table_expression_node->as<IdentifierNode>())
+            table_expression_modifiers = identifier_node->getTableExpressionModifiers();
+
         result_table_expression->database_and_table_name = result_table_expression->children.back();
+    }
     else if (node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    {
+        if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+            table_expression_modifiers = table_function_node->getTableExpressionModifiers();
+
         result_table_expression->table_function = result_table_expression->children.back();
+    }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected identiifer, table, query, union or table function. Actual {}", table_expression_node->formatASTForErrorMessage());
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected identifier, table, query, union or table function. Actual {}",
+            table_expression_node->formatASTForErrorMessage());
+    }
+
+    if (table_expression_modifiers)
+    {
+        result_table_expression->final = table_expression_modifiers->hasFinal();
+
+        auto sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
+        if (sample_size_ratio.has_value())
+            result_table_expression->sample_size = std::make_shared<ASTSampleRatio>(*sample_size_ratio);
+
+        auto sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
+        if (sample_offset_ratio.has_value())
+            result_table_expression->sample_offset = std::make_shared<ASTSampleRatio>(*sample_offset_ratio);
+    }
 
     return result_table_expression;
 }

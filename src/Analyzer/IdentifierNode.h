@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Analyzer/TableExpressionModifiers.h>
 
 namespace DB
 {
@@ -21,10 +22,32 @@ public:
         : identifier(std::move(identifier_))
     {}
 
+    /** Construct identifier node with identifier and table expression modifiers
+      * when identifier node is part of JOIN TREE.
+      *
+      * Example: SELECT * FROM test_table SAMPLE 0.1 OFFSET 0.1 FINAL
+      */
+    explicit IdentifierNode(Identifier identifier_, TableExpressionModifiers table_expression_modifiers_)
+        : identifier(std::move(identifier_))
+        , table_expression_modifiers(std::move(table_expression_modifiers_))
+    {}
+
     /// Get identifier
     const Identifier & getIdentifier() const
     {
         return identifier;
+    }
+
+    /// Return true if identifier node has table expression modifiers, false otherwise
+    bool hasTableExpressionModifiers() const
+    {
+        return table_expression_modifiers.has_value();
+    }
+
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    {
+        return table_expression_modifiers;
     }
 
     QueryTreeNodeType getNodeType() const override
@@ -50,6 +73,7 @@ protected:
 
 private:
     Identifier identifier;
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
 };
 
 }

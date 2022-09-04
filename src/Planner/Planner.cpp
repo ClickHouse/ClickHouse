@@ -324,7 +324,7 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
     PlannerContextPtr & planner_context);
 
 QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
-    SelectQueryInfo & table_expression_query_info,
+    SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context)
 {
@@ -347,6 +347,12 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     {
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+
+        auto table_expression_query_info = select_query_info;
+        if (table_node)
+            table_expression_query_info.table_expression_modifiers = table_node->getTableExpressionModifiers();
+        else
+            table_expression_query_info.table_expression_modifiers = table_function_node->getTableExpressionModifiers();
 
         auto from_stage = storage->getQueryProcessingStage(planner_context->getQueryContext(), select_query_options.to_stage, storage_snapshot, table_expression_query_info);
         const auto & columns_names = table_expression_columns.getColumnsNames();
@@ -745,8 +751,7 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            SelectQueryInfo table_expression_query_info = select_query_info;
-            return buildQueryPlanForTableExpression(join_tree_node, table_expression_query_info, select_query_options, planner_context);
+            return buildQueryPlanForTableExpression(join_tree_node, select_query_info, select_query_options, planner_context);
         }
         case QueryTreeNodeType::JOIN:
         {

@@ -6,6 +6,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -93,6 +94,25 @@ public:
         return children[queries_child_index]->as<ListNode &>();
     }
 
+    /// Return true if union node has table expression modifiers, false otherwise
+    bool hasTableExpressionModifiers() const
+    {
+        return table_expression_modifiers.has_value();
+    }
+
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    {
+        return table_expression_modifiers;
+    }
+
+    /// Set table expression modifiers
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+    {
+        table_expression_modifiers = std::move(table_expression_modifiers_value);
+    }
+
+
     /// Compute union projection
     NamesAndTypes computeProjectionColumns() const;
 
@@ -141,6 +161,7 @@ private:
     SelectUnionModes union_modes;
     SelectUnionModesSet union_modes_set;
     ConstantValuePtr constant_value;
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     static constexpr size_t queries_child_index = 0;
     static constexpr size_t children_size = queries_child_index + 1;

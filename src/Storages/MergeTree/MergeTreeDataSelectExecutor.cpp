@@ -107,14 +107,12 @@ static std::string toString(const RelativeSize & x)
 }
 
 /// Converts sample size to an approximate number of rows (ex. `SAMPLE 1000000`) to relative value (ex. `SAMPLE 0.1`).
-static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, size_t approx_total_rows)
+static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTSampleRatio::Rational & ratio, size_t approx_total_rows)
 {
     if (approx_total_rows == 0)
         return 1;
 
-    const auto & node_sample = node->as<ASTSampleRatio &>();
-
-    auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
+    auto absolute_sample_size = ratio.numerator / ratio.denominator;
     return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / RelativeSize(approx_total_rows));
 }
 
@@ -467,7 +465,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 }
 
 MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
-    const ASTSelectQuery & select,
+    const SelectQueryInfo & select_query_info,
     NamesAndTypesList available_real_columns,
     const MergeTreeData::DataPartsVector & parts,
     KeyCondition & key_condition,
@@ -484,23 +482,46 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    auto select_sample_size = select.sampleSize();
-    auto select_sample_offset = select.sampleOffset();
+    bool final = false;
+    std::optional<ASTSampleRatio::Rational> sample_size_ratio;
+    std::optional<ASTSampleRatio::Rational> sample_offset_ratio;
 
-    if (select_sample_size)
+    if (select_query_info.table_expression_modifiers)
     {
-        relative_sample_size.assign(
-            select_sample_size->as<ASTSampleRatio &>().ratio.numerator,
-            select_sample_size->as<ASTSampleRatio &>().ratio.denominator);
+        const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
+        final = table_expression_modifiers.hasFinal();
+
+        if (table_expression_modifiers.hasSampleSizeRatio())
+            sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
+
+        if (table_expression_modifiers.hasSampleOffsetRatio())
+            sample_offset_ratio = table_expression_modifiers.getSampleSizeRatio();
+    }
+    else
+    {
+        auto & select = select_query_info.query->as<ASTSelectQuery &>();
+
+        final = select.final();
+        auto select_sample_size = select.sampleSize();
+        auto select_sample_offset = select.sampleOffset();
+
+        if (select_sample_size)
+            sample_size_ratio = select_sample_size->as<ASTSampleRatio &>().ratio;
+
+        if (select_sample_offset)
+            sample_offset_ratio = select_sample_offset->as<ASTSampleRatio &>().ratio;
+    }
+
+    if (sample_size_ratio)
+    {
+        relative_sample_size.assign(sample_size_ratio->numerator, sample_size_ratio->denominator);
 
         if (relative_sample_size < 0)
             throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         relative_sample_offset = 0;
-        if (select_sample_offset)
-            relative_sample_offset.assign(
-                select_sample_offset->as<ASTSampleRatio &>().ratio.numerator,
-                select_sample_offset->as<ASTSampleRatio &>().ratio.denominator);
+        if (sample_offset_ratio)
+            relative_sample_offset.assign(sample_offset_ratio->numerator, sample_offset_ratio->denominator);
 
         if (relative_sample_offset < 0)
             throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -513,7 +534,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         if (relative_sample_size > 1)
         {
-            relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
+            relative_sample_size = convertAbsoluteSampleSizeToRelative(*sample_size_ratio, approx_total_rows);
             LOG_DEBUG(log, "Selected relative sample size: {}", toString(relative_sample_size));
         }
 
@@ -526,7 +547,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         if (relative_sample_offset > 1)
         {
-            relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
+            relative_sample_offset = convertAbsoluteSampleSizeToRelative(*sample_offset_ratio, approx_total_rows);
             LOG_DEBUG(log, "Selected relative sample offset: {}", toString(relative_sample_offset));
         }
     }
@@ -660,7 +681,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             /// So, assume that we already have calculated column.
             ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
 
-            if (select.final())
+            if (final)
             {
                 sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.column_names[0]);
                 /// We do spoil available_real_columns here, but it is not used later.
