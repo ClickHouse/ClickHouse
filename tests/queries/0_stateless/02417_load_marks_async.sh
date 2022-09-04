@@ -40,7 +40,7 @@ function test
     else
         echo 'F'
     fi
-    result=$(${CLICKHOUSE_CLIENT} -q "WITH CurrentMetric_BackgroundLoadingMarksTasks as a SELECT count(a) FROM system.metric_log WHERE a > 0")
+    result=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['BackgroundLoadingMarksTasks'] FROM system.query_log WHERE query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND current_database = currentDatabase()")
     if [[ $result -ne 0 ]]; then
         echo 'Ok'
     else
