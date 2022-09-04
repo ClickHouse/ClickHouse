@@ -74,6 +74,12 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
 
     buffer << ", table_function_name: " << table_function_name;
 
+    if (table_expression_modifiers)
+    {
+        buffer << ", ";
+        table_expression_modifiers->dump(buffer);
+    }
+
     const auto & arguments = getArguments();
     if (!arguments.getNodes().empty())
     {
@@ -91,6 +97,13 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     if (storage && rhs_typed.storage)
         return storage_id == rhs_typed.storage_id;
 
+    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
+        return false;
+    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
+        return false;
+    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
+        return false;
+
     return true;
 }
 
@@ -105,6 +118,9 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state) const
         state.update(full_name.size());
         state.update(full_name);
     }
+
+    if (table_expression_modifiers)
+        table_expression_modifiers->updateTreeHash(state);
 }
 
 ASTPtr TableFunctionNode::toASTImpl() const
@@ -130,6 +146,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
     result->storage = storage;
     result->storage_id = storage_id;
     result->storage_snapshot = storage_snapshot;
+    result->table_expression_modifiers = table_expression_modifiers;
 
     return result;
 }

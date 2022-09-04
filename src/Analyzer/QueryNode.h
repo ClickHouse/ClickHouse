@@ -6,6 +6,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
 
 namespace DB
 {
@@ -108,6 +109,24 @@ public:
     bool isGroupByWithGroupingSets() const
     {
         return is_group_by_with_grouping_sets;
+    }
+
+    /// Return true if query node has table expression modifiers, false otherwise
+    bool hasTableExpressionModifiers() const
+    {
+        return table_expression_modifiers.has_value();
+    }
+
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    {
+        return table_expression_modifiers;
+    }
+
+    /// Set table expression modifiers
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+    {
+        table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
 
     bool hasWith() const
@@ -420,6 +439,7 @@ private:
     std::string cte_name;
     NamesAndTypes projection_columns;
     ConstantValuePtr constant_value;
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;

@@ -513,7 +513,13 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
     }
 
-    if (!modified_select.final() && storage->needRewriteQueryWithFinal(real_column_names))
+    bool final = false;
+    if (modified_query_info.table_expression_modifiers)
+        final = modified_query_info.table_expression_modifiers->hasFinal();
+    else
+        final = modified_select.final();
+
+    if (!final && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.

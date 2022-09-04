@@ -848,9 +848,11 @@ Block KeyCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-
-    expr_for_constant_folding->execute(result);
+    if (syntax_analyzer_result)
+    {
+        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
+        expr_for_constant_folding->execute(result);
+    }
 
     return result;
 }
@@ -892,8 +894,11 @@ KeyCondition::KeyCondition(
       */
     Block block_with_constants = getBlockWithConstants(query, syntax_analyzer_result, context);
 
-    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-        array_joined_columns.insert(name);
+    if (syntax_analyzer_result)
+    {
+        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+            array_joined_columns.insert(name);
+    }
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -964,8 +969,11 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
-    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-        array_joined_columns.insert(name);
+    if (syntax_analyzer_result)
+    {
+        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+            array_joined_columns.insert(name);
+    }
 
     if (!dag_nodes.nodes.empty())
     {

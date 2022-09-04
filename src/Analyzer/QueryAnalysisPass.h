@@ -38,6 +38,7 @@ namespace DB
   * No GROUPING function if there is no GROUP BY.
   * No aggregate functions in WHERE, PREWHERE and inside another aggregate functions.
   * GROUP BY modifiers CUBE, ROLLUP, GROUPING SETS and WITH TOTALS.
+  * Table expression modifiers are disabled for subqueries in JOIN TREE.
   *
   * 10. Special functions handling:
   * Function `untuple` is handled properly.
