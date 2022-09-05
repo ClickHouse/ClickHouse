@@ -28,7 +28,7 @@ MarkType::MarkType(std::string_view extension)
     }
 
     if (!extension.starts_with("mrk"))
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Mark file extension does not start with .mrk or .cmrk");
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Mark file extension does not start with .mrk or .cmrk: {}", extension);
 
     extension = extension.substr(strlen("mrk"));
 
