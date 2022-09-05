@@ -18,6 +18,36 @@ CREATE TABLE test_table_compound
 
 INSERT INTO test_table_compound VALUES (0, tuple(0, 'Value'));
 
+DROP TABLE IF EXISTS test_table_join_1;
+CREATE TABLE test_table_join_1
+(
+    id UInt64,
+    value String,
+    value_join_1 String
+) ENGINE=TinyLog;
+
+INSERT INTO test_table_join_1 VALUES (0, 'Join_1_Value', 'Join_1_Value');
+
+DROP TABLE IF EXISTS test_table_join_2;
+CREATE TABLE test_table_join_2
+(
+    id UInt64,
+    value String,
+    value_join_2 String
+) ENGINE=TinyLog;
+
+INSERT INTO test_table_join_2 VALUES (0, 'Join_2_Value', 'Join_2_Value');
+
+DROP TABLE IF EXISTS test_table_join_3;
+CREATE TABLE test_table_join_3
+(
+    id UInt64,
+    value String,
+    value_join_3 String
+) ENGINE=TinyLog;
+
+INSERT INTO test_table_join_3 VALUES (0, 'Join_3_Value', 'Join_3_Value');
+
 -- { echoOn }
 
 SELECT 'Constants';
@@ -55,7 +85,6 @@ DESCRIBE (SELECT tuple_value.* FROM test_table_compound);
 SELECT '--';
 
 DESCRIBE (SELECT tuple_value.* APPLY x -> x FROM test_table_compound);
-
 
 SELECT '--';
 
@@ -211,9 +240,100 @@ DESCRIBE (SELECT arrayMap(x -> (SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2) AS
 
 SELECT '--';
 
-SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b;
+DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b);
+
+SELECT 'Joins';
+
+DESCRIBE (SELECT * FROM test_table_join_1, test_table_join_2);
+
+SELECT '--';
+
+DESCRIBE (SELECT * FROM test_table_join_1 AS t1, test_table_join_2 AS t2);
+
+SELECT '--';
+
+DESCRIBE (SELECT * APPLY toString FROM test_table_join_1 AS t1, test_table_join_2 AS t2);
+
+SELECT '--';
+
+DESCRIBE (SELECT * APPLY x -> toString(x) FROM test_table_join_1 AS t1, test_table_join_2 AS t2);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.*, test_table_join_2.* FROM test_table_join_1 INNER JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT t1.*, t2.* FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.* APPLY toString, test_table_join_2.* APPLY toString FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.* APPLY x -> toString(x), test_table_join_2.* APPLY x -> toString(x) FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_1.value_join_1, test_table_join_2.id, test_table_join_2.value, test_table_join_2.value_join_2
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT t1.id, t1.value, t1.value_join_1, t2.id, t2.value, t2.value_join_2 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id);
+
+SELECT 'Multiple JOINS';
+
+DESCRIBE (SELECT * FROM test_table_join_1, test_table_join_2, test_table_join_3);
+
+SELECT '--';
+
+DESCRIBE (SELECT * FROM test_table_join_1 AS t1, test_table_join_2 AS t2, test_table_join_3 AS t3);
+
+SELECT '--';
+
+DESCRIBE (SELECT * APPLY toString FROM test_table_join_1 AS t1, test_table_join_2 AS t2, test_table_join_3 AS t3);
+
+SELECT '--';
+
+DESCRIBE (SELECT * APPLY x -> toString(x) FROM test_table_join_1 AS t1, test_table_join_2 AS t2, test_table_join_3 AS t3);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.*, test_table_join_2.*, test_table_join_3.*
+FROM test_table_join_1 INNER JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id
+INNER JOIN test_table_join_3 ON test_table_join_2.id = test_table_join_3.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT t1.*, t2.*, t3.*
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 ON t2.id = t3.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.* APPLY toString, test_table_join_2.* APPLY toString, test_table_join_3.* APPLY toString
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 ON t2.id = t3.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.* APPLY x -> toString(x), test_table_join_2.* APPLY x -> toString(x), test_table_join_3.* APPLY x -> toString(x)
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 ON t2.id = t3.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_1.value_join_1, test_table_join_2.id, test_table_join_2.value, test_table_join_2.value_join_2,
+test_table_join_3.id, test_table_join_3.value, test_table_join_3.value_join_3
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 ON t2.id = t3.id);
+
+SELECT '--';
+
+DESCRIBE (SELECT t1.id, t1.value, t1.value_join_1, t2.id, t2.value, t2.value_join_2, t3.id, t3.value, t3.value_join_3
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 ON t2.id = t3.id);
 
 -- { echoOff }
 
+DROP TABLE test_table_join_1;
+DROP TABLE test_table_join_2;
 DROP TABLE test_table;
 DROP TABLE test_table_compound;

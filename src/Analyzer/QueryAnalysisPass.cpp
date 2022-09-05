@@ -1222,10 +1222,14 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
             return {};
     }
 
-    if (identifier_lookup.isExpressionLookup() && it->second->getNodeType() != QueryTreeNodeType::COLUMN && it->second->getNodeType() != QueryTreeNodeType::CONSTANT
-        && it->second->getNodeType() != QueryTreeNodeType::FUNCTION && it->second->getNodeType() != QueryTreeNodeType::QUERY)
+    auto node_type = it->second->getNodeType();
+    if (identifier_lookup.isExpressionLookup() && node_type != QueryTreeNodeType::COLUMN && node_type != QueryTreeNodeType::CONSTANT
+        && node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
         return {};
-    else if (identifier_lookup.isTableLookup() && it->second->getNodeType() != QueryTreeNodeType::TABLE && it->second->getNodeType() != QueryTreeNodeType::QUERY)
+    else if (identifier_lookup.isTableLookup() && node_type != QueryTreeNodeType::TABLE && node_type != QueryTreeNodeType::TABLE_FUNCTION &&
+        node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
+        return {};
+    else if (identifier_lookup.isFunctionLookup() && node_type != QueryTreeNodeType::LAMBDA)
         return {};
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
@@ -1613,6 +1617,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
 
                     IdentifierLookup column_identifier_lookup {qualified_identifier_with_removed_part, IdentifierLookupContext::EXPRESSION};
                     bool can_bind_identifier_to_table_expression = tryBindIdentifierToTableExpression(column_identifier_lookup, table_expression_to_check, scope);
+
                     if (can_bind_identifier_to_table_expression)
                     {
                         can_remove_qualificator = false;
@@ -1665,6 +1670,21 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
+    auto left_resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_join_node.getLeftTableExpression(), scope);
+    auto right_resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_join_node.getRightTableExpression(), scope);
+
+    if (!identifier_lookup.isExpressionLookup())
+    {
+        if (left_resolved_identifier && right_resolved_identifier)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "JOIN {} ambigious identifier {}. In scope {}",
+                table_expression_node->formatASTForErrorMessage(),
+                identifier_lookup.dump(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        return left_resolved_identifier ? left_resolved_identifier : right_resolved_identifier;
+    }
+
     bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
 
     std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
@@ -1679,9 +1699,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             join_using_column_name_to_column_node.emplace(column_node.getName(), std::static_pointer_cast<ColumnNode>(join_using_node));
         }
     }
-
-    auto left_resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_join_node.getLeftTableExpression(), scope);
-    auto right_resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_join_node.getRightTableExpression(), scope);
 
     std::optional<JoinTableSide> resolved_side;
     QueryTreeNodePtr resolved_identifier;
@@ -1720,7 +1737,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "JOIN {} ambigious identifier {}. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.identifier.getFullName(),
+                identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
@@ -3559,10 +3576,11 @@ String QueryAnalyzer::calculateProjectionNodeDisplayName(QueryTreeNodePtr & node
 
         if (resolved_identifier_result.resolved_identifier && resolved_identifier_result.isResolvedFromJoinTree())
         {
-            projection_name_from_scope = try_to_get_projection_name_from_scope(node);
+            projection_name_from_scope = try_to_get_projection_name_from_scope(resolved_identifier_result.resolved_identifier);
 
             if (!projection_name_from_scope.empty())
                 return projection_name_from_scope;
+
             if (auto * column_node = resolved_identifier_result.resolved_identifier->as<ColumnNode>())
                 return column_node->getColumnName();
         }
@@ -3822,7 +3840,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                     if (table_expression_modifiers.has_value())
                         resolved_identifier_table_node->setTableExpressionModifiers(*table_expression_modifiers);
                 }
-                else if (auto * resolved_identifier_table_function_node = resolved_identifier->as<TableFunctionNode>();)
+                else if (auto * resolved_identifier_table_function_node = resolved_identifier->as<TableFunctionNode>())
                 {
                     if (table_expression_modifiers.has_value())
                         resolved_identifier_table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
