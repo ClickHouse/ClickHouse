@@ -31,7 +31,6 @@ private:
     DataPartStoragePtr data_part_storage;
     MarkCache * mark_cache = nullptr;
     String mrk_path;
-    bool compress_marks;
     size_t marks_count;
     const MergeTreeIndexGranularityInfo & index_granularity_info;
     bool save_marks_in_cache = false;

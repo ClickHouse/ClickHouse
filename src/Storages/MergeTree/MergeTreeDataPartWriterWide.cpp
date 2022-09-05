@@ -30,6 +30,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 
     Granules result;
     size_t current_row = 0;
+
     /// When our last mark is not finished yet and we have to write rows into it
     if (rows_written_in_last_mark > 0)
     {
@@ -43,7 +44,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
             .is_complete = (rows_left_in_block >= rows_left_in_last_mark),
         });
         current_row += result.back().rows_to_write;
-        current_mark++;
+        ++current_mark;
     }
 
     /// Calculating normal granules for block
@@ -61,7 +62,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
             .is_complete = (rows_left_in_block >= expected_rows_in_mark),
         });
         current_row += result.back().rows_to_write;
-        current_mark++;
+        ++current_mark;
     }
 
     return result;
@@ -144,7 +145,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         if (is_offsets && offset_columns.contains(stream_name))
             return nullptr;
 
-        return &column_streams.at(stream_name)->compressed;
+        return &column_streams.at(stream_name)->compressed_hashing;
     };
 }
 
@@ -272,10 +273,12 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
     Stream & stream = *column_streams[stream_with_mark.stream_name];
-    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.compress_marks ? stream.marks_compressed : stream.marks_hashing);
-    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.compress_marks ? stream.marks_compressed : stream.marks_hashing);
+    WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
+
+    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, marks_out);
+    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, marks_out);
     if (settings.can_use_adaptive_granularity)
-        writeIntBinary(rows_in_mark, stream.compress_marks ? stream.marks_compressed : stream.marks_hashing);
+        writeIntBinary(rows_in_mark, marks_out);
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -297,13 +300,13 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         Stream & stream = *column_streams[stream_name];
 
         /// There could already be enough data to compress into the new block.
-        if (stream.compressed.offset() >= settings.min_compress_block_size)
-            stream.compressed.next();
+        if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
+            stream.compressed_hashing.next();
 
         StreamNameAndMark stream_with_mark;
         stream_with_mark.stream_name = stream_name;
         stream_with_mark.mark.offset_in_compressed_file = stream.plain_hashing.count();
-        stream_with_mark.mark.offset_in_decompressed_block = stream.compressed.offset();
+        stream_with_mark.mark.offset_in_decompressed_block = stream.compressed_hashing.offset();
 
         result.push_back(stream_with_mark);
     }, path);
@@ -333,7 +336,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
-        column_streams[stream_name]->compressed.nextIfAtEnd();
+        column_streams[stream_name]->compressed_hashing.nextIfAtEnd();
     }, serialize_settings.path);
 }
 
