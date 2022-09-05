@@ -118,7 +118,9 @@ def get_query_stat(instance, hint):
 def get_minio_size(cluster):
     minio = cluster.minio_client
     size = 0
-    for obj_level1 in minio.list_objects(cluster.minio_bucket, prefix="data/", recursive=True):
+    for obj_level1 in minio.list_objects(
+        cluster.minio_bucket, prefix="data/", recursive=True
+    ):
         size += obj_level1.size
     return size
 
