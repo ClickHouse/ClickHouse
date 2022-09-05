@@ -649,19 +649,33 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 }
 
 
-void DistributedSink::writeToLocal(const Block & block, size_t repeats)
+void DistributedSink::writeToLocal(const Cluster::ShardInfo& shard_info, const Block & block, size_t repeats)
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("db.statement", this->query_string);
+    span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+    span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
+    span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
+    span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+    span.addAttribute("clickhouse.rows", [&block]() { return std::to_string(block.rows()); });
+    span.addAttribute("clickhouse.bytes", [&block]() { return std::to_string(block.bytes()); });
 
-    InterpreterInsertQuery interp(query_ast, context, allow_materialized);
+    try
+    {
+        InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
-    auto block_io = interp.execute();
-    PushingPipelineExecutor executor(block_io.pipeline);
+        auto block_io = interp.execute();
+        PushingPipelineExecutor executor(block_io.pipeline);
 
-    executor.start();
-    writeBlockConvert(executor, block, repeats, log);
-    executor.finish();
+        executor.start();
+        writeBlockConvert(executor, block, repeats, log);
+        executor.finish();
+    }
+    catch (...)
+    {
+        span.addAttribute(std::current_exception());
+        throw;
+    }
 }
 
 
