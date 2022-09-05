@@ -1592,7 +1592,21 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
                     else
                     {
                         LOG_WARNING(log, "Removing temporary directory {}", full_path);
-                        disk->removeRecursive(it->path());
+
+                        /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
+                        /// is executed as a callback.
+                        ///
+                        /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
+                        /// or not. So we are not doing it
+                        bool keep_shared = false;
+                        if (it->path().find("fetch") != std::string::npos)
+                        {
+                            keep_shared = disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication;
+                            if (keep_shared)
+                                LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
+                        }
+
+                        disk->removeSharedRecursive(it->path(), keep_shared, {});
                         ++cleared_count;
                     }
                 }
@@ -5539,6 +5553,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     // INTERPOLATE expressions may include aliases, so aliases should be preserved
     if (select_query->interpolate() && !select_query->interpolate()->children.empty())
+        return std::nullopt;
+
+    // Currently projections don't support GROUPING SET yet.
+    if (select_query->group_by_with_grouping_sets)
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
