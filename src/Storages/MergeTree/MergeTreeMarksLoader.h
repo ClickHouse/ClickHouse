@@ -23,6 +23,7 @@ public:
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         bool save_marks_in_cache_,
         const ReadSettings & read_settings_,
+        ThreadPool * load_marks_threadpool_,
         size_t columns_in_mark_ = 1);
 
     ~MergeTreeMarksLoader();
@@ -30,8 +31,6 @@ public:
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
 private:
-    static std::shared_ptr<ThreadPool> getLoadMarksThreadpool();
-
     DataPartStoragePtr data_part_storage;
     MarkCache * mark_cache = nullptr;
     String mrk_path;
@@ -47,6 +46,7 @@ private:
     MarkCache::MappedPtr loadMarksImpl();
 
     std::future<MarkCache::MappedPtr> future;
+    ThreadPool * load_marks_threadpool;
 };
 
 }

@@ -27,7 +27,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
         clockid_t clock_type_,
-        bool is_low_cardinality_dictionary_)
+        bool is_low_cardinality_dictionary_,
+        ThreadPool * load_marks_cache_threadpool_)
     : settings(settings_)
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
@@ -49,7 +50,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         marks_count,
         *index_granularity_info,
         save_marks_in_cache,
-        settings.read_settings)
+        settings.read_settings,
+        load_marks_cache_threadpool_)
 {
 }
 
