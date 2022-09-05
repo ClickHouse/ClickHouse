@@ -174,6 +174,8 @@ void WriteBufferFromS3::finalizeImpl()
 
         if (!response.IsSuccess())
             throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket);
+        else
+            LOG_TRACE(log, "Object {} exists after upload", key);
     }
 }
 
