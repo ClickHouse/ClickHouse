@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/special/merge
+---
 # 合并 {#merge}
 
 `Merge` 引擎 (不要跟 `MergeTree` 引擎混淆) 本身不存储数据，但可用于同时从任意多个其他的表中读取数据。

@@ -38,8 +38,6 @@ BUILD_LOG_NAME = "build_log.log"
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
-    if build_config["bundled"] != "bundled":
-        return False
     if build_config["libraries"] == "shared":
         return False
     if build_config["sanitizer"] != "":
@@ -60,8 +58,9 @@ def get_packager_cmd(
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
+    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && ./packager --output-dir={output_path} "
+        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 

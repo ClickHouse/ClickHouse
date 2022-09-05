@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/numbers
+---
 # system.numbers {#system-numbers}
 
 Таблица содержит один столбец с именем number типа UInt64, содержащим почти все натуральные числа, начиная с нуля.

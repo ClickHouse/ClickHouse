@@ -179,12 +179,14 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     if (!table_expression->database_and_table_name)
     {
-        // If it's a view table function, add a fake db.table name.
+        // If it's a view or merge table function, add a fake db.table name.
         if (table_expression->table_function)
         {
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
-            if ((table_function_name == "view") || (table_function_name == "viewIfPermitted"))
+            if (table_function_name == "view" || table_function_name == "viewIfPermitted")
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
+            if (table_function_name == "merge")
+                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__merge");
         }
         if (!table_expression->database_and_table_name)
             throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);

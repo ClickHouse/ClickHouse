@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/quota_usage
+---
 # system.quota_usage {#system_tables-quota_usage}
 
 当前用户的配额使用情况: 使用了多少, 还剩多少.

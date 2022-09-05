@@ -32,7 +32,10 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         ContextPtr context_,
-        const String & primary_key_);
+        const String & primary_key_,
+        Int32 ttl_ = 0,
+        String rocksdb_dir_ = "",
+        bool read_only_ = false);
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
@@ -80,6 +83,8 @@ private:
     RocksDBPtr rocksdb_ptr;
     mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
+    Int32 ttl;
+    bool read_only;
 
     void initDB();
 };

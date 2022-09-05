@@ -155,7 +155,7 @@ private:
  *  We use boost::circular_buffer as a container for queues not to do any allocations.
  *
  *  Another nuisance that we faces with is than background operations always interact with an associated Storage.
- *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
+ *  So, when a Storage want to shutdown, it must wait until all its background operations are finished.
  */
 template <class Queue>
 class MergeTreeBackgroundExecutor final : boost::noncopyable
