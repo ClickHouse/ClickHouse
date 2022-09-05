@@ -154,7 +154,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            /// don't optimise functions that shadow any of it's arguments, e.g.:
+            /// don't optimize functions that shadow any of it's arguments, e.g.:
             /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
             if (!function->alias.empty())
             {
@@ -632,7 +632,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
         if (!cnf_form)
             return false;
 
-        cnf_form->pushNotInFuntions();
+        cnf_form->pushNotInFunctions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
         return true;
     }
