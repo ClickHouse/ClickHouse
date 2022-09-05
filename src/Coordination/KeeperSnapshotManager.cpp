@@ -360,27 +360,57 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         return node.getData().empty() && node.stat == Coordination::Stat{};
     };
 
-    //ConcurrentBoundedQueue<std::pair<std::string, KeeperStorage::Node>> node_queue(std::numeric_limits<size_t>::max());
-    //auto node_load_thread = ThreadFromGlobalPool([&] 
-    //{ 
-    //    size_t loaded = 0;
-    //    while (loaded != snapshot_container_size)
-    //    {
-    //        std::pair<std::string, KeeperStorage::Node> next_node;
-    //        if (node_queue.tryPop(next_node))
-    //        {
-    //            auto & [path, node] = next_node;
-    //            storage.container.insertOrReplace(path, node);
-    //            if (node.stat.ephemeralOwner != 0)
-    //                storage.ephemerals[node.stat.ephemeralOwner].insert(path);
+    ConcurrentBoundedQueue<std::pair<std::string, KeeperStorage::Node>> node_queue(snapshot_container_size);
+    auto node_load_thread = ThreadFromGlobalPool([&] 
+    { 
+        size_t loaded = 0;
+        while (loaded != snapshot_container_size)
+        {
+            std::pair<std::string, KeeperStorage::Node> next_node;
+            if (node_queue.tryPop(next_node))
+            {
+                auto & [path, node] = next_node;
 
-    //            if (recalculate_digest)
-    //                storage.nodes_digest += node.getDigest(path);
+                if (node.stat.ephemeralOwner != 0)
+                    storage.ephemerals[node.stat.ephemeralOwner].insert(path);
 
-    //            ++loaded;
-    //        }
-    //    }
-    //});
+                if (recalculate_digest)
+                    storage.nodes_digest += node.getDigest(path);
+
+                storage.container.insertOrReplace(path, std::move(node));
+
+                ++loaded;
+            }
+        }
+
+        for (const auto & itr : storage.container)
+        {
+            if (itr.key != "/")
+            {
+                auto parent_path = parentPath(itr.key);
+                storage.container.updateValue(
+                    parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
+            }
+        }
+
+        for (const auto & itr : storage.container)
+        {
+            if (itr.key != "/")
+            {
+                if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+                {
+#ifdef NDEBUG
+                    /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                                " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                                " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#endif
+                }
+            }
+        }
+    });
 
     Stopwatch node_timer;
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
@@ -424,50 +454,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     error_msg);
         }
 
-        //[[maybe_unused]] bool pushed = node_queue.tryPush({std::move(path), std::move(node)});
-        storage.container.insertOrReplace(path, node);
-        if (node.stat.ephemeralOwner != 0)
-            storage.ephemerals[node.stat.ephemeralOwner].insert(path);
-
-        if (recalculate_digest)
-            storage.nodes_digest += node.getDigest(path);
+        [[maybe_unused]] bool pushed = node_queue.tryPush({std::move(path), std::move(node)});
     }
-
-    //if (node_load_thread.joinable())
-    //    node_load_thread.join();
-
-    LOG_INFO(&Poco::Logger::get("STOPWATCH"), "Node loading took {}", node_timer.elapsedMilliseconds());
-
-    Stopwatch parenting_timer;
-    for (const auto & itr : storage.container)
-    {
-        if (itr.key != "/")
-        {
-            auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(
-                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
-        }
-    }
-    LOG_INFO(&Poco::Logger::get("STOPWATCH"), "Parenting took {}", parenting_timer.elapsedMilliseconds());
-
-    for (const auto & itr : storage.container)
-    {
-        if (itr.key != "/")
-        {
-            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
-            {
-#ifdef NDEBUG
-                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#endif
-            }
-        }
-    }
-
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);
@@ -513,6 +501,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         buffer->pos(0);
         deserialization_result.cluster_config = ClusterConfig::deserialize(*buffer);
     }
+
+    if (node_load_thread.joinable())
+        node_load_thread.join();
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_)
