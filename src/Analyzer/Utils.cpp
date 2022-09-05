@@ -201,14 +201,14 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
-                nodes_to_process.push_back(array_join_node.getTableExpression());
+                nodes_to_process.push_front(array_join_node.getTableExpression());
                 break;
             }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
-                nodes_to_process.push_back(join_node.getLeftTableExpression());
-                nodes_to_process.push_back(join_node.getRightTableExpression());
+                nodes_to_process.push_front(join_node.getRightTableExpression());
+                nodes_to_process.push_front(join_node.getLeftTableExpression());
                 break;
             }
             default:
