@@ -2,7 +2,8 @@
 
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <Common/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -10,7 +11,6 @@
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
-#include <Common/LRUFileCachePriority.h>
 
 namespace fs = std::filesystem;
 
@@ -59,6 +59,24 @@ String FileCache::getPathInLocalCache(const Key & key) const
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
 }
 
+void FileCache::removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) const
+{
+    /// Note: it is guaranteed that there is no concurrency here with files deletion
+    /// because cache key directories are create only in FileCache class under cache_lock.
+
+    auto key_str = key.toString();
+    auto key_prefix_path = fs::path(cache_base_path) / key_str.substr(0, 3);
+    auto key_path = key_prefix_path / key_str;
+
+    if (!fs::exists(key_path))
+        return;
+
+    fs::remove_all(key_path);
+
+    if (fs::is_empty(key_prefix_path))
+        fs::remove(key_prefix_path);
+}
+
 static bool isQueryInitialized()
 {
     return CurrentThread::isInitialized()
@@ -104,6 +122,7 @@ void FileCache::initialize()
             fs::create_directories(cache_base_path);
         }
 
+        status_file = make_unique<StatusFile>(fs::path(cache_base_path) / "status", StatusFile::write_full_info);
         is_initialized = true;
     }
 }
@@ -174,15 +193,8 @@ FileSegments FileCache::getImpl(
     const auto & file_segments = it->second;
     if (file_segments.empty())
     {
-        auto key_path = getPathInLocalCache(key);
-
         files.erase(key);
-
-        /// Note: it is guaranteed that there is no concurrency with files deletion,
-        /// because cache files are deleted only inside FileCache and under cache lock.
-        if (fs::exists(key_path))
-            fs::remove_all(key_path);
-
+        removeKeyDirectoryIfExists(key, cache_lock);
         return {};
     }
 
@@ -827,14 +839,10 @@ void FileCache::removeIfExists(const Key & key)
         }
     }
 
-    auto key_path = getPathInLocalCache(key);
-
     if (!some_cells_were_skipped)
     {
         files.erase(key);
-
-        if (fs::exists(key_path))
-            fs::remove_all(key_path);
+        removeKeyDirectoryIfExists(key, cache_lock);
     }
 }
 
@@ -924,12 +932,8 @@ void FileCache::remove(
 
             if (is_initialized && offsets.empty())
             {
-                auto key_path = getPathInLocalCache(key);
-
                 files.erase(key);
-
-                if (fs::exists(key_path))
-                    fs::remove_all(key_path);
+                removeKeyDirectoryIfExists(key, cache_lock);
             }
         }
         catch (...)
@@ -960,12 +964,19 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
     fs::directory_iterator key_prefix_it{cache_base_path};
     for (; key_prefix_it != fs::directory_iterator(); ++key_prefix_it)
     {
+        if (!key_prefix_it->is_directory())
+        {
+            if (key_prefix_it->path().filename() != "status")
+                LOG_DEBUG(log, "Unexpected file {} (not a directory), will skip it", key_prefix_it->path().string());
+            continue;
+        }
+
         fs::directory_iterator key_it{key_prefix_it->path()};
         for (; key_it != fs::directory_iterator(); ++key_it)
         {
             if (!key_it->is_directory())
             {
-                LOG_WARNING(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
+                LOG_DEBUG(log, "Unexpected file {} (not a directory), will skip it", key_it->path().string());
                 continue;
             }
 

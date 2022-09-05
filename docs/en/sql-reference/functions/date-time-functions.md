@@ -267,7 +267,7 @@ Result:
 └────────────────┘
 ```
 
-:::Attention
+:::note
 The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is `Date` or `DateTime`.
 Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
 In case argument is out of normal range:
@@ -1069,7 +1069,7 @@ Formats a Time according to the given Format string. Format is a constant expres
 **Syntax**
 
 ``` sql
-formatDateTime(Time, Format\[, Timezone\])
+formatDateTime(Time, Format[, Timezone])
 ```
 
 **Returned value(s)**
@@ -1105,6 +1105,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
+| %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
 
 **Example**
