@@ -2281,7 +2281,7 @@ bool ParserExpressionImpl<Type, MinPriority>::parse(IParser::Pos & pos, ASTPtr &
 
         layers.pop_back();
 
-        /// We try to check whether there were some checkpoint 
+        /// We try to check whether there were some checkpoint
         while (!layers.empty() && !layers.back()->checkpoint_pos)
             layers.pop_back();
 
