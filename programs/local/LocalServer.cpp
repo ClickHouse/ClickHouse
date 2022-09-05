@@ -368,8 +368,9 @@ try
     UseSSL use_ssl;
     ThreadStatus thread_status;
     SCOPE_EXIT_SAFE({
-        if (connection)
-            connection.reset();
+        /// Context should not live longer than thread_status.
+        global_context.reset();
+        shared_context.reset();
     });
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
