@@ -3,9 +3,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/IDataType.h>
 
 #include <base/StringRef.h>
@@ -103,7 +106,7 @@ struct AggregateFunctionsMinMaxDataNumeric
     bool has_value = false;
     T value{};
 
-    bool has() const { return has_value; }
+    bool ALWAYS_INLINE has() const { return has_value; }
 
     bool ALWAYS_INLINE inline add(const T & new_value)
     {
@@ -140,7 +143,7 @@ struct AggregateFunctionsMinMaxDataNumeric
 
     void insertResultInto(IColumn & to) const
     {
-        if (has_value)
+        if (has())
             assert_cast<ColVecType &>(to).getData().push_back(value);
         else
             assert_cast<ColVecType &>(to).insertDefault();
@@ -153,33 +156,33 @@ struct AggregateFunctionsMinMaxDataNumeric
     {
         size_t count = row_end - row_begin;
         ptr += row_begin;
-
-        T aux{};
         if constexpr (!add_all_elements)
             condition_map += row_begin;
 
+        T ret{};
         size_t i = 0;
         for (; i < count; i++)
         {
             if (add_all_elements || !condition_map[i] == add_if_cond_zero)
             {
-                aux = ptr[i];
+                ret = ptr[i];
                 break;
             }
         }
-        if (i == count)
+        if (i >= count)
             return {};
 
+        /// Unroll the loop manually for floating point, since the compiler seems unable to do it by itself
         if constexpr (std::is_floating_point_v<T>)
         {
-            constexpr size_t unroll_block = 512 / sizeof(T);
+            constexpr size_t unroll_block = 512 / sizeof(T); /// Chosen via benchmarks with AVX2 so YMMV
             size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
 
             if (i < unrolled_end)
             {
                 T partial_min[unroll_block];
                 for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                    partial_min[unroll_it] = aux;
+                    partial_min[unroll_it] = ret;
 
                 while (i < unrolled_end)
                 {
@@ -191,26 +194,26 @@ struct AggregateFunctionsMinMaxDataNumeric
                     i += unroll_block;
                 }
                 for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                    aux = Comparator::cmp_get(aux, partial_min[unroll_it]);
+                    ret = Comparator::cmp_get(ret, partial_min[unroll_it]);
             }
         }
 
         for (; i < count; i++)
         {
             if (add_all_elements || !condition_map[i] == add_if_cond_zero)
-                aux = Comparator::cmp_get(aux, ptr[i]);
+                ret = Comparator::cmp_get(ret, ptr[i]);
         }
 
-        return aux;
+        return ret;
     }))
 
-    /// Given a vector of T finds the extreme (MIN or MAX) or that data and returns an optional value with it
+    /// Given a vector of T finds the extreme (MIN or MAX) value
     template <bool add_all_elements, bool add_if_cond_zero>
     static std::optional<T>
     findNumericExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>)
+        if constexpr (supported_multitarget_type)
         {
             if (isArchSupported(TargetArch::AVX2))
             {
@@ -225,7 +228,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         return findNumericExtremeImpl<add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
     }
 
-    /// Given a vector of T finds the extreme (MIN or MAX) for that data and returns the index where it is found
+    /// Given a vector of T finds the **index** where the extreme (MIN or MAX) value is placed
     template <bool add_all_elements, bool add_if_cond_zero>
     static std::optional<size_t> NO_INLINE findNumericExtremeIndex(
         const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
@@ -235,34 +238,35 @@ struct AggregateFunctionsMinMaxDataNumeric
         if constexpr (!add_all_elements)
             condition_map += row_begin;
 
-        if constexpr (add_all_elements && (std::is_integral_v<T> || std::is_floating_point_v<T>))
+        if constexpr (add_all_elements && supported_multitarget_type)
         {
-            /// This is implemented based on findNumericExtreme and not the other way around because getting the final value is way easier to
-            /// do with SIMD, while getting the index, not to much
-            /// What we do is to divide the block in chunks of 1024 elements and calculate where the minmax element of each block
-            /// Once we know in which block the absolute minmax element is we look into that chunk only to find the index position
+            /// This is implemented based on findNumericExtreme and not the other way around because, for example, getting the min of
+            /// an array is easily done with SIMD, while getting the index where that min value is a much harder problem
+
+            /// What we do here is to divide the array in chunks of 1024 elements and calculate the min (or max) of each chunk
+            /// Once we know in which chunk the absolute min is, we look for the index in only that chunk
             constexpr size_t BLOCK_SIZE = 1024;
             size_t full_blocks = count / BLOCK_SIZE;
 
-            T v = *ptr;
+            T absolute_value = *ptr;
             size_t extreme_block = 0;
             size_t final_iterator = 0;
             for (size_t b = 0; b < full_blocks; b++)
             {
                 T block_value
                     = *findNumericExtreme<add_all_elements, add_if_cond_zero>(ptr, condition_map, b * BLOCK_SIZE, (b + 1) * BLOCK_SIZE);
-                if (Comparator::cmp(block_value, v))
+                if (Comparator::cmp(block_value, absolute_value))
                 {
-                    v = block_value;
+                    absolute_value = block_value;
                     extreme_block = b;
                 }
             }
 
             for (size_t i = full_blocks * BLOCK_SIZE; i < count; i++)
             {
-                if (Comparator::cmp(ptr[i], v))
+                if (Comparator::cmp(ptr[i], absolute_value))
                 {
-                    v = ptr[i];
+                    absolute_value = ptr[i];
                     extreme_block = full_blocks;
                     final_iterator = i;
                 }
@@ -272,7 +276,9 @@ struct AggregateFunctionsMinMaxDataNumeric
             {
                 for (size_t i = extreme_block * BLOCK_SIZE; i < (extreme_block + 1) * BLOCK_SIZE; i++)
                 {
-                    if (!Comparator::cmp(v, ptr[i]))
+                    /// Find the first element in the chunk that is not greater than the absolute min (or smaller than the absolute max)
+                    /// This will be the absolute_value we stored in the SIMD iteration and what we can return as index
+                    if (!Comparator::cmp(absolute_value, ptr[i]))
                     {
                         final_iterator = i;
                         break;
@@ -284,8 +290,10 @@ struct AggregateFunctionsMinMaxDataNumeric
         }
         else
         {
+            /// When we don't have a SIMD version to find the absolute_value we won't benefit from using the previous trick
+            /// so it's simpler to iterate over the data a single time
             std::optional<size_t> final_iterator{};
-            T v{};
+            T absolute_value{};
             size_t i = 0;
 
             while (!final_iterator && i < count)
@@ -293,7 +301,7 @@ struct AggregateFunctionsMinMaxDataNumeric
                 if (add_all_elements || !condition_map[i] == add_if_cond_zero)
                 {
                     final_iterator = i;
-                    v = ptr[i];
+                    absolute_value = ptr[i];
                     break;
                 }
                 i++;
@@ -303,10 +311,10 @@ struct AggregateFunctionsMinMaxDataNumeric
             {
                 if (add_all_elements || !condition_map[i] == add_if_cond_zero)
                 {
-                    if (Comparator::cmp(ptr[i], v))
+                    if (Comparator::cmp(ptr[i], absolute_value))
                     {
                         final_iterator = i;
-                        v = ptr[i];
+                        absolute_value = ptr[i];
                     }
                 }
             }
@@ -315,7 +323,7 @@ struct AggregateFunctionsMinMaxDataNumeric
         }
     }
 
-
+    /// Processes a block of data to find the min/max
     void addMany(const IColumn & column, size_t start, size_t end, Arena *)
     {
         const auto & col = assert_cast<const ColVecType &>(column);
@@ -325,6 +333,8 @@ struct AggregateFunctionsMinMaxDataNumeric
             add(*v);
     }
 
+    /// Processes a block of data to find the min/max and returns the index of the absolute element inserted (if any)
+    /// See findNumericExtremeIndex for an explanation why these are separate functions
     std::optional<size_t> addManyIndex(const IColumn & column, size_t start, size_t end, Arena * arena)
     {
         const auto & col = assert_cast<const ColVecType &>(column);
@@ -377,7 +387,7 @@ struct AggregateFunctionsMinMaxDataNumeric
 
     bool merge(const AggregateFunctionsMinMaxDataNumeric & rhs, Arena *)
     {
-        if (rhs.has_value)
+        if (rhs.has())
             return add(rhs.value);
         return false;
     }
@@ -1005,4 +1015,36 @@ public:
     }
 #endif
 };
+
+
+template <template <typename> class Comparator>
+IAggregateFunction *
+createAggregateFunctionMinMax(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & argument_type = argument_types[0];
+
+    WhichDataType which(argument_type);
+#define NUMERIC_DISPATCH(TYPE) \
+if (which.idx == TypeIndex::TYPE) \
+    return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<TYPE>>>(argument_type); /// NOLINT
+    FOR_NUMERIC_TYPES(NUMERIC_DISPATCH)
+
+    NUMERIC_DISPATCH(DateTime64)
+    NUMERIC_DISPATCH(Decimal32)
+    NUMERIC_DISPATCH(Decimal64)
+    NUMERIC_DISPATCH(Decimal128)
+#undef NUMERIC_DISPATCH
+
+    if (which.idx == TypeIndex::Date)
+        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<DataTypeDate::FieldType>>>(argument_type);
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataNumeric<Comparator<DataTypeDateTime::FieldType>>>(
+            argument_type);
+    if (which.idx == TypeIndex::String)
+        return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataString<Comparator<StringRef>>>(argument_type);
+    return new AggregateFunctionsMinMax<AggregateFunctionsMinMaxDataGeneric<Comparator<Field>>>(argument_type);
+}
 }
