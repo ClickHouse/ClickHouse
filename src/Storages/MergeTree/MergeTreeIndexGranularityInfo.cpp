@@ -16,19 +16,10 @@ namespace ErrorCodes
 std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage)
 {
     if (data_part_storage->exists())
-    {
         for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
-        {
-            const auto & ext = fs::path(it->name()).extension();
-            if (ext == getNonAdaptiveMrkExtension(false)
-                || ext == getNonAdaptiveMrkExtension(true)
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, false)
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, true)
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, false)
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, true))
-                return ext;
-        }
-    }
+            if (it->isFile())
+                if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
+                    return ext;
     return {};
 }
 

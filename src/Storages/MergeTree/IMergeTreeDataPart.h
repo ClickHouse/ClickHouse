@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -22,6 +23,7 @@
 #include <Storages/MergeTree/IPartMetadataManager.h>
 
 #include <shared_mutex>
+
 
 namespace zkutil
 {
@@ -585,6 +587,23 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
-bool isCompressedFromMrkExtension(const String & mrk_extension);
+
+
+/** Various types of mark files are stored in files with various extensions:
+  * .mrk, .mrk2, .mrk3, .cmrk, .cmrk2, .cmrk3.
+  * This helper allows to obtain mark type from file extension and vise versa.
+  */
+struct MarkType
+{
+    MarkType(std::string_view extension);
+    MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_);
+
+    static bool isMarkFileExtension(std::string_view extension);
+    std::string getFileExtension();
+
+    bool adaptive = false;
+    bool compressed = false;
+    MergeTreeDataPartType::Value part_type = MergeTreeDataPartType::Unknown;
+};
 
 }

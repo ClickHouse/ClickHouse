@@ -65,7 +65,9 @@ namespace ErrorCodes
     extern const int BAD_TTL_FILE;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int INCORRECT_FILE_NAME;
 }
+
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
@@ -1807,12 +1809,74 @@ bool isCompressedFromIndexExtension(const String & index_extension)
     return index_extension == getIndexExtension(true);
 }
 
-bool isCompressedFromMrkExtension(const String & mrk_extension)
+MarkType::MarkType(std::string_view extension)
 {
-    return mrk_extension == getNonAdaptiveMrkExtension(true)
-        || mrk_extension == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, true)
-        || mrk_extension == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, true)
-        || mrk_extension == getAdaptiveMrkExtension(MergeTreeDataPartType::InMemory, true);
+    if (extension.starts_with('c'))
+    {
+        compressed = true;
+        extension = extension.substr(1);
+    }
+
+    if (!extension.starts_with("mrk"))
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Mark file extension does not start with .mrk or .cmrk");
+
+    extension = extension.substr(strlen("mrk"));
+
+    if (extension.empty())
+    {
+        adaptive = false;
+        part_type = MergeTreeDataPartType::Wide;
+    }
+    else if (extension == "2")
+    {
+        adaptive = true;
+        part_type = MergeTreeDataPartType::Wide;
+    }
+    else if (extension == "3")
+    {
+        adaptive = true;
+        part_type = MergeTreeDataPartType::Compact;
+    }
+    else
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Unknown mark file extension: '{}'", extension);
+}
+
+MarkType::MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_)
+    : adaptive(adaptive_), compressed(compressed_), part_type(part_type_)
+{
+    if (!adaptive && part_type != MergeTreeDataPartType::Wide)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: non-Wide data part type with non-adaptive granularity");
+    if (part_type == MergeTreeDataPartType::Unknown)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown data part type");
+}
+
+bool MarkType::isMarkFileExtension(std::string_view extension)
+{
+    return extension.find("mrk") != std::string_view::npos;
+}
+
+std::string MarkType::getFileExtension()
+{
+    std::string res = compressed ? "cmrk" : "mrk";
+
+    if (!adaptive)
+    {
+        if (part_type != MergeTreeDataPartType::Wide)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: non-Wide data part type with non-adaptive granularity");
+        return res;
+    }
+
+    switch (part_type)
+    {
+        case MergeTreeDataPartType::Wide:
+            return res + "2";
+        case MergeTreeDataPartType::Compact:
+            return res + "3";
+        case MergeTreeDataPartType::InMemory:
+            return "";
+        case MergeTreeDataPartType::Unknown:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown data part type");
+    }
 }
 
 }
