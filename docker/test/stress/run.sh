@@ -38,6 +38,7 @@ function install_packages()
 
 function configure()
 {
+    export ZOOKEEPER_FAULT_INJECTION=1
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
