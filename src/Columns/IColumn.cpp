@@ -36,6 +36,12 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
+void IColumn::insertIndicesFrom(const IColumn & src, const Selector & selector)
+{
+    for (auto sel : selector)
+        insertFrom(src, sel);
+}
+
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())

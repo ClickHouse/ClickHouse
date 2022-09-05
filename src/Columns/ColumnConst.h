@@ -131,6 +131,11 @@ public:
         s += length;
     }
 
+    void insertIndicesFrom(const IColumn &, const Selector & selector) override
+    {
+        s += selector.size();
+    }
+
     void insert(const Field &) override
     {
         ++s;

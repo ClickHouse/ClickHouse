@@ -220,6 +220,8 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
+    void insertIndicesFrom(const IColumn & src, const Selector & selector) override;
+
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
     void expand(const Filter & mask, bool inverted) override;

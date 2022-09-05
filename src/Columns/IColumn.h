@@ -380,6 +380,8 @@ public:
     using Selector = PaddedPODArray<ColumnIndex>;
     [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 
+    virtual void insertIndicesFrom(const IColumn & src, const Selector & selector);
+
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
     /// (descendants should call gatherer_stream.gather(*this) to implement this function.)

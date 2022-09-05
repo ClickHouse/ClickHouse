@@ -143,6 +143,11 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     }
 }
 
+void ColumnString::insertIndicesFrom(const IColumn & src, const Selector & selector)
+{
+    for (auto sel : selector)
+        ColumnString::insertFrom(src, sel);
+}
 
 ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {

@@ -306,6 +306,8 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
+    void insertIndicesFrom(const IColumn & src, const IColumn::Selector & selector) override;
+
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
     void expand(const IColumn::Filter & mask, bool inverted) override;
