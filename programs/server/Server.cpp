@@ -50,6 +50,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
@@ -735,7 +736,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
     AsynchronousMetrics async_metrics(
-        global_context, config().getUInt("asynchronous_metrics_update_period_s", 1),
+        global_context,
+        config().getUInt("asynchronous_metrics_update_period_s", 1),
+        config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;
@@ -1153,6 +1156,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setExternalAuthenticatorsConfig(*config);
 
             global_context->loadOrReloadDictionaries(*config);
+            global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             global_context->setRemoteHostFilter(*config);
@@ -1727,6 +1731,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
         catch (...)
         {
             tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
+            throw;
+        }
+
+        /// try to load models immediately, throw on error and die
+        try
+        {
+            global_context->loadOrReloadModels(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
             throw;
         }
 

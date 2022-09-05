@@ -1177,14 +1177,10 @@ void MergeTreeData::loadDataPartsFromDisk(
 void MergeTreeData::loadDataPartsFromWAL(
     DataPartsVector & /* broken_parts_to_detach */,
     DataPartsVector & duplicate_parts_to_remove,
-    MutableDataPartsVector & parts_from_wal,
-    DataPartsLock & part_lock)
+    MutableDataPartsVector & parts_from_wal)
 {
     for (auto & part : parts_from_wal)
     {
-        if (getActiveContainingPart(part->info, DataPartState::Active, part_lock))
-            continue;
-
         part->modification_time = time(nullptr);
         /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
         part->setState(DataPartState::Active);
@@ -1212,7 +1208,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto settings = getSettings();
-    MutableDataPartsVector parts_from_wal;
     Strings part_file_names;
 
     auto disks = getStoragePolicy()->getDisks();
@@ -1269,16 +1264,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     /// Collect part names by disk.
     std::map<String, std::vector<std::pair<String, DiskPtr>>> disk_part_map;
-    std::map<String, MutableDataPartsVector> disk_wal_part_map;
     ThreadPool pool(disks.size());
-    std::mutex wal_init_lock;
+
     for (const auto & disk_ptr : disks)
     {
         if (disk_ptr->isBroken())
             continue;
 
         auto & disk_parts = disk_part_map[disk_ptr->getName()];
-        auto & disk_wal_parts = disk_wal_part_map[disk_ptr->getName()];
 
         pool.scheduleOrThrowOnError([&, disk_ptr]()
         {
@@ -1291,33 +1284,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
                 if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
                     disk_parts.emplace_back(std::make_pair(it->name(), disk_ptr));
-                else if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME && settings->in_memory_parts_enable_wal)
-                {
-                    std::lock_guard lock(wal_init_lock);
-                    if (write_ahead_log != nullptr)
-                        throw Exception(
-                            "There are multiple WAL files appeared in current storage policy. You need to resolve this manually",
-                            ErrorCodes::CORRUPTED_DATA);
-
-                    write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                    for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext()))
-                        disk_wal_parts.push_back(std::move(part));
-                }
-                else if (settings->in_memory_parts_enable_wal)
-                {
-                    MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                    for (auto && part : wal.restore(metadata_snapshot, getContext()))
-                        disk_wal_parts.push_back(std::move(part));
-                }
             }
         });
     }
-
     pool.wait();
-
-    for (auto & [_, disk_wal_parts] : disk_wal_part_map)
-        parts_from_wal.insert(
-            parts_from_wal.end(), std::make_move_iterator(disk_wal_parts.begin()), std::make_move_iterator(disk_wal_parts.end()));
 
     size_t num_parts = 0;
     std::queue<std::vector<std::pair<String, DiskPtr>>> parts_queue;
@@ -1332,13 +1302,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     auto part_lock = lockParts();
     data_parts_indexes.clear();
 
-    if (num_parts == 0 && parts_from_wal.empty())
-    {
-        resetObjectColumnsFromActiveParts(part_lock);
-        LOG_DEBUG(log, "There are no data parts");
-        return;
-    }
-
     DataPartsVector broken_parts_to_detach;
     DataPartsVector duplicate_parts_to_remove;
 
@@ -1346,8 +1309,65 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         loadDataPartsFromDisk(
             broken_parts_to_detach, duplicate_parts_to_remove, pool, num_parts, parts_queue, skip_sanity_checks, settings);
 
-    if (!parts_from_wal.empty())
-        loadDataPartsFromWAL(broken_parts_to_detach, duplicate_parts_to_remove, parts_from_wal, part_lock);
+    if (settings->in_memory_parts_enable_wal)
+    {
+        std::map<String, MutableDataPartsVector> disk_wal_part_map;
+
+        std::mutex wal_init_lock;
+        for (const auto & disk_ptr : disks)
+        {
+            if (disk_ptr->isBroken())
+                continue;
+
+            auto & disk_wal_parts = disk_wal_part_map[disk_ptr->getName()];
+
+            pool.scheduleOrThrowOnError([&, disk_ptr]()
+            {
+                for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
+                {
+                    if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+                        continue;
+
+                    if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME)
+                    {
+                        std::lock_guard lock(wal_init_lock);
+                        if (write_ahead_log != nullptr)
+                            throw Exception(
+                                "There are multiple WAL files appeared in current storage policy. You need to resolve this manually",
+                                ErrorCodes::CORRUPTED_DATA);
+
+                        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
+                        for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock))
+                            disk_wal_parts.push_back(std::move(part));
+                    }
+                    else
+                    {
+                        MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
+                        for (auto && part : wal.restore(metadata_snapshot, getContext(), part_lock))
+                            disk_wal_parts.push_back(std::move(part));
+                    }
+                }
+            });
+        }
+
+        pool.wait();
+
+        MutableDataPartsVector parts_from_wal;
+        for (auto & [_, disk_wal_parts] : disk_wal_part_map)
+            parts_from_wal.insert(
+                parts_from_wal.end(), std::make_move_iterator(disk_wal_parts.begin()), std::make_move_iterator(disk_wal_parts.end()));
+
+        loadDataPartsFromWAL(broken_parts_to_detach, duplicate_parts_to_remove, parts_from_wal);
+
+        num_parts += parts_from_wal.size();
+    }
+
+    if (num_parts == 0)
+    {
+        resetObjectColumnsFromActiveParts(part_lock);
+        LOG_DEBUG(log, "There are no data parts");
+        return;
+    }
 
     for (auto & part : broken_parts_to_detach)
     {
@@ -1592,7 +1612,21 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
                     else
                     {
                         LOG_WARNING(log, "Removing temporary directory {}", full_path);
-                        disk->removeRecursive(it->path());
+
+                        /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
+                        /// is executed as a callback.
+                        ///
+                        /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
+                        /// or not. So we are not doing it
+                        bool keep_shared = false;
+                        if (it->path().find("fetch") != std::string::npos)
+                        {
+                            keep_shared = disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication;
+                            if (keep_shared)
+                                LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
+                        }
+
+                        disk->removeSharedRecursive(it->path(), keep_shared, {});
                         ++cleared_count;
                     }
                 }
@@ -5539,6 +5573,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     // INTERPOLATE expressions may include aliases, so aliases should be preserved
     if (select_query->interpolate() && !select_query->interpolate()->children.empty())
+        return std::nullopt;
+
+    // Currently projections don't support GROUPING SET yet.
+    if (select_query->group_by_with_grouping_sets)
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
