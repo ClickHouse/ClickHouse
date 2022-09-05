@@ -341,7 +341,7 @@ struct PartRangesReadInfo
             sum_marks_in_parts[i] = parts[i].getMarksCount();
             sum_marks += sum_marks_in_parts[i];
 
-            if (parts[i].data_part->index_granularity_info.is_adaptive)
+            if (parts[i].data_part->index_granularity_info.mark_type.adaptive)
                 ++adaptive_parts;
         }
 

@@ -67,7 +67,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     return std::make_unique<MergeTreeDataPartWriterWide>(
         shared_from_this(), data_part_storage_builder,
         columns_list, metadata_snapshot, indices_to_recalc,
-        index_granularity_info.marks_file_extension,
+        getMarksFileExtension(),
         default_codec_, writer_settings, computed_index_granularity);
 }
 
@@ -95,7 +95,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
             size.data_uncompressed += bin_checksum->second.uncompressed_size;
         }
 
-        auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
+        auto mrk_checksum = checksums.files.find(file_name + getMarksFileExtension());
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
     });
@@ -103,10 +103,10 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     return size;
 }
 
+
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     index_granularity_info.changeGranularityIfRequired(data_part_storage);
-
 
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -119,54 +119,47 @@ void MergeTreeDataPartWide::loadIndexGranularity()
             std::string(fs::path(data_part_storage->getFullPath()) / marks_file_path));
 
     size_t marks_file_size = data_part_storage->getFileSize(marks_file_path);
-    if (!index_granularity_info.compress_marks)
-    {
-        if (!index_granularity_info.is_adaptive)
-        {
-            size_t marks_count = marks_file_size / index_granularity_info.getMarkSizeInBytes();
-            index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
-        }
-        else
-        {
-            auto buffer = data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
-            while (!buffer->eof())
-            {
-                buffer->seek(sizeof(size_t) * 2, SEEK_CUR); /// skip offset_in_compressed file and offset_in_decompressed_block
-                size_t granularity;
-                readIntBinary(granularity, *buffer);
-                index_granularity.appendMark(granularity);
-            }
 
-            if (index_granularity.getMarksCount() * index_granularity_info.getMarkSizeInBytes() != marks_file_size)
-                throw Exception("Cannot read all marks from file " + data_part_storage->getFullPath() + "/" + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
-        }
+    if (!index_granularity_info.mark_type.adaptive && !index_granularity_info.mark_type.compressed)
+    {
+        /// The most easy way - no need to read the file, everything is known from its size.
+        size_t marks_count = marks_file_size / index_granularity_info.getMarkSizeInBytes();
+        index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
     }
     else
     {
-        CompressedReadBufferFromFile buffer(
-            data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt));
+        auto marks_file = data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
-        MarksInCompressedFile mark(1);
+        std::unique_ptr<ReadBuffer> marks_reader;
+        if (!index_granularity_info.mark_type.compressed)
+            marks_reader = std::move(marks_file);
+        else
+            marks_reader = std::make_unique<CompressedReadBufferFromFile>(std::move(marks_file));
+
         size_t marks_count = 0;
-        while (!buffer.eof())
+        while (!marks_reader->eof())
         {
-            buffer.readStrict(reinterpret_cast<char *>(mark.data()), sizeof(size_t) * 2); /// skip offset_in_compressed file and offset_in_decompressed_block
+            MarkInCompressedFile mark;
+            size_t granularity;
+
+            readBinary(mark.offset_in_compressed_file, *marks_reader);
+            readBinary(mark.offset_in_decompressed_block, *marks_reader);
             ++marks_count;
 
-            if (index_granularity_info.is_adaptive)
+            if (index_granularity_info.mark_type.adaptive)
             {
-                size_t granularity;
-                readIntBinary(granularity, buffer);
+                readIntBinary(granularity, *marks_reader);
                 index_granularity.appendMark(granularity);
             }
         }
 
-        if (!index_granularity_info.is_adaptive)
-            index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity);
+        if (!index_granularity_info.mark_type.adaptive)
+            index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
     }
 
     index_granularity.setInitialized();
 }
+
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
@@ -186,7 +179,7 @@ MergeTreeDataPartWide::~MergeTreeDataPartWide()
 void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();
-    //String path = getRelativePath();
+    std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
     if (!checksums.empty())
     {
@@ -197,7 +190,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                 getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
                     String file_name = ISerialization::getFileNameForStream(name_type, substream_path);
-                    String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
+                    String mrk_file_name = file_name + marks_file_extension;
                     String bin_file_name = file_name + DATA_FILE_EXTENSION;
 
                     if (!checksums.files.contains(mrk_file_name))
@@ -223,7 +216,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         {
             getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto file_path = ISerialization::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
+                auto file_path = ISerialization::getFileNameForStream(name_type, substream_path) + marks_file_extension;
 
                 /// Missing file is Ok for case when new column was added.
                 if (data_part_storage->exists(file_path))
@@ -251,10 +244,11 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
 
 bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 {
-    auto check_stream_exists = [this](const String & stream_name)
+    std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
+    auto check_stream_exists = [this, &marks_file_extension](const String & stream_name)
     {
         auto bin_checksum = checksums.files.find(stream_name + DATA_FILE_EXTENSION);
-        auto mrk_checksum = checksums.files.find(stream_name + index_granularity_info.marks_file_extension);
+        auto mrk_checksum = checksums.files.find(stream_name + marks_file_extension);
 
         return bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end();
     };
