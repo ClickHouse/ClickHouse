@@ -190,6 +190,9 @@ def parse_env_variables(
         cc = compiler
         result.append("DEB_ARCH=amd64")
 
+    if compiler.endswith("-amd64sse2"):
+        cmake_flags.append('-DNO_SSE3_OR_HIGHER=1')
+
     cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
 
     if package_type == "deb":
@@ -339,6 +342,7 @@ if __name__ == "__main__":
             "clang-14-darwin-aarch64",
             "clang-14-aarch64",
             "clang-14-ppc64le",
+            "clang-14-amd64sse2",
             "clang-14-freebsd",
             "gcc-11",
         ),
