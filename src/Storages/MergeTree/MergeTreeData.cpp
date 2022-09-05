@@ -1072,7 +1072,7 @@ void MergeTreeData::loadDataPartsFromDisk(
             suspicious_broken_parts_bytes += size_of_part;
             return;
         }
-        if (!part->index_granularity_info.is_adaptive)
+        if (!part->index_granularity_info.mark_type.adaptive)
             has_non_adaptive_parts.store(true, std::memory_order_relaxed);
         else
             has_adaptive_parts.store(true, std::memory_order_relaxed);
@@ -6315,9 +6315,9 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 
     if (!settings->enable_mixed_granularity_parts || settings->index_granularity_bytes == 0)
     {
-        if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.is_adaptive)
+        if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.mark_type.adaptive)
             return false;
-        if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.is_adaptive)
+        if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
     return true;

@@ -160,7 +160,7 @@ public:
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
-    String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
+    String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
@@ -587,23 +587,5 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
-
-
-/** Various types of mark files are stored in files with various extensions:
-  * .mrk, .mrk2, .mrk3, .cmrk, .cmrk2, .cmrk3.
-  * This helper allows to obtain mark type from file extension and vise versa.
-  */
-struct MarkType
-{
-    MarkType(std::string_view extension);
-    MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_);
-
-    static bool isMarkFileExtension(std::string_view extension);
-    std::string getFileExtension();
-
-    bool adaptive = false;
-    bool compressed = false;
-    MergeTreeDataPartType::Value part_type = MergeTreeDataPartType::Unknown;
-};
 
 }
