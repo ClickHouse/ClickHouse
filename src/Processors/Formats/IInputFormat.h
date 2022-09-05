@@ -2,6 +2,7 @@
 
 #include <Processors/ISource.h>
 #include <IO/ReadBuffer.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Formats/ColumnMapping.h>
 
@@ -11,15 +12,64 @@ namespace DB
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
-struct InputFormatErrorRow
+class InputFormatErrorsLogger
 {
-    String time;
-    size_t offset;
-    String reason;
-    String raw_data;
+public:
+    struct ErrorEntry
+    {
+        String time;
+        size_t offset;
+        String reason;
+        String raw_data;
+    };
+
+    InputFormatErrorsLogger(
+        Context::ApplicationType app_type,
+        const String & user_files_path,
+        String & path_in_setting,
+        bool is_changed,
+        FormatSettings::ErrorsOutputFormat output_format,
+        const String & database_,
+        const String & table_);
+
+    virtual ~InputFormatErrorsLogger() = default;
+
+    virtual void logError(ErrorEntry entry);
+    void logErrorImpl(ErrorEntry entry);
+
+private:
+    String errors_file_path;
+    std::shared_ptr<WriteBufferFromFile> write_buf;
+    OutputFormatPtr writer;
+
+    String database;
+    String table;
 };
 
-using InputFormatErrorRows = std::vector<InputFormatErrorRow>;
+using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
+
+class ParallelInputFormatErrorsLogger : public InputFormatErrorsLogger
+{
+public:
+    ParallelInputFormatErrorsLogger(
+        Context::ApplicationType app_type,
+        const String & user_files_path,
+        String & path_in_setting,
+        bool is_changed,
+        FormatSettings::ErrorsOutputFormat output_format,
+        const String & database_,
+        const String & table_)
+        : InputFormatErrorsLogger(app_type, user_files_path, path_in_setting, is_changed, output_format, database_, table_)
+    {
+    }
+
+    ~ParallelInputFormatErrorsLogger() override;
+
+    void logError(ErrorEntry entry) override;
+
+private:
+    std::mutex write_mutex;
+};
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
@@ -65,28 +115,16 @@ public:
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
-    void addErrorRow(InputFormatErrorRow && error_row) { error_rows.emplace_back(error_row); }
-    InputFormatErrorRows & getErrorRows() { return error_rows; }
-
-    void addErrorRows(InputFormatErrorRows & source_error_rows)
-    {
-        multi_error_rows.emplace_back(InputFormatErrorRows());
-        multi_error_rows.back().swap(source_error_rows);
-    }
-    const std::list<InputFormatErrorRows> & getMultiErrorRows() { return multi_error_rows; }
-
-    bool isEmptyErrorRows() { return error_rows.empty(); }
-    bool isEmptyMultiErrorRows() { return multi_error_rows.empty(); }
+    void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 
 protected:
     ColumnMappingPtr column_mapping{};
 
+    InputFormatErrorsLoggerPtr errors_logger;
+
 private:
     /// Number of currently parsed chunk (if parallel parsing is enabled)
     size_t current_unit_number = 0;
-
-    InputFormatErrorRows error_rows;
-    std::list<InputFormatErrorRows> multi_error_rows;
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };

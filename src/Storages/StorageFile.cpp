@@ -509,87 +509,6 @@ public:
         return storage->getName();
     }
 
-    void errorRowsSink()
-    {
-        const auto & processors = pipeline->getProcessors();
-        if (!processors.empty())
-        {
-            IInputFormat * input_format = dynamic_cast<IInputFormat *>(processors[0].get());
-            if (!input_format || (input_format->isEmptyErrorRows() && input_format->isEmptyMultiErrorRows()))
-                return;
-
-            String errors_file_name = context->getSettingsRef().input_format_record_errors_file_name;
-            String errors_file_path = context->getUserFilesPath();
-            if (!errors_file_path.empty())
-                trimLeft(errors_file_name, '/');
-            errors_file_path += errors_file_name;
-            if (context->getSettingsRef().isChanged("input_format_record_errors_file_name"))
-            {
-                while (fs::exists(errors_file_path))
-                    errors_file_path += "_new";
-            }
-
-            String database_name;
-            String table_name;
-            try
-            {
-                table_name = context->getInsertionTable().getTableName();
-                database_name = context->getInsertionTable().getDatabaseName();
-            }
-            catch (...)
-            {
-                /// Ignore
-            }
-
-            if (context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER))
-            {
-                Poco::Logger * log = &Poco::Logger::get("StorageFileSource");
-
-                InputFormatErrorRows & error_rows = input_format->getErrorRows();
-                try
-                {
-                    WriteBufferFromFile out(errors_file_path);
-                    for (auto & error_row : error_rows)
-                    {
-                        String row_in_file = "Time: " + error_row.time + "\nDatabase: " + database_name + "\nTable: " + table_name
-                            + "\nOffset: " + toString(error_row.offset) + "\nReason: \n" + error_row.reason
-                            + "\nRaw data: " + error_row.raw_data + "\n------\n";
-                        out.write(row_in_file.data(), row_in_file.size());
-                    }
-                    out.sync();
-                }
-                catch (...)
-                {
-                    LOG_ERROR(
-                        log, "Caught Exception {} while writing the Errors file {}", getCurrentExceptionMessage(false), errors_file_path);
-                }
-            }
-            else
-            {
-                const auto & multi_error_rows = input_format->getMultiErrorRows();
-                try
-                {
-                    WriteBufferFromFile out(errors_file_path);
-                    for (const auto & error_rows : multi_error_rows)
-                    {
-                        for (const auto & error_row : error_rows)
-                        {
-                            String row_in_file = "Time: " + error_row.time + "\nDatabase: " + database_name + "\nTable: " + table_name
-                                + "\nOffset: " + toString(error_row.offset) + "\nReason: \n" + error_row.reason
-                                + "\nRaw data: " + error_row.raw_data + "\n------\n";
-                            out.write(row_in_file.data(), row_in_file.size());
-                        }
-                    }
-                    out.sync();
-                }
-                catch (...)
-                {
-                    /// Ignore
-                }
-            }
-        }
-    }
-
     Chunk generate() override
     {
         while (!finished_generate)
@@ -637,56 +556,46 @@ public:
             }
 
             Chunk chunk;
-            try
+            if (reader->pull(chunk))
             {
-                if (reader->pull(chunk))
+                UInt64 num_rows = chunk.getNumRows();
+
+                /// Enrich with virtual columns.
+                if (files_info->need_path_column)
                 {
-                    UInt64 num_rows = chunk.getNumRows();
-
-                    /// Enrich with virtual columns.
-                    if (files_info->need_path_column)
-                    {
-                        auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
-                        chunk.addColumn(column->convertToFullColumnIfConst());
-                    }
-
-                    if (files_info->need_file_column)
-                    {
-                        size_t last_slash_pos = current_path.find_last_of('/');
-                        auto file_name = current_path.substr(last_slash_pos + 1);
-
-                        auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
-                        chunk.addColumn(column->convertToFullColumnIfConst());
-                    }
-
-                    if (num_rows)
-                    {
-                        auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
-                        size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
-                        total_rows_approx_accumulated += total_rows_approx;
-                        ++total_rows_count_times;
-                        total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
-
-                        /// We need to add diff, because total_rows_approx is incremental value.
-                        /// It would be more correct to send total_rows_approx as is (not a diff),
-                        /// but incrementation of total_rows_to_read does not allow that.
-                        /// A new field can be introduces for that to be sent to client, but it does not worth it.
-                        if (total_rows_approx > total_rows_approx_prev)
-                        {
-                            size_t diff = total_rows_approx - total_rows_approx_prev;
-                            addTotalRowsApprox(diff);
-                            total_rows_approx_prev = total_rows_approx;
-                        }
-                    }
-                    return chunk;
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
+                    chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
-                errorRowsSink();
-            }
-            catch (...)
-            {
-                errorRowsSink();
-                throw;
+                if (files_info->need_file_column)
+                {
+                    size_t last_slash_pos = current_path.find_last_of('/');
+                    auto file_name = current_path.substr(last_slash_pos + 1);
+
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
+                    chunk.addColumn(column->convertToFullColumnIfConst());
+                }
+
+                if (num_rows)
+                {
+                    auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
+                    size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
+                    total_rows_approx_accumulated += total_rows_approx;
+                    ++total_rows_count_times;
+                    total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
+
+                    /// We need to add diff, because total_rows_approx is incremental value.
+                    /// It would be more correct to send total_rows_approx as is (not a diff),
+                    /// but incrementation of total_rows_to_read does not allow that.
+                    /// A new field can be introduces for that to be sent to client, but it does not worth it.
+                    if (total_rows_approx > total_rows_approx_prev)
+                    {
+                        size_t diff = total_rows_approx - total_rows_approx_prev;
+                        addTotalRowsApprox(diff);
+                        total_rows_approx_prev = total_rows_approx;
+                    }
+                }
+                return chunk;
             }
 
             /// Read only once for file descriptor.
