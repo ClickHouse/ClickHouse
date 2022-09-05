@@ -1,4 +1,4 @@
-#include <Planner/PlannerCollectSets.h>
+#include <Planner/CollectSets.h>
 
 #include <Interpreters/Context.h>
 
