@@ -90,8 +90,9 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
         readBoolText(is_remote, buffer);
         DB::assertChar('\n', buffer);
     }
-    auto unescaped_replica_name = unescapeForFileName(replica_name);
+    std::string unescaped_replica_name;
     readString(unescaped_replica_name, buffer);
+    replica_name = unescapeForFileName(unescaped_replica_name);
     DB::assertChar('\n', buffer);
     readString(zookeeper_name, buffer);
     DB::assertChar('\n', buffer);
