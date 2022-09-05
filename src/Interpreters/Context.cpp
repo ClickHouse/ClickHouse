@@ -143,7 +143,7 @@ namespace ErrorCodes
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
-struct ContextSharedPart
+struct ContextSharedPart : boost::noncopyable
 {
     Poco::Logger * log = &Poco::Logger::get("Context");
 
@@ -314,11 +314,19 @@ struct ContextSharedPart
 
     ~ContextSharedPart()
     {
-        /// Wait for thread pool for background writes,
-        /// since it may use per-user MemoryTracker which will be destroyed here.
         try
         {
+            /// Wait for thread pool for background writes,
+            /// since it may use per-user MemoryTracker which will be destroyed here.
             IObjectStorage::getThreadPoolWriter().wait();
+            /// Make sure that threadpool is destructed before this->process_list
+            /// because thread_status, which was created for threads inside threadpool,
+            /// relies on it.
+            if (load_marks_threadpool)
+            {
+                load_marks_threadpool->wait();
+                load_marks_threadpool.reset();
+            }
         }
         catch (...)
         {
