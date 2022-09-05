@@ -187,7 +187,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT 5663."
         },
         {
-            "print totimespan(time(-1:12:34))",
+            "print totimespan(time('-1:12:34'))",
             "SELECT -87154."
         },
         {

@@ -53,4 +53,11 @@ protected:
     const char * getName() const override { return "totimespan()"; }
     bool convertImpl(String & out, IParser::Pos & pos) override;
 };
+
+class ToDecimal : public IParserKQLFunction
+{
+protected:
+    const char * getName() const override { return "todecimal()"; }
+    bool convertImpl(String & out, IParser::Pos & pos) override;
+};
 }

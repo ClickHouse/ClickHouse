@@ -165,9 +165,45 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
 
 bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+   
+bool DatatypeDecimal::convertImpl(String &out,IParser::Pos &pos)
+{
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String arg;
+    int scale =0 ,length =0;
+    int precision = 34;
+
+    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral )
+        throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+
+    --pos;
+    arg = getArgument(fn_name, pos);
+
+    //NULL expr returns NULL not execption
+    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL";
+    if(is_string)
+        throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+
+    auto dot_pos = arg.find(".");
+    if(dot_pos != String::npos)
+    {
+        length = arg.substr(0,dot_pos-1).length();
+        scale = (precision - length) > 0 ? precision - length : 0;
+    }
+    if(is_string)
+        throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+
+    if (scale < 0 || Poco::toUpper(arg) == "NULL")
+        out = std::format("NULL");
+    else
+        out = std::format("toDecimal128({}::String,{})", arg, scale);
+
+    return true;
+}
 }
 
 }

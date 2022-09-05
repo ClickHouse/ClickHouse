@@ -132,6 +132,7 @@ namespace DB
         {"toreal", KQLFunctionValue::todouble},
         {"tostring", KQLFunctionValue::tostring},
         {"totimespan", KQLFunctionValue::totimespan},
+        {"todecimal", KQLFunctionValue::todecimal},
 
         {"arg_max", KQLFunctionValue::arg_max},
         {"arg_min", KQLFunctionValue::arg_min},
@@ -551,6 +552,9 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
 
         case KQLFunctionValue::totimespan:
             return std::make_unique<ToTimeSpan>();
+
+        case KQLFunctionValue::todecimal:
+            return std::make_unique<ToDecimal>();
 
         case KQLFunctionValue::arg_max:
             return std::make_unique<ArgMax>();

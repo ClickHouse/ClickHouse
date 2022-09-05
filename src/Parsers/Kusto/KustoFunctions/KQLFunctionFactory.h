@@ -114,6 +114,7 @@ namespace DB
         toint,
         tolong,
         tostring,
+        todecimal,
 
         arg_max,
         arg_min,
