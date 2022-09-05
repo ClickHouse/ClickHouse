@@ -146,15 +146,16 @@ public:
         return std::make_pair(it, false);
     }
 
-    void insertOrReplace(const std::string & key, const V & value)
+    void insertOrReplace(const std::string & key, V value)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
         uint64_t old_value_size = it == map.end() ? 0 : it->getMapped()->value.sizeInBytes();
+        auto new_value_size = value.sizeInBytes();
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(arena, key), value, current_version};
+            ListElem elem{copyStringInArena(arena, key), std::move(value), current_version};
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
@@ -166,7 +167,7 @@ public:
             auto list_itr = it->getMapped();
             if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value, current_version};
+                ListElem elem{list_itr->key, std::move(value), current_version};
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), std::move(elem));
                 it->getMapped() = new_list_itr;
@@ -174,10 +175,10 @@ public:
             }
             else
             {
-                list_itr->value = value;
+                list_itr->value = std::move(value);
             }
         }
-        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
+        updateDataSize(INSERT_OR_REPLACE, key.size(), new_value_size, old_value_size);
     }
 
     bool erase(const std::string & key)
