@@ -34,7 +34,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , marks_hashing(*marks_file)
     , marks_compressed_buf(marks_hashing, settings_.getMarksCompressionCodec(), settings_.marks_compress_block_size)
     , marks_compressed(marks_compressed_buf)
-    , is_compress_marks(isCompressedFromMrkExtension(marks_file_extension))
+    , compress_marks(isCompressedFromMrkExtension(marks_file_extension))
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
@@ -207,8 +207,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             };
 
 
-            writeIntBinary(plain_hashing.count(), is_compress_marks ? marks_compressed : marks_hashing);
-            writeIntBinary(static_cast<UInt64>(0), is_compress_marks ? marks_compressed : marks_hashing);
+            writeIntBinary(plain_hashing.count(), compress_marks ? marks_compressed : marks_hashing);
+            writeIntBinary(static_cast<UInt64>(0), compress_marks ? marks_compressed : marks_hashing);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), data_part->getSerialization(name_and_type->name),
@@ -218,7 +218,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             prev_stream->hashing_buf.next(); //-V522
         }
 
-        writeIntBinary(granule.rows_to_write, is_compress_marks ? marks_compressed : marks_hashing);
+        writeIntBinary(granule.rows_to_write, compress_marks ? marks_compressed : marks_hashing);
     }
 }
 
@@ -247,14 +247,14 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
     {
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
-            writeIntBinary(plain_hashing.count(), is_compress_marks ? marks_compressed : marks_hashing);
-            writeIntBinary(static_cast<UInt64>(0), is_compress_marks ? marks_compressed : marks_hashing);
+            writeIntBinary(plain_hashing.count(), compress_marks ? marks_compressed : marks_hashing);
+            writeIntBinary(static_cast<UInt64>(0), compress_marks ? marks_compressed : marks_hashing);
         }
-        writeIntBinary(static_cast<UInt64>(0), is_compress_marks ? marks_compressed : marks_hashing);
+        writeIntBinary(static_cast<UInt64>(0), compress_marks ? marks_compressed : marks_hashing);
     }
 
     plain_file->next();
-    if (is_compress_marks)
+    if (compress_marks)
         marks_compressed.next();
 
     marks_hashing.next();
@@ -339,7 +339,7 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     checksums.files[data_file_name].file_size = plain_hashing.count();
     checksums.files[data_file_name].file_hash = plain_hashing.getHash();
 
-    if (is_compress_marks)
+    if (compress_marks)
     {
         checksums.files[marks_file_name].is_compressed = true;
         checksums.files[marks_file_name].uncompressed_size = marks_compressed.count();

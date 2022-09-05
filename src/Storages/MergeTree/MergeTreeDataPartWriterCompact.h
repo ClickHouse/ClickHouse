@@ -89,7 +89,7 @@ private:
     HashingWriteBuffer marks_hashing;
     CompressedWriteBuffer marks_compressed_buf;
     HashingWriteBuffer marks_compressed;
-    bool is_compress_marks;
+    bool compress_marks;
 };
 
 }
