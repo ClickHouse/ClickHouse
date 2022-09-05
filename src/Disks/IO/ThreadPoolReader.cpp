@@ -200,28 +200,19 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    ThreadGroupStatusPtr running_group;
+    ThreadGroupStatusPtr thread_group;
     if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
-        running_group = CurrentThread::get().getThreadGroup();
+        thread_group = CurrentThread::get().getThreadGroup();
 
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
-    auto task = std::make_shared<std::packaged_task<Result()>>([request, fd, running_group, query_context]
+    auto task = std::make_shared<std::packaged_task<Result()>>([request, fd, thread_group]
     {
-        ThreadStatus thread_status;
+        if (thread_group)
+             CurrentThread::attachTo(thread_group);
 
         SCOPE_EXIT({
-            if (running_group)
-                thread_status.detachQuery();
+            if (thread_group)
+                CurrentThread::detachQuery();
         });
-
-        if (running_group)
-            thread_status.attachQuery(running_group);
-
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
 
         setThreadName("ThreadPoolRead");
 
