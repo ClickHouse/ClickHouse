@@ -1,6 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/HelpersArgMinMaxAny.h>
 
 #include <AggregateFunctions/AggregateFunctionArgMinMax.h>
 #include <AggregateFunctions/AggregateFunctionMinMax.h>

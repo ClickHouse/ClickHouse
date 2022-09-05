@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionArgMinMaxAnyBase.h>
+#include <AggregateFunctions/AggregateFunctionMinMax.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <base/StringRef.h>
