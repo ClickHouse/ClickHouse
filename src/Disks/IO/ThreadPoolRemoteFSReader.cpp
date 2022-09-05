@@ -40,30 +40,19 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ThreadGroupStatusPtr running_group;
+    ThreadGroupStatusPtr thread_group;
     if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
-        running_group = CurrentThread::get().getThreadGroup();
+        thread_group = CurrentThread::get().getThreadGroup();
 
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
-    auto task = std::make_shared<std::packaged_task<Result()>>([request, running_group, query_context]
+    auto task = std::make_shared<std::packaged_task<Result()>>([request, thread_group]
     {
-        ThreadStatus thread_status;
+        if (thread_group)
+             CurrentThread::attachTo(thread_group);
 
         SCOPE_EXIT({
-            if (running_group)
-                thread_status.detachQuery();
+            if (thread_group)
+                CurrentThread::detachQuery();
         });
-
-        /// To be able to pass ProfileEvents.
-        if (running_group)
-            thread_status.attachQuery(running_group);
-
-        /// Save query context if any, because cache implementation needs it.
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
 
         setThreadName("VFSRead");
 
