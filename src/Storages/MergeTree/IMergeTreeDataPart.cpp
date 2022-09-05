@@ -532,13 +532,34 @@ void IMergeTreeDataPart::removeIfNeeded()
             LOG_TRACE(storage.log, "Removed part from old location {}", path);
         }
     }
-    catch (...)
+    catch (const Exception & ex)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while removing part {} with path {}", name, path));
+
+        /// In this case we want to avoid assertions, because such errors are unavoidable in setup
+        /// with zero-copy replication.
+        if (const auto * keeper_exception = dynamic_cast<const Coordination::Exception *>(&ex))
+        {
+            if (Coordination::isHardwareError(keeper_exception->code))
+                return;
+        }
+
         /// FIXME If part it temporary, then directory will not be removed for 1 day (temporary_directories_lifetime).
         /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
         /// then all future attempts to execute part producing operation will fail with "directory already exists".
-        /// Seems like it's especially important for remote disks, because removal may fail due to network issues.
-        tryLogCurrentException(__PRETTY_FUNCTION__, "while removiong path: " + path);
+        assert(!is_temp);
+        assert(state != MergeTreeDataPartState::DeleteOnDestroy);
+        assert(state != MergeTreeDataPartState::Temporary);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while removing part {} with path {}", name, path));
+
+        /// FIXME If part it temporary, then directory will not be removed for 1 day (temporary_directories_lifetime).
+        /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
+        /// then all future attempts to execute part producing operation will fail with "directory already exists".
+        ///
+        /// For remote disks this issue is really frequent, so we don't about server here
         assert(!is_temp);
         assert(state != MergeTreeDataPartState::DeleteOnDestroy);
         assert(state != MergeTreeDataPartState::Temporary);
