@@ -603,7 +603,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
             continue;
 
         if (value.wait_until(wait_until) != std::future_status::ready)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Failed to fetch values: timeout");
+            throw DB::Exception(ErrorCodes::KEEPER_EXCEPTION, "Failed to fetch values: timeout");
 
         auto response = value.get();
         Coordination::Error code = response.error;
