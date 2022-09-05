@@ -1,4 +1,6 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+
+#include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB
@@ -73,6 +75,11 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         size_t current_pos = current_row_sources.size();
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
+
+        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->getRow()];
+        if ((sign != 1) && (sign != -1))
+            throw Exception("Incorrect data: Sign = " + toString(sign) + " (must be 1 or -1).",
+                            ErrorCodes::INCORRECT_DATA);
 
         /// A non-strict comparison, since we select the last row for the same version values.
         if (version_column_number == -1
