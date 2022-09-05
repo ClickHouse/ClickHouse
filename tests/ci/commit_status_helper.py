@@ -19,9 +19,6 @@ def override_status(status, check_name, invert=False):
     if CI_CONFIG["tests_config"].get(check_name, {}).get("force_tests", False):
         return "success"
 
-    if "s3 storage" in check_name and ("debug" in check_name or "thread" in check_name):
-        return "success"
-
     if invert:
         if status == "success":
             return "error"
