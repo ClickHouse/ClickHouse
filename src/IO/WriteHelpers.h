@@ -146,14 +146,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
 
-        if (DecomposedFloat64(x).is_integer_in_representable_range())
+        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
             result = itoa(Int64(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
-        if (DecomposedFloat32(x).is_integer_in_representable_range())
+        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;

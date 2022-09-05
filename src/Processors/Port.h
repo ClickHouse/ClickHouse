@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 class Port
 {
-    friend void connect(OutputPort &, InputPort &);
+    friend void connect(OutputPort &, InputPort &, bool);
     friend class IProcessor;
 
 public:
@@ -267,7 +267,7 @@ protected:
 ///   * You can pull only if port hasData().
 class InputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &);
+    friend void connect(OutputPort &, InputPort &, bool);
 
 private:
     OutputPort * output_port = nullptr;
@@ -390,7 +390,7 @@ public:
 ///   * You can push only if port doesn't hasData().
 class OutputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &);
+    friend void connect(OutputPort &, InputPort &, bool);
 
 private:
     InputPort * input_port = nullptr;
@@ -483,6 +483,6 @@ using InputPorts = std::list<InputPort>;
 using OutputPorts = std::list<OutputPort>;
 
 
-void connect(OutputPort & output, InputPort & input);
+void connect(OutputPort & output, InputPort & input, bool reconnect = false);
 
 }
