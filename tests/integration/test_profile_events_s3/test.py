@@ -52,7 +52,7 @@ init_list = {
 def get_s3_events(instance):
     result = init_list.copy()
     events = instance.query(
-        "SELECT event,value FROM system.events WHERE event LIKE '%S3%'"
+        "SELECT event, value FROM system.events WHERE event LIKE '%S3%'"
     ).split("\n")
     for event in events:
         ev = event.split("\t")
@@ -118,8 +118,8 @@ def get_query_stat(instance, hint):
 def get_minio_size(cluster):
     minio = cluster.minio_client
     size = 0
-    for obj in minio.list_objects(cluster.minio_bucket, "data/"):
-        size += obj.size
+    for obj_level1 in minio.list_objects(cluster.minio_bucket, prefix="data/", recursive=True):
+        size += obj_level1.size
     return size
 
 
@@ -135,7 +135,7 @@ def test_profile_events(cluster):
     metrics0 = get_s3_events(instance)
     minio0 = get_minio_stat(cluster)
 
-    query1 = "CREATE TABLE test_s3.test_s3 (key UInt32, value UInt32) ENGINE=MergeTree PRIMARY KEY key ORDER BY key SETTINGS storage_policy='s3'"
+    query1 = "CREATE TABLE test_s3.test_s3 (key UInt32, value UInt32) ENGINE=MergeTree PRIMARY KEY key ORDER BY key SETTINGS storage_policy = 's3'"
     instance.query(query1)
 
     size1 = get_minio_size(cluster)
@@ -157,7 +157,7 @@ def test_profile_events(cluster):
         metrics1["WriteBufferFromS3Bytes"] - metrics0["WriteBufferFromS3Bytes"] == size1
     )
 
-    query2 = "INSERT INTO test_s3.test_s3 FORMAT Values"
+    query2 = "INSERT INTO test_s3.test_s3 VALUES"
     instance.query(query2 + " (1,1)")
 
     size2 = get_minio_size(cluster)
@@ -172,9 +172,12 @@ def test_profile_events(cluster):
         metrics2["S3WriteRequestsCount"] - metrics1["S3WriteRequestsCount"]
         == minio2["set_requests"] - minio1["set_requests"]
     )
+
     stat2 = get_query_stat(instance, query2)
+
     for metric in stat2:
         assert stat2[metric] == metrics2[metric] - metrics1[metric]
+
     assert (
         metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"]
         == size2 - size1
@@ -195,6 +198,7 @@ def test_profile_events(cluster):
         == minio3["set_requests"] - minio2["set_requests"]
     )
     stat3 = get_query_stat(instance, query3)
+
     # With async reads profile events are not updated fully because reads are done in a separate thread.
     # for metric in stat3:
     #    print(metric)
