@@ -20,8 +20,6 @@ from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 NAME = "Run Check"
 
 TRUSTED_ORG_IDS = {
-    7409213,  # yandex
-    28471076,  # altinity
     54801242,  # clickhouse
 }
 
