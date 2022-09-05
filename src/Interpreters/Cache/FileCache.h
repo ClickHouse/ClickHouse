@@ -13,11 +13,12 @@
 
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
-#include <Common/FileCache_fwd.h>
-#include <Common/FileSegment.h>
-#include <Common/IFileCachePriority.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <Common/logger_useful.h>
-#include <Common/FileCacheType.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Common/StatusFile.h>
 
 namespace DB
 {
@@ -143,6 +144,7 @@ private:
 
     bool is_initialized = false;
     std::exception_ptr initialization_exception;
+    std::unique_ptr<StatusFile> status_file;
 
     mutable std::mutex mutex;
 
@@ -260,6 +262,8 @@ private:
     size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
     void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
+
+    void removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & cache_lock) const;
 
     /// Used to track and control the cache access of each query.
     /// Through it, we can realize the processing of different queries by the cache layer.
