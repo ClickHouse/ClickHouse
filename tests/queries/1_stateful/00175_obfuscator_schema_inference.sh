@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Compared to explicitly specifying the structure of the input,
+#  schema inference adds Nullable(T) to all types, so the model and the results
+#  are a bit different from test '00175_obfuscator_schema_inference.sh'
+
 $CLICKHOUSE_CLIENT --max_threads 1 --query="SELECT URL, Title, SearchPhrase FROM test.hits LIMIT 1000" > "${CLICKHOUSE_TMP}"/data.tsv
 
 # Test obfuscator without saving the model
