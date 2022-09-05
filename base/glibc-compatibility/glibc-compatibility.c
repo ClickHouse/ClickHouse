@@ -189,6 +189,8 @@ ssize_t copy_file_range(int fd_in, off_t *off_in, int fd_out, off_t *off_out, si
 #include <stdint.h>
 #include "syscall.h"
 
+
+#if !defined(__aarch64__)
 struct statx {
 	uint32_t stx_mask;
 	uint32_t stx_blksize;
@@ -213,7 +215,7 @@ struct statx {
 	uint32_t stx_dev_minor;
 	uint64_t spare[14];
 };
-
+#endif
 
 int statx(int fd, const char *restrict path, int flag,
                  unsigned int mask, struct statx *restrict statxbuf)
@@ -308,20 +310,7 @@ int __execvpe(const char *file, char *const argv[], char *const envp[])
 	return -1;
 }
 
-typedef struct {
-	int __flags;
-	pid_t __pgrp;
-	sigset_t __def, __mask;
-	int __prio, __pol;
-	void *__fn;
-	char __pad[64-sizeof(void *)];
-} posix_spawnattr_t;
-
-typedef struct {
-	int __pad0[2];
-	void *__actions;
-	int __pad[16];
-} posix_spawn_file_actions_t;
+#include "spawn.h"
 
 int posix_spawnp(pid_t *restrict res, const char *restrict file,
 	const posix_spawn_file_actions_t *fa,
