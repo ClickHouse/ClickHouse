@@ -253,6 +253,13 @@ void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
     transaction->commit();
 }
 
+void DiskObjectStorage::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    auto transaction = createObjectStorageTransaction();
+    transaction->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
+    transaction->commit();
+}
+
 UInt32 DiskObjectStorage::getRefCount(const String & path) const
 {
     return metadata_storage->getHardlinkCount(path);

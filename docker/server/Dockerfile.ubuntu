@@ -31,9 +31,6 @@ ARG deb_location_url=""
 
 # set non-empty single_binary_location_url to create docker image
 # from a single binary url (useful for non-standard builds - with sanitizers, for arm64).
-# for example (run on aarch64 server):
-# docker build . --network host --build-arg single_binary_location_url="https://builds.clickhouse.com/master/aarch64/clickhouse" -t altinity/clickhouse-server:master-testing-arm
-# note: clickhouse-odbc-bridge is not supported there.
 ARG single_binary_location_url=""
 
 # user/group precreated explicitly with fixed uid/gid on purpose.

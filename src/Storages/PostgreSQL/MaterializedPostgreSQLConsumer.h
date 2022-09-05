@@ -126,7 +126,7 @@ private:
 
     static void assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx);
 
-    /// lsn - log sequnce nuumber, like wal offset (64 bit).
+    /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
