@@ -41,6 +41,33 @@ SELECT 'maxIf_NullableString', maxIf(number::Nullable(String), number < 10) as n
 SELECT 'min_NullableString', min(n::Nullable(String)) from (Select if(number < 15 and number % 2 == 1, number * 2, NULL) as n from numbers(10, 20));
 SELECT 'max_NullableString', max(n::Nullable(String)) from (Select if(number < 15 and number % 2 == 1, number * 2, NULL) as n from numbers(10, 20));
 
+
+SELECT 'argmax_numeric_block1', argMax(number, now()) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmax_numeric_block2', argMax(number, now()) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmax_numeric_block3', argMax(number, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmax_numeric_block4', argMax(number, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmax_numeric_block5', argMax(number::String, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmax_numeric_block6', argMax(number::String, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmax_numeric_block7', argMax(number, now() + number) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmax_numeric_block8', argMax(number, now() + number) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmax_numeric_block9', argMaxIf(number, now() + number, number % 10 < 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmax_numeric_block10', argMaxIf(number, now() + number, number % 10 < 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmax_numeric_block11', argMaxIf(number, now() + number, number % 10 > 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmax_numeric_block12', argMaxIf(number, now() + number, number % 10 > 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+
+SELECT 'argmin_numeric_block1', argMin(number, now()) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmin_numeric_block2', argMin(number, now()) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmin_numeric_block3', argMin(number, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmin_numeric_block4', argMin(number, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmin_numeric_block3', argMin(number::String, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmin_numeric_block4', argMin(number::String, 1) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmin_numeric_block7', argMin(number, now() + number) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmin_numeric_block8', argMin(number, now() + number) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmin_numeric_block9', argMinIf(number, now() + number, number % 10 < 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmin_numeric_block10', argMinIf(number, now() + number, number % 10 < 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+SELECT 'argmin_numeric_block11', argMinIf(number, now() + number, number % 10 > 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=100;
+SELECT 'argmin_numeric_block12', argMinIf(number, now() + number, number % 10 > 20) FROM (Select number as number from numbers(10, 10000)) settings max_threads=1, max_block_size=20000;
+
 -- { echoOn }
 SET compile_aggregate_expressions=1;
 SET min_count_to_compile_aggregate_expression=0;

@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -97,26 +98,45 @@ struct AggregateFunctionsMinMaxDataNumeric
     using T = typename Comparator::Type;
     using ColVecType = ColumnVectorOrDecimal<T>;
     static constexpr bool supported_multitarget_type = std::is_integral_v<T> || std::is_floating_point_v<T>;
+    static constexpr bool allocates_memory_in_arena = false;
 
     bool has_value = false;
     T value{};
 
-    void ALWAYS_INLINE inline add(T new_value)
+    bool has() const { return has_value; }
+
+    bool ALWAYS_INLINE inline add(const T & new_value)
     {
-        if (!has_value)
+        bool changed = false;
+        if (!has_value || Comparator::cmp(new_value, value))
+        {
             value = new_value;
-        else
-            value = Comparator::cmp_get(value, new_value);
+            changed = true;
+        }
+        has_value = true;
+        return changed;
+    }
+
+    bool ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
+    {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        return add(col.getData()[row_num]);
+    }
+
+    void ALWAYS_INLINE set(const IColumn & column, size_t row_num, Arena *)
+    {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        value = col.getData()[row_num];
         has_value = true;
     }
 
-    void ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
+    void ALWAYS_INLINE inline set(const AggregateFunctionsMinMaxDataNumeric & rhs, Arena *)
     {
-        const auto & col = assert_cast<const ColVecType &>(column);
-        add(col.getData()[row_num]);
+        has_value = rhs.has_value;
+        value = rhs.value;
     }
 
-    void ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { add(column, 0, arena); }
+    bool ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { return add(column, 0, arena); }
 
     void insertResultInto(IColumn & to) const
     {
@@ -127,167 +147,239 @@ struct AggregateFunctionsMinMaxDataNumeric
     }
 
     MULTITARGET_FUNCTION_AVX2_SSE42(
-        MULTITARGET_FUNCTION_HEADER(
-        template <bool add_all_elements, bool add_if_cond_zero>
-        void NO_INLINE
-        ), addManyImpl, MULTITARGET_FUNCTION_BODY(
-        (const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
+    MULTITARGET_FUNCTION_HEADER(template <bool add_all_elements, bool add_if_cond_zero> static std::optional<T> NO_INLINE),
+    findNumericExtremeImpl,
+    MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
+    {
+        size_t count = row_end - row_begin;
+        ptr += row_begin;
+
+        T aux{};
+        if constexpr (!add_all_elements)
+            condition_map += row_begin;
+
+        size_t i = 0;
+        for (; i < count; i++)
         {
-              size_t count = row_end - row_begin;
-              ptr += row_begin;
-              if constexpr (!add_all_elements)
-                  condition_map += row_begin;
+            if (add_all_elements || !condition_map[i] == add_if_cond_zero)
+            {
+                aux = ptr[i];
+                break;
+            }
+        }
+        if (i == count)
+            return {};
 
-              size_t i = 0;
-              if constexpr (add_all_elements)
-              {
-                  chassert(row_end - row_begin);
-                  if (!has_value)
-                  {
-                      has_value = true;
-                      value = *ptr;
-                  }
-              }
-              else
-              {
-                  if (!has_value)
-                  {
-                      for (; i < count; i++)
-                      {
-                          if (!condition_map[i] == add_if_cond_zero)
-                          {
-                              has_value = true;
-                              value = ptr[i];
-                              break;
-                          }
-                      }
-                      if (i == count)
-                          return;
-                  }
-              }
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            constexpr size_t unroll_block = 512 / sizeof(T);
+            size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
 
-              T aux{value}; /// Need an auxiliary variable for "compiler reasons", otherwise it won't use SIMD
-              if constexpr (std::is_floating_point_v<T>)
-              {
-                  constexpr size_t unroll_block = 512 / sizeof(T);
-                  size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
+            if (i < unrolled_end)
+            {
+                T partial_min[unroll_block];
+                for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
+                    partial_min[unroll_it] = aux;
 
-                  if (i < unrolled_end)
-                  {
-                      T partial_min[unroll_block];
-                      for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                          partial_min[unroll_it] = aux;
+                while (i < unrolled_end)
+                {
+                    for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
+                    {
+                        if (add_all_elements || !condition_map[i + unroll_it] == add_if_cond_zero)
+                            partial_min[unroll_it] = Comparator::cmp_get(partial_min[unroll_it], ptr[i + unroll_it]);
+                    }
+                    i += unroll_block;
+                }
+                for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
+                    aux = Comparator::cmp_get(aux, partial_min[unroll_it]);
+            }
+        }
 
-                      while (i < unrolled_end)
-                      {
-                          for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                          {
-                              if constexpr (add_all_elements)
-                              {
-                                  partial_min[unroll_it] = Comparator::cmp_get(partial_min[unroll_it], ptr[i + unroll_it]);
-                              }
-                              else
-                              {
-                                  if (!condition_map[i + unroll_it] == add_if_cond_zero)
-                                      partial_min[unroll_it] = Comparator::cmp_get(partial_min[unroll_it], ptr[i + unroll_it]);
-                              }
-                          }
-                          i += unroll_block;
-                      }
-                      for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                          aux = Comparator::cmp_get(aux, partial_min[unroll_it]);
-                  }
-              }
+        for (; i < count; i++)
+        {
+            if (add_all_elements || !condition_map[i] == add_if_cond_zero)
+                aux = Comparator::cmp_get(aux, ptr[i]);
+        }
 
-              for (; i < count; i++)
-              {
-                  if constexpr (add_all_elements)
-                  {
-                      aux = Comparator::cmp_get(aux, ptr[i]);
-                  }
-                  else
-                  {
-                      if (!condition_map[i] == add_if_cond_zero)
-                          aux = Comparator::cmp_get(aux, ptr[i]);
-                  }
-              }
+        return aux;
+    }))
 
-              value = aux;
-              has_value = true;
-        })
-    )
+    /// Given a vector of T finds the extreme (MIN or MAX) or that data and returns an optional value with it
+    template <bool add_all_elements, bool add_if_cond_zero>
+    static std::optional<T>
+    findNumericExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
+    {
+#if USE_MULTITARGET_CODE
+        if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>)
+        {
+            if (isArchSupported(TargetArch::AVX2))
+            {
+                return findNumericExtremeImplAVX2<add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+            }
+            else if (isArchSupported(TargetArch::SSE42))
+            {
+                return findNumericExtremeImplSSE42<add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+            }
+        }
+#endif
+        return findNumericExtremeImpl<add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+    }
 
-    /// Vectorized version
+    /// Given a vector of T finds the extreme (MIN or MAX) for that data and returns the index where it is found
+    template <bool add_all_elements, bool add_if_cond_zero>
+    static std::optional<size_t> NO_INLINE findNumericExtremeIndex(
+        const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
+    {
+        size_t count = row_end - row_begin;
+        ptr += row_begin;
+        if constexpr (!add_all_elements)
+            condition_map += row_begin;
+
+        if constexpr (add_all_elements && (std::is_integral_v<T> || std::is_floating_point_v<T>))
+        {
+            /// This is implemented based on findNumericExtreme and not the other way around because getting the final value is way easier to
+            /// do with SIMD, while getting the index, not to much
+            /// What we do is to divide the block in chunks of 1024 elements and calculate where the minmax element of each block
+            /// Once we know in which block the absolute minmax element is we look into that chunk only to find the index position
+            constexpr size_t BLOCK_SIZE = 1024;
+            size_t full_blocks = count / BLOCK_SIZE;
+
+            T v = *ptr;
+            size_t extreme_block = 0;
+            size_t final_iterator = 0;
+            for (size_t b = 0; b < full_blocks; b++)
+            {
+                T block_value
+                    = *findNumericExtreme<add_all_elements, add_if_cond_zero>(ptr, condition_map, b * BLOCK_SIZE, (b + 1) * BLOCK_SIZE);
+                if (Comparator::cmp(block_value, v))
+                {
+                    v = block_value;
+                    extreme_block = b;
+                }
+            }
+
+            for (size_t i = full_blocks * BLOCK_SIZE; i < count; i++)
+            {
+                if (Comparator::cmp(ptr[i], v))
+                {
+                    v = ptr[i];
+                    extreme_block = full_blocks;
+                    final_iterator = i;
+                }
+            }
+
+            if (extreme_block < full_blocks)
+            {
+                for (size_t i = extreme_block * BLOCK_SIZE; i < (extreme_block + 1) * BLOCK_SIZE; i++)
+                {
+                    if (!Comparator::cmp(v, ptr[i]))
+                    {
+                        final_iterator = i;
+                        break;
+                    }
+                }
+            }
+
+            return row_begin + final_iterator;
+        }
+        else
+        {
+            std::optional<size_t> final_iterator{};
+            T v{};
+            size_t i = 0;
+
+            while (!final_iterator && i < count)
+            {
+                if (add_all_elements || !condition_map[i] == add_if_cond_zero)
+                {
+                    final_iterator = i;
+                    v = ptr[i];
+                    break;
+                }
+                i++;
+            }
+
+            for (; i < count; i++)
+            {
+                if (add_all_elements || !condition_map[i] == add_if_cond_zero)
+                {
+                    if (Comparator::cmp(ptr[i], v))
+                    {
+                        final_iterator = i;
+                        v = ptr[i];
+                    }
+                }
+            }
+
+            return final_iterator ? row_begin + *final_iterator : final_iterator;
+        }
+    }
+
+
     void addMany(const IColumn & column, size_t start, size_t end, Arena *)
     {
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
-#if USE_MULTITARGET_CODE
-        if constexpr (supported_multitarget_type)
-        {
-            if (isArchSupported(TargetArch::AVX2))
-            {
-                addManyImplAVX2<true, false>(ptr, nullptr, start, end);
-                return;
-            }
-            else if (isArchSupported(TargetArch::SSE42))
-            {
-                addManyImplSSE42<true, false>(ptr, nullptr, start, end);
-                return;
-            }
-        }
-#endif
-        addManyImpl<true, false>(ptr, nullptr, start, end);
+        std::optional<T> v = findNumericExtreme<true, false>(ptr, nullptr, start, end);
+        if (v)
+            add(*v);
+    }
+
+    std::optional<size_t> addManyIndex(const IColumn & column, size_t start, size_t end, Arena * arena)
+    {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        auto * ptr = col.getData().data();
+        std::optional<size_t> v = findNumericExtremeIndex<true, false>(ptr, nullptr, start, end);
+        if (v && add(column, *v, arena))
+            return v;
+        return {};
     }
 
     void addManyNotNull(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena *)
     {
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
-#if USE_MULTITARGET_CODE
-        if constexpr (supported_multitarget_type)
-        {
-            if (isArchSupported(TargetArch::AVX2))
-            {
-                addManyImplAVX2<false, true>(ptr, null_map, start, end);
-                return;
-            }
-            else if (isArchSupported(TargetArch::SSE42))
-            {
-                addManyImplSSE42<false, true>(ptr, null_map, start, end);
-                return;
-            }
-        }
-#endif
-        addManyImpl<false, true>(ptr, null_map, start, end);
+        std::optional<T> v = findNumericExtreme<false, true>(ptr, null_map, start, end);
+        if (v)
+            add(*v);
+    }
+
+    std::optional<size_t>
+    addManyNotNullIndex(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena)
+    {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        auto * ptr = col.getData().data();
+        std::optional<size_t> v = findNumericExtremeIndex<false, true>(ptr, null_map, start, end);
+        if (v && add(column, *v, arena))
+            return v;
+        return {};
     }
 
     void addManyConditional(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena *)
     {
         const auto & col = assert_cast<const ColVecType &>(column);
         auto * ptr = col.getData().data();
-#if USE_MULTITARGET_CODE
-        if constexpr (supported_multitarget_type)
-        {
-            if (isArchSupported(TargetArch::AVX2))
-            {
-                addManyImplAVX2<false, false>(ptr, condition_map, start, end);
-                return;
-            }
-            else if (isArchSupported(TargetArch::SSE42))
-            {
-                addManyImplSSE42<false, false>(ptr, condition_map, start, end);
-                return;
-            }
-        }
-#endif
-        addManyImpl<false, false>(ptr, condition_map, start, end);
+        std::optional<T> v = findNumericExtreme<false, false>(ptr, condition_map, start, end);
+        if (v)
+            add(*v);
     }
 
-    void merge(const AggregateFunctionsMinMaxDataNumeric & rhs, Arena *)
+    std::optional<size_t>
+    addManyConditionalIndex(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena)
+    {
+        const auto & col = assert_cast<const ColVecType &>(column);
+        auto * ptr = col.getData().data();
+        std::optional<size_t> v = findNumericExtremeIndex<false, false>(ptr, condition_map, start, end);
+        if (v && add(column, *v, arena))
+            return v;
+        return {};
+    }
+
+    bool merge(const AggregateFunctionsMinMaxDataNumeric & rhs, Arena *)
     {
         if (rhs.has_value)
-            add(rhs.value);
+            return add(rhs.value);
+        return false;
     }
 
     void write(WriteBuffer & buf, const ISerialization &) const
@@ -445,6 +537,7 @@ struct AggregateFunctionsMinMaxDataString
     static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
     static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
+    static constexpr bool allocates_memory_in_arena = true;
 
     bool ALWAYS_INLINE has() const { return size >= 0; }
 
@@ -477,24 +570,30 @@ struct AggregateFunctionsMinMaxDataString
         }
     }
 
-    void set(const IColumn & column, size_t row_num, Arena * arena)
+    void ALWAYS_INLINE set(const IColumn & column, size_t row_num, Arena * arena)
     {
         setImpl(assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
     }
 
-    void ALWAYS_INLINE inline add(const StringRef & s, Arena * arena)
+    void ALWAYS_INLINE inline set(const AggregateFunctionsMinMaxDataString & rhs, Arena * arena) { setImpl(rhs.getStringRef(), arena); }
+
+    bool ALWAYS_INLINE inline add(const StringRef & s, Arena * arena)
     {
         if (!has() || Comparator::cmp(s, getStringRef()))
+        {
             setImpl(s, arena);
+            return true;
+        }
+        return false;
     }
 
-    void ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena * arena)
+    bool ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena * arena)
     {
         StringRef s = assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num);
-        add(s, arena);
+        return add(s, arena);
     }
 
-    void ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { add(column, 0, arena); }
+    bool ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { return add(column, 0, arena); }
 
     void insertResultInto(IColumn & to) const
     {
@@ -505,7 +604,7 @@ struct AggregateFunctionsMinMaxDataString
     }
 
     template <bool add_all_elements, bool add_if_cond_zero>
-    void NO_INLINE
+    std::optional<size_t> NO_INLINE
     addManyImpl(const IColumn & column, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end, Arena * arena)
     {
         const auto & col = assert_cast<const ColumnString &>(column);
@@ -514,20 +613,27 @@ struct AggregateFunctionsMinMaxDataString
             while (!condition_map[start] != add_if_cond_zero && start < end)
                 start++;
             if (start >= end)
-                return;
+                return {};
         }
 
         StringRef idx = col.getDataAtWithTerminatingZero(start);
+        size_t pos = start;
         for (size_t i = start + 1; i < end; i++)
         {
             if (!add_all_elements && !condition_map[i] != add_if_cond_zero)
                 continue;
             StringRef iref = col.getDataAtWithTerminatingZero(i);
             if (Comparator::cmp(iref, idx))
+            {
                 idx = iref;
+                pos = i;
+            }
         }
 
-        add(idx, arena);
+        if (add(idx, arena))
+            return pos;
+        else
+            return {};
     }
 
     void addMany(const IColumn & column, size_t start, size_t end, Arena * arena)
@@ -535,9 +641,20 @@ struct AggregateFunctionsMinMaxDataString
         addManyImpl<true, false>(column, nullptr, start, end, arena);
     }
 
+    std::optional<size_t> addManyIndex(const IColumn & column, size_t start, size_t end, Arena * arena)
+    {
+        return addManyImpl<true, false>(column, nullptr, start, end, arena);
+    }
+
     void addManyNotNull(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena)
     {
         addManyImpl<false, true>(column, null_map, start, end, arena);
+    }
+
+    std::optional<size_t>
+    addManyNotNullIndex(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena)
+    {
+        return addManyImpl<false, true>(column, null_map, start, end, arena);
     }
 
     void addManyConditional(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena)
@@ -545,10 +662,17 @@ struct AggregateFunctionsMinMaxDataString
         addManyImpl<false, false>(column, condition_map, start, end, arena);
     }
 
-    void merge(const AggregateFunctionsMinMaxDataString & rhs, Arena * arena)
+    std::optional<size_t>
+    addManyConditionalIndex(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena)
+    {
+        return addManyImpl<false, false>(column, condition_map, start, end, arena);
+    }
+
+    bool merge(const AggregateFunctionsMinMaxDataString & rhs, Arena * arena)
     {
         if (rhs.has())
-            add(rhs.getStringRef(), arena);
+            return add(rhs.getStringRef(), arena);
+        return false;
     }
 
     void write(WriteBuffer & buf, const ISerialization &) const
@@ -609,32 +733,36 @@ template <typename Comparator>
 struct AggregateFunctionsMinMaxDataGeneric
 {
     using ComparatorType = Comparator;
+    static constexpr bool allocates_memory_in_arena = true;
 
 private:
     Field value;
 
     bool has() const { return !value.isNull(); }
 
-    void ALWAYS_INLINE inline add(const Field & new_value)
+    bool ALWAYS_INLINE inline add(const Field & new_value)
     {
         if (!has() || Comparator::cmp(new_value, value))
+        {
             value = new_value;
+            return true;
+        }
+        return false;
     }
 
 public:
-    void ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
+    bool ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
     {
-        if (!has())
-            column.get(row_num, value);
-        else
-        {
-            Field new_value;
-            column.get(row_num, new_value);
-            add(new_value);
-        }
+        Field new_value;
+        column.get(row_num, new_value);
+        return add(new_value);
     }
 
-    void ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { add(column, 0, arena); }
+    void ALWAYS_INLINE inline set(const IColumn & column, size_t row_num, Arena *) { column.get(row_num, value); }
+
+    void ALWAYS_INLINE inline set(const AggregateFunctionsMinMaxDataGeneric & rhs, Arena *) { value = rhs.value; }
+
+    bool ALWAYS_INLINE inline addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { return add(column, 0, arena); }
 
     void insertResultInto(IColumn & to) const
     {
@@ -645,7 +773,7 @@ public:
     }
 
     template <bool add_all_elements, bool add_if_cond_zero>
-    void NO_INLINE
+    std::optional<size_t> NO_INLINE
     addManyImpl(const IColumn & column, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end, Arena * arena)
     {
         if constexpr (!add_all_elements)
@@ -653,7 +781,7 @@ public:
             while (!condition_map[start] != add_if_cond_zero && start < end)
                 start++;
             if (start >= end)
-                return;
+                return {};
         }
 
         size_t idx = start;
@@ -665,7 +793,9 @@ public:
                 idx = i;
         }
 
-        add(column, idx, arena);
+        if (add(column, idx, arena))
+            return idx;
+        return {};
     }
 
     void addMany(const IColumn & column, size_t start, size_t end, Arena * arena)
@@ -673,9 +803,20 @@ public:
         addManyImpl<true, false>(column, nullptr, start, end, arena);
     }
 
+    std::optional<size_t> addManyIndex(const IColumn & column, size_t start, size_t end, Arena * arena)
+    {
+        return addManyImpl<true, false>(column, nullptr, start, end, arena);
+    }
+
     void addManyNotNull(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena)
     {
         addManyImpl<false, true>(column, null_map, start, end, arena);
+    }
+
+    std::optional<size_t>
+    addManyNotNullIndex(const IColumn & column, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena)
+    {
+        return addManyImpl<false, true>(column, null_map, start, end, arena);
     }
 
     void addManyConditional(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena)
@@ -683,10 +824,17 @@ public:
         addManyImpl<false, false>(column, condition_map, start, end, arena);
     }
 
-    void merge(const AggregateFunctionsMinMaxDataGeneric & rhs, Arena *)
+    std::optional<size_t>
+    addManyConditionalIndex(const IColumn & column, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena)
+    {
+        return addManyImpl<false, false>(column, condition_map, start, end, arena);
+    }
+
+    bool merge(const AggregateFunctionsMinMaxDataGeneric & rhs, Arena *)
     {
         if (rhs.has())
-            add(rhs.value);
+            return add(rhs.value);
+        return false;
     }
 
     void write(WriteBuffer & buf, const ISerialization & serialization) const
@@ -798,7 +946,7 @@ public:
         this->data(place).read(buf, *serialization, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return Data::allocates_memory_in_arena; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
