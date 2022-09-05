@@ -7,8 +7,8 @@ option(ENABLE_ANNOY "Enable Annoy index support" ${ENABLE_LIBRARIES})
 # Problem with aligment can lead to errors like
 # (https://stackoverflow.com/questions/46790550/c-undefined-behavior-strict-aliasing-rule-or-incorrect-alignment)
 # or will lead to crash on arm https://developer.arm.com/documentation/ka003038/latest
-# This issues should be resolved before annoy became non-experimental
-if ((NOT ENABLE_ANNOY) OR (SANITIZE STREQUAL "undefined") OR (${CMAKE_SYSTEM_PROCESSOR} MATCHES "^arm"))
+# This issues should be resolved before annoy became non-experimental (--> setting "allow_experimental_annoy_index")
+if ((NOT ENABLE_ANNOY) OR (SANITIZE STREQUAL "undefined") OR (ARCH_AARCH64))
     message (STATUS "Not using annoy")
     return()
 endif()

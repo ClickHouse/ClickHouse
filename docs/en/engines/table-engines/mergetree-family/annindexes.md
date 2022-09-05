@@ -46,6 +46,8 @@ Both types of queries are handled the same way. The indexes get `n` neighbors (w
 
 ## Create table with ANNIndex
 
+This feature is disabled by default. To enable it, set `allow_experimental_annoy_index` to 1. Also, this feature is disabled for arm, due to likely problems with the algorithm.
+
 ```sql
 CREATE TABLE t
 (
