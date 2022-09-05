@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
@@ -174,6 +175,10 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 - `br`
 - `deflate`
 - `xz`
+- `zstd`
+- `lz4`
+- `bz2`
+- `snappy`
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.

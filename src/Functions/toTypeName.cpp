@@ -62,7 +62,7 @@ public:
 
 }
 
-void registerFunctionToTypeName(FunctionFactory & factory)
+REGISTER_FUNCTION(ToTypeName)
 {
     factory.registerFunction<FunctionToTypeName>();
 }

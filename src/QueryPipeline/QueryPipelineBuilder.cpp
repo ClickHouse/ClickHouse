@@ -23,6 +23,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include "Core/SortDescription.h"
+#include <QueryPipeline/narrowPipe.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -158,10 +159,10 @@ void QueryPipelineBuilder::addChain(Chain chain)
     pipe.addChains(std::move(chains));
 }
 
-void QueryPipelineBuilder::transform(const Transformer & transformer)
+void QueryPipelineBuilder::transform(const Transformer & transformer, bool check_ports)
 {
     checkInitializedAndNotCompleted();
-    pipe.transform(transformer);
+    pipe.transform(transformer, check_ports);
 }
 
 void QueryPipelineBuilder::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
@@ -193,6 +194,12 @@ void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
     pipe.resize(num_streams, force, strict);
+}
+
+void QueryPipelineBuilder::narrow(size_t size)
+{
+    checkInitializedAndNotCompleted();
+    narrowPipe(pipe, size);
 }
 
 void QueryPipelineBuilder::addTotalsHavingTransform(ProcessorPtr transform)
@@ -341,8 +348,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-
-    if (left->pipe.output_ports.size() != 1 || right->pipe.output_ports.size() != 1)
+    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
         throw Exception("Join is supported only for pipelines with one output port", ErrorCodes::LOGICAL_ERROR);
 
     if (left->hasTotals() || right->hasTotals())
@@ -352,8 +358,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
 
-    auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
-    return result;
+    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(

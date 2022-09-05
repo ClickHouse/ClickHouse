@@ -182,6 +182,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.min_free_disk_space,
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
+                    transform_params->params.max_block_size,
                     /* only_merge */ false,
                     transform_params->params.stats_collecting_params};
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
@@ -239,15 +240,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
                 auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-                ActionsDAG::NodeRawConstPtrs index;
-                index.reserve(output_header.columns() + 1);
+                ActionsDAG::NodeRawConstPtrs outputs;
+                outputs.reserve(output_header.columns() + 1);
 
                 auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
                 const auto * grouping_node = &dag->addColumn(
                     {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 
                 grouping_node = &dag->materializeNode(*grouping_node);
-                index.push_back(grouping_node);
+                outputs.push_back(grouping_node);
 
                 const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
 
@@ -264,19 +265,19 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         auto column = ColumnConst::create(std::move(column_with_default), 0);
                         const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
                         node = &dag->materializeNode(*node);
-                        index.push_back(node);
+                        outputs.push_back(node);
                     }
                     else
                     {
-                        const auto * column_node = dag->getIndex()[header.getPositionByName(col.name)];
+                        const auto * column_node = dag->getOutputs()[header.getPositionByName(col.name)];
                         if (group_by_use_nulls && column_node->result_type->canBeInsideNullable())
-                            index.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
+                            outputs.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
                         else
-                            index.push_back(column_node);
+                            outputs.push_back(column_node);
                     }
                 }
 
-                dag->getIndex().swap(index);
+                dag->getOutputs().swap(outputs);
                 auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 
@@ -376,16 +377,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         });
 
         /// We add the explicit resize here, but not in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : pipeline.getNumStreams(), true /* force */);
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
 
         aggregating = collector.detachProcessors(0);
     }
     else
     {
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AggregatingTransform>(header, transform_params);
-        });
+        pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
+
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false /* force */);
 
         aggregating = collector.detachProcessors(0);
     }

@@ -1,9 +1,10 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Common/checkStackSize.h>
-#include <Common/getRandomASCIIString.h>
 #include <ranges>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
+
 
 namespace DB
 {
@@ -109,7 +110,6 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
             if (hardlink_count == 0)
             {
                 objects_to_remove = objects;
-                remove_from_cache = true;
             }
         }
         catch (const Exception & e)
@@ -136,12 +136,6 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     {
         if (!delete_metadata_only && !objects_to_remove.empty())
             object_storage.removeObjects(objects_to_remove);
-
-        if (remove_from_cache)
-        {
-            for (const auto & object : objects_to_remove)
-                object_storage.removeCacheIfExists(object.getPathKeyForCache());
-        }
     }
 };
 
@@ -186,9 +180,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                 if (hardlink_count == 0)
                 {
                     objects_to_remove[path_to_remove] = objects_paths;
-                    objects_to_remove_from_cache.insert(objects_to_remove_from_cache.end(), objects_paths.begin(), objects_paths.end());
                 }
-
             }
             catch (const Exception & e)
             {
@@ -237,9 +229,6 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             }
             object_storage.removeObjects(remove_from_remote);
         }
-
-        for (const auto & object : objects_to_remove_from_cache)
-            object_storage.removeCacheIfExists(object.getPathKeyForCache());
     }
 };
 
@@ -613,6 +602,15 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
         }));
 }
 
+void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path, mode](MetadataTransactionPtr tx)
+        {
+            tx->chmod(path, mode);
+        }));
+}
+
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
     operations_to_execute.emplace_back(
@@ -636,9 +634,11 @@ void DiskObjectStorageTransaction::commit()
         {
             operations_to_execute[i]->execute(metadata_transaction);
         }
-        catch (Exception & ex)
+        catch (...)
         {
-            ex.addMessage(fmt::format("While executing operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
+            tryLogCurrentException(
+                &Poco::Logger::get("DiskObjectStorageTransaction"),
+                fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
             {
@@ -646,9 +646,12 @@ void DiskObjectStorageTransaction::commit()
                 {
                     operations_to_execute[j]->undo();
                 }
-                catch (Exception & rollback_ex)
+                catch (...)
                 {
-                    rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
+                    tryLogCurrentException(
+                        &Poco::Logger::get("DiskObjectStorageTransaction"),
+                        fmt::format("An error occurred while undoing transaction's operation #{}", i));
+
                     throw;
                 }
             }

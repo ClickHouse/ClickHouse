@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/alter/user
 sidebar_position: 45
 sidebar_label: USER
+title: "ALTER USER"
 ---
-
-# ALTER USER
 
 Changes ClickHouse user accounts.
 

@@ -635,12 +635,13 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
 
 bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
 {
-    static constexpr uint32_t ZSTD_COMPRESSED_MAGIC = 0xFD2FB528;
+    static constexpr unsigned char ZSTD_COMPRESSED_MAGIC[4] = {0x28, 0xB5, 0x2F, 0xFD};
+
     ReadBufferFromNuraftBuffer reader(buffer);
-    uint32_t magic_from_buffer;
+    unsigned char magic_from_buffer[4]{};
     reader.readStrict(reinterpret_cast<char *>(&magic_from_buffer), sizeof(magic_from_buffer));
     buffer->pos(0);
-    return magic_from_buffer == ZSTD_COMPRESSED_MAGIC;
+    return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
 SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const

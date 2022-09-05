@@ -15,7 +15,7 @@ struct VerticalImpl
 namespace DB
 {
 
-void registerFunctionExtractAllGroupsVertical(FunctionFactory & factory)
+REGISTER_FUNCTION(ExtractAllGroupsVertical)
 {
     factory.registerFunction<FunctionExtractAllGroups<VerticalImpl>>();
     factory.registerAlias("extractAllGroups", VerticalImpl::Name, FunctionFactory::CaseSensitive);

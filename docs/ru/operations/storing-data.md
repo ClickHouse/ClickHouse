@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/storing-data
 sidebar_position: 68
 sidebar_label: "Хранение данных на внешних дисках"
 ---

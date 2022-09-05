@@ -28,6 +28,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/LightweightDeleteDescription.h>
 
 
@@ -859,9 +860,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             for (const auto & kv : stage.column_to_updated)
             {
                 auto column_name = kv.second->getColumnName();
-                const auto & dag_node = actions->findInIndex(column_name);
+                const auto & dag_node = actions->findInOutputs(column_name);
                 const auto & alias = actions->addAlias(dag_node, kv.first);
-                actions->addOrReplaceInIndex(alias);
+                actions->addOrReplaceInOutputs(alias);
             }
         }
 
@@ -934,14 +935,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             }
         }
 
-        SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
-        if (!subqueries_for_sets.empty())
-        {
-            const Settings & settings = context->getSettingsRef();
-            SizeLimits network_transfer_limits(
-                    settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-            addCreatingSetsStep(plan, std::move(subqueries_for_sets), network_transfer_limits, context);
-        }
+        addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan;

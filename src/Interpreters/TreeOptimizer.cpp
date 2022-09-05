@@ -13,6 +13,7 @@
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
+#include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
@@ -148,6 +149,19 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     function_builder = function_factory.get(function->name, context);
 
                 if (!function_builder->isInjective({}))
+                {
+                    ++i;
+                    continue;
+                }
+            }
+            /// don't optimise functions that shadow any of it's arguments, e.g.:
+            /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
+            if (!function->alias.empty())
+            {
+                FunctionMaskingArgumentCheckVisitor::Data data{.alias=function->alias};
+                FunctionMaskingArgumentCheckVisitor(data).visit(function->arguments);
+
+                if (data.is_rejected)
                 {
                     ++i;
                     continue;
@@ -439,7 +453,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         return;
 
     /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their undelying tables
+    /// because we can't get the sorting key of their underlying tables
     /// and we can break the matching of the sorting key for `read_in_order`
     /// optimization by removing monotonous functions from the prefix of key.
     if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))

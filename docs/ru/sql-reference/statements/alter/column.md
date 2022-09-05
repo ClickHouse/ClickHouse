@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/column
 sidebar_position: 37
 sidebar_label: "Манипуляции со столбцами"
 ---

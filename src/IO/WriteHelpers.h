@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iterator>
 #include <concepts>
+#include <bit>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -145,14 +146,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
 
-        if (DecomposedFloat64(x).is_integer_in_representable_range())
+        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
             result = itoa(Int64(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
-        if (DecomposedFloat32(x).is_integer_in_representable_range())
+        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
@@ -1110,13 +1111,15 @@ template <typename T>
 requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
-    if constexpr (sizeof(x) == 2)
-        x = __builtin_bswap16(x);
-    else if constexpr (sizeof(x) == 4)
-        x = __builtin_bswap32(x);
-    else if constexpr (sizeof(x) == 8)
-        x = __builtin_bswap64(x);
-
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        if constexpr (sizeof(x) == 2)
+            x = __builtin_bswap16(x);
+        else if constexpr (sizeof(x) == 4)
+            x = __builtin_bswap32(x);
+        else if constexpr (sizeof(x) == 8)
+            x = __builtin_bswap64(x);
+    }
     writePODBinary(x, buf);
 }
 
