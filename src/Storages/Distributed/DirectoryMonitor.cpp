@@ -140,6 +140,11 @@ namespace
         size_t rows = 0;
         size_t bytes = 0;
 
+        UInt32 shard_num = 0;
+        std::string cluster_name;
+        std::string distributed_table;
+        std::string remote_table;
+
         /// dumpStructure() of the header -- obsolete
         std::string block_header_string;
         Block block_header;
@@ -193,6 +198,14 @@ namespace
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
                             in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
+            }
+
+            if (header_buf.hasPendingData())
+            {
+              readVarUInt(distributed_header.shard_num, header_buf);
+              readStringBinary(distributed_header.cluster_name, header_buf);
+              readStringBinary(distributed_header.distributed_table, header_buf);
+              readStringBinary(distributed_header.remote_table, header_buf);
             }
 
             /// Add handling new data here, for example:
@@ -621,17 +634,22 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
+            distributed_header.client_info.client_trace_context,
+            this->storage.getContext()->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.addAttribute("clickhouse.shard_num", distributed_header.shard_num);
+        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster_name);
+        thread_trace_context->root_span.addAttribute("clickhouse.distributed", distributed_header.distributed_table);
+        thread_trace_context->root_span.addAttribute("clickhouse.remote", distributed_header.remote_table);
+        thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
+        thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
 
+        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),
             formatReadableQuantity(distributed_header.rows),
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
-
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
-            distributed_header.client_info.client_trace_context,
-            this->storage.getContext()->getOpenTelemetrySpanLog());
 
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
