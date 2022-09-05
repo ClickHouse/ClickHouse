@@ -1,5 +1,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include "Common/ConcurrentBoundedQueue.h"
+#include <Common/Stopwatch.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -358,10 +360,34 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         return node.getData().empty() && node.stat == Coordination::Stat{};
     };
 
+    //ConcurrentBoundedQueue<std::pair<std::string, KeeperStorage::Node>> node_queue(std::numeric_limits<size_t>::max());
+    //auto node_load_thread = ThreadFromGlobalPool([&] 
+    //{ 
+    //    size_t loaded = 0;
+    //    while (loaded != snapshot_container_size)
+    //    {
+    //        std::pair<std::string, KeeperStorage::Node> next_node;
+    //        if (node_queue.tryPop(next_node))
+    //        {
+    //            auto & [path, node] = next_node;
+    //            storage.container.insertOrReplace(path, node);
+    //            if (node.stat.ephemeralOwner != 0)
+    //                storage.ephemerals[node.stat.ephemeralOwner].insert(path);
+
+    //            if (recalculate_digest)
+    //                storage.nodes_digest += node.getDigest(path);
+
+    //            ++loaded;
+    //        }
+    //    }
+    //});
+
+    Stopwatch node_timer;
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
         std::string path;
         readBinary(path, in);
+
         KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
@@ -398,6 +424,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     error_msg);
         }
 
+        //[[maybe_unused]] bool pushed = node_queue.tryPush({std::move(path), std::move(node)});
         storage.container.insertOrReplace(path, node);
         if (node.stat.ephemeralOwner != 0)
             storage.ephemerals[node.stat.ephemeralOwner].insert(path);
@@ -406,6 +433,12 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             storage.nodes_digest += node.getDigest(path);
     }
 
+    //if (node_load_thread.joinable())
+    //    node_load_thread.join();
+
+    LOG_INFO(&Poco::Logger::get("STOPWATCH"), "Node loading took {}", node_timer.elapsedMilliseconds());
+
+    Stopwatch parenting_timer;
     for (const auto & itr : storage.container)
     {
         if (itr.key != "/")
@@ -415,6 +448,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                 parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
+    LOG_INFO(&Poco::Logger::get("STOPWATCH"), "Parenting took {}", parenting_timer.elapsedMilliseconds());
 
     for (const auto & itr : storage.container)
     {
