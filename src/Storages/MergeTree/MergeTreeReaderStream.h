@@ -31,7 +31,8 @@ public:
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback,
         clockid_t clock_type,
-        bool is_low_cardinality_dictionary_);
+        bool is_low_cardinality_dictionary_,
+        ThreadPool * load_marks_cache_threadpool_);
 
     void seekToMark(size_t index);
 
