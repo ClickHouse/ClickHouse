@@ -282,6 +282,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
 void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context)
 {
+    Stopwatch total;
     uint8_t version;
     readBinary(version, in);
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
@@ -360,16 +361,16 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         return node.getData().empty() && node.stat == Coordination::Stat{};
     };
 
-    ConcurrentBoundedQueue<std::pair<std::string, KeeperStorage::Node>> node_queue(snapshot_container_size);
+    ConcurrentBoundedQueue<std::shared_ptr<std::pair<std::string, KeeperStorage::Node>>> node_queue(snapshot_container_size);
     auto node_load_thread = ThreadFromGlobalPool([&] 
     { 
         size_t loaded = 0;
         while (loaded != snapshot_container_size)
         {
-            std::pair<std::string, KeeperStorage::Node> next_node;
+            std::shared_ptr<std::pair<std::string, KeeperStorage::Node>> next_node;
             if (node_queue.tryPop(next_node))
             {
-                auto & [path, node] = next_node;
+                auto & [path, node] = *next_node;
 
                 if (node.stat.ephemeralOwner != 0)
                     storage.ephemerals[node.stat.ephemeralOwner].insert(path);
@@ -415,10 +416,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     Stopwatch node_timer;
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
-        std::string path;
+        auto pair = std::make_shared<std::pair<std::string, KeeperStorage::Node>>();
+        auto & [path, node] = *pair;
         readBinary(path, in);
-
-        KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
         using enum PathMatchResult;
@@ -454,7 +454,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     error_msg);
         }
 
-        [[maybe_unused]] bool pushed = node_queue.tryPush({std::move(path), std::move(node)});
+        [[maybe_unused]] bool pushed = node_queue.tryPush(std::move(pair));
     }
 
     size_t active_sessions_size;
@@ -504,6 +504,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
 
     if (node_load_thread.joinable())
         node_load_thread.join();
+
+    LOG_INFO(&Poco::Logger::get("TIMER"), "Total tiem {}ms", total.elapsedMilliseconds());
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_)
