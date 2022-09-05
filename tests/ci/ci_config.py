@@ -250,7 +250,7 @@ CI_CONFIG = {
         "Stateless tests (debug, s3 storage)": {
             "required_build": "package_debug",
         },
-        "Stateless tests (thread, s3 storage)": {
+        "Stateless tests (tsan, s3 storage)": {
             "required_build": "package_tsan",
         },
         "Stress test (asan)": {
