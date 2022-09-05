@@ -112,6 +112,11 @@ public:
         disk.setLastModified(path, timestamp);
     }
 
+    void chmod(const String & path, mode_t mode) override
+    {
+        disk.chmod(path, mode);
+    }
+
     void setReadOnly(const std::string & path) override
     {
         disk.setReadOnly(path);

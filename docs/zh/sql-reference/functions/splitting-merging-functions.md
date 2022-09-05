@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/splitting-merging-functions
+---
 # 字符串拆分合并函数 {#zi-fu-chuan-chai-fen-he-bing-han-shu}
 
 ## splitByChar（分隔符，s) {#splitbycharseparator-s}

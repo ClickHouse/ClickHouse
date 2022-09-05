@@ -261,7 +261,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
                     key.getPath(), subtypes[0]->getName(), subtypes[i]->getName());
 
         tuple_paths.emplace_back(key);
-        tuple_types.emplace_back(getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
+        tuple_types.emplace_back(getLeastSupertypeOrString(subtypes));
     }
 
     if (tuple_paths.empty())
@@ -737,14 +737,31 @@ Field FieldVisitorReplaceScalars::operator()(const Array & x) const
     return res;
 }
 
-size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x)
 {
     const size_t size = x.size();
     size_t dimensions = 0;
     for (size_t i = 0; i < size; ++i)
-        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
+    {
+        size_t element_dimensions = applyVisitor(*this, x[i]);
+        if (i > 0 && element_dimensions != dimensions)
+            need_fold_dimension = true;
+        dimensions = std::max(dimensions, element_dimensions);
+    }
 
     return 1 + dimensions;
 }
 
+Field FieldVisitorFoldDimension::operator()(const Array & x) const
+{
+    if (num_dimensions_to_fold == 0)
+        return x;
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        res[i] = applyVisitor(FieldVisitorFoldDimension(num_dimensions_to_fold - 1), x[i]);
+    }
+    return res;
+}
 }

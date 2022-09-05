@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -8,6 +10,65 @@ namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
+
+
+/// Lightweight (in terms of logic) stream for reading single part from MergeTree
+/// NOTE:
+///  It doesn't filter out rows that are deleted with lightweight deletes.
+///  Use createMergeTreeSequentialSource filter out those rows.
+class MergeTreeSequentialSource : public ISource
+{
+public:
+    MergeTreeSequentialSource(
+        const MergeTreeData & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        MergeTreeData::DataPartPtr data_part_,
+        Names columns_to_read_,
+        bool read_with_direct_io_,
+        bool take_column_types_from_storage,
+        bool quiet = false);
+
+    ~MergeTreeSequentialSource() override;
+
+    String getName() const override { return "MergeTreeSequentialSource"; }
+
+    size_t getCurrentMark() const { return current_mark; }
+
+    size_t getCurrentRow() const { return current_row; }
+
+protected:
+    Chunk generate() override;
+
+private:
+
+    const MergeTreeData & storage;
+    StorageSnapshotPtr storage_snapshot;
+
+    /// Data part will not be removed if the pointer owns it
+    MergeTreeData::DataPartPtr data_part;
+
+    /// Columns we have to read (each Block from read will contain them)
+    Names columns_to_read;
+
+    /// Should read using direct IO
+    bool read_with_direct_io;
+
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeSequentialSource");
+
+    std::shared_ptr<MarkCache> mark_cache;
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+    MergeTreeReaderPtr reader;
+
+    /// current mark at which we stop reading
+    size_t current_mark = 0;
+
+    /// current row at which we stop reading
+    size_t current_row = 0;
+
+    /// Closes readers and unlock part locks
+    void finish();
+};
+
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
@@ -46,7 +107,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
+            .withSystemColumns();
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
@@ -142,5 +205,40 @@ void MergeTreeSequentialSource::finish()
 }
 
 MergeTreeSequentialSource::~MergeTreeSequentialSource() = default;
+
+
+Pipe createMergeTreeSequentialSource(
+    const MergeTreeData & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    MergeTreeData::DataPartPtr data_part,
+    Names columns_to_read,
+    bool read_with_direct_io,
+    bool take_column_types_from_storage,
+    bool quiet,
+    std::shared_ptr<std::atomic<size_t>> filtered_rows_count)
+{
+    /// The part might have some rows masked by lightweight deletes
+    const bool need_to_filter_deleted_rows = data_part->hasLightweightDelete();
+    auto columns = columns_to_read;
+    if (need_to_filter_deleted_rows)
+        columns.emplace_back(LightweightDeleteDescription::FILTER_COLUMN.name);
+
+    auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
+        storage, storage_snapshot, data_part, columns, read_with_direct_io, take_column_types_from_storage, quiet);
+
+    Pipe pipe(std::move(column_part_source));
+
+    /// Add filtering step that discards deleted rows
+    if (need_to_filter_deleted_rows)
+    {
+        pipe.addSimpleTransform([filtered_rows_count](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(
+                header, nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, false, filtered_rows_count);
+        });
+    }
+
+    return pipe;
+}
 
 }

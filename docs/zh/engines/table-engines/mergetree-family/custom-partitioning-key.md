@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/custom-partitioning-key
+---
 # 自定义分区键 {#zi-ding-yi-fen-qu-jian}
 
 [MergeTree](mergetree.md) 系列的表（包括 [可复制表](replication.md) ）可以使用分区。基于 MergeTree 表的 [物化视图](../special/materializedview.md#materializedview) 也支持分区。

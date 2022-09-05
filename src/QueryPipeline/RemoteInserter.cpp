@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -30,22 +31,6 @@ RemoteInserter::RemoteInserter(
 {
     ClientInfo modified_client_info = client_info_;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    if (CurrentThread::isInitialized())
-    {
-        auto& thread_trace_context = CurrentThread::get().thread_trace_context;
-
-        if (thread_trace_context.trace_id != UUID())
-        {
-            // overwrite the trace context only if current thread trace context is available
-            modified_client_info.client_trace_context = thread_trace_context;
-        }
-        else
-        {
-            // if the trace on the thread local is not enabled(for example running in a background thread)
-            // we should not clear the trace context on the client info because the client info may hold trace context
-            // and this trace context should be propagated to the remote server so that the tracing of distributed table insert is complete.
-        }
-    }
 
     Settings settings = settings_;
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
@@ -66,7 +51,8 @@ RemoteInserter::RemoteInserter(
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
+    connection.sendQuery(
+        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
 
     while (true)
     {

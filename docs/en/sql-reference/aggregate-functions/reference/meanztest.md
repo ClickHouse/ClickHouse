@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/meanztest
 sidebar_position: 303
 sidebar_label: meanZTest
 ---
@@ -66,5 +67,3 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/meanZTest/) <!--hide-->

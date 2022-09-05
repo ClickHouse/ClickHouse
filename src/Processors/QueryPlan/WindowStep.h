@@ -28,9 +28,10 @@ public:
     const WindowDescription & getWindowDescription() const;
 
 private:
+    void updateOutputStream() override;
+
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
-    Block input_header;
 };
 
 }

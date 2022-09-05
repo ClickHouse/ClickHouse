@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/create/function
 sidebar_position: 38
 sidebar_label: FUNCTION
 ---
@@ -10,7 +11,7 @@ Creates a user defined function from a lambda expression. The expression must co
 **Syntax**
 
 ```sql
-CREATE FUNCTION name AS (parameter0, ...) -> expression
+CREATE FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
 ```
 A function can have an arbitrary number of parameters.
 

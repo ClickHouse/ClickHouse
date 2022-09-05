@@ -24,7 +24,7 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
+#    include <aws/s3/model/HeadObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -148,7 +148,7 @@ public:
     {
         String credentials_string;
         {
-            std::unique_lock<std::recursive_mutex> locker(token_mutex);
+            std::lock_guard locker(token_mutex);
 
             LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
             auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
@@ -194,7 +194,7 @@ public:
         String new_token;
 
         {
-            std::unique_lock<std::recursive_mutex> locker(token_mutex);
+            std::lock_guard locker(token_mutex);
 
             Aws::StringStream ss;
             ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
@@ -790,7 +790,8 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
-    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+
+    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
     {
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
@@ -804,13 +805,18 @@ namespace S3
         if (outcome.IsSuccess())
         {
             auto read_result = outcome.GetResultWithOwnership();
-            return static_cast<size_t>(read_result.GetContentLength());
+            return {.size = static_cast<size_t>(read_result.GetContentLength()), .last_modification_time = read_result.GetLastModified().Millis() / 1000};
         }
         else if (throw_on_error)
         {
             throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
         }
-        return 0;
+        return {};
+    }
+
+    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    {
+        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error).size;
     }
 }
 

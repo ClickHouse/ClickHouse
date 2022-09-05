@@ -240,7 +240,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
             size_t res_chars_size = res->chars.size();
             while (mask)
             {
-                size_t index = __builtin_ctzll(mask);
+                size_t index = std::countr_zero(mask);
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;

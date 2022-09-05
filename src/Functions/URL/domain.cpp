@@ -10,7 +10,7 @@ struct NameDomain { static constexpr auto name = "domain"; };
 using FunctionDomain = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false>>, NameDomain>;
 
 
-void registerFunctionDomain(FunctionFactory & factory)
+REGISTER_FUNCTION(Domain)
 {
     factory.registerFunction<FunctionDomain>();
 }

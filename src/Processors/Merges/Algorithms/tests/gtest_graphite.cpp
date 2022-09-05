@@ -12,6 +12,8 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <base/errnoToString.h>
+
 
 using namespace DB;
 
@@ -43,7 +45,7 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
     int fd = mkstemp(tmp_file);
     if (fd == -1)
     {
-        throw std::runtime_error(strerror(errno));
+        throw std::runtime_error(errnoToString());
     }
     try
     {
@@ -61,7 +63,7 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
         {
             int err = errno;
             (void)remove(tmp_file);
-            throw std::runtime_error(strerror(err));
+            throw std::runtime_error(errnoToString(err));
         }
         ConfigProcessor::LoadedConfig config = loadConfiguration(config_path);
         (void)remove(tmp_file);

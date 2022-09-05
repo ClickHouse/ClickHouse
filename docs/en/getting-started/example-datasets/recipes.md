@@ -1,8 +1,8 @@
 ---
+slug: /en/getting-started/example-datasets/recipes
 sidebar_label: Recipes Dataset
+title: "Recipes Dataset"
 ---
-
-# Recipes Dataset
 
 RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
 

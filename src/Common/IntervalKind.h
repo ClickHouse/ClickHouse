@@ -31,7 +31,11 @@ struct IntervalKind
 
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
-    Float64 toAvgSeconds() const;
+    Int32 toAvgSeconds() const;
+
+    /// Returns exact number of seconds in one interval.
+    /// For `Month`, `Quarter` and `Year` the function raises an error.
+    Float64 toSeconds() const;
 
     /// Chooses an interval kind based on number of seconds.
     /// For example, `IntervalKind::fromAvgSeconds(3600)` returns `IntervalKind::Hour`.
@@ -60,7 +64,7 @@ struct IntervalKind
     const char * toNameOfFunctionExtractTimePart() const;
 
     /// Converts the string representation of an interval kind to its IntervalKind equivalent.
-    /// Returns false if the conversion unsucceeded.
+    /// Returns false if the conversion did not succeed.
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
 };

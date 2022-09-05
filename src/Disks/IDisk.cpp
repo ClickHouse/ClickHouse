@@ -7,6 +7,8 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
@@ -111,14 +113,12 @@ void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<
 
 void IDisk::truncateFile(const String &, size_t)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
 }
-
-MetadataStoragePtr IDisk::getMetadataStorage() { return std::make_shared<MetadataStorageFromDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), ""); }
 
 }

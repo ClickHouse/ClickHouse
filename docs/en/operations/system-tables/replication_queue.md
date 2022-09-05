@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/replication_queue
+---
 # replication_queue
 
 Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
@@ -88,4 +91,3 @@ last_postpone_time:     1970-01-01 03:00:00
 
 -   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md#query-language-system-replicated)
 
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/replication_queue) <!--hide-->
