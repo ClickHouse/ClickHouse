@@ -65,7 +65,8 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/ActionsChain.h>
-#include <Planner/PlannerCollectSets.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
 
 namespace DB
 {
@@ -106,218 +107,6 @@ namespace ErrorCodes
 namespace
 {
 
-StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
-{
-    StreamLocalLimits limits;
-    limits.mode = LimitsMode::LIMITS_TOTAL;
-    limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
-    limits.speed_limits.max_execution_time = settings.max_execution_time;
-    limits.timeout_overflow_mode = settings.timeout_overflow_mode;
-
-    /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
-      *  because the initiating server has a summary of the execution of the request on all servers.
-      *
-      * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
-      *  additionally on each remote server, because these limits are checked per block of data processed,
-      *  and remote servers may process way more blocks of data than are received by initiator.
-      *
-      * The limits to throttle maximum execution speed is also checked on all servers.
-      */
-    if (options.to_stage == QueryProcessingStage::Complete)
-    {
-        limits.speed_limits.min_execution_rps = settings.min_execution_speed;
-        limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
-    }
-
-    limits.speed_limits.max_execution_rps = settings.max_execution_speed;
-    limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
-    limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-
-    return limits;
-}
-
-StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options)
-{
-    const auto & settings = context.getSettingsRef();
-
-    StreamLocalLimits limits;
-    SizeLimits leaf_limits;
-
-    /// Set the limits and quota for reading data, the speed and time of the query.
-    if (!options.ignore_limits)
-    {
-        limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf, settings.read_overflow_mode_leaf);
-    }
-
-    return {limits, leaf_limits};
-}
-
-/** There are no limits on the maximum size of the result for the subquery.
-  * Since the result of the query is not the result of the entire query.
-  */
-ContextPtr buildSubqueryContext(const ContextPtr & context)
-{
-    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
-      * Because the result of this query is not the result of the entire query.
-      * Constraints work instead
-      *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-      *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
-      *  which are checked separately (in the Set, Join objects).
-      */
-    auto subquery_context = Context::createCopy(context);
-    Settings subquery_settings = context->getSettings();
-    subquery_settings.max_result_rows = 0;
-    subquery_settings.max_result_bytes = 0;
-    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings.extremes = false;
-    subquery_context->setSettings(subquery_settings);
-    return subquery_context;
-}
-
-QueryTreeNodes extractAggregateFunctionNodes(const QueryTreeNodePtr & query_node)
-{
-    const auto & query_node_typed = query_node->as<QueryNode &>();
-
-    QueryTreeNodes aggregate_function_nodes;
-    if (query_node_typed.hasHaving())
-        collectAggregateFunctionNodes(query_node_typed.getHaving(), aggregate_function_nodes);
-
-    if (query_node_typed.hasOrderBy())
-        collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
-
-    collectAggregateFunctionNodes(query_node_typed.getProjectionNode(), aggregate_function_nodes);
-
-    return aggregate_function_nodes;
-}
-
-AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context)
-{
-    QueryTreeNodeToName node_to_name;
-    NameSet unique_aggregate_action_node_names;
-    AggregateDescriptions aggregate_descriptions;
-
-    for (const auto & aggregate_function_node : aggregate_function_nodes)
-    {
-        const auto & aggregagte_function_node_typed = aggregate_function_node->as<FunctionNode &>();
-        String node_name = calculateActionNodeName(aggregate_function_node, planner_context, node_to_name);
-        auto [_, inserted] = unique_aggregate_action_node_names.emplace(node_name);
-        if (!inserted)
-            continue;
-
-        AggregateDescription aggregate_description;
-        aggregate_description.function = aggregagte_function_node_typed.getAggregateFunction();
-
-        const auto & parameters_nodes = aggregagte_function_node_typed.getParameters().getNodes();
-        aggregate_description.parameters.reserve(parameters_nodes.size());
-
-        for (const auto & parameter_node : parameters_nodes)
-        {
-            /// Function parameters constness validated during analysis stage
-            aggregate_description.parameters.push_back(parameter_node->getConstantValue().getValue());
-        }
-
-        const auto & arguments_nodes = aggregagte_function_node_typed.getArguments().getNodes();
-        aggregate_description.argument_names.reserve(arguments_nodes.size());
-
-        for (const auto & argument_node : arguments_nodes)
-        {
-            String argument_node_name = calculateActionNodeName(argument_node, planner_context, node_to_name);
-            aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
-        }
-
-        aggregate_description.column_name = node_name;
-        aggregate_descriptions.push_back(std::move(aggregate_description));
-    }
-
-    return aggregate_descriptions;
-}
-
-class CollectSourceColumnsMatcher
-{
-public:
-    using Visitor = InDepthQueryTreeVisitor<CollectSourceColumnsMatcher, true, false>;
-
-    struct Data
-    {
-        PlannerContext & planner_context;
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data & data)
-    {
-        auto * column_node = node->as<ColumnNode>();
-        if (!column_node)
-            return;
-
-        auto column_source_node = column_node->getColumnSource();
-        auto column_source_node_type = column_source_node->getNodeType();
-
-        if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN ||
-            column_source_node_type == QueryTreeNodeType::LAMBDA)
-            return;
-
-        /// JOIN using expression
-        if (column_node->hasExpression() && column_source_node->getNodeType() == QueryTreeNodeType::JOIN)
-            return;
-
-        auto & table_expression_node_to_columns = data.planner_context.getTableExpressionNodeToColumns();
-
-        auto [it, _] = table_expression_node_to_columns.emplace(column_source_node, TableExpressionColumns());
-        auto & table_expression_columns = it->second;
-
-        if (column_node->hasExpression())
-        {
-            /// Replace ALIAS column with expression
-            table_expression_columns.addAliasColumnName(column_node->getColumnName());
-            node = column_node->getExpression();
-            visit(node, data);
-            return;
-        }
-
-        if (column_source_node_type != QueryTreeNodeType::TABLE &&
-            column_source_node_type != QueryTreeNodeType::TABLE_FUNCTION &&
-            column_source_node_type != QueryTreeNodeType::QUERY &&
-            column_source_node_type != QueryTreeNodeType::UNION)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected table, table function, query or union column source. Actual {}",
-                column_source_node->formatASTForErrorMessage());
-
-        bool column_already_exists = table_expression_columns.hasColumn(column_node->getColumnName());
-
-        if (!column_already_exists)
-        {
-            auto column_identifier = data.planner_context.getColumnUniqueIdentifier(column_source_node, column_node->getColumnName());
-            data.planner_context.registerColumnNode(node, column_identifier);
-            table_expression_columns.addColumn(column_node->getColumn(), column_identifier);
-        }
-        else
-        {
-            auto column_identifier = table_expression_columns.getColumnIdentifierOrThrow(column_node->getColumnName());
-            data.planner_context.registerColumnNode(node, column_identifier);
-        }
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
-    {
-        return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
-    }
-};
-
-using CollectSourceColumnsVisitor = CollectSourceColumnsMatcher::Visitor;
-
-ActionsDAGPtr convertExpressionNodeIntoDAG(const QueryTreeNodePtr & expression_node, const ColumnsWithTypeAndName & inputs, const PlannerContextPtr & planner_context)
-{
-    ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(inputs);
-    PlannerActionsVisitor actions_visitor(planner_context);
-    auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
-    action_dag->getOutputs().clear();
-
-    for (auto & expression_dag_index_node : expression_dag_index_nodes)
-        action_dag->getOutputs().push_back(expression_dag_index_node);
-
-    return action_dag;
-}
-
 QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
     SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -335,13 +124,14 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
 
     QueryPlan query_plan;
 
-    auto & table_expression_node_to_columns = planner_context->getTableExpressionNodeToColumns();
+    auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
+    auto it = table_expression_node_to_data.find(table_expression);
+    if (it == table_expression_node_to_data.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Table expression {} is not registered",
+            table_expression->formatASTForErrorMessage());
 
-    /** Use default columns to support case when there are no columns in query.
-      * Example: SELECT 1;
-      */
-    const auto & [it, _] = table_expression_node_to_columns.emplace(table_expression, TableExpressionColumns());
-    auto & table_expression_columns = it->second;
+    auto & table_expression_data = it->second;
 
     if (table_node || table_function_node)
     {
@@ -355,7 +145,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
             table_expression_query_info.table_expression_modifiers = table_function_node->getTableExpressionModifiers();
 
         auto from_stage = storage->getQueryProcessingStage(planner_context->getQueryContext(), select_query_options.to_stage, storage_snapshot, table_expression_query_info);
-        const auto & columns_names = table_expression_columns.getColumnsNames();
+        const auto & columns_names = table_expression_data.getColumnsNames();
         Names column_names(columns_names.begin(), columns_names.end());
 
         std::optional<NameAndTypePair> read_additional_column;
@@ -370,7 +160,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
         {
             auto column_identifier = planner_context->getColumnUniqueIdentifier(table_expression, read_additional_column->name);
             column_names.push_back(read_additional_column->name);
-            table_expression_columns.addColumn(*read_additional_column, column_identifier);
+            table_expression_data.addColumn(*read_additional_column, column_identifier);
         }
 
         if (!column_names.empty())
@@ -406,7 +196,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
 
     auto rename_actions_dag = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
 
-    for (const auto & [column_name, column_identifier] : table_expression_columns.getColumnNameToIdentifier())
+    for (const auto & [column_name, column_identifier] : table_expression_data.getColumnNameToIdentifier())
     {
         auto position = query_plan.getCurrentDataStream().header.getPositionByName(column_name);
         const auto * node_to_rename = rename_actions_dag->getOutputs()[position];
@@ -930,13 +720,10 @@ void Planner::buildQueryPlanIfNeeded()
     select_query_info.query = select_query_info.original_query;
 
     StorageLimitsList storage_limits;
-    storage_limits.push_back(getStorageLimits(*query_context, select_query_options));
+    storage_limits.push_back(buildStorageLimits(*query_context, select_query_options));
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
 
-    CollectSourceColumnsVisitor::Data data {*planner_context};
-    CollectSourceColumnsVisitor collect_source_columns_visitor(data);
-    collect_source_columns_visitor.visit(query_tree);
-
+    collectTableExpressionData(query_tree, *planner_context);
     collectSets(query_tree, *planner_context);
 
     query_plan = buildQueryPlanForJoinTreeNode(query_node.getJoinTree(), select_query_info, select_query_options, planner_context);
@@ -950,7 +737,7 @@ void Planner::buildQueryPlanIfNeeded()
         const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
         const auto & where_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
-        auto where_actions = convertExpressionNodeIntoDAG(query_node.getWhere(), where_input, planner_context);
+        auto where_actions = buildActionsDAGFromExpressionNode(query_node.getWhere(), where_input, planner_context);
         where_filter_action_node_name = where_actions->getOutputs().at(0)->result_name;
         actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(where_actions)));
         where_action_step_index = actions_chain.getLastStepIndex();
@@ -1094,7 +881,7 @@ void Planner::buildQueryPlanIfNeeded()
         chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
         const auto & having_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
-        auto having_actions = convertExpressionNodeIntoDAG(query_node.getHaving(), having_input, planner_context);
+        auto having_actions = buildActionsDAGFromExpressionNode(query_node.getHaving(), having_input, planner_context);
         having_filter_action_node_name = having_actions->getOutputs().at(0)->result_name;
         actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(having_actions)));
         having_action_step_index = actions_chain.getLastStepIndex();
@@ -1142,7 +929,7 @@ void Planner::buildQueryPlanIfNeeded()
     {
         chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
         const auto & limit_by_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-        auto limit_by_actions = convertExpressionNodeIntoDAG(query_node.getLimitByNode(), limit_by_input, planner_context);
+        auto limit_by_actions = buildActionsDAGFromExpressionNode(query_node.getLimitByNode(), limit_by_input, planner_context);
 
         limit_by_columns_names.reserve(limit_by_actions->getOutputs().size());
         for (auto & output_node : limit_by_actions->getOutputs())
@@ -1155,7 +942,7 @@ void Planner::buildQueryPlanIfNeeded()
 
     chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-    auto projection_actions = convertExpressionNodeIntoDAG(query_node.getProjectionNode(), projection_input, planner_context);
+    auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), projection_input, planner_context);
 
     const auto & projection_action_dag_nodes = projection_actions->getOutputs();
     size_t projection_action_dag_nodes_size = projection_action_dag_nodes.size();
@@ -1266,10 +1053,10 @@ void Planner::buildQueryPlanIfNeeded()
             : static_cast<size_t>(settings.max_threads);
 
         bool storage_has_evenly_distributed_read = false;
-        auto & table_expression_node_to_columns = planner_context->getTableExpressionNodeToColumns();
-        if (table_expression_node_to_columns.size() == 1)
+        auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
+        if (table_expression_node_to_data.size() == 1)
         {
-            auto it = table_expression_node_to_columns.begin();
+            auto it = table_expression_node_to_data.begin();
             const auto & table_expression_node = it->first;
             if (const auto * table_node = table_expression_node->as<TableNode>())
                 storage_has_evenly_distributed_read = table_node->getStorage()->hasEvenlyDistributedRead();
