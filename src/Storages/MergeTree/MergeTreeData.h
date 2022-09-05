@@ -1339,8 +1339,7 @@ private:
     void loadDataPartsFromWAL(
         DataPartsVector & broken_parts_to_detach,
         DataPartsVector & duplicate_parts_to_remove,
-        MutableDataPartsVector & parts_from_wal,
-        DataPartsLock & part_lock);
+        MutableDataPartsVector & parts_from_wal);
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
