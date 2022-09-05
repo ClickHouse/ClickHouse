@@ -1018,7 +1018,7 @@ void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
 const ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResult() const
 {
     if (std::holds_alternative<std::exception_ptr>(analyzed_result_ptr->result))
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(analyzed_result_ptr->result)));
+        std::rethrow_exception(std::get<std::exception_ptr>(analyzed_result_ptr->result));
 
     return std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
 }
