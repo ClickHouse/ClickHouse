@@ -548,9 +548,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     if (need_preliminary_merge)
     {
-        size_t fixed_prefix_size = input_order_info->order_key_fixed_prefix_descr.size();
-        size_t prefix_size = fixed_prefix_size + input_order_info->order_key_prefix_descr.size();
-
+        size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
         auto order_key_prefix_ast = metadata_for_reading->getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
