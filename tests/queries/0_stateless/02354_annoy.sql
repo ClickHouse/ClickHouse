@@ -1,5 +1,7 @@
 -- Tags: no-fasttest, no-ubsan
 
+SET allow_experimental_annoy_index = 1;
+
 DROP TABLE IF EXISTS 02354_annoy;
 
 CREATE TABLE 02354_annoy
