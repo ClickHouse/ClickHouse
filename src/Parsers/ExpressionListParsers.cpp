@@ -35,75 +35,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-const char * ParserMultiplicativeExpression::operators[] =
-{
-    "*",     "multiply",
-    "/",     "divide",
-    "%",     "modulo",
-    "MOD",   "modulo",
-    "DIV",   "intDiv",
-    nullptr
-};
-
-const char * ParserUnaryExpression::operators[] =
-{
-    "-",     "negate",
-    "NOT",   "not",
-    nullptr
-};
-
-const char * ParserAdditiveExpression::operators[] =
-{
-    "+",     "plus",
-    "-",     "minus",
-    nullptr
-};
-
-const char * ParserComparisonExpression::operators[] =
-{
-    "==",            "equals",
-    "!=",            "notEquals",
-    "<>",            "notEquals",
-    "<=",            "lessOrEquals",
-    ">=",            "greaterOrEquals",
-    "<",             "less",
-    ">",             "greater",
-    "=",             "equals",
-    "LIKE",          "like",
-    "ILIKE",         "ilike",
-    "NOT LIKE",      "notLike",
-    "NOT ILIKE",     "notILike",
-    "IN",            "in",
-    "NOT IN",        "notIn",
-    "GLOBAL IN",     "globalIn",
-    "GLOBAL NOT IN", "globalNotIn",
-    nullptr
-};
-
-const char * ParserComparisonExpression::overlapping_operators_to_skip[] =
-{
-    "IN PARTITION",
-    nullptr
-};
-
-const char * ParserLogicalNotExpression::operators[] =
-{
-    "NOT", "not",
-    nullptr
-};
-
-const char * ParserArrayElementExpression::operators[] =
-{
-    "[", "arrayElement",
-    nullptr
-};
-
-const char * ParserTupleElementExpression::operators[] =
-{
-    ".", "tupleElement",
-    nullptr
-};
-
 
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -419,199 +350,6 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
     return true;
 }
 
-bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// For the expression (subject [NOT] BETWEEN left AND right)
-    /// create an AST the same as for (subject >= left AND subject <= right).
-
-    ParserKeyword s_not("NOT");
-    ParserKeyword s_between("BETWEEN");
-    ParserKeyword s_and("AND");
-
-    ASTPtr subject;
-    ASTPtr left;
-    ASTPtr right;
-
-    if (!elem_parser.parse(pos, subject, expected))
-        return false;
-
-    bool negative = s_not.ignore(pos, expected);
-
-    if (!s_between.ignore(pos, expected))
-    {
-        if (negative)
-            --pos;
-
-        /// No operator was parsed, just return element.
-        node = subject;
-    }
-    else
-    {
-        if (!elem_parser.parse(pos, left, expected))
-            return false;
-
-        if (!s_and.ignore(pos, expected))
-            return false;
-
-        if (!elem_parser.parse(pos, right, expected))
-            return false;
-
-        auto f_combined_expression = std::make_shared<ASTFunction>();
-        auto args_combined_expression = std::make_shared<ASTExpressionList>();
-
-        /// [NOT] BETWEEN left AND right
-        auto f_left_expr = std::make_shared<ASTFunction>();
-        auto args_left_expr = std::make_shared<ASTExpressionList>();
-
-        auto f_right_expr = std::make_shared<ASTFunction>();
-        auto args_right_expr = std::make_shared<ASTExpressionList>();
-
-        args_left_expr->children.emplace_back(subject);
-        args_left_expr->children.emplace_back(left);
-
-        args_right_expr->children.emplace_back(subject);
-        args_right_expr->children.emplace_back(right);
-
-        if (negative)
-        {
-            /// NOT BETWEEN
-            f_left_expr->name = "less";
-            f_right_expr->name = "greater";
-            f_combined_expression->name = "or";
-        }
-        else
-        {
-            /// BETWEEN
-            f_left_expr->name = "greaterOrEquals";
-            f_right_expr->name = "lessOrEquals";
-            f_combined_expression->name = "and";
-        }
-
-        f_left_expr->arguments = args_left_expr;
-        f_left_expr->children.emplace_back(f_left_expr->arguments);
-
-        f_right_expr->arguments = args_right_expr;
-        f_right_expr->children.emplace_back(f_right_expr->arguments);
-
-        args_combined_expression->children.emplace_back(f_left_expr);
-        args_combined_expression->children.emplace_back(f_right_expr);
-
-        f_combined_expression->arguments = args_combined_expression;
-        f_combined_expression->children.emplace_back(f_combined_expression->arguments);
-
-        node = f_combined_expression;
-    }
-
-    return true;
-}
-
-bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserToken symbol1(TokenType::QuestionMark);
-    ParserToken symbol2(TokenType::Colon);
-
-    ASTPtr elem_cond;
-    ASTPtr elem_then;
-    ASTPtr elem_else;
-
-    if (!elem_parser.parse(pos, elem_cond, expected))
-        return false;
-
-    if (!symbol1.ignore(pos, expected))
-        node = elem_cond;
-    else
-    {
-        if (!elem_parser.parse(pos, elem_then, expected))
-            return false;
-
-        if (!symbol2.ignore(pos, expected))
-            return false;
-
-        if (!elem_parser.parse(pos, elem_else, expected))
-            return false;
-
-        /// the function corresponding to the operator
-        auto function = std::make_shared<ASTFunction>();
-
-        /// function arguments
-        auto exp_list = std::make_shared<ASTExpressionList>();
-
-        function->name = "if";
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-
-        exp_list->children.push_back(elem_cond);
-        exp_list->children.push_back(elem_then);
-        exp_list->children.push_back(elem_else);
-
-        node = function;
-    }
-
-    return true;
-}
-
-
-bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserToken arrow(TokenType::Arrow);
-    ParserToken open(TokenType::OpeningRoundBracket);
-    ParserToken close(TokenType::ClosingRoundBracket);
-
-    Pos begin = pos;
-
-    do
-    {
-        ASTPtr inner_arguments;
-        ASTPtr expression;
-
-        bool was_open = false;
-
-        if (open.ignore(pos, expected))
-        {
-            was_open = true;
-        }
-
-        if (!ParserList(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma)).parse(pos, inner_arguments, expected))
-            break;
-
-        if (was_open)
-        {
-            if (!close.ignore(pos, expected))
-                break;
-        }
-
-        if (!arrow.ignore(pos, expected))
-            break;
-
-        if (!elem_parser.parse(pos, expression, expected))
-            return false;
-
-        /// lambda(tuple(inner_arguments), expression)
-
-        auto lambda = std::make_shared<ASTFunction>();
-        node = lambda;
-        lambda->name = "lambda";
-
-        auto outer_arguments = std::make_shared<ASTExpressionList>();
-        lambda->arguments = outer_arguments;
-        lambda->children.push_back(lambda->arguments);
-
-        auto tuple = std::make_shared<ASTFunction>();
-        outer_arguments->children.push_back(tuple);
-        tuple->name = "tuple";
-        tuple->arguments = inner_arguments;
-        tuple->children.push_back(inner_arguments);
-
-        outer_arguments->children.push_back(expression);
-
-        return true;
-    }
-    while (false);
-
-    pos = begin;
-    return elem_parser.parse(pos, node, expected);
-}
-
 
 ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
 {
@@ -742,27 +480,6 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
 }
 
 
-bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// As an exception, negative numbers should be parsed as literals, and not as an application of the operator.
-
-    if (pos->type == TokenType::Minus)
-    {
-        Pos begin = pos;
-        if (ParserCastOperator().parse(pos, node, expected))
-            return true;
-
-        pos = begin;
-        if (ParserLiteral().parse(pos, node, expected))
-            return true;
-
-        pos = begin;
-    }
-
-    return operator_parser.parse(pos, node, expected);
-}
-
-
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr expr_ast;
@@ -784,26 +501,6 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 }
 
 
-bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &expected)
-{
-    return ParserLeftAssociativeBinaryOperatorList{
-        operators,
-        std::make_unique<ParserCastExpression>(std::make_unique<ParserExpressionElement>()),
-        std::make_unique<ParserExpressionWithOptionalAlias>(false)
-    }.parse(pos, node, expected);
-}
-
-
-bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &expected)
-{
-    return ParserLeftAssociativeBinaryOperatorList{
-        operators,
-        std::make_unique<ParserCastExpression>(std::make_unique<ParserArrayElementExpression>()),
-        std::make_unique<ParserUnsignedInteger>()
-    }.parse(pos, node, expected);
-}
-
-
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
     : impl(std::make_unique<ParserWithOptionalAlias>(
         is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
@@ -822,11 +519,6 @@ bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 
 bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    return nested_parser.parse(pos, node, expected) && !node->children.empty();
-}
-
-bool ParserNotEmptyExpressionList2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
@@ -900,179 +592,6 @@ bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         .parse(pos, node, expected);
 }
 
-
-bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr node_comp;
-    if (!elem_parser.parse(pos, node_comp, expected))
-        return false;
-
-    ParserKeyword s_is{"IS"};
-    ParserKeyword s_not{"NOT"};
-    ParserKeyword s_null{"NULL"};
-
-    if (s_is.ignore(pos, expected))
-    {
-        bool is_not = false;
-        if (s_not.ignore(pos, expected))
-            is_not = true;
-
-        if (!s_null.ignore(pos, expected))
-            return false;
-
-        auto args = std::make_shared<ASTExpressionList>();
-        args->children.push_back(node_comp);
-
-        auto function = std::make_shared<ASTFunction>();
-        function->name = is_not ? "isNotNull" : "isNull";
-        function->arguments = args;
-        function->children.push_back(function->arguments);
-
-        node = function;
-    }
-    else
-        node = node_comp;
-
-    return true;
-}
-
-bool ParserDateOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto begin = pos;
-
-    /// If no DATE keyword, go to the nested parser.
-    if (!ParserKeyword("DATE").ignore(pos, expected))
-        return next_parser.parse(pos, node, expected);
-
-    ASTPtr expr;
-    if (!ParserStringLiteral().parse(pos, expr, expected))
-    {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
-    }
-
-    /// the function corresponding to the operator
-    auto function = std::make_shared<ASTFunction>();
-
-    /// function arguments
-    auto exp_list = std::make_shared<ASTExpressionList>();
-
-    /// the first argument of the function is the previous element, the second is the next one
-    function->name = "toDate";
-    function->arguments = exp_list;
-    function->children.push_back(exp_list);
-
-    exp_list->children.push_back(expr);
-
-    node = function;
-    return true;
-}
-
-bool ParserTimestampOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto begin = pos;
-
-    /// If no TIMESTAMP keyword, go to the nested parser.
-    if (!ParserKeyword("TIMESTAMP").ignore(pos, expected))
-        return next_parser.parse(pos, node, expected);
-
-    ASTPtr expr;
-    if (!ParserStringLiteral().parse(pos, expr, expected))
-    {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
-    }
-
-    /// the function corresponding to the operator
-    auto function = std::make_shared<ASTFunction>();
-
-    /// function arguments
-    auto exp_list = std::make_shared<ASTExpressionList>();
-
-    /// the first argument of the function is the previous element, the second is the next one
-    function->name = "toDateTime";
-    function->arguments = exp_list;
-    function->children.push_back(exp_list);
-
-    exp_list->children.push_back(expr);
-
-    node = function;
-    return true;
-}
-
-bool ParserIntervalOperatorExpression::parseArgumentAndIntervalKind(
-    Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected)
-{
-    auto begin = pos;
-    auto init_expected = expected;
-    ASTPtr string_literal;
-    //// A String literal followed INTERVAL keyword,
-    /// the literal can be a part of an expression or
-    /// include Number and INTERVAL TYPE at the same time
-    if (ParserStringLiteral{}.parse(pos, string_literal, expected))
-    {
-        String literal;
-        if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
-        {
-            Tokens tokens(literal.data(), literal.data() + literal.size());
-            Pos token_pos(tokens, 0);
-            Expected token_expected;
-
-            if (!ParserNumber{}.parse(token_pos, expr, token_expected))
-                return false;
-            else
-            {
-                /// case: INTERVAL '1' HOUR
-                /// back to begin
-                if (!token_pos.isValid())
-                {
-                    pos = begin;
-                    expected = init_expected;
-                }
-                else
-                    /// case: INTERVAL '1 HOUR'
-                    return parseIntervalKind(token_pos, token_expected, interval_kind);
-            }
-        }
-    }
-    // case: INTERVAL expr HOUR
-    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
-        return false;
-    return parseIntervalKind(pos, expected, interval_kind);
-}
-
-bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto begin = pos;
-
-    /// If no INTERVAL keyword, go to the nested parser.
-    if (!ParserKeyword("INTERVAL").ignore(pos, expected))
-        return next_parser.parse(pos, node, expected);
-
-    ASTPtr expr;
-    IntervalKind interval_kind;
-    if (!parseArgumentAndIntervalKind(pos, expr, interval_kind, expected))
-    {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
-    }
-
-    /// the function corresponding to the operator
-    auto function = std::make_shared<ASTFunction>();
-
-    /// function arguments
-    auto exp_list = std::make_shared<ASTExpressionList>();
-
-    /// the first argument of the function is the previous element, the second is the next one
-    function->name = interval_kind.toNameOfFunctionToIntervalDataType();
-    function->arguments = exp_list;
-    function->children.push_back(exp_list);
-
-    exp_list->children.push_back(expr);
-
-    node = function;
-    return true;
-}
 
 bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1168,6 +687,13 @@ public:
     Int32 priority;
     Int32 arity;
     String function_name;
+};
+
+enum class Checkpoint
+{
+    None,
+    Interval,
+    Case
 };
 
 /** Layer is a class that represents context for parsing certain element,
@@ -1402,6 +928,9 @@ public:
 
     bool allow_alias = true;
     bool allow_alias_without_as_keyword = true;
+
+    std::optional<IParser::Pos> checkpoint_pos;
+    Checkpoint checkpoint_type;
 
 protected:
     std::vector<Operator> operators;
@@ -2576,10 +2105,13 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
+template<class Type, int MinPriority>
 struct ParserExpressionImpl
 {
-    static std::vector<std::pair<const char *, Operator>> op_table;
-    static std::vector<std::pair<const char *, Operator>> op_table_unary;
+    static std::vector<std::pair<const char *, Operator>> operators_table;
+    static std::vector<std::pair<const char *, Operator>> unary_operators_table;
+    static const char * overlapping_operators_to_skip[];
+
     static Operator finish_between_operator;
 
     ParserCompoundIdentifier identifier_parser{false, true};
@@ -2611,23 +2143,45 @@ struct ParserExpressionImpl
 
     using Layers = std::vector<std::unique_ptr<Layer>>;
 
-    ParseResult tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
-    static ParseResult tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
+    ParseResult tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
+    static ParseResult tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
 };
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserExpressionImpl().parse(pos, node, expected);
+    return ParserExpressionImpl<SingleElementLayer, 0>().parse(pos, node, expected);
 }
 
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::op_table({
-        {"+",             Operator("plus",            11)},
-        {"-",             Operator("minus",           11)},
-        {"*",             Operator("multiply",        12)},
-        {"/",             Operator("divide",          12)},
-        {"%",             Operator("modulo",          12)},
-        {"MOD",           Operator("modulo",          12)},
-        {"DIV",           Operator("intDiv",          12)},
+bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserExpressionImpl<SingleElementLayer, 2>().parse(pos, node, expected);
+}
+
+bool ParserLogicalOrExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Parses everything with lower than "OR" operator priority
+    /// TODO: make ":" and "OR" different priority and check if everything is ok
+    return ParserExpressionImpl<SingleElementLayer, 3>().parse(pos, node, expected);
+}
+
+bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Parses everything with lower than "INTERVAL" operator priority in previous parser
+    return ParserKeyword("INTERVAL").parse(pos, node, expected)
+        && ParserExpressionImpl<IntervalLayer, 12>().parse(pos, node, expected);
+}
+
+template<class Type, int MinPriority>
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type, MinPriority>::operators_table({
+        {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
+        {"?",             Operator("",                2,  0, OperatorType::StartIf)},
+        {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
+        {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
+        {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
+        {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
+        {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
+        {"IS NULL",       Operator("isNull",          8,  1, OperatorType::IsNull)},
+        {"IS NOT NULL",   Operator("isNotNull",       8,  1, OperatorType::IsNull)},
         {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
         {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
         {"<>",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
@@ -2636,12 +2190,6 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::op_table({
         {"<",             Operator("less",            9,  2, OperatorType::Comparison)},
         {">",             Operator("greater",         9,  2, OperatorType::Comparison)},
         {"=",             Operator("equals",          9,  2, OperatorType::Comparison)},
-        {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
-        {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
-        {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
-        {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
-        {"IS NULL",       Operator("isNull",          8,  1, OperatorType::IsNull)},
-        {"IS NOT NULL",   Operator("isNotNull",       8,  1, OperatorType::IsNull)},
         {"LIKE",          Operator("like",            9)},
         {"ILIKE",         Operator("ilike",           9)},
         {"NOT LIKE",      Operator("notLike",         9)},
@@ -2650,82 +2198,104 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::op_table({
         {"NOT IN",        Operator("notIn",           9)},
         {"GLOBAL IN",     Operator("globalIn",        9)},
         {"GLOBAL NOT IN", Operator("globalNotIn",     9)},
-        {"?",             Operator("",                2,  0, OperatorType::StartIf)},
-        {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
-        {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
-        {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
+        {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+        {"+",             Operator("plus",            11)},
+        {"-",             Operator("minus",           11)},
+        {"*",             Operator("multiply",        12)},
+        {"/",             Operator("divide",          12)},
+        {"%",             Operator("modulo",          12)},
+        {"MOD",           Operator("modulo",          12)},
+        {"DIV",           Operator("intDiv",          12)},
+        {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
         {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
         {"::",            Operator("CAST",            14, 2, OperatorType::Cast)},
-        {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)}
     });
 
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::op_table_unary({
+template<class Type, int MinPriority>
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type, MinPriority>::unary_operators_table({
         {"NOT",           Operator("not",             5,  1)},
         {"-",             Operator("negate",          13, 1)}
     });
 
-Operator ParserExpressionImpl::finish_between_operator = Operator("",       7, 0, OperatorType::FinishBetween);
+template<class Type, int MinPriority>
+Operator ParserExpressionImpl<Type, MinPriority>::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
 
-bool ParserExpressionImpl::parse(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+template<class Type, int MinPriority>
+const char * ParserExpressionImpl<Type, MinPriority>::overlapping_operators_to_skip[] =
+{
+    "IN PARTITION",
+    nullptr
+};
+
+template<class Type, int MinPriority>
+bool ParserExpressionImpl<Type, MinPriority>::parse(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     Action next = Action::OPERAND;
 
     std::vector<std::unique_ptr<Layer>> layers;
-    layers.push_back(std::make_unique<SingleElementLayer>());
+    layers.push_back(std::make_unique<Type>());
 
-    while (pos.isValid())
+    while (true)
     {
-        if (!layers.back()->parse(pos, expected, next))
-            return false;
-
-        if (layers.back()->isFinished())
+        while (pos.isValid())
         {
-            next = Action::OPERATOR;
+            if (!layers.back()->parse(pos, expected, next))
+                break;
 
-            ASTPtr res;
-            if (!layers.back()->getResult(res))
-                return false;
-
-            layers.pop_back();
-
-            if (layers.empty())
+            if (layers.back()->isFinished())
             {
-                node = res;
-                return true;
+                if (layers.size() == 1)
+                    break;
+
+                next = Action::OPERATOR;
+
+                ASTPtr res;
+                if (!layers.back()->getResult(res))
+                    break;
+
+                layers.pop_back();
+                layers.back()->pushOperand(res);
+                continue;
             }
 
-            layers.back()->pushOperand(res);
-            continue;
+            ParseResult result;
+
+            if (next == Action::OPERAND)
+                result = tryParseOperand(layers, pos, expected);
+            else
+                result = tryParseOperator(layers, pos, expected);
+
+            if (result == ParseResult::END)
+                break;
+            else if (result == ParseResult::ERROR)
+                break;
+            else if (result == ParseResult::OPERATOR)
+                next = Action::OPERATOR;
+            else if (result == ParseResult::OPERAND)
+                next = Action::OPERAND;
         }
 
-        ParseResult result;
+        /// When we exit the loop we should be on the 1st level
+        if (layers.size() == 1 && layers.back()->getResult(node))
+            return true;
 
-        if (next == Action::OPERAND)
-            result = tryParseOperator(layers, pos, expected);
-        else
-            result = tryParseOperand(layers, pos, expected);
+        layers.pop_back();
 
-        if (result == ParseResult::END)
-            break;
-        else if (result == ParseResult::ERROR)
+        /// We try to check whether there were some checkpoint 
+        while (!layers.empty() && !layers.back()->checkpoint_pos)
+            layers.pop_back();
+
+        if (layers.empty())
             return false;
-        else if (result == ParseResult::OPERATOR)
-            next = Action::OPERATOR;
-        else if (result == ParseResult::OPERAND)
-            next = Action::OPERAND;
+
+        /// Currently all checkpoints are located in operand section
+        next = Action::OPERAND;
+        pos = layers.back()->checkpoint_pos.value();
     }
-
-    // When we exit the loop we should be on the 1st level
-    if (layers.size() > 1)
-        return false;
-
-    if (!layers.back()->getResult(node))
-        return false;
-
-    return true;
 }
 
-ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
+template<class Type, int MinPriority>
+typename ParserExpressionImpl<Type, MinPriority>::ParseResult ParserExpressionImpl<Type, MinPriority>::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2767,77 +2337,44 @@ ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperator(Layers 
     }
 
     /// Try to find any unary operators
-    auto cur_op = op_table_unary.begin();
-    for (; cur_op != op_table_unary.end(); ++cur_op)
+    auto cur_op = unary_operators_table.begin();
+    for (; cur_op != unary_operators_table.end(); ++cur_op)
     {
         if (parseOperator(pos, cur_op->first, expected))
             break;
     }
 
-    if (cur_op != op_table_unary.end())
+    if (cur_op != unary_operators_table.end())
     {
         layers.back()->pushOperator(cur_op->second);
         return ParseResult::OPERAND;
     }
 
     auto old_pos = pos;
-    std::unique_ptr<Layer> layer;
-    if (parseOperator(pos, "INTERVAL", expected))
-        layer = std::make_unique<IntervalLayer>();
-    else if (parseOperator(pos, "CASE", expected))
-        layer = std::make_unique<CaseLayer>();
-
-    /// Here we check that CASE or INTERVAL is not an identifier
-    /// It is needed for backwards compatibility
-    if (layer)
+    if (layers.back()->checkpoint_type != Checkpoint::Interval && parseOperator(pos, "INTERVAL", expected))
     {
-        Expected stub;
-
-        auto stub_cur_op = op_table.begin();
-        for (; stub_cur_op != op_table.end(); ++stub_cur_op)
-        {
-            /// Minus can be unary
-            /// TODO: check cases 'select case - number from table' and 'select case -x when 10 then 5 else 0 end'
-            if (stub_cur_op->second.function_name == "minus")
-                continue;
-            if (parseOperator(pos, stub_cur_op->first, stub))
-                break;
-        }
-
-        auto check_pos = pos;
-
-        if (stub_cur_op != op_table.end() ||
-            ParserToken(TokenType::Comma).ignore(pos, stub) ||
-            ParserToken(TokenType::ClosingRoundBracket).ignore(pos, stub) ||
-            ParserToken(TokenType::ClosingSquareBracket).ignore(pos, stub) ||
-            ParserToken(TokenType::Semicolon).ignore(pos, stub) ||
-            ParserKeyword("AS").ignore(pos, stub) ||
-            ParserKeyword("FROM").ignore(pos, stub) ||
-            !pos.isValid())
-        {
-            pos = old_pos;
-        }
-        else if (ParserAlias(true).ignore(check_pos, stub) &&
-                    (ParserToken(TokenType::Comma).ignore(check_pos, stub) ||
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(check_pos, stub) ||
-                    ParserToken(TokenType::ClosingSquareBracket).ignore(check_pos, stub) ||
-                    ParserToken(TokenType::Semicolon).ignore(check_pos, stub) ||
-                    ParserKeyword("FROM").ignore(check_pos, stub) ||
-                    !check_pos.isValid()))
-        {
-            pos = old_pos;
-        }
-        else
-        {
-            layers.push_back(std::move(layer));
-            return ParseResult::OPERAND;
-        }
+        layers.back()->checkpoint_pos = old_pos;
+        layers.back()->checkpoint_type = Checkpoint::Interval;
+        layers.push_back(std::make_unique<IntervalLayer>());
+        return ParseResult::OPERAND;
+    }
+    else if (layers.back()->checkpoint_type != Checkpoint::Case && parseOperator(pos, "CASE", expected))
+    {
+        layers.back()->checkpoint_pos = old_pos;
+        layers.back()->checkpoint_type = Checkpoint::Case;
+        layers.push_back(std::make_unique<CaseLayer>());
+        return ParseResult::OPERAND;
+    }
+    else if (layers.back()->checkpoint_pos)
+    {
+        layers.back()->checkpoint_pos.reset();
+        layers.back()->checkpoint_type = Checkpoint::None;
     }
 
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
         ParseTimestampOperatorExpression(pos, tmp, expected) ||
         tuple_literal_parser.parse(pos, tmp, expected) ||
-        array_literal_parser.parse(pos, tmp, expected) ||
+        // array_literal_parser.parse(pos, tmp, expected) ||
         number_parser.parse(pos, tmp, expected) ||
         literal_parser.parse(pos, tmp, expected) ||
         asterisk_parser.parse(pos, tmp, expected) ||
@@ -2926,8 +2463,8 @@ ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperator(Layers 
     return ParseResult::OPERATOR;
 }
 
-
-ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
+template<class Type, int MinPriority>
+typename ParserExpressionImpl<Type, MinPriority>::ParseResult ParserExpressionImpl<Type, MinPriority>::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2936,18 +2473,19 @@ ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand(Layers &
     ///
     /// 'IN PARTITION' here is not an 'IN' operator, so we should stop parsing immediately
     Expected stub;
-    if (ParserKeyword("IN PARTITION").checkWithoutMoving(pos, stub))
-        return ParseResult::END;
+    for (const char ** it = overlapping_operators_to_skip; *it; ++it)
+        if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
+            return ParseResult::END;
 
-    /// Try to find operators from 'op_table'
-    auto cur_op = op_table.begin();
-    for (; cur_op != op_table.end(); ++cur_op)
+    /// Try to find operators from 'operators_table'
+    auto cur_op = operators_table.begin();
+    for (; cur_op != operators_table.end(); ++cur_op)
     {
-        if (parseOperator(pos, cur_op->first, expected))
+        if (cur_op->second.priority >= MinPriority && parseOperator(pos, cur_op->first, expected))
             break;
     }
 
-    if (cur_op == op_table.end())
+    if (cur_op == operators_table.end())
     {
         if (layers.back()->allow_alias && ParserAlias(layers.back()->allow_alias_without_as_keyword).parse(pos, tmp, expected))
         {
@@ -2971,7 +2509,7 @@ ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand(Layers &
         return ParseResult::OPERAND;
     }
 
-    // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
+    /// 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
     if (op.function_name == "and" && layers.back()->between_counter)
     {
         layers.back()->between_counter--;
@@ -3027,7 +2565,7 @@ ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand(Layers &
 
     ParseResult next = ParseResult::OPERAND;
 
-    // isNull & isNotNull is postfix unary operator
+    /// isNull & isNotNull are postfix unary operators
     if (op.type == OperatorType::IsNull)
         next = ParseResult::OPERATOR;
 

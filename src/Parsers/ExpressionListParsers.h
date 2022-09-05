@@ -223,207 +223,20 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-
-class ParserArrayElementExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-
-protected:
-    const char * getName() const  override{ return "array element expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-class ParserTupleElementExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-
-protected:
-    const char * getName() const override { return "tuple element expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-class ParserUnaryExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserCastExpression>(std::make_unique<ParserTupleElementExpression>())};
-
-protected:
-    const char * getName() const override { return "unary expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-class ParserMultiplicativeExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserUnaryExpression>()};
-
-protected:
-    const char * getName() const  override { return "multiplicative expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
-};
-
-/// DATE operator. "DATE '2001-01-01'" would be parsed as "toDate('2001-01-01')".
-class ParserDateOperatorExpression : public IParserBase
-{
-protected:
-    ParserMultiplicativeExpression next_parser;
-
-    const char * getName() const  override { return "DATE operator expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// TIMESTAMP operator. "TIMESTAMP '2001-01-01 12:34:56'" would be parsed as "toDateTime('2001-01-01 12:34:56')".
-class ParserTimestampOperatorExpression : public IParserBase
-{
-protected:
-    ParserDateOperatorExpression next_parser;
-
-    const char * getName() const  override { return "TIMESTAMP operator expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /// Optional conversion to INTERVAL data type. Example: "INTERVAL x SECOND" parsed as "toIntervalSecond(x)".
 class ParserIntervalOperatorExpression : public IParserBase
 {
 protected:
-    ParserTimestampOperatorExpression next_parser;
-
     const char * getName() const  override { return "INTERVAL operator expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-private:
-    static bool parseArgumentAndIntervalKind(Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected);
-};
-
-class ParserAdditiveExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserIntervalOperatorExpression>()};
-
-protected:
-    const char * getName() const  override { return "additive expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
-};
-
-
-class ParserConcatExpression : public IParserBase
-{
-    ParserVariableArityOperatorList operator_parser {"||", "concat", std::make_unique<ParserAdditiveExpression>()};
-
-protected:
-    const char * getName() const override { return "string concatenation expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
-};
-
-
-class ParserBetweenExpression : public IParserBase
-{
-private:
-    ParserConcatExpression elem_parser;
-
-protected:
-    const char * getName() const override { return "BETWEEN expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-class ParserComparisonExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-    static const char * overlapping_operators_to_skip[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators,
-        overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>(), true};
-
-protected:
-    const char * getName() const  override{ return "comparison expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
-};
-
-/** Parser for nullity checking with IS (NOT) NULL.
-  */
-class ParserNullityChecking : public IParserBase
-{
-private:
-    ParserComparisonExpression elem_parser;
-
-protected:
-    const char * getName() const override { return "nullity checking"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-class ParserLogicalNotExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserNullityChecking>()};
-
-protected:
-    const char * getName() const  override{ return "logical-NOT expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
-};
-
-
-class ParserLogicalAndExpression : public IParserBase
-{
-private:
-    ParserVariableArityOperatorList operator_parser {"AND", "and", std::make_unique<ParserLogicalNotExpression>()};
-
-protected:
-    const char * getName() const override { return "logical-AND expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
 };
 
 
 class ParserLogicalOrExpression : public IParserBase
 {
-private:
-    ParserVariableArityOperatorList operator_parser {"OR", "or", std::make_unique<ParserLogicalAndExpression>()};
-
 protected:
     const char * getName() const override { return "logical-OR expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 
@@ -432,26 +245,11 @@ protected:
   */
 class ParserTernaryOperatorExpression : public IParserBase
 {
-private:
-    ParserLogicalOrExpression elem_parser;
-
 protected:
     const char * getName() const override { return "expression with ternary operator"; }
-
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-
-class ParserLambdaExpression : public IParserBase
-{
-private:
-    ParserTernaryOperatorExpression elem_parser;
-
-protected:
-    const char * getName() const override { return "lambda expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 class ParserExpression : public IParserBase
 {
@@ -472,9 +270,6 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
-
-
-using ParserExpression2 = ParserLambdaExpression;
 
 
 class ParserExpressionWithOptionalAlias : public IParserBase
@@ -521,56 +316,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserExpressionWithOptionalAlias2 : public IParserBase
-{
-public:
-    explicit ParserExpressionWithOptionalAlias2(bool allow_alias_without_as_keyword, bool is_table_function = false)
-    : impl(std::make_unique<ParserWithOptionalAlias>(
-        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression2>()),
-        allow_alias_without_as_keyword)) {}
-protected:
-    ParserPtr impl;
-
-    const char * getName() const override { return "expression with optional alias"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return impl->parse(pos, node, expected);
-    }
-};
-
-/** A comma-separated list of expressions, probably empty. */
-class ParserExpressionList2 : public IParserBase
-{
-public:
-    explicit ParserExpressionList2(bool allow_alias_without_as_keyword_, bool is_table_function_ = false)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), is_table_function(is_table_function_) {}
-
-protected:
-    bool allow_alias_without_as_keyword;
-    bool is_table_function; // This expression list is used by a table function
-
-    const char * getName() const override { return "list of expressions"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return ParserList(
-            std::make_unique<ParserExpressionWithOptionalAlias2>(allow_alias_without_as_keyword, is_table_function),
-            std::make_unique<ParserToken>(TokenType::Comma))
-        .parse(pos, node, expected);
-    }
-};
-
-class ParserNotEmptyExpressionList2 : public IParserBase
-{
-public:
-    explicit ParserNotEmptyExpressionList2(bool allow_alias_without_as_keyword)
-        : nested_parser(allow_alias_without_as_keyword) {}
-private:
-    ParserExpressionList2 nested_parser;
-protected:
-    const char * getName() const override { return "not empty list of expressions"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 class ParserOrderByExpressionList : public IParserBase
 {
