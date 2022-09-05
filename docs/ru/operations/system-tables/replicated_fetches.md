@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/replicated_fetches
+---
 # system.replicated_fetches {#system_tables-replicated_fetches}
 
 Содержит информацию о выполняемых в данный момент фоновых операциях скачивания кусков данных с других реплик.

@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP客户端
 ---
