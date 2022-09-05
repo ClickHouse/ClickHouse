@@ -55,7 +55,7 @@ SortingStep::SortingStep(
 {
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 SortingStep::SortingStep(
@@ -73,7 +73,7 @@ SortingStep::SortingStep(
 {
     /// TODO: check input_stream is sorted by prefix_description.
     output_stream->sort_description = result_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 SortingStep::SortingStep(
@@ -89,14 +89,14 @@ SortingStep::SortingStep(
 {
     /// TODO: check input_stream is partially sorted (each port) by the same description.
     output_stream->sort_description = result_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 void SortingStep::updateOutputStream()
 {
     output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
     output_stream->sort_description = result_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -256,23 +256,23 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
-    const auto input_sort_mode = input_streams.front().sort_mode;
+    const auto input_sort_mode = input_streams.front().sort_scope;
     const SortDescription & input_sort_desc = input_streams.front().sort_description;
     if (optimize_sorting_by_input_stream_properties)
     {
         /// skip sorting if stream is already sorted
-        if (input_sort_mode == DataStream::SortMode::Stream && input_sort_desc.hasPrefix(result_description))
+        if (input_sort_mode == DataStream::SortScope::Global && input_sort_desc.hasPrefix(result_description))
             return;
 
         /// merge sorted
-        if (input_sort_mode == DataStream::SortMode::Port && input_sort_desc.hasPrefix(result_description))
+        if (input_sort_mode == DataStream::SortScope::Stream && input_sort_desc.hasPrefix(result_description))
         {
             mergingSorted(pipeline, result_description, limit);
             return;
         }
 
         /// if chunks already sorted according to result_sort_desc, then we can skip chunk sorting
-        if (input_sort_mode == DataStream::SortMode::Chunk && input_sort_desc.hasPrefix(result_description))
+        if (input_sort_mode == DataStream::SortScope::Chunk && input_sort_desc.hasPrefix(result_description))
         {
             const bool skip_partial_sort = true;
             fullSort(pipeline, result_description, limit, skip_partial_sort);

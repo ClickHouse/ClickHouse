@@ -37,7 +37,6 @@ if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; 
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
 # There could be many disks declared in config
-readarray -t FILESYSTEM_CACHE_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.data_cache_path' || true)
 readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
@@ -51,7 +50,6 @@ for dir in "$DATA_DIR" \
   "$TMP_DIR" \
   "$USER_PATH" \
   "$FORMAT_SCHEMA_PATH" \
-  "${FILESYSTEM_CACHE_PATHS[@]}" \
   "${DISKS_PATHS[@]}"
 do
     # check if variable not empty
