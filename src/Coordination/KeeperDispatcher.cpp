@@ -53,7 +53,7 @@ KeeperDispatcher::KeeperDispatcher()
 /// When a request is received from a client, we check if there are requests being processed from that same
 /// session, and if yes, of what type. If the types are the same, and there are no requests of different
 /// type inbetetween, we can instanly add it to active request queue. Otherwise, we need to wait until
-/// all requests of the other tpye are processed.
+/// all requests of the other type are processed.
 ///
 /// There are multiple threads used for processing the request, each of them communicating with a queue.
 /// Assumption: only one type of request is being processed from a same session at any point in time (read or write).
