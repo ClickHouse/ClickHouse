@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 
 #ifdef __SSE2__
 #    include <emmintrin.h>

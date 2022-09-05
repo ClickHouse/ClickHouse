@@ -62,7 +62,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
     }
 };
 
-void registerFunctionIntExp2(FunctionFactory & factory)
+REGISTER_FUNCTION(IntExp2)
 {
     factory.registerFunction<FunctionIntExp2>();
 }

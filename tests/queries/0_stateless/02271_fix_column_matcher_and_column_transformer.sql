@@ -1,4 +1,3 @@
--- Tags: no-backward-compatibility-check:22.4.2
 DROP TABLE IF EXISTS github_events;
 
 CREATE TABLE github_events

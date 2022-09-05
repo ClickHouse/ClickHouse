@@ -215,10 +215,10 @@ void StorageMaterializedView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageMaterializedView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -419,6 +419,13 @@ void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restore
 {
     if (hasInnerTable())
         return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+}
+
+bool StorageMaterializedView::supportsBackupPartition() const
+{
+    if (hasInnerTable())
+        return getTargetTable()->supportsBackupPartition();
+    return false;
 }
 
 std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const

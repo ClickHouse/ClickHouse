@@ -94,8 +94,21 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::None;
 
     throw Exception(
-        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods",
+        "Unknown compression method '" + hint + "'. Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods",
         ErrorCodes::NOT_IMPLEMENTED);
+}
+
+std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method)
+{
+    switch (method)
+    {
+        case CompressionMethod::Zstd:
+            return {1, 22};
+        case CompressionMethod::Lz4:
+            return {1, 12};
+        default:
+            return {1, 9};
+    }
 }
 
 static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(

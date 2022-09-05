@@ -13,6 +13,7 @@
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
+#include <Core/Settings.h>
 
 #include <sys/stat.h>
 

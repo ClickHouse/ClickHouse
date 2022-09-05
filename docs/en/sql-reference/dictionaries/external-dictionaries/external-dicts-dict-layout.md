@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 sidebar_position: 41
 sidebar_label: Storing Dictionaries in Memory
 ---
@@ -410,7 +411,7 @@ If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary 
 
 To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
 
-Supported [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+All types of sources are supported.
 
 Example of settings:
 

@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/quota_limits
+---
 # system.quota_limits {#system_tables-quota_limits}
 
 包含关于所有配额的所有间隔的最大值的信息. 任何行数或0行都可以对应一个配额.

@@ -58,6 +58,22 @@ def test_disks_app_func_ls(started_cluster):
 
     assert files[0] == "store"
 
+    out = source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--send-logs",
+            "--disk",
+            "test1",
+            "list",
+            ".",
+            "--recursive",
+        ]
+    )
+
+    assert ".:\nstore\n" in out
+    assert "\n./store:\n" in out
+
 
 def test_disks_app_func_cp(started_cluster):
     source = cluster.instances["disks_app_test"]

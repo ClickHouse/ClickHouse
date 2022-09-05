@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/encryption-functions
 sidebar_position: 67
 sidebar_label: "Функции для шифрования"
 ---

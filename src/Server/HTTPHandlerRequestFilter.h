@@ -3,7 +3,6 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/StringRef.h>
 #include <base/find_symbols.h>
 
 #include <re2/re2.h>
@@ -23,16 +22,16 @@ namespace ErrorCodes
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
-static inline bool checkRegexExpression(const StringRef & match_str, const CompiledRegexPtr & compiled_regex)
+static inline bool checkRegexExpression(std::string_view match_str, const CompiledRegexPtr & compiled_regex)
 {
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
     re2::StringPiece matches[num_captures];
-    re2::StringPiece match_input(match_str.data, match_str.size);
-    return compiled_regex->Match(match_input, 0, match_str.size, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
+    re2::StringPiece match_input(match_str.data(), match_str.size());
+    return compiled_regex->Match(match_input, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
 }
 
-static inline bool checkExpression(const StringRef & match_str, const std::pair<String, CompiledRegexPtr> & expression)
+static inline bool checkExpression(std::string_view match_str, const std::pair<String, CompiledRegexPtr> & expression)
 {
     if (expression.second)
         return checkRegexExpression(match_str, expression.second);
@@ -71,7 +70,7 @@ static inline auto urlFilter(Poco::Util::AbstractConfiguration & config, const s
         const auto & uri = request.getURI();
         const auto & end = find_first_symbols<'?'>(uri.data(), uri.data() + uri.size());
 
-        return checkExpression(StringRef(uri.data(), end - uri.data()), expression);
+        return checkExpression(std::string_view(uri.data(), end - uri.data()), expression);
     };
 }
 
@@ -93,7 +92,7 @@ static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, con
         for (const auto & [header_name, header_expression] : headers_expression)
         {
             const auto & header_value = request.get(header_name, "");
-            if (!checkExpression(StringRef(header_value.data(), header_value.size()), header_expression))
+            if (!checkExpression(std::string_view(header_value.data(), header_value.size()), header_expression))
                 return false;
         }
 

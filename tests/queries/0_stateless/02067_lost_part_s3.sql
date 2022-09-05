@@ -1,4 +1,4 @@
--- Tags: no-backward-compatibility-check:22.5.1
+-- Tags: no-backward-compatibility-check
 
 DROP TABLE IF EXISTS partslost_0;
 DROP TABLE IF EXISTS partslost_1;
