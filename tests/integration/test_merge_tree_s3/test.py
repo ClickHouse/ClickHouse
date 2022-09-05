@@ -120,11 +120,17 @@ def run_s3_mocks(cluster):
 def wait_for_delete_s3_objects(cluster, expected, timeout=30):
     minio = cluster.minio_client
     while timeout > 0:
-        if len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) == expected:
+        if (
+            len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+            == expected
+        ):
             return
         timeout -= 1
         time.sleep(1)
-    assert len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) == expected
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        == expected
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -140,7 +146,9 @@ def drop_table(cluster, node_name):
         wait_for_delete_s3_objects(cluster, 0)
     finally:
         # Remove extra objects to prevent tests cascade failing
-        for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
+        for obj in list(
+            minio.list_objects(cluster.minio_bucket, "data/", recursive=True)
+        ):
             minio.remove_object(cluster.minio_bucket, obj.object_name)
 
 
@@ -338,7 +346,8 @@ def test_attach_detach_partition(cluster, node_name):
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) == FILES_OVERHEAD
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        == FILES_OVERHEAD
     )
 
 
@@ -409,7 +418,8 @@ def test_table_manipulations(cluster, node_name):
     node.query("TRUNCATE TABLE s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) == FILES_OVERHEAD
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        == FILES_OVERHEAD
     )
 
 
@@ -533,7 +543,8 @@ def test_freeze_unfreeze(cluster, node_name):
 
     # Data should be removed from S3.
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) == FILES_OVERHEAD
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        == FILES_OVERHEAD
     )
 
 
@@ -565,7 +576,8 @@ def test_freeze_system_unfreeze(cluster, node_name):
 
     # Data should be removed from S3.
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) == FILES_OVERHEAD
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        == FILES_OVERHEAD
     )
 
 
