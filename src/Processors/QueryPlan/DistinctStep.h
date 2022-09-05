@@ -24,6 +24,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    bool isPreliminary() const { return pre_distinct; }
+
 private:
     void updateOutputStream() override;
 
