@@ -394,16 +394,6 @@ protected:
 };
 
 
-/** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
-  */
-class ParserExpressionElement : public IParserBase
-{
-protected:
-    const char * getName() const override { return "element of expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
 /** An expression element, possibly with an alias, if appropriate.
   */
 class ParserWithOptionalAlias : public IParserBase

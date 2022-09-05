@@ -15,7 +15,6 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -162,40 +161,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 select_query->limit_with_ties = true;
         }
 
-        // TEST
-        // auto pos_test = pos;
-        // auto expected_test = expected;
-        // ASTPtr select_expression_list_test;
-        // ParserNotEmptyExpressionList2 exp_list_for_select_clause2(true);
-
-        // bool res_test = exp_list_for_select_clause2.parse(pos_test, select_expression_list_test, expected_test);
-        // bool res = exp_list_for_select_clause.parse(pos, select_expression_list, expected);
-
-        // if (res != res_test && res)
-        //     throw Exception("PARSER TEST: old parser cannot parse this query", ErrorCodes::SYNTAX_ERROR);
-
-        // if (res != res_test && res_test)
-        //     throw Exception("PARSER TEST: new parser cannot parse this query", ErrorCodes::SYNTAX_ERROR);
-
-        // if (!res)
-        //     return false;
-
-        // if (select_expression_list->getTreeHash() != select_expression_list_test->getTreeHash())
-        //     throw Exception("PARSER TEST: Tree hash differs. \n\n OLD: \n" + select_expression_list_test->dumpTree()
-        //         + "\n\n NEW: \n" + select_expression_list->dumpTree(), ErrorCodes::SYNTAX_ERROR);
-
-        ParserToken test(TokenType::DollarSign);
-        if (!test.ignore(pos, expected))
-        {
-            if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
-                return false;
-        }
-        else
-        {
-            ParserNotEmptyExpressionList2 exp_list_for_select_clause2(true);
-            if (!exp_list_for_select_clause2.parse(pos, select_expression_list, expected))
-                return false;
-        }
+        if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
+            return false;
     }
 
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)

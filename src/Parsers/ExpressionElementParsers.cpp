@@ -1866,41 +1866,59 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 }
 
 template <typename Collection>
+struct CollectionOfLiteralsLayer
+{
+    explicit CollectionOfLiteralsLayer(IParser::Pos & pos) : literal_begin(pos)
+    {
+        ++pos;
+    }
+
+    IParser::Pos literal_begin;
+    Collection arr;
+};
+
+template <typename Collection>
 bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (pos->type != opening_bracket)
         return false;
 
-    Pos literal_begin = pos;
+    std::vector<CollectionOfLiteralsLayer<Collection>> layers;
+    layers.emplace_back(pos);
 
-    Collection arr;
     ParserLiteral literal_p;
-    ParserCollectionOfLiterals<Collection> collection_p(opening_bracket, closing_bracket);
 
-    ++pos;
     while (pos.isValid())
     {
-        if (!arr.empty())
+        if (!layers.back().arr.empty())
         {
             if (pos->type == closing_bracket)
             {
                 std::shared_ptr<ASTLiteral> literal;
 
                 /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
-                if (std::is_same_v<Collection, Tuple> && arr.size() == 1)
+                if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
                     return false;
 
-                literal = std::make_shared<ASTLiteral>(std::move(arr));
-                literal->begin = literal_begin;
+                literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
+                literal->begin = layers.back().literal_begin;
                 literal->end = ++pos;
-                node = literal;
-                return true;
+
+                layers.pop_back();
+
+                if (layers.empty())
+                {
+                    node = literal;
+                    return true;
+                }
+
+                layers.back().arr.push_back(literal->value);
             }
             else if (pos->type == TokenType::Comma)
             {
                 ++pos;
             }
-            else if (pos->type == TokenType::Colon && std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
+            else if (pos->type == TokenType::Colon && std::is_same_v<Collection, Map> && layers.back().arr.size() % 2 == 1)
             {
                 ++pos;
             }
@@ -1912,10 +1930,12 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         }
 
         ASTPtr literal_node;
-        if (!literal_p.parse(pos, literal_node, expected) && !collection_p.parse(pos, literal_node, expected))
+        if (literal_p.parse(pos, literal_node, expected))
+            layers.back().arr.push_back(literal_node->as<ASTLiteral &>().value);
+        else if (pos->type == opening_bracket)
+            layers.emplace_back(pos);
+        else
             return false;
-
-        arr.push_back(literal_node->as<ASTLiteral &>().value);
     }
 
     expected.add(pos, getTokenName(closing_bracket));
@@ -2408,26 +2428,6 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     node = function_node;
     node->setAlias("@@" + name);
     return true;
-}
-
-
-bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    return ParserSubquery().parse(pos, node, expected)
-        || ParserCastOperator().parse(pos, node, expected)
-        || ParserTupleOfLiterals().parse(pos, node, expected)
-        || ParserParenthesisExpression().parse(pos, node, expected)
-        || ParserArrayOfLiterals().parse(pos, node, expected)
-        || ParserArray().parse(pos, node, expected)
-        || ParserLiteral().parse(pos, node, expected)
-        || ParserCase().parse(pos, node, expected)
-        || ParserColumnsMatcher().parse(pos, node, expected) /// before ParserFunction because it can be also parsed as a function.
-        || ParserFunction().parse(pos, node, expected)
-        || ParserQualifiedAsterisk().parse(pos, node, expected)
-        || ParserAsterisk().parse(pos, node, expected)
-        || ParserCompoundIdentifier(false, true).parse(pos, node, expected)
-        || ParserSubstitution().parse(pos, node, expected)
-        || ParserMySQLGlobalVariable().parse(pos, node, expected);
 }
 
 
