@@ -668,8 +668,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
+            {
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
+                    if (properties.indices[properties.indices.size()-1].type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
+                        throw Exception("Annoy index is disabled. Turn on allow_experimental_annoy_index", ErrorCodes::INCORRECT_QUERY);
+            }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
