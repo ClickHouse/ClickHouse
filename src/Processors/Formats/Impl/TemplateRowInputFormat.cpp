@@ -458,7 +458,6 @@ TemplateSchemaReader::TemplateSchemaReader(
     , buf(in_)
     , format(format_)
     , row_format(row_format_)
-    , format_settings(format_settings_)
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
 {
     setColumnNames(row_format.column_names);
@@ -492,6 +491,11 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
 
     format_reader.skipRowEndDelimiter();
     return data_types;
+}
+
+void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t column_idx)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings, row_format.escaping_rules[column_idx]);
 }
 
 static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)
@@ -562,12 +566,31 @@ void registerTemplateSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
     {
-        factory.registerSchemaReader(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [ignore_spaces](ReadBuffer & buf, const FormatSettings & settings)
+        String format_name = ignore_spaces ? "TemplateIgnoreSpaces" : "Template";
+        factory.registerSchemaReader(format_name, [ignore_spaces](ReadBuffer & buf, const FormatSettings & settings)
         {
             size_t index = 0;
             auto idx_getter = [&](const String &) -> std::optional<size_t> { return index++; };
             auto row_format = fillRowFormat(settings, idx_getter, false);
             return std::make_shared<TemplateSchemaReader>(buf, ignore_spaces, fillResultSetFormat(settings), row_format, settings.template_settings.row_between_delimiter, settings);
+        });
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+        {
+            size_t index = 0;
+            auto idx_getter = [&](const String &) -> std::optional<size_t> { return index++; };
+            auto row_format = fillRowFormat(settings, idx_getter, false);
+            std::unordered_set<FormatSettings::EscapingRule> visited_escaping_rules;
+            String result = fmt::format("row_format={}, resultset_format={}, row_between_delimiter={}",
+                settings.template_settings.row_format,
+                settings.template_settings.resultset_format,
+                settings.template_settings.row_between_delimiter);
+            for (auto escaping_rule : row_format.escaping_rules)
+            {
+                if (!visited_escaping_rules.contains(escaping_rule))
+                    result += ", " + getAdditionalFormatInfoByEscapingRule(settings, settings.regexp.escaping_rule);
+                visited_escaping_rules.insert(escaping_rule);
+            }
+            return result;
         });
     }
 }

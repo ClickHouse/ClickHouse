@@ -89,6 +89,8 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
+    assert instance.contains_in_log("using native copy")
+
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -129,6 +131,8 @@ def test_restore_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
+    assert instance.contains_in_log("using native copy")
+
     assert instance.query("EXISTS test.table2") == "0\n"
 
     instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
@@ -141,6 +145,8 @@ def test_backup_table_under_another_name():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table AS test.table2 TO {backup_name}")
+
+    assert instance.contains_in_log("using native copy")
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
@@ -169,6 +175,8 @@ def test_incremental_backup():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert instance.contains_in_log("using native copy")
 
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 
@@ -216,6 +224,89 @@ def test_incremental_backup_after_renaming_table():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "100\t4950\n"
 
 
+def test_incremental_backup_for_log_family():
+    backup_name = new_backup_name()
+    create_and_fill_table(engine="Log")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "102\t5081\n"
+
+    backup_name2 = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name2}")
+
+    backup_name_inc = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE test.table TO {backup_name_inc} SETTINGS base_backup = {backup_name}"
+    )
+
+    metadata_path = os.path.join(
+        get_path_to_backup(backup_name), "metadata/test/table.sql"
+    )
+
+    metadata_path2 = os.path.join(
+        get_path_to_backup(backup_name2), "metadata/test/table.sql"
+    )
+
+    metadata_path_inc = os.path.join(
+        get_path_to_backup(backup_name_inc), "metadata/test/table.sql"
+    )
+
+    assert os.path.isfile(metadata_path)
+    assert os.path.isfile(metadata_path2)
+    assert not os.path.isfile(metadata_path_inc)
+    assert os.path.getsize(metadata_path) > 0
+    assert os.path.getsize(metadata_path) == os.path.getsize(metadata_path2)
+
+    x_bin_path = os.path.join(get_path_to_backup(backup_name), "data/test/table/x.bin")
+    y_bin_path = os.path.join(get_path_to_backup(backup_name), "data/test/table/y.bin")
+
+    x_bin_path2 = os.path.join(
+        get_path_to_backup(backup_name2), "data/test/table/x.bin"
+    )
+    y_bin_path2 = os.path.join(
+        get_path_to_backup(backup_name2), "data/test/table/y.bin"
+    )
+
+    x_bin_path_inc = os.path.join(
+        get_path_to_backup(backup_name_inc), "data/test/table/x.bin"
+    )
+
+    y_bin_path_inc = os.path.join(
+        get_path_to_backup(backup_name_inc), "data/test/table/y.bin"
+    )
+
+    assert os.path.isfile(x_bin_path)
+    assert os.path.isfile(y_bin_path)
+    assert os.path.isfile(x_bin_path2)
+    assert os.path.isfile(y_bin_path2)
+    assert os.path.isfile(x_bin_path_inc)
+    assert os.path.isfile(y_bin_path_inc)
+
+    x_bin_size = os.path.getsize(x_bin_path)
+    y_bin_size = os.path.getsize(y_bin_path)
+    x_bin_size2 = os.path.getsize(x_bin_path2)
+    y_bin_size2 = os.path.getsize(y_bin_path2)
+    x_bin_size_inc = os.path.getsize(x_bin_path_inc)
+    y_bin_size_inc = os.path.getsize(y_bin_path_inc)
+
+    assert x_bin_size > 0
+    assert y_bin_size > 0
+    assert x_bin_size2 > 0
+    assert y_bin_size2 > 0
+    assert x_bin_size_inc > 0
+    assert y_bin_size_inc > 0
+    assert x_bin_size2 == x_bin_size + x_bin_size_inc
+    assert y_bin_size2 == y_bin_size + y_bin_size_inc
+
+    instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name_inc}")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
+
+
 def test_backup_not_found_or_already_exists():
     backup_name = new_backup_name()
 
@@ -244,6 +335,8 @@ def test_file_engine():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
+    assert instance.contains_in_log("using native copy")
+
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -257,6 +350,9 @@ def test_database():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
+
+    assert instance.contains_in_log("using native copy")
+
     instance.query("DROP DATABASE test")
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")
 
@@ -269,6 +365,7 @@ def test_zip_archive():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
     assert os.path.isfile(get_path_to_backup(backup_name))
 
     instance.query("DROP TABLE test.table")
@@ -335,31 +432,51 @@ def test_async_backups_to_same_destination(interface):
     create_and_fill_table()
     backup_name = new_backup_name()
 
-    ids = []
-    for _ in range(2):
-        if interface == "http":
-            res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
-        else:
-            res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
-        ids.append(res.split("\t")[0])
+    # The first backup.
+    if interface == "http":
+        res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+    else:
+        res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+    id1 = res.split("\t")[0]
 
-    [id1, id2] = ids
+    # The second backup to the same destination.
+    if interface == "http":
+        res, err = instance.http_query_and_get_answer_with_error(
+            f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+        )
+    else:
+        res, err = instance.query_and_get_answer_with_error(
+            f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+        )
+
+    # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+    # If it fails immediately we won't even get its ID.
+    id2 = None if err else res.split("\t")[0]
+
+    ids = [id1]
+    if id2:
+        ids.append(id2)
+    ids_for_query = "[" + ", ".join(f"'{id}'" for id in ids) + "]"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE id IN ['{id1}', '{id2}'] AND status == 'CREATING_BACKUP'",
+        f"SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'",
         "",
     )
 
+    # The first backup should succeed.
     assert instance.query(
         f"SELECT status, error FROM system.backups WHERE id='{id1}'"
     ) == TSV([["BACKUP_CREATED", ""]])
 
-    assert (
-        instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
-        == "BACKUP_FAILED\n"
-    )
+    if id2:
+        # The second backup should fail.
+        assert (
+            instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
+            == "BACKUP_FAILED\n"
+        )
 
+    # Check that the first backup is all right.
     instance.query("DROP TABLE test.table")
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"

@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/mergetree
 sidebar_position: 11
 sidebar_label:  MergeTree
 ---
@@ -482,9 +483,11 @@ For example:
 
 ## Projections {#projections}
 Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
-::: note
+
+:::note
 When you are implementing projections you should also consider the [force_optimize_projection](../../../operations/settings/settings.md#force-optimize-projection) setting.
 :::
+
 Projections are not supported in the `SELECT` statements with the [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 ### Projection Query {#projection-query}
@@ -878,8 +881,6 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 
 `MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
 
-This feature is under development and not ready for production. There are known drawbacks such as very low performance.
-
 Configuration markup:
 ``` xml
 <storage_configuration>
@@ -1022,6 +1023,10 @@ Other parameters:
 * `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
+
+  :::warning Zero-copy replication is not ready for production
+  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+  :::
 
 ## Virtual Columns {#virtual-columns}
 

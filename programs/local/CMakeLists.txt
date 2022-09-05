@@ -18,6 +18,9 @@ if(NOT CLICKHOUSE_ONE_SHARED)
     target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
 endif()
 
+# Always use internal readpassphrase
+target_link_libraries(clickhouse-local-lib PRIVATE readpassphrase)
+
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
     set (WITH_COVERAGE ON)

@@ -391,7 +391,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 }
 
 
-void registerFunctionArrayReduceInRanges(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayReduceInRanges)
 {
     factory.registerFunction<FunctionArrayReduceInRanges>();
 }

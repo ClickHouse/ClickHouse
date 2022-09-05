@@ -37,6 +37,9 @@ public:
 
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;
 
+    virtual bool supportsChmod() const = 0;
+    virtual void chmod(const String & path, mode_t mode) = 0;
+
     virtual void setReadOnly(const std::string & path) = 0;
 
     virtual void unlinkFile(const std::string & path) = 0;
@@ -85,8 +88,6 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 /// small amounts of data (strings).
 class IMetadataStorage : private boost::noncopyable
 {
-friend class MetadataStorageFromDiskTransaction;
-
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
@@ -107,6 +108,11 @@ public:
 
     virtual time_t getLastChanged(const std::string & path) const = 0;
 
+    virtual bool supportsChmod() const = 0;
+
+    virtual bool supportsStat() const = 0;
+    virtual struct stat stat(const String & path) const = 0;
+
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
     virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
@@ -118,7 +124,7 @@ public:
 
     virtual ~IMetadataStorage() = default;
 
-    /// ==== More specefic methods. Previous were almost general purpose. ====
+    /// ==== More specific methods. Previous were almost general purpose. ====
 
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;

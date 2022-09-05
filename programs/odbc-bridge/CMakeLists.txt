@@ -2,17 +2,17 @@ include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
 set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ColumnInfoHandler.cpp
-    getIdentifierQuote.cpp
-    HandlerFactory.cpp
     IdentifierQuoteHandler.cpp
     MainHandler.cpp
     ODBCBlockInputStream.cpp
     ODBCBlockOutputStream.cpp
     ODBCBridge.cpp
+    ODBCHandlerFactory.cpp
     PingHandler.cpp
     SchemaAllowedHandler.cpp
-    validateODBCConnectionString.cpp
+    getIdentifierQuote.cpp
     odbc-bridge.cpp
+    validateODBCConnectionString.cpp
 )
 
 if (OS_LINUX)

@@ -6,7 +6,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Poco/Base64Encoder.h>
 #include <Poco/SHA1Engine.h>
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -14,6 +14,7 @@
 #include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
 #include <sstream>
@@ -365,10 +366,18 @@ void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
 {
     for (auto & delta : new_deltas)
     {
-        if (!delta.path.empty())
-            applyDelta(delta);
+        const auto & added_delta = deltas.emplace_back(std::move(delta));
 
-        deltas.push_back(std::move(delta));
+        if (!added_delta.path.empty())
+        {
+            deltas_for_path[added_delta.path].push_back(&added_delta);
+            applyDelta(added_delta);
+        }
+        else if (const auto * auth_delta = std::get_if<AddAuthDelta>(&added_delta.operation))
+        {
+            auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
+            uncommitted_auth.emplace_back(&auth_delta->auth_id);
+        }
     }
 }
 
@@ -382,6 +391,26 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
         {
             deltas.pop_front();
             break;
+        }
+
+        auto & front_delta = deltas.front();
+
+        if (!front_delta.path.empty())
+        {
+            auto & path_deltas = deltas_for_path.at(front_delta.path);
+            assert(path_deltas.front() == &front_delta);
+            path_deltas.pop_front();
+            if (path_deltas.empty())
+                deltas_for_path.erase(front_delta.path);
+        }
+        else if (auto * add_auth = std::get_if<AddAuthDelta>(&front_delta.operation))
+        {
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id];
+            assert(!uncommitted_auth.empty() && uncommitted_auth.front() == &add_auth->auth_id);
+            uncommitted_auth.pop_front();
+            if (uncommitted_auth.empty())
+                session_and_auth.erase(add_auth->session_id);
+
         }
 
         deltas.pop_front();
@@ -404,10 +433,12 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
             deltas.back().zxid,
             rollback_zxid);
 
+    auto delta_it = deltas.rbegin();
+
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
     // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
-    for (auto delta_it = deltas.rbegin(); delta_it != deltas.rend(); ++delta_it)
+    for (; delta_it != deltas.rend(); ++delta_it)
     {
         if (delta_it->zxid < rollback_zxid)
             break;
@@ -430,29 +461,56 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                     }
                 },
                 delta_it->operation);
+
+            auto & path_deltas = deltas_for_path.at(delta_it->path);
+            if (path_deltas.back() == &*delta_it)
+            {
+                path_deltas.pop_back();
+                if (path_deltas.empty())
+                    deltas_for_path.erase(delta_it->path);
+            }
+        }
+        else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta_it->operation))
+        {
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id];
+            if (uncommitted_auth.back() == &add_auth->auth_id)
+            {
+                uncommitted_auth.pop_back();
+                if (uncommitted_auth.empty())
+                    session_and_auth.erase(add_auth->session_id);
+            }
         }
     }
 
-    std::erase_if(deltas, [rollback_zxid](const auto & delta) { return delta.zxid == rollback_zxid; });
+    if (delta_it == deltas.rend())
+        deltas.clear();
+    else
+        deltas.erase(delta_it.base(), deltas.end());
 
-    std::unordered_set<std::string> deleted_nodes;
+    absl::flat_hash_set<std::string> deleted_nodes;
     std::erase_if(
         nodes,
         [&, rollback_zxid](const auto & node)
         {
             if (node.second.zxid == rollback_zxid)
             {
-                deleted_nodes.emplace(node.first);
+                deleted_nodes.emplace(std::move(node.first));
                 return true;
             }
             return false;
         });
 
     // recalculate all the uncommitted deleted nodes
-    for (const auto & delta : deltas)
+    for (const auto & deleted_node : deleted_nodes)
     {
-        if (!delta.path.empty() && deleted_nodes.contains(delta.path))
-            applyDelta(delta);
+        auto path_delta_it = deltas_for_path.find(deleted_node);
+        if (path_delta_it != deltas_for_path.end())
+        {
+            for (const auto & delta : path_delta_it->second)
+            {
+                applyDelta(*delta);
+            }
+        }
     }
 }
 
@@ -2113,14 +2171,30 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     return results;
 }
 
-void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
+void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
 {
+    if (allow_missing && (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid < rollback_zxid))
+        return;
+
     if (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid != rollback_zxid)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be the last preprocessed.", rollback_zxid);
+    }
 
-    uncommitted_transactions.pop_back();
-    uncommitted_state.rollback(rollback_zxid);
+    // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
+    // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+    try
+    {
+        uncommitted_transactions.pop_back();
+        uncommitted_state.rollback(rollback_zxid);
+    }
+    catch (...)
+    {
+        LOG_FATAL(&Poco::Logger::get("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
+        std::terminate();
+    }
 }
 
 KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const

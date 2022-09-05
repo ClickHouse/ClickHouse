@@ -1128,7 +1128,7 @@ public:
 struct NameFunctionIPv4NumToString { static constexpr auto name = "IPv4NumToString"; };
 struct NameFunctionIPv4NumToStringClassC { static constexpr auto name = "IPv4NumToStringClassC"; };
 
-void registerFunctionsCoding(FunctionFactory & factory)
+REGISTER_FUNCTION(Coding)
 {
     factory.registerFunction<FunctionCutIPv6>();
     factory.registerFunction<FunctionIPv4ToIPv6>();

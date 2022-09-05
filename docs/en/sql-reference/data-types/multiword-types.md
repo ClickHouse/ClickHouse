@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/data-types/multiword-types
 sidebar_position: 61
 sidebar_label: Multiword Type Names
+title: "Multiword Types"
 ---
-
-# Multiword Types
 
 When creating tables, you can use data types with a name consisting of several words. This is implemented for better SQL compatibility.
 

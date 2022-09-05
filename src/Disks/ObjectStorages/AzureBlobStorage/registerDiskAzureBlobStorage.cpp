@@ -90,7 +90,6 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
             "DiskAzureBlobStorage",
             std::move(metadata_storage),
             std::move(azure_object_storage),
-            DiskType::AzureBlobStorage,
             send_metadata,
             copy_thread_pool_size
         );
@@ -105,18 +104,6 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
 
         azure_blob_storage_disk->startup(context);
 
-#ifdef NDEBUG
-        bool use_cache = true;
-#else
-        /// Current cache implementation lead to allocations in destructor of
-        /// read buffer.
-        bool use_cache = false;
-#endif
-        if (config.getBool(config_prefix + ".cache_enabled", use_cache))
-        {
-            String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-            azure_blob_storage_disk = wrapWithCache(azure_blob_storage_disk, "azure-blob-storage-cache", cache_path, metadata_path);
-        }
         return std::make_shared<DiskRestartProxy>(azure_blob_storage_disk);
     };
 

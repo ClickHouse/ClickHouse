@@ -78,6 +78,14 @@ struct URI
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
 
+struct ObjectInfo
+{
+    size_t size = 0;
+    time_t last_modification_time = 0;
+};
+
+S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
+
 size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
 
 }
