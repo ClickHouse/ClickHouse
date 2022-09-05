@@ -361,13 +361,16 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         return node.getData().empty() && node.stat == Coordination::Stat{};
     };
 
-    ConcurrentBoundedQueue<std::shared_ptr<std::pair<std::string, KeeperStorage::Node>>> node_queue(snapshot_container_size);
+    using PathNodePair = std::pair<std::string, KeeperStorage::Node>;
+    using PathNodePairPtr = std::shared_ptr<PathNodePair>;
+
+    ConcurrentBoundedQueue<PathNodePairPtr> node_queue(snapshot_container_size);
     auto node_load_thread = ThreadFromGlobalPool([&] 
     { 
         size_t loaded = 0;
         while (loaded != snapshot_container_size)
         {
-            std::shared_ptr<std::pair<std::string, KeeperStorage::Node>> next_node;
+            PathNodePairPtr next_node;
             if (node_queue.tryPop(next_node))
             {
                 auto & [path, node] = *next_node;
@@ -413,11 +416,10 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         }
     });
 
-    Stopwatch node_timer;
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
-        auto pair = std::make_shared<std::pair<std::string, KeeperStorage::Node>>();
-        auto & [path, node] = *pair;
+        auto path_node = std::make_shared<PathNodePair>();
+        auto & [path, node] = *path_node;
         readBinary(path, in);
         readNode(node, in, current_version, storage.acl_map);
 
@@ -454,7 +456,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     error_msg);
         }
 
-        [[maybe_unused]] bool pushed = node_queue.tryPush(std::move(pair));
+        [[maybe_unused]] bool pushed = node_queue.tryPush(std::move(path_node));
+        assert(pushed);
     }
 
     size_t active_sessions_size;
