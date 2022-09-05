@@ -11,6 +11,8 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <Planner/TableExpressionData.h>
+
 namespace DB
 {
 
@@ -18,97 +20,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-using ColumnIdentifier = std::string;
-
-class TableExpressionColumns
-{
-public:
-    using ColumnNameToColumnIdentifier = std::unordered_map<std::string, ColumnIdentifier>;
-
-    bool hasColumn(const std::string & column_name) const
-    {
-        return alias_columns_names.contains(column_name) || columns_names.contains(column_name);
-    }
-
-    void addColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
-    {
-        if (hasColumn(column.name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists");
-
-        columns_names.insert(column.name);
-        columns.push_back(column);
-        column_name_to_column_identifier.emplace(column.name, column_identifier);
-    }
-
-    void addColumnIfNotExists(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
-    {
-        if (hasColumn(column.name))
-            return;
-
-        columns_names.insert(column.name);
-        columns.push_back(column);
-        column_name_to_column_identifier.emplace(column.name, column_identifier);
-    }
-
-    void addAliasColumnName(const std::string & column_name)
-    {
-        alias_columns_names.insert(column_name);
-    }
-
-    const NameSet & getAliasColumnsNames() const
-    {
-        return alias_columns_names;
-    }
-
-    const NameSet & getColumnsNames() const
-    {
-        return columns_names;
-    }
-
-    const NamesAndTypesList & getColumns() const
-    {
-        return columns;
-    }
-
-    const ColumnNameToColumnIdentifier & getColumnNameToIdentifier() const
-    {
-        return column_name_to_column_identifier;
-    }
-
-    const ColumnIdentifier & getColumnIdentifierOrThrow(const std::string & column_name) const
-    {
-        auto it = column_name_to_column_identifier.find(column_name);
-        if (it == column_name_to_column_identifier.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column identifier for name {} does not exists",
-                column_name);
-
-        return it->second;
-    }
-
-    const ColumnIdentifier * getColumnIdentifierOrNull(const std::string & column_name) const
-    {
-        auto it = column_name_to_column_identifier.find(column_name);
-        if (it == column_name_to_column_identifier.end())
-            return nullptr;
-
-        return &it->second;
-    }
-
-private:
-    /// Valid for table, table function, query table expression nodes
-    NamesAndTypesList columns;
-
-    /// Valid for table, table function, query table expression nodes
-    NameSet columns_names;
-
-    /// Valid only for table table expression node
-    NameSet alias_columns_names;
-
-    /// Valid for table, table function, query table expression nodes
-    ColumnNameToColumnIdentifier column_name_to_column_identifier;
-};
 
 /// Subquery node for set
 struct SubqueryNodeForSet
@@ -181,14 +92,14 @@ public:
         return global_planner_context;
     }
 
-    const std::unordered_map<QueryTreeNodePtr, TableExpressionColumns> & getTableExpressionNodeToColumns() const
+    const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
     {
-        return table_expression_node_to_columns;
+        return table_expression_node_to_data;
     }
 
-    std::unordered_map<QueryTreeNodePtr, TableExpressionColumns> & getTableExpressionNodeToColumns()
+    std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData()
     {
-        return table_expression_node_to_columns;
+        return table_expression_node_to_data;
     }
 
     ColumnIdentifier getColumnUniqueIdentifier(const QueryTreeNodePtr & column_source_node, std::string column_name = {});
@@ -209,8 +120,8 @@ private:
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
 
-    /// Table expression node to columns
-    std::unordered_map<QueryTreeNodePtr, TableExpressionColumns> table_expression_node_to_columns;
+    /// Table expression node to data
+    std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     size_t column_identifier_counter = 0;
 };

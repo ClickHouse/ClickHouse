@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/FunctionNode.h>
 
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerActionsVisitor.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 
@@ -17,5 +19,11 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node,
     const Names & aggregation_keys,
     const GroupingSetsParamsList & grouping_sets_parameters_list,
     const PlannerContext & planner_context);
+
+/// Extract aggregate function nodes from query node
+QueryTreeNodes extractAggregateFunctionNodes(const QueryTreeNodePtr & query_node);
+
+/// Extract aggregate descriptions from aggregate function nodes
+AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context);
 
 }
