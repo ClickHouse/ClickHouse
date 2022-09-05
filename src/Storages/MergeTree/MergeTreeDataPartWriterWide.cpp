@@ -272,10 +272,10 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
     Stream & stream = *column_streams[stream_with_mark.stream_name];
-    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
-    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
+    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.is_compress_marks ? stream.marks_compressed : stream.marks_hashing);
+    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.is_compress_marks ? stream.marks_compressed : stream.marks_hashing);
     if (settings.can_use_adaptive_granularity)
-        writeIntBinary(rows_in_mark, stream.compress_marks? stream.marks_compressed : stream.marks_hashing);
+        writeIntBinary(rows_in_mark, stream.is_compress_marks ? stream.marks_compressed : stream.marks_hashing);
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
