@@ -177,7 +177,7 @@ public:
         /// Rename map new_name -> old_name
         std::unordered_map<String, String> rename_map;
 
-        bool isColumnRenamed(const String & new_name) const { return rename_map.count(new_name) > 0; }
+        bool isColumnRenamed(const String & new_name) const { return rename_map.contains(new_name); }
         String getColumnOldName(const String & new_name) const { return rename_map.at(new_name); }
     };
 
@@ -634,7 +634,7 @@ public:
     /// Delete WAL files containing parts, that all already stored on disk.
     size_t clearOldWriteAheadLogs();
 
-    size_t clearOldBrokenPartsFromDetachedDirecory();
+    size_t clearOldBrokenPartsFromDetachedDirectory();
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
@@ -761,7 +761,7 @@ public:
 
     const ColumnsDescription & getObjectColumns() const { return object_columns; }
 
-    /// Creates desciprion of columns of data type Object from the range of data parts.
+    /// Creates description of columns of data type Object from the range of data parts.
     static ColumnsDescription getObjectColumns(
         const DataPartsVector & parts, const ColumnsDescription & storage_columns);
 
@@ -1083,7 +1083,7 @@ protected:
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
-    /// Current descriprion of columns of data type Object.
+    /// Current description of columns of data type Object.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
@@ -1125,7 +1125,7 @@ protected:
         return {begin, end};
     }
 
-    /// Creates desciprion of columns of data type Object from the range of data parts.
+    /// Creates description of columns of data type Object from the range of data parts.
     static ColumnsDescription getObjectColumns(
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
@@ -1263,7 +1263,7 @@ private:
     void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
-    /// in precommitted state and to transasction
+    /// in precommitted state and to transaction
     void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartStorageBuilderPtr builder);
 
     /// Low-level method for preparing parts for commit (in-memory).
@@ -1352,7 +1352,7 @@ private:
     /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
     /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_successed);
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     TemporaryParts temporary_parts;
 };
