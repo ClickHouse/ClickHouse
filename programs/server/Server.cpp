@@ -1279,18 +1279,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("keeper_server"))
     {
 #if USE_NURAFT
-        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
-        //// of clickhouse-keeper, so start synchronously.
-        bool can_initialize_keeper_async = false;
-
-        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
-        {
-            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
-            /// synchronously.
-            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
-        }
         /// Initialize keeper RAFT.
-        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+        global_context->initializeKeeperDispatcher(/* start_async */ true);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
         auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
