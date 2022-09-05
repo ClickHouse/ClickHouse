@@ -75,20 +75,20 @@ def get_minio_stat(cluster):
         )
     ).text.split("\n")
     for line in stat:
-        x = re.search("s3_requests_total(\{.*\})?\s(\d+)(\s.*)?", line)
+        x = re.search(r"s3_requests_total(\{.*\})?\s(\d+)(\s.*)?", line)
         if x != None:
             y = re.search('.*api="(get|list|head|select).*', x.group(1))
             if y != None:
                 result["get_requests"] += int(x.group(2))
             else:
                 result["set_requests"] += int(x.group(2))
-        x = re.search("s3_errors_total(\{.*\})?\s(\d+)(\s.*)?", line)
+        x = re.search(r"s3_errors_total(\{.*\})?\s(\d+)(\s.*)?", line)
         if x != None:
             result["errors"] += int(x.group(2))
-        x = re.search("s3_rx_bytes_total(\{.*\})?\s([\d\.e\+\-]+)(\s.*)?", line)
+        x = re.search(r"s3_rx_bytes_total(\{.*\})?\s([\d\.e\+\-]+)(\s.*)?", line)
         if x != None:
             result["tx_bytes"] += float(x.group(2))
-        x = re.search("s3_tx_bytes_total(\{.*\})?\s([\d\.e\+\-]+)(\s.*)?", line)
+        x = re.search(r"s3_tx_bytes_total(\{.*\})?\s([\d\.e\+\-]+)(\s.*)?", line)
         if x != None:
             result["rx_bytes"] += float(x.group(2))
     return result
