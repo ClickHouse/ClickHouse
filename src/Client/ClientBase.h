@@ -132,7 +132,6 @@ private:
     void onEndOfStream();
     void onProfileEvents(Block & block);
 
-    void errorRowsSink(const QueryPipeline & pipeline);
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
                       const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data = false);

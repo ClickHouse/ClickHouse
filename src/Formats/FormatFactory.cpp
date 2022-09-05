@@ -224,6 +224,21 @@ InputFormatPtr FormatFactory::getInput(
             parallel_parsing = false;
     }
 
+    String errors_file_path = context->getSettingsRef().input_format_record_errors_file_path;
+    bool is_changed = context->getSettingsRef().isChanged("input_format_record_errors_file_path");
+    auto output_format = context->getSettingsRef().errors_output_format;
+    String database_name;
+    String table_name;
+    try
+    {
+        table_name = context->getInsertionTable().getTableName();
+        database_name = context->getInsertionTable().getDatabaseName();
+    }
+    catch (...)
+    {
+        /// Ignore
+    }
+
     if (parallel_parsing)
     {
         const auto & input_getter = getCreators(name).input_creator;
@@ -243,11 +258,22 @@ InputFormatPtr FormatFactory::getInput(
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
                context->getApplicationType() == Context::ApplicationType::SERVER};
-        return std::make_shared<ParallelParsingInputFormat>(params);
+        auto format = std::make_shared<ParallelParsingInputFormat>(params);
+        format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(
+            context->getApplicationType(),
+            context->getUserFilesPath(),
+            errors_file_path,
+            is_changed,
+            output_format,
+            database_name,
+            table_name));
+        return format;
     }
 
 
     auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
+    format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(
+        context->getApplicationType(), context->getUserFilesPath(), errors_file_path, is_changed, output_format, database_name, table_name));
     return format;
 }
 

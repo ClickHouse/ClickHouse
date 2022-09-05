@@ -75,6 +75,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setCurrentUnitNumber(current_ticket_number);
+        input_format->setErrorsLogger(errors_logger);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
@@ -88,30 +89,12 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
-        try
+        while (!parsing_finished && (chunk = parser.getChunk()))
         {
-            while (!parsing_finished && (chunk = parser.getChunk()))
-            {
-                /// Variable chunk is moved, but it is not really used in the next iteration.
-                /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
-                unit.chunk_ext.chunk.emplace_back(std::move(chunk));
-                unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
-            }
-
-            if (!input_format->isEmptyErrorRows())
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                addErrorRows(input_format->getErrorRows());
-            }
-        }
-        catch (...)
-        {
-            if (!input_format->isEmptyErrorRows())
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                addErrorRows(input_format->getErrorRows());
-            }
-            throw;
+            /// Variable chunk is moved, but it is not really used in the next iteration.
+            /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
+            unit.chunk_ext.chunk.emplace_back(std::move(chunk));
+            unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
         }
 
         /// Extract column_mapping from first parser to propagate it to others

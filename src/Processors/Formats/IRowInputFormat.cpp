@@ -122,11 +122,13 @@ Chunk IRowInputFormat::generate()
                 {
                     /// Error while trying to obtain verbose diagnostic. Ok to ignore.
                 }
+                trimLeft(diagnostic, '\n');
                 trimRight(diagnostic, '\n');
 
                 auto now_time = time(nullptr);
 
-                addErrorRow(InputFormatErrorRow{to_string(now_time), total_rows, diagnostic, raw_data});
+                if (errors_logger)
+                    errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{to_string(now_time), total_rows, diagnostic, raw_data});
 
                 /// Logic for possible skipping of errors.
 
