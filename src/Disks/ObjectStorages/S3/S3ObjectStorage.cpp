@@ -157,7 +157,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl), disk_read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
     }
 }
@@ -245,6 +245,8 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
     auto outcome = client_ptr->DeleteObject(request);
 
     throwIfUnexpectedError(outcome, if_exists);
+
+    LOG_TRACE(log, "Object with path {} was removed from S3", object.absolute_path);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
@@ -288,6 +290,8 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
             auto outcome = client_ptr->DeleteObjects(request);
 
             throwIfUnexpectedError(outcome, if_exists);
+
+            LOG_TRACE(log, "Objects with paths [{}] were removed from S3", keys);
         }
     }
 }
