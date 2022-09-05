@@ -4,7 +4,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -85,10 +85,6 @@ void WriteBufferFromS3::nextImpl()
 
     size_t size = offset();
     temporary_buffer->write(working_buffer.begin(), size);
-
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
     last_part_size += offset();
@@ -435,7 +431,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
 {
     if (schedule)
     {
-        std::lock_guard lock(bg_tasks_mutex);
+        std::unique_lock lock(bg_tasks_mutex);
         {
             while (!upload_object_tasks.empty() && upload_object_tasks.front().is_finised)
             {
@@ -446,7 +442,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
 
                 if (exception)
                 {
-                    waitForAllBackGroundTasks();
+                    waitForAllBackGroundTasksUnlocked(lock);
                     std::rethrow_exception(exception);
                 }
 
@@ -461,7 +457,15 @@ void WriteBufferFromS3::waitForAllBackGroundTasks()
     if (schedule)
     {
         std::unique_lock lock(bg_tasks_mutex);
-        bg_tasks_condvar.wait(lock, [this]() { return num_added_bg_tasks == num_finished_bg_tasks; });
+        waitForAllBackGroundTasksUnlocked(lock);
+    }
+}
+
+void WriteBufferFromS3::waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock)
+{
+    if (schedule)
+    {
+        bg_tasks_condvar.wait(bg_tasks_lock, [this]() { return num_added_bg_tasks == num_finished_bg_tasks; });
 
         while (!upload_object_tasks.empty())
         {
@@ -476,7 +480,7 @@ void WriteBufferFromS3::waitForAllBackGroundTasks()
 
         if (put_object_task)
         {
-            bg_tasks_condvar.wait(lock, [this]() { return put_object_task->is_finised; });
+            bg_tasks_condvar.wait(bg_tasks_lock, [this]() { return put_object_task->is_finised; });
             if (put_object_task->exception)
                 std::rethrow_exception(put_object_task->exception);
         }
