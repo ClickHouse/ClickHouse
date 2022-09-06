@@ -130,14 +130,24 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             break;
         }
-        catch (const S3Exception & e)
+        catch (const Exception & e)
         {
             watch.stop();
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
-            /// It doesn't make sense to retry Access Denied or No Such Key
-            if (!e.isRetryableError())
+            if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+            {
+                /// It doesn't make sense to retry Access Denied or No Such Key
+                if (!s3_exception->isRetryableError())
+                {
+                    tryLogCurrentException(log);
+                    throw;
+                }
+            }
+
+            /// It doesn't make sense to retry allocator errors
+            if (e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
             {
                 tryLogCurrentException(log);
                 throw;
