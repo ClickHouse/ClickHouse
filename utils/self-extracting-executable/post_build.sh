@@ -1,6 +1,10 @@
 padding="               "
 if [[ $OSTYPE == 'darwin'* ]]; then
-    sz="$(stat -f %z 'decompressor')"
+    if which gstat; then
+        sz="$(gstat -c %s 'decompressor')"
+    else
+        sz="$(stat -f %z 'decompressor')"
+    fi
 else
     sz="$(stat -c %s 'decompressor')"
 fi
