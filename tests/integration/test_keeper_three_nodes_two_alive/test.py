@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -39,6 +40,7 @@ def get_fake_zk(nodename, timeout=30.0):
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
         yield cluster
 
@@ -48,6 +50,7 @@ def started_cluster():
 
 def start(node):
     node.start_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node)
 
 
 def delete_with_retry(node_name, path):
@@ -74,10 +77,10 @@ def test_start_offline(started_cluster):
         p.map(start, [node2, node3])
 
         assert node2.contains_in_log(
-            "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start"
+            "Connected to ZooKeeper (or Keeper) before internal Keeper start"
         )
         assert node3.contains_in_log(
-            "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start"
+            "Connected to ZooKeeper (or Keeper) before internal Keeper start"
         )
 
         node2_zk = get_fake_zk("node2")
@@ -110,10 +113,10 @@ def test_start_non_existing(started_cluster):
         p.map(start, [node2, node1])
 
         assert node1.contains_in_log(
-            "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start"
+            "Connected to ZooKeeper (or Keeper) before internal Keeper start"
         )
         assert node2.contains_in_log(
-            "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start"
+            "Connected to ZooKeeper (or Keeper) before internal Keeper start"
         )
 
         node2_zk = get_fake_zk("node2")
@@ -138,6 +141,7 @@ def test_restart_third_node(started_cluster):
     node1_zk.create("/test_restart", b"aaaa")
 
     node3.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node3)
 
     assert node3.contains_in_log(
         "Connected to ZooKeeper (or Keeper) before internal Keeper start"

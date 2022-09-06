@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -24,6 +25,7 @@ from kazoo.client import KazooClient, KazooState
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
         yield cluster
 
@@ -84,6 +86,7 @@ def test_recover_from_snapshot(started_cluster):
     # stale node should recover from leader's snapshot
     # with some sanitizers can start longer than 5 seconds
     node3.start_clickhouse(20)
+    keeper_utils.wait_until_connected(cluster, node3)
     print("Restarted")
 
     try:
