@@ -198,10 +198,9 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-
+set(ENABLE_BLAKE3 1)
 if (OS_DARWIN AND ARCH_AARCH64)
     set(ENABLE_BLAKE3 0)
-    set(USE_BLAKE3 0)
 endif()
 
 option(ENABLE_CURL_BUILD "Enable curl, azure, sentry build on by default except MacOS." ON)
