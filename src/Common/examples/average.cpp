@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <bit>
 
 #include <fmt/format.h>
 
@@ -561,7 +562,7 @@ int main(int argc, char ** argv)
     /// Fill source data
     for (size_t i = 0; i < size; ++i)
     {
-        keys[i] = __builtin_ctz(i + 1); /// Make keys to have just slightly more realistic distribution.
+        keys[i] = std::countr_zero(i + 1); /// Make keys to have just slightly more realistic distribution.
         values[i] = 1234.5; /// The distribution of values does not affect execution speed.
     }
 

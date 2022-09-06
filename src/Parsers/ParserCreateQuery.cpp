@@ -31,6 +31,7 @@ namespace ErrorCodes
 
 namespace
 {
+
 ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_comment("COMMENT");
@@ -41,7 +42,9 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
     return comment;
 }
+
 }
+
 
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -90,7 +93,7 @@ bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
 bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserColumnDeclaration>(require_type, allow_null_modifiers, check_keywords_after_name), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
@@ -467,6 +470,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
@@ -574,12 +578,16 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!table_properties_p.parse(pos, columns_list, expected))
             return false;
 
+        /// We allow a trailing comma in the columns list for user convenience.
+        /// Although it diverges from the SQL standard slightly.
+        s_comma.ignore(pos, expected);
+
         if (!s_rparen.ignore(pos, expected))
             return false;
 
         auto storage_parse_result = storage_p.parse(pos, storage, expected);
 
-        if (storage_parse_result && need_parse_as_select())
+        if ((storage_parse_result || is_temporary) && need_parse_as_select())
         {
             if (!select_p.parse(pos, select, expected))
                 return false;

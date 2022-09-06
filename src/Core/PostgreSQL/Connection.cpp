@@ -73,6 +73,7 @@ void Connection::connect()
     if (!connection || !connection->is_open())
         updateConnection();
 }
+
 }
 
 #endif

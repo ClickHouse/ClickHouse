@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/
 sidebar_label: 聚合函数
 sidebar_position: 33
 ---

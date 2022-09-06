@@ -8,8 +8,7 @@
 #include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/IDataType.h>
-
-class Collator;
+#include <Columns/Collator.h>
 
 namespace DB
 {
@@ -28,7 +27,9 @@ struct FillColumnDescription
     /// All missed values in range [FROM, TO) will be filled
     /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
+    DataTypePtr fill_from_type;
     Field fill_to;          /// Fill value + STEP < FILL_TO
+    DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
 
@@ -63,9 +64,18 @@ struct SortColumnDescription
     {
     }
 
-    bool operator == (const SortColumnDescription & other) const
+    static bool compareCollators(const std::shared_ptr<Collator> & a, const std::shared_ptr<Collator> & b)
     {
-        return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction;
+        if (unlikely(a && b))
+            return *a == *b;
+
+        return a == b;
+    }
+
+    bool operator==(const SortColumnDescription & other) const
+    {
+        return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction
+            && compareCollators(collator, other.collator);
     }
 
     bool operator != (const SortColumnDescription & other) const
@@ -87,6 +97,13 @@ struct SortColumnDescriptionWithColumnIndex
         : base(std::move(description_)), column_number(column_number_)
     {
     }
+
+    bool operator==(const SortColumnDescriptionWithColumnIndex & other) const
+    {
+        return base == other.base && column_number == other.column_number;
+    }
+
+    bool operator!=(const SortColumnDescriptionWithColumnIndex & other) const { return !(*this == other); }
 };
 
 class CompiledSortDescriptionFunctionHolder;
@@ -102,6 +119,8 @@ public:
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
+
+    bool hasPrefix(const SortDescription & prefix) const;
 };
 
 /** Compile sort description for header_types.

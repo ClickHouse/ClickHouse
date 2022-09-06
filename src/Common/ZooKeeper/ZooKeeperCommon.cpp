@@ -1,3 +1,4 @@
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
@@ -296,6 +297,32 @@ void ZooKeeperListRequest::readImpl(ReadBuffer & in)
 std::string ZooKeeperListRequest::toStringImpl() const
 {
     return fmt::format("path = {}", path);
+}
+
+void ZooKeeperFilteredListRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(has_watch, out);
+    Coordination::write(static_cast<uint8_t>(list_request_type), out);
+}
+
+void ZooKeeperFilteredListRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    Coordination::read(has_watch, in);
+
+    uint8_t read_request_type{0};
+    Coordination::read(read_request_type, in);
+    list_request_type = static_cast<ListRequestType>(read_request_type);
+}
+
+std::string ZooKeeperFilteredListRequest::toStringImpl() const
+{
+    return fmt::format(
+            "path = {}\n"
+            "list_request_type = {}",
+            path,
+            list_request_type);
 }
 
 void ZooKeeperListResponse::readImpl(ReadBuffer & in)
@@ -697,7 +724,10 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
     assert(!elem.xid || elem.xid == xid);
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
-    assert(!elem.op_num || elem.op_num == response_op || response_op < 0);
+
+    [[maybe_unused]] const bool is_filtered_list = elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredList)
+        && response_op == static_cast<int32_t>(Coordination::OpNum::List);
+    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
     elem.op_num = response_op;
 
     elem.zxid = zxid;
@@ -865,6 +895,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
+    registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
 }
 
 }

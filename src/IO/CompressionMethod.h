@@ -46,6 +46,9 @@ std::string toContentEncodingName(CompressionMethod method);
   */
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint);
 
+/// Get a range of the valid compression levels for the compression method.
+std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method);
+
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested,
     CompressionMethod method,

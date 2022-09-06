@@ -146,7 +146,7 @@ private:
 
 }
 
-void registerFunctionIsDecimalOverflow(FunctionFactory & factory)
+REGISTER_FUNCTION(IsDecimalOverflow)
 {
     factory.registerFunction<FunctionIsDecimalOverflow>();
 }

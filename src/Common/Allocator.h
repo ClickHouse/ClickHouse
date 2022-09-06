@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 
 #ifdef NDEBUG
     #define ALLOCATOR_ASLR 0

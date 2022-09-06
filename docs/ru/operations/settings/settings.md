@@ -527,7 +527,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 -   [Использование вложенных структур](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
 
-## input_format_with_names_use_header {#settings-input-format-with-names-use-header}
+## input_format_with_names_use_header {#input_format_with_names_use_header}
 
 Включает или отключает проверку порядка столбцов при вставке данных.
 
@@ -535,8 +535,38 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 Поддерживаемые форматы:
 
--   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
--   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes)
+- [CustomSeparatedWithNames](../../interfaces/formats.md#customseparatedwithnames)
+- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 1.
+
+## input_format_with_types_use_header {#input_format_with_types_use_header}
+
+Определяет, должен ли синтаксический анализатор формата проверять, соответствуют ли типы данных из входных данных типам данных из целевой таблицы.
+
+Поддерживаемые форматы:
+
+- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
+- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
 
 Возможные значения:
 
@@ -626,8 +656,9 @@ ClickHouse может парсить только базовый формат `Y
 
 Изменяет поведение операций, выполняемых со строгостью `ANY`.
 
-:::danger "Внимание"
+:::warning "Внимание"
     Настройка применяется только для операций `JOIN`, выполняемых над таблицами с движком [Join](../../engines/table-engines/special/join.md).
+:::
 
 Возможные значения:
 
@@ -968,7 +999,7 @@ log_query_threads=1
 
 Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
 
-Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.md).
+Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.mdx).
 
 Возможные значения:
 
@@ -2082,8 +2113,9 @@ SELECT * FROM test_table
 
 Устанавливает приоритет ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) для потоков, исполняющих запросы. Планировщик ОС учитывает эти приоритеты при выборе следующего потока для исполнения на доступном ядре CPU.
 
-:::danger "Предупреждение"
+:::warning "Предупреждение"
     Для использования этой настройки необходимо установить свойство `CAP_SYS_NICE`. Пакет `clickhouse-server` устанавливает его во время инсталляции. Некоторые виртуальные окружения не позволяют установить `CAP_SYS_NICE`. В этом случае, `clickhouse-server` выводит сообщение при запуске.
+:::
 
 Допустимые значения:
 
@@ -3758,14 +3790,14 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md). Если вы хотите использовать номера столбцов вместо названий в выражениях этих операторов, установите `enable_positional_arguments = 1`.
+Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
 Возможные значения:
 
 -   0 — Позиционные аргументы не поддерживаются.
 -   1 — Позиционные аргументы поддерживаются: можно использовать номера столбцов вместо названий столбцов.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 **Пример**
 
@@ -3775,8 +3807,6 @@ Exception: Total regexp lengths too large.
 CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
 
 INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SET enable_positional_arguments = 1;
 
 SELECT * FROM positional_arguments ORDER BY 2,3;
 ```
