@@ -11,7 +11,7 @@ namespace DB
 {
 
 /** Join clause represent single JOIN ON section clause.
-  * Join clause consits of JOIN keys and conditions.
+  * Join clause consists of JOIN keys and conditions.
   *
   * JOIN can contain multiple clauses in JOIN ON section.
   * Example: SELECT * FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 ON t1.id = t2.id OR t1.value = t2.value;
@@ -34,7 +34,7 @@ namespace DB
   *
   * We have 2 streams, left stream and right stream.
   * We split JOIN ON section expressions actions in two parts left join expression actions and right join expression actions.
-  * Left join expresion actions must be used to calculate necessary actions for left stream.
+  * Left join expression actions must be used to calculate necessary actions for left stream.
   * Right join expression actions must be used to calculate necessary actions for right stream.
   */
 class PlannerContext;

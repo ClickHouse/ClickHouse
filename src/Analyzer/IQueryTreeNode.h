@@ -80,7 +80,7 @@ public:
     }
 
     /** Get result type of query tree node that can be used as part of expression.
-      * If node does not support this method exception is throwed.
+      * If node does not support this method exception is thrown.
       * TODO: Maybe this can be a part of ExpressionQueryTreeNode.
       */
     virtual DataTypePtr getResultType() const

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** Identifier constists from identifier parts.
+/** Identifier consists from identifier parts.
   * Each identifier part is arbitrary long sequence of digits, underscores, lowercase and uppercase letters.
   * Example: a, a.b, a.b.c.
   */
@@ -26,21 +26,21 @@ public:
     {
     }
 
-        /// Create Identifier from parts
+    /// Create Identifier from parts
     explicit Identifier(std::vector<std::string> && parts_)
         : parts(std::move(parts_))
         , full_name(boost::algorithm::join(parts, "."))
     {
     }
 
-    /// Create Identifier from full name, full name is splitted with '.' as separator.
+    /// Create Identifier from full name, full name is split with '.' as separator.
     explicit Identifier(const std::string & full_name_)
         : full_name(full_name_)
     {
         boost::split(parts, full_name, [](char c) { return c == '.'; });
     }
 
-    /// Create Identifier from full name, full name is splitted with '.' as separator.
+    /// Create Identifier from full name, full name is split with '.' as separator.
     explicit Identifier(std::string && full_name_)
         : full_name(std::move(full_name_))
     {

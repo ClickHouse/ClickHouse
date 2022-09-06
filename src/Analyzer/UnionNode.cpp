@@ -99,10 +99,25 @@ String UnionNode::getName() const
             continue;
 
         auto query_union_mode = union_modes.at(i - 1);
-        if (query_union_mode == SelectUnionMode::ALL || query_union_mode == SelectUnionMode::DISTINCT)
-            buffer << " UNION " << toString(query_union_mode);
-        else
-            buffer << toString(query_union_mode);
+
+        if (query_union_mode == SelectUnionMode::UNION_DEFAULT)
+            buffer << "UNION";
+        else if (query_union_mode == SelectUnionMode::UNION_ALL)
+            buffer << "UNION ALL";
+        else if (query_union_mode == SelectUnionMode::UNION_DISTINCT)
+            buffer << "UNION DISTINCT";
+        else if (query_union_mode == SelectUnionMode::EXCEPT_DEFAULT)
+            buffer << "EXCEPT";
+        else if (query_union_mode == SelectUnionMode::EXCEPT_ALL)
+            buffer << "EXCEPT ALL";
+        else if (query_union_mode == SelectUnionMode::EXCEPT_DISTINCT)
+            buffer << "EXCEPT DISTINCT";
+        else if (query_union_mode == SelectUnionMode::INTERSECT_DEFAULT)
+            buffer << "INTERSECT";
+        else if (query_union_mode == SelectUnionMode::INTERSECT_ALL)
+            buffer << "INTERSECT ALL";
+        else if (query_union_mode == SelectUnionMode::INTERSECT_DISTINCT)
+            buffer << "INTERSECT DISTINCT";
     }
 
     return buffer.str();
@@ -133,12 +148,7 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         table_expression_modifiers->dump(buffer);
     }
 
-    buffer << ", union_mode: ";
-
-    if (union_mode == SelectUnionMode::ALL || union_mode == SelectUnionMode::DISTINCT)
-        buffer << " UNION " << toString(union_mode);
-    else
-        buffer << toString(union_mode);
+    buffer << ", union_mode: " << toString(union_mode);
 
     size_t union_modes_size = union_modes.size();
     buffer << '\n' << std::string(indent + 2, ' ') << "UNION MODES " << union_modes_size << '\n';
@@ -148,10 +158,7 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << std::string(indent + 4, ' ');
 
         auto query_union_mode = union_modes[i];
-        if (query_union_mode == SelectUnionMode::ALL || query_union_mode == SelectUnionMode::DISTINCT)
-            buffer << " UNION " << toString(query_union_mode);
-        else
-            buffer << toString(query_union_mode);
+        buffer << toString(query_union_mode);
 
         if (i + 1 != union_modes_size)
             buffer << '\n';
@@ -208,6 +215,12 @@ ASTPtr UnionNode::toASTImpl() const
 {
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
+
+    if (union_mode != SelectUnionMode::UNION_DEFAULT &&
+        union_mode != SelectUnionMode::EXCEPT_DEFAULT &&
+        union_mode != SelectUnionMode::EXCEPT_DEFAULT)
+        select_with_union_query->is_normalized = true;
+
     select_with_union_query->list_of_modes = union_modes;
     select_with_union_query->set_of_modes = union_modes_set;
     select_with_union_query->children.push_back(getQueriesNode()->toAST());
