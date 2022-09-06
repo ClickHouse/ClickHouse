@@ -104,15 +104,15 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         }
 
         bool inserted_readonly = false;
-        if (element.is_const && !element.setting_name.empty())
+        if ((element.type == SettingConstraintType::CONST || element.type == SettingConstraintType::WRITABLE) && !element.setting_name.empty())
         {
-            column_readonly.push_back(*element.is_const);
+            column_readonly.push_back(element.type == SettingConstraintType::CONST);
             column_readonly_null_map.push_back(false);
             inserted_readonly = true;
         }
 
         bool inserted_changeable_in_readonly = false;
-        if (element.changeable_in_readonly && !element.setting_name.empty())
+        if (element.type == SettingConstraintType::CHANGEABLE_IN_READONLY && !element.setting_name.empty())
         {
             column_changeable_in_readonly.push_back(true);
             column_changeable_in_readonly_null_map.push_back(false);

@@ -35,33 +35,24 @@ void SettingsConstraints::clear()
     constraints.clear();
 }
 
-
-void SettingsConstraints::setMinValue(const String & setting_name, const Field & min_value)
+void SettingsConstraints::set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintType type)
 {
-    constraints[setting_name].min_value = Settings::castValueUtil(setting_name, min_value);
+    if (min_value.isNull() && max_value.isNull() && type == SettingConstraintType::NONE)
+        return; // Do not even create entry to avoid issues during profile inheritance
+    auto & constraint = constraints[setting_name];
+    if (!min_value.isNull())
+        constraint.min_value = Settings::castValueUtil(setting_name, min_value);
+    if (!max_value.isNull())
+        constraint.max_value = Settings::castValueUtil(setting_name, max_value);
+    constraint.type = type;
 }
 
-void SettingsConstraints::setMaxValue(const String & setting_name, const Field & max_value)
-{
-    constraints[setting_name].max_value = Settings::castValueUtil(setting_name, max_value);
-}
-
-void SettingsConstraints::setIsConst(const String & setting_name, bool is_const)
-{
-    constraints[setting_name].is_const = is_const;
-}
-
-void SettingsConstraints::setChangableInReadonly(const String & setting_name, bool changeable_in_readonly)
-{
-    constraints[setting_name].changeable_in_readonly = changeable_in_readonly;
-}
-
-void SettingsConstraints::get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, bool & is_const) const
+void SettingsConstraints::get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintType & type) const
 {
     auto range = getRange(current_settings, setting_name);
     min_value = range.min_value;
     max_value = range.max_value;
-    is_const = range.is_const;
+    type = range.type;
 }
 
 void SettingsConstraints::merge(const SettingsConstraints & other)
@@ -80,8 +71,8 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
                 constraint.min_value = other_constraint.min_value;
             if (!other_constraint.max_value.isNull())
                 constraint.max_value = other_constraint.max_value;
-            if (other_constraint.is_const)
-                constraint.is_const = true; // NOTE: In this mode <readonly/> flag cannot be overridden to be false
+            if (other_constraint.type == SettingConstraintType::CONST)
+                constraint.type = SettingConstraintType::CONST; // NOTE: In this mode <readonly/> flag cannot be overridden to be false
         }
     }
 }
@@ -217,7 +208,7 @@ bool SettingsConstraints::Range::check(SettingChange & change, const Field & new
             return false;
     }
 
-    if (is_const)
+    if (type == SettingConstraintType::CONST)
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception("Setting " + setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
@@ -277,7 +268,7 @@ SettingsConstraints::Range SettingsConstraints::getRange(const Settings & curren
     auto it = constraints.find(setting_name);
     if (current_settings.readonly == 1)
     {
-        if (it == constraints.end() || !it->second.changeable_in_readonly)
+        if (it == constraints.end() || it->second.type != SettingConstraintType::CHANGEABLE_IN_READONLY)
             return Range::forbidden("Cannot modify '" + String(setting_name) + "' setting in readonly mode", ErrorCodes::READONLY);
     }
     else // For both readonly=0 and readonly=2
@@ -290,7 +281,7 @@ SettingsConstraints::Range SettingsConstraints::getRange(const Settings & curren
 
 bool SettingsConstraints::Range::operator==(const Range & other) const
 {
-    return is_const == other.is_const && changeable_in_readonly == other.changeable_in_readonly && min_value == other.min_value && max_value == other.max_value;
+    return type == other.type && min_value == other.min_value && max_value == other.max_value;
 }
 
 bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right)

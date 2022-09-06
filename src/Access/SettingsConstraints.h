@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Access/SettingsProfileElement.h>
 #include <Common/SettingsChanges.h>
 #include <unordered_map>
-
 
 namespace Poco::Util
 {
@@ -65,12 +65,8 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void setMinValue(const String & setting_name, const Field & min_value);
-    void setMaxValue(const String & setting_name, const Field & max_value);
-    void setIsConst(const String & setting_name, bool is_const);
-    void setChangableInReadonly(const String & setting_name, bool is_const);
-
-    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, bool & is_const) const;
+    void set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintType type);
+    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintType & type) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -94,8 +90,7 @@ private:
 
     struct Range
     {
-        bool is_const = false;
-        bool changeable_in_readonly = false;
+        SettingConstraintType type = SettingConstraintType::NONE;
         Field min_value;
         Field max_value;
 
@@ -115,7 +110,7 @@ private:
 
         static Range forbidden(const String & explain, int code)
         {
-            return Range{.is_const = true, .explain = explain, .code = code};
+            return Range{.type = SettingConstraintType::CONST, .explain = explain, .code = code};
         }
     };
 
