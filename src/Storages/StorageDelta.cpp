@@ -20,8 +20,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int S3_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 void DeltaLakeMetadata::add(const String & key, uint64_t timestamp)
