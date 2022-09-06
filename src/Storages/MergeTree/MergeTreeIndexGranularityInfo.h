@@ -14,7 +14,7 @@ class MergeTreeData;
 
 /** Various types of mark files are stored in files with various extensions:
   * .mrk, .mrk2, .mrk3, .cmrk, .cmrk2, .cmrk3.
-  * This helper allows to obtain mark type from file extension and vise versa.
+  * This helper allows to obtain mark type from file extension and vice versa.
   */
 struct MarkType
 {
