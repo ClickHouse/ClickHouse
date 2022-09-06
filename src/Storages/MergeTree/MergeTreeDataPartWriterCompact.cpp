@@ -27,15 +27,24 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
             settings.max_compress_block_size,
             settings_.query_write_settings))
     , plain_hashing(*plain_file)
-    , marks_file(data_part_storage_builder->writeFile(
+{
+    marks_file = data_part_storage_builder->writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
             4096,
-            settings_.query_write_settings))
-    , marks_hashing(*marks_file)
-    , marks_compressed_buf(marks_hashing, settings_.getMarksCompressionCodec(), settings_.marks_compress_block_size)
-    , marks_compressed(marks_compressed_buf)
-    , is_compress_marks(isCompressedFromMrkExtension(marks_file_extension))
-{
+            settings_.query_write_settings);
+
+    marks_file_hashing = std::make_unique<HashingWriteBuffer>(*marks_file);
+
+    if (MarkType(marks_file_extension).compressed)
+    {
+        marks_compressor = std::make_unique<CompressedWriteBuffer>(
+            *marks_file_hashing,
+            settings_.getMarksCompressionCodec(),
+            settings_.marks_compress_block_size);
+
+        marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
+    }
+
     const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
         addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
@@ -176,6 +185,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
 void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
 {
+    WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
+
     for (const auto & granule : granules)
     {
         data_written = true;
@@ -207,8 +218,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             };
 
 
-            writeIntBinary(plain_hashing.count(), is_compress_marks ? marks_compressed : marks_hashing);
-            writeIntBinary(static_cast<UInt64>(0), is_compress_marks ? marks_compressed : marks_hashing);
+            writeIntBinary(plain_hashing.count(), marks_out);
+            writeIntBinary(static_cast<UInt64>(0), marks_out);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), data_part->getSerialization(name_and_type->name),
@@ -218,7 +229,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             prev_stream->hashing_buf.next(); //-V522
         }
 
-        writeIntBinary(granule.rows_to_write, is_compress_marks ? marks_compressed : marks_hashing);
+        writeIntBinary(granule.rows_to_write, marks_out);
     }
 }
 
@@ -243,21 +254,26 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
         assert(stream->hashing_buf.offset() == 0);
 #endif
 
+    WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
+
     if (with_final_mark && data_written)
     {
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
-            writeIntBinary(plain_hashing.count(), is_compress_marks ? marks_compressed : marks_hashing);
-            writeIntBinary(static_cast<UInt64>(0), is_compress_marks ? marks_compressed : marks_hashing);
+            writeIntBinary(plain_hashing.count(), marks_out);
+            writeIntBinary(static_cast<UInt64>(0), marks_out);
         }
-        writeIntBinary(static_cast<UInt64>(0), is_compress_marks ? marks_compressed : marks_hashing);
+        writeIntBinary(static_cast<UInt64>(0), marks_out);
     }
 
     plain_file->next();
-    if (is_compress_marks)
-        marks_compressed.next();
 
-    marks_hashing.next();
+    if (marks_source_hashing)
+        marks_source_hashing->next();
+    if (marks_compressor)
+        marks_compressor->next();
+
+    marks_file_hashing->next();
     addToChecksums(checksums);
 
     plain_file->preFinalize();
@@ -268,6 +284,7 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 {
     plain_file->finalize();
     marks_file->finalize();
+
     if (sync)
     {
         plain_file->sync();
@@ -339,14 +356,15 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     checksums.files[data_file_name].file_size = plain_hashing.count();
     checksums.files[data_file_name].file_hash = plain_hashing.getHash();
 
-    if (is_compress_marks)
+    if (marks_compressor)
     {
         checksums.files[marks_file_name].is_compressed = true;
-        checksums.files[marks_file_name].uncompressed_size = marks_compressed.count();
-        checksums.files[marks_file_name].uncompressed_hash = marks_compressed.getHash();
+        checksums.files[marks_file_name].uncompressed_size = marks_source_hashing->count();
+        checksums.files[marks_file_name].uncompressed_hash = marks_source_hashing->getHash();
     }
-    checksums.files[marks_file_name].file_size = marks_hashing.count();
-    checksums.files[marks_file_name].file_hash = marks_hashing.getHash();
+
+    checksums.files[marks_file_name].file_size = marks_file_hashing->count();
+    checksums.files[marks_file_name].file_hash = marks_file_hashing->getHash();
 }
 
 void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns)

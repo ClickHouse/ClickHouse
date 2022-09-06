@@ -154,6 +154,7 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
+
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
     if (metadata.sampling_key.column_names.empty())
@@ -1085,7 +1086,7 @@ void MergeTreeData::loadDataPartsFromDisk(
                 suspicious_broken_parts_bytes += *size_of_part;
             return;
         }
-        if (!part->index_granularity_info.is_adaptive)
+        if (!part->index_granularity_info.mark_type.adaptive)
             has_non_adaptive_parts.store(true, std::memory_order_relaxed);
         else
             has_adaptive_parts.store(true, std::memory_order_relaxed);
@@ -2676,21 +2677,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
         throw Exception("Unknown type of part " + data_part_storage->getRelativePath(), ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
-static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext)
-{
-    if (mrk_ext == getNonAdaptiveMrkExtension(true)
-        || mrk_ext == getNonAdaptiveMrkExtension(false))
-        return MergeTreeDataPartType::Wide;
-    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, true)
-        || mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, false))
-        return MergeTreeDataPartType::Wide;
-    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, true)
-        || mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, false))
-        return MergeTreeDataPartType::Compact;
-
-    throw Exception("Can't determine part type, because of unknown mark extension " + mrk_ext, ErrorCodes::UNKNOWN_PART_TYPE);
-}
-
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name, const DataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part) const
 {
@@ -2705,7 +2691,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(data_part_storage);
 
     if (mrk_ext)
-        type = getPartTypeFromMarkExtension(*mrk_ext);
+    {
+        type = MarkType(*mrk_ext).part_type;
+    }
     else
     {
         /// Didn't find any mark file, suppose that part is empty.
@@ -6361,9 +6349,9 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 
     if (!settings->enable_mixed_granularity_parts || settings->index_granularity_bytes == 0)
     {
-        if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.is_adaptive)
+        if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.mark_type.adaptive)
             return false;
-        if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.is_adaptive)
+        if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
     return true;
