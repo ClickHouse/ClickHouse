@@ -395,6 +395,17 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
+    M(DeleteS3Keys, "Number of s3 API Delete Keys be called") \
+    M(CopyS3Object, "Number of s3 API CopyObject be called") \
+    M(ListS3Objects, "Number of s3 API ListObjects be called") \
+    M(HeadS3Object,  "Number of s3 API HeadObject be called") \
+    M(CreateS3MultipartUpload, "Number of s3 API CreateMultipartUpload be called") \
+    M(UploadS3PartCopy, "Number of s3 API UploadPartCopy be called") \
+    M(UploadS3Part, "Number of s3 API UploadS3Part be called") \
+    M(AbortS3MultipartUpload, "Number of s3 API AbortMultipartUpload be called") \
+    M(CompleteS3MultipartUpload, "Number of s3 API CompleteS3MultipartUpload be called") \
+    M(PutS3ObjectRequest, "Number of s3 API PutS3ObjectRequest be called") \
+    M(GetS3ObjectRequest, "Number of s3 API GetS3ObjectRequest be called")
 
 namespace ProfileEvents
 {
