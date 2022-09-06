@@ -30,7 +30,7 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const std::string & name);
+    HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
     virtual ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
@@ -100,6 +100,9 @@ private:
     /// See settings http_max_fields, http_max_field_name_size, http_max_field_value_size in HTMLForm.
     const Settings & default_settings;
 
+    /// Overrides Content-Type provided by the format of the response.
+    std::optional<String> content_type_override;
+
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
 
@@ -140,7 +143,7 @@ class DynamicQueryHandler : public HTTPHandler
 private:
     std::string param_name;
 public:
-    explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query");
+    explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query", const std::optional<String>& content_type_override_ = std::nullopt);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
@@ -157,7 +160,8 @@ private:
 public:
     PredefinedQueryHandler(
         IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
-        , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_);
+        , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_
+        , const std::optional<std::string> & content_type_override_);
 
     virtual void customizeContext(HTTPServerRequest & request, ContextMutablePtr context) override;
 

@@ -10,7 +10,7 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.1.10.70",
+    tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
 )
@@ -18,7 +18,7 @@ node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.1.10.70",
+    tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
 )
@@ -26,7 +26,7 @@ node3 = cluster.add_instance(
     "node3",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.1.10.70",
+    tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
 )
@@ -58,8 +58,8 @@ def test_mutate_and_upgrade(start_cluster):
 
     node2.query("DETACH TABLE mt")  # stop being leader
     node1.query("DETACH TABLE mt")  # stop being leader
-    node1.restart_with_latest_version(signal=9)
-    node2.restart_with_latest_version(signal=9)
+    node1.restart_with_latest_version(signal=9, fix_metadata=True)
+    node2.restart_with_latest_version(signal=9, fix_metadata=True)
 
     # After hard restart table can be in readonly mode
     exec_query_with_retry(
@@ -111,7 +111,7 @@ def test_upgrade_while_mutation(start_cluster):
     node3.query("ALTER TABLE mt1 DELETE WHERE id % 2 == 0")
 
     node3.query("DETACH TABLE mt1")  # stop being leader
-    node3.restart_with_latest_version(signal=9)
+    node3.restart_with_latest_version(signal=9, fix_metadata=True)
 
     # checks for readonly
     exec_query_with_retry(node3, "OPTIMIZE TABLE mt1", sleep_time=5, retry_count=60)

@@ -15,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// Info that represents a scalar or array field in a decomposed view.
@@ -35,6 +35,10 @@ struct FieldInfo
 
     /// Number of dimension in array. 0 if field is scalar.
     size_t num_dimensions;
+
+    /// If true then this field is an array of variadic dimension field
+    /// and we need to normalize the dimension
+    bool need_fold_dimension;
 };
 
 FieldInfo getFieldInfo(const Field & field);
@@ -85,12 +89,16 @@ public:
         void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
         void popBack(size_t n);
 
+        Subcolumn cut(size_t start, size_t length) const;
+
         /// Converts all column's parts to the common type and
         /// creates a single column that stores all values.
         void finalize();
 
         /// Returns last inserted field.
         Field getLastField() const;
+
+        FieldInfo getFieldInfo() const;
 
         /// Recreates subcolumn with default scalar values and keeps sizes of arrays.
         /// Used to create columns of type Nested with consistent array sizes.
@@ -111,7 +119,7 @@ public:
         class LeastCommonType
         {
         public:
-            LeastCommonType() = default;
+            LeastCommonType();
             explicit LeastCommonType(DataTypePtr type_);
 
             const DataTypePtr & get() const { return type; }
@@ -142,6 +150,8 @@ public:
         /// least common type and we count number of defaults in prefix,
         /// which will be converted to the default type of final common type.
         size_t num_of_defaults_in_prefix = 0;
+
+        size_t num_rows = 0;
     };
 
     using Subcolumns = SubcolumnsTree<Subcolumn>;
@@ -179,6 +189,11 @@ public:
     /// It cares about consistency of sizes of Nested arrays.
     void addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size);
 
+    /// Finds a subcolumn from the same Nested type as @entry and inserts
+    /// an array with default values with consistent sizes as in Nested type.
+    bool tryInsertDefaultFromNested(const Subcolumns::NodePtr & entry) const;
+    bool tryInsertManyDefaultsFromNested(const Subcolumns::NodePtr & entry) const;
+
     const Subcolumns & getSubcolumns() const { return subcolumns; }
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
@@ -210,6 +225,19 @@ public:
     void finalize() override;
     bool isFinalized() const override;
 
+    /// Order of rows in ColumnObject is undefined.
+    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
+
+    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    void getExtremes(Field & min, Field & max) const override;
+
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    void gather(ColumnGathererStream & gatherer) override;
+
     /// All other methods throw exception.
 
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
@@ -222,14 +250,7 @@ public:
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
     void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
-    int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeConcrete(); }
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
-    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override { throwMustBeConcrete(); }
-    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeConcrete(); }
-    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeConcrete(); }
-    void gather(ColumnGathererStream &) override { throwMustBeConcrete(); }
-    void getExtremes(Field &, Field &) const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
@@ -237,11 +258,13 @@ public:
 private:
     [[noreturn]] static void throwMustBeConcrete()
     {
-        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     template <typename Func>
     MutableColumnPtr applyForSubcolumns(Func && func) const;
-};
 
+    /// It's used to get shared sized of Nested to insert correct default values.
+    const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
+};
 }

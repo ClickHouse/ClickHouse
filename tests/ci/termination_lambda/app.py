@@ -30,7 +30,10 @@ def get_installation_id(jwt_token):
     response = requests.get("https://api.github.com/app/installations", headers=headers)
     response.raise_for_status()
     data = response.json()
-    return data[0]["id"]
+    for installation in data:
+        if installation["account"]["login"] == "ClickHouse":
+            installation_id = installation["id"]
+    return installation_id
 
 
 def get_access_token(jwt_token, installation_id):

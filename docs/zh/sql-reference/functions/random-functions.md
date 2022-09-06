@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/random-functions
+---
 # 随机函数 {#sui-ji-han-shu}
 
 随机函数使用非加密方式生成伪随机数字。

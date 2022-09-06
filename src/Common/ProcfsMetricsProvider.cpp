@@ -1,6 +1,6 @@
 #include "ProcfsMetricsProvider.h"
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>

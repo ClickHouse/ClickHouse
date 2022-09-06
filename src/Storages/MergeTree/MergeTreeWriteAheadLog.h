@@ -62,10 +62,14 @@ public:
 
     void addPart(DataPartInMemoryPtr & part);
     void dropPart(const String & part_name);
-    std::vector<MergeTreeMutableDataPartPtr> restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    std::vector<MergeTreeMutableDataPartPtr> restore(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        std::unique_lock<std::mutex> & parts_lock);
 
     using MinMaxBlockNumber = std::pair<Int64, Int64>;
     static std::optional<MinMaxBlockNumber> tryParseMinMaxBlockNumber(const String & filename);
+    void shutdown();
 
 private:
     void init();
@@ -89,6 +93,7 @@ private:
 
     size_t bytes_at_last_sync = 0;
     bool sync_scheduled = false;
+    bool shutdown_called = false;
 
     mutable std::mutex write_mutex;
 

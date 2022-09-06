@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/one
+---
 # system.one {#system-one}
 
 此表包含一行只有一个值为 0 的 `dummy` UInt8 列的数据。

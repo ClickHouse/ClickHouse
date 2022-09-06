@@ -4,7 +4,7 @@
 
 #if USE_SQLITE
 #include <Core/ExternalResultDescription.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 #include <sqlite3.h>
 
@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class SQLiteSource : public SourceWithProgress
+class SQLiteSource : public ISource
 {
 
 using SQLitePtr = std::shared_ptr<sqlite3>;

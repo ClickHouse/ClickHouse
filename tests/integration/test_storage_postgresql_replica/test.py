@@ -1,4 +1,12 @@
 import pytest
+
+# FIXME Tests with MaterializedPostgresSQL are temporarily disabled
+# https://github.com/ClickHouse/ClickHouse/issues/36898
+# https://github.com/ClickHouse/ClickHouse/issues/38677
+# https://github.com/ClickHouse/ClickHouse/pull/39272#issuecomment-1190087190
+
+pytestmark = pytest.mark.skip
+
 import time
 import psycopg2
 import os.path as p
@@ -545,6 +553,7 @@ def test_connection_loss(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_clickhouse_restart(started_cluster):
+    pytest.skip("Temporary disabled (FIXME)")
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,

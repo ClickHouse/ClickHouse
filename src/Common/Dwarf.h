@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 /*
  * Copyright 2012-present Facebook, Inc.

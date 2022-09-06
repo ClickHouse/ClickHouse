@@ -12,6 +12,7 @@
                 <value>ZSTD</value>
                 <value>DoubleDelta</value>
                 <value>Gorilla</value>
+                <value>FPC</value>
             </values>
         </substitution>
         <substitution>
@@ -36,7 +37,11 @@
         </substitution>
     </substitutions>
 
-    <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec})) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();</create_query>
+    <create_query>
+        CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec}))
+        ENGINE = MergeTree PARTITION BY tuple()
+        ORDER BY tuple();
+    </create_query>
 
     <fill_query>INSERT INTO codec_seq_{type}_{codec} (n) SELECT number/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
     <fill_query>INSERT INTO codec_mon_{type}_{codec} (n) SELECT number+sin(number) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>

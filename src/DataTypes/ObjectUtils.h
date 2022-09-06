@@ -12,7 +12,7 @@ namespace DB
 {
 
 struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t getNumberOfDimensions(const IDataType & type);
@@ -54,6 +54,8 @@ DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage
 /// Converts types of object columns to tuples in @columns_list
 /// according to @object_columns and adds all tuple's subcolumns if needed.
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns);
+
+/// Checks whether @columns contain any column with dynamic subcolumns.
 bool hasDynamicSubcolumns(const ColumnsDescription & columns);
 
 /// Updates types of objects in @object_columns inplace
@@ -79,10 +81,13 @@ DataTypePtr unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types);
 
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column);
+
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types,
     const Columns & tuple_columns);
+
 
 /// For all columns which exist in @expected_columns and
 /// don't exist in @available_columns adds to WITH clause
@@ -117,10 +122,44 @@ private:
 class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
 {
 public:
-    size_t operator()(const Array & x) const;
+    size_t operator()(const Array & x);
 
     template <typename T>
     size_t operator()(const T &) const { return 0; }
+
+    bool need_fold_dimension = false;
+};
+
+/// Fold field (except Null) to the higher dimension, e.g. `1` -- fold 2 --> `[[1]]`
+/// used to normalize dimension of element in an array. e.g [1, [2]] --> [[1], [2]]
+class FieldVisitorFoldDimension : public StaticVisitor<Field>
+{
+public:
+    explicit FieldVisitorFoldDimension(size_t num_dimensions_to_fold_) : num_dimensions_to_fold(num_dimensions_to_fold_) { }
+
+    Field operator()(const Array & x) const;
+
+    Field operator()(const Null & x) const { return x; }
+
+    template <typename T>
+    Field operator()(const T & x) const
+    {
+        if (num_dimensions_to_fold == 0)
+            return x;
+
+        Array res(1, x);
+        for (size_t i = 1; i < num_dimensions_to_fold; ++i)
+        {
+            Array new_res;
+            new_res.push_back(std::move(res));
+            res = std::move(new_res);
+        }
+
+        return res;
+    }
+
+private:
+    size_t num_dimensions_to_fold;
 };
 
 /// Receives range of objects, which contains collections

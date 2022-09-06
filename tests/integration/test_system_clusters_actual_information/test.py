@@ -7,7 +7,6 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(

@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/statements/alter/role
 sidebar_position: 46
 sidebar_label: ROLE
 ---
 
-## ALTER ROLE {#alter-role-statement}
+## ALTER ROLE
 
 Changes roles.
 

@@ -7,6 +7,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Storages/StorageDictionary.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -35,7 +36,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    dictionary_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    dictionary_name = checkAndGetLiteralArgument<String>(args[0], "dictionary_name");
 }
 
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const

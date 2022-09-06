@@ -1,9 +1,10 @@
 ---
+slug: /en/operations/system-tables/
 sidebar_position: 52
 sidebar_label: System Tables
 ---
 
-# System Tables {#system-tables}
+# System Tables
 
 ## Introduction {#system-tables-introduction}
 

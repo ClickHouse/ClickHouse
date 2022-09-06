@@ -47,6 +47,12 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 }
 
 
+void ReadBufferFromRabbitMQConsumer::closeChannel()
+{
+    if (consumer_channel)
+        consumer_channel->close();
+}
+
 void ReadBufferFromRabbitMQConsumer::subscribe()
 {
     for (const auto & queue_name : queues)

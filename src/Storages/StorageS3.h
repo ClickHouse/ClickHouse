@@ -11,13 +11,14 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/Cache/SchemaCache.h>
 
 namespace Aws::S3
 {
@@ -29,30 +30,40 @@ namespace DB
 
 class PullingPipelineExecutor;
 class StorageS3SequentialSource;
-class StorageS3Source : public SourceWithProgress, WithContext
+class StorageS3Source : public ISource, WithContext
 {
 public:
     class DisclosedGlobIterator
     {
-        public:
-            DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
-            String next();
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
+    public:
+        DisclosedGlobIterator(
+            const Aws::S3::S3Client & client_,
+            const S3::URI & globbed_uri_,
+            ASTPtr query,
+            const Block & virtual_header,
+            ContextPtr context,
+            std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
+            Strings * read_keys_ = nullptr);
+
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
     };
 
     class KeysIterator
     {
-        public:
-            explicit KeysIterator(const std::vector<String> & keys_);
-            String next();
+    public:
+        explicit KeysIterator(
+            const std::vector<String> & keys_, const String & bucket_, ASTPtr query, const Block & virtual_header, ContextPtr context);
+        String next();
 
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
     };
 
     class ReadTasksIterator
@@ -82,11 +93,12 @@ public:
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
         String compression_hint_,
-        const std::shared_ptr<Aws::S3::S3Client> & client_,
+        const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IteratorWrapper> file_iterator_,
-        size_t download_thread_num);
+        size_t download_thread_num,
+        const std::unordered_map<String, S3::ObjectInfo> & object_infos_);
 
     String getName() const override;
 
@@ -104,7 +116,7 @@ private:
     UInt64 max_block_size;
     UInt64 max_single_read_retries;
     String compression_hint;
-    std::shared_ptr<Aws::S3::S3Client> client;
+    std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
@@ -120,7 +132,9 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
-    /// Recreate ReadBuffer and BlockInputStream for each file.
+    std::unordered_map<String, S3::ObjectInfo> object_infos;
+
+    /// Recreate ReadBuffer and Pipeline for each file.
     bool initialize();
 
     std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
@@ -182,7 +196,8 @@ public:
         const String & compression_method,
         bool distributed_processing,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        ContextPtr ctx,
+        std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
 
     static void processNamedCollectionResult(StorageS3Configuration & configuration, const std::vector<std::pair<String, ASTPtr>> & key_value_args);
 
@@ -191,10 +206,12 @@ public:
         const S3::URI uri;
         const String access_key_id;
         const String secret_access_key;
-        std::shared_ptr<Aws::S3::S3Client> client;
+        std::shared_ptr<const Aws::S3::S3Client> client;
         S3Settings::AuthSettings auth_settings;
         S3Settings::ReadWriteSettings rw_settings;
     };
+
+    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
 private:
     friend class StorageS3Cluster;
@@ -203,6 +220,7 @@ private:
     S3Configuration s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
+    Block virtual_block;
 
     String format_name;
     String compression_method;
@@ -214,6 +232,8 @@ private:
 
     std::vector<String> read_tasks_used_in_schema_inference;
 
+    std::unordered_map<String, S3::ObjectInfo> object_infos;
+
     static void updateS3Configuration(ContextPtr, S3Configuration &);
 
     static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(
@@ -222,7 +242,11 @@ private:
         bool is_key_with_globs,
         bool distributed_processing,
         ContextPtr local_context,
-        const std::vector<String> & read_tasks = {});
+        ASTPtr query,
+        const Block & virtual_block,
+        const std::vector<String> & read_tasks = {},
+        std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
+        Strings * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
@@ -232,9 +256,27 @@ private:
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
-        std::vector<String> * read_keys_in_distributed_processing = nullptr);
+        std::vector<String> * read_keys_in_distributed_processing = nullptr,
+        std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings::const_iterator & begin,
+        const Strings::const_iterator & end,
+        const S3Configuration & s3_configuration,
+        std::unordered_map<String, S3::ObjectInfo> * object_infos,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
+
+    static void addColumnsToCache(
+        const Strings & keys,
+        const S3Configuration & s3_configuration,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
 };
 
 }

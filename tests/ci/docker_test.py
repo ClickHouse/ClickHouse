@@ -117,13 +117,14 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
         image = di.DockerImage("path", "name", False, gh_repo_path="")
 
-        result, _ = di.build_and_push_one_image(image, "version", True, True)
+        result, _ = di.build_and_push_one_image(image, "version", "", True, True)
         mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version --cache-from type=registry,ref=name:version "
             "--cache-from type=registry,ref=name:latest "
             "--cache-to type=inline,mode=max --push --progress plain path",
@@ -135,13 +136,14 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_machine.reset_mock()
 
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
-        result, _ = di.build_and_push_one_image(image, "version2", False, True)
+        result, _ = di.build_and_push_one_image(image, "version2", "", False, True)
         mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version2 "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
             "--cache-to type=inline,mode=max --progress plain path",
@@ -153,14 +155,36 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.reset_mock()
         mock_machine.reset_mock()
         mock_popen.return_value.__enter__.return_value.wait.return_value = 1
-        result, _ = di.build_and_push_one_image(image, "version2", False, False)
+        result, _ = di.build_and_push_one_image(image, "version2", "", False, False)
         mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
+            "--cache-to type=inline,mode=max --progress plain path",
+            mock_popen.call_args.args,
+        )
+        self.assertFalse(result)
+
+        mock_open.reset_mock()
+        mock_popen.reset_mock()
+        mock_machine.reset_mock()
+        mock_popen.return_value.__enter__.return_value.wait.return_value = 1
+        result, _ = di.build_and_push_one_image(
+            image, "version2", "cached-version", False, False
+        )
+        mock_open.assert_called_once()
+        mock_popen.assert_called_once()
+        mock_machine.assert_not_called()
+        self.assertIn(
+            f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+            "--tag name:version2 --cache-from type=registry,ref=name:version2 "
+            "--cache-from type=registry,ref=name:latest "
+            "--cache-from type=registry,ref=name:cached-version "
             "--cache-to type=inline,mode=max --progress plain path",
             mock_popen.call_args.args,
         )
@@ -172,7 +196,9 @@ class TestDockerImageCheck(unittest.TestCase):
         only_amd64_image = di.DockerImage("path", "name", True)
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
 
-        result, _ = di.build_and_push_one_image(only_amd64_image, "version", True, True)
+        result, _ = di.build_and_push_one_image(
+            only_amd64_image, "version", "", True, True
+        )
         mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_called_once()
@@ -183,7 +209,7 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertTrue(result)
         result, _ = di.build_and_push_one_image(
-            only_amd64_image, "version", False, True
+            only_amd64_image, "version", "", False, True
         )
         self.assertIn(
             "docker pull ubuntu:20.04; docker tag ubuntu:20.04 name:version; ",
@@ -192,7 +218,7 @@ class TestDockerImageCheck(unittest.TestCase):
 
     @patch("docker_images_check.build_and_push_one_image")
     def test_process_image_with_parents(self, mock_build):
-        mock_build.side_effect = lambda w, x, y, z: (True, f"{w.repo}_{x}.log")
+        mock_build.side_effect = lambda v, w, x, y, z: (True, f"{v.repo}_{w}.log")
         im1 = di.DockerImage("path1", "repo1", False)
         im2 = di.DockerImage("path2", "repo2", False, im1)
         im3 = di.DockerImage("path3", "repo3", False, im2)
@@ -200,7 +226,7 @@ class TestDockerImageCheck(unittest.TestCase):
         # We use list to have determined order of image builgings
         images = [im4, im1, im3, im2, im1]
         results = [
-            di.process_image_with_parents(im, ["v1", "v2", "latest"], True)
+            di.process_image_with_parents(im, ["v1", "v2", "latest"], "", True)
             for im in images
         ]
 

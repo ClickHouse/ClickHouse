@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-s3-storage
 # Tag no-fasttest: setting use_metadata_cache=true is not supported in fasttest, because clickhouse binary in fasttest is build without RocksDB.
 # To suppress Warning messages from CHECK TABLE
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+set -e
 
 table_engines=(ReplicatedMergeTree)
 database_engines=(Ordinary Atomic)
@@ -22,7 +24,7 @@ for table_engine in "${table_engines[@]}"; do
 
                     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_metadata_cache.check_part_metadata_cache SYNC;"
                     ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS test_metadata_cache;"
-                    ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE test_metadata_cache ENGINE = ${database_engine};"
+                    ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "CREATE DATABASE test_metadata_cache ENGINE = ${database_engine};"
 
                     table_engine_clause=""
                     if [[ "$table_engine" == "ReplicatedMergeTree" ]]; then

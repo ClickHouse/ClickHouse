@@ -819,11 +819,9 @@ $L$SEH_begin_vpaes_set_encrypt_key:
 
 
 
-%ifndef NDEBUG
-%ifndef BORINGSSL_FIPS
+%ifdef BORINGSSL_DISPATCH_TEST
 EXTERN	BORINGSSL_function_hit
 	mov	BYTE[((BORINGSSL_function_hit+5))],1
-%endif
 %endif
 
 	lea	rsp,[((-184))+rsp]
@@ -937,11 +935,9 @@ $L$SEH_begin_vpaes_encrypt:
 
 
 
-%ifndef NDEBUG
-%ifndef BORINGSSL_FIPS
+%ifdef BORINGSSL_DISPATCH_TEST
 EXTERN	BORINGSSL_function_hit
 	mov	BYTE[((BORINGSSL_function_hit+4))],1
-%endif
 %endif
 	lea	rsp,[((-184))+rsp]
 	movaps	XMMWORD[16+rsp],xmm6

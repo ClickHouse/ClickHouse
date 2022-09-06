@@ -1217,7 +1217,7 @@ private:
 
 }
 
-void registerFunctionTransform(FunctionFactory & factory)
+REGISTER_FUNCTION(Transform)
 {
     factory.registerFunction<FunctionTransform>();
 }

@@ -9,6 +9,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -269,8 +271,24 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         }
     };
 
+    std::exception_ptr error;
     for (int column_idx = 0; column_idx < num_columns; ++column_idx)
-        proccess_column_value(readInt8(message, pos, size), column_idx);
+    {
+        try
+        {
+            proccess_column_value(readInt8(message, pos, size), column_idx);
+        }
+        catch (...)
+        {
+            insertDefaultValue(buffer, column_idx);
+            /// Let's collect only the first exception.
+            /// This delaying of error throw is needed because
+            /// some errors can be ignored and just logged,
+            /// but in this case we need to finish insertion to all columns.
+            if (!error)
+                error = std::current_exception();
+        }
+    }
 
     switch (type)
     {
@@ -301,6 +319,9 @@ void MaterializedPostgreSQLConsumer::readTupleData(
             break;
         }
     }
+
+    if (error)
+        std::rethrow_exception(error);
 }
 
 
@@ -422,6 +443,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             pos += unused_flags_len + commit_lsn_len + transaction_end_lsn_len + transaction_commit_timestamp_len;
 
             final_lsn = current_lsn;
+            committed = true;
             break;
         }
         case 'R': // Relation
@@ -572,6 +594,12 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
+    updateLsn();
+}
+
+
+void MaterializedPostgreSQLConsumer::updateLsn()
+{
     try
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -593,6 +621,7 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 
     final_lsn = result[0][0].as<std::string>();
     LOG_TRACE(log, "Advanced LSN up to: {}", getLSNValue(final_lsn));
+    committed = false;
     return final_lsn;
 }
 
@@ -750,7 +779,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 
             try
             {
-                // LOG_DEBUG(log, "Current message: {}", (*row)[1]);
+                /// LOG_DEBUG(log, "Current message: {}", (*row)[1]);
                 processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
             }
             catch (const Exception & e)
@@ -769,6 +798,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
     catch (const pqxx::broken_connection &)
     {
+        LOG_DEBUG(log, "Connection was broken");
         connection->tryUpdateConnection();
         return false;
     }
@@ -802,7 +832,13 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
 
     if (!tables_to_sync.empty())
+    {
         syncTables();
+    }
+    else if (committed)
+    {
+        updateLsn();
+    }
 
     return true;
 }

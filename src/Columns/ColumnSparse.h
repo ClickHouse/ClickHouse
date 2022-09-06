@@ -215,6 +215,7 @@ public:
 
     Iterator begin() const { return Iterator(getOffsetsData(), _size, 0, 0); }
     Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
+    Iterator getIterator(size_t n) const;
 
 private:
     using Inserter = std::function<void(IColumn &)>;

@@ -101,7 +101,7 @@ public:
 
 }
 
-void registerFunctionH3ToString(FunctionFactory & factory)
+REGISTER_FUNCTION(H3ToString)
 {
     factory.registerFunction<FunctionH3ToString>();
 }

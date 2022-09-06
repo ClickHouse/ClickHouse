@@ -179,7 +179,7 @@ void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
 {
     ReadBufferFromFile reader(out->getFileName());
-    auto fsize = reader.size();
+    auto fsize = reader.getFileSize();
     if (fsize > 3)
     {
         std::array<char, 3> result;

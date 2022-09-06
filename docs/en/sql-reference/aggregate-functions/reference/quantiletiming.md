@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/quantiletiming
 sidebar_position: 204
 ---
 
-# quantileTiming {#quantiletiming}
+# quantileTiming
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

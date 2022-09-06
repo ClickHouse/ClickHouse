@@ -1,11 +1,15 @@
 #pragma once
 
 #include <Common/OptimizedRegularExpression.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 
 
 namespace DB
 {
+
+struct QueryPlanResourceHolder;
 
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
@@ -49,7 +53,8 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -102,7 +107,64 @@ private:
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
-protected:
+    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+
+    friend class ReadFromMerge;
+};
+
+class ReadFromMerge final : public ISourceStep
+{
+public:
+    static constexpr auto name = "ReadFromMerge";
+    String getName() const override { return name; }
+
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    using StorageListWithLocks = std::list<StorageWithLockAndName>;
+    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
+
+    ReadFromMerge(
+        Block common_header_,
+        StorageListWithLocks selected_tables_,
+        Names column_names_,
+        bool has_database_virtual_column_,
+        bool has_table_virtual_column_,
+        size_t max_block_size,
+        size_t num_streams,
+        StoragePtr storage,
+        StorageSnapshotPtr storage_snapshot,
+        const SelectQueryInfo & query_info_,
+        ContextMutablePtr context_,
+        QueryProcessingStage::Enum processed_stage);
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    void addFilter(ActionsDAGPtr expression, std::string column_name)
+    {
+        added_filter_dags.push_back(expression);
+        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
+    }
+
+private:
+    const size_t required_max_block_size;
+    const size_t requested_num_streams;
+    const Block common_header;
+
+    StorageListWithLocks selected_tables;
+    Names column_names;
+    bool has_database_virtual_column;
+    bool has_table_virtual_column;
+    StoragePtr storage_merge;
+    StorageSnapshotPtr merge_storage_snapshot;
+
+    SelectQueryInfo query_info;
+    ContextMutablePtr context;
+    QueryProcessingStage::Enum common_processed_stage;
+
+    std::vector<ActionsDAGPtr> added_filter_dags;
+    ActionDAGNodes added_filter_nodes;
+
+    std::string added_filter_column_name;
+
     struct AliasData
     {
         String name;
@@ -112,7 +174,7 @@ protected:
 
     using Aliases = std::vector<AliasData>;
 
-    Pipe createSources(
+    QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,
@@ -123,19 +185,12 @@ protected:
         Names & real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
-        bool has_database_virtual_column,
-        bool has_table_virtual_column,
         bool concat_streams = false);
 
     void convertingSourceStream(
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
         ContextPtr context, ASTPtr & query,
-        Pipe & pipe, QueryProcessingStage::Enum processed_stage);
-
-    static SelectQueryInfo getModifiedQueryInfo(
-        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & current_storage_id, bool is_merge_engine);
-
-    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+        QueryPipelineBuilder & builder, QueryProcessingStage::Enum processed_stage);
 };
 
 }

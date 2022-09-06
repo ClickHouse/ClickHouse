@@ -7,6 +7,8 @@ CSVWithNamesAndTypes
 CustomSeparated
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
+JSONColumns
+JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
 JSONCompactEachRowWithNamesAndTypes

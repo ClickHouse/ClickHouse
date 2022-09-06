@@ -511,8 +511,6 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         /// Insert used_keys into global dictionary and update sub_index.
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
                                                                                       settings.low_cardinality_max_dictionary_size);
-        // size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
-        // ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
@@ -655,11 +653,6 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         else
         {
             auto maps = mapIndexWithAdditionalKeys(*indexes_column, global_dictionary->size());
-
-            // ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
-
-            // ColumnLowCardinality::Index(indexes_column->getPtr()).check(
-            //         maps.dictionary_map->size() + maps.additional_keys_map->size());
 
             auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
 

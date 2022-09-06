@@ -1,0 +1,8 @@
+{% for format in ['Pretty', 'PrettyNoEscapes', 'PrettyMonoBlock', 'PrettyNoEscapesMonoBlock', 'PrettyCompact', 'PrettyCompactNoEscapes',
+                  'PrettyCompactMonoBlock', 'PrettyCompactNoEscapesMonoBlock', 'PrettySpace', 'PrettySpaceNoEscapes', 'PrettySpaceMonoBlock',
+                  'PrettySpaceNoEscapesMonoBlock'] -%}
+
+select '{{ format }}';
+select number as x, number + 1 as y from numbers(4) settings max_block_size=2 format {{ format }};
+
+{% endfor -%}

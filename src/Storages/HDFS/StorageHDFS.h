@@ -4,8 +4,9 @@
 
 #if USE_HDFS
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Storages/IStorage.h>
+#include <Storages/Cache/SchemaCache.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 
@@ -57,7 +58,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -65,10 +66,26 @@ public:
         const String & compression_method,
         ContextPtr ctx);
 
+    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
 protected:
     friend class HDFSSource;
 
 private:
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & paths,
+        const String & uri_without_path,
+        std::unordered_map<String, time_t> & last_mod_time,
+        const String & format_name,
+        const ContextPtr & ctx);
+
+    static void addColumnsToCache(
+        const Strings & paths,
+        const String & uri_without_path,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const ContextPtr & ctx);
+
     std::vector<const String> uris;
     String format_name;
     String compression_method;
@@ -82,7 +99,7 @@ private:
 
 class PullingPipelineExecutor;
 
-class HDFSSource : public SourceWithProgress, WithContext
+class HDFSSource : public ISource, WithContext
 {
 public:
     class DisclosedGlobIterator
@@ -132,8 +149,6 @@ private:
     Block block_for_format;
     std::vector<NameAndTypePair> requested_virtual_columns;
     UInt64 max_block_size;
-    bool need_path_column;
-    bool need_file_column;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
 

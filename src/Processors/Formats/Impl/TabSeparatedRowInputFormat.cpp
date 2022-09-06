@@ -40,7 +40,15 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     bool with_types_,
     bool is_raw_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
+    : RowInputFormatWithNamesAndTypes(
+        header_,
+        in_,
+        params_,
+        false,
+        with_names_,
+        with_types_,
+        format_settings_,
+        std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
 {
 }
 
@@ -80,7 +88,11 @@ String TabSeparatedFormatReader::readFieldIntoString()
 
 void TabSeparatedFormatReader::skipField()
 {
-    readFieldIntoString();
+    NullOutput out;
+    if (is_raw)
+        readStringInto(out, *in);
+    else
+        readEscapedStringInto(out, *in);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()
@@ -226,6 +238,12 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
     }
 }
 
+void TabSeparatedFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
+        readRow();
+}
+
 void TabSeparatedRowInputFormat::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(*in);
@@ -283,6 +301,14 @@ void registerTSVSchemaReader(FormatFactory & factory)
             factory.registerSchemaReader(format_name, [with_names, with_types, is_raw](ReadBuffer & buf, const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
+            });
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
+            {
+                String result = getAdditionalFormatInfoByEscapingRule(
+                    settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
+                if (!with_names)
+                    result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                return result;
             });
         };
 
@@ -347,6 +373,8 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
     }
 
     // We can use the same segmentation engine for TSKV.

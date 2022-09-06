@@ -34,67 +34,104 @@ CLICKHOUSE_QueryProcessingStage=(
     with_mergeable_state_after_aggregation_and_limit
 )
 
+CLICKHOUSE_QueryKind=(
+    initial_query
+    secondary_query
+    no_query
+)
+
+# SELECT name FROM system.formats ORDER BY name FORMAT LineAsString
 CLICKHOUSE_Format=(
-    CapnProto
-    PostgreSQLWire
-    MySQLWire
-    JSONStringsEachRowWithProgress
-    JSONEachRowWithProgress
-    JSONCompact
-    JSON
-    CSV
-    Vertical
-    ODBCDriver2
-    PrettySpaceNoEscapes
-    Pretty
-    JSONCompactStrings
-    PrettyNoEscapes
-    ArrowStream
-    TabSeparatedWithNames
-    Parquet
     Arrow
-    PrettyCompact
-    AvroConfluent
-    ORC
-    PrettyCompactNoEscapes
-    RawBLOB
-    Template
-    MsgPack
-    JSONCompactEachRow
-    CustomSeparated
-    TemplateIgnoreSpaces
-    Markdown
-    XML
-    ProtobufSingle
-    JSONCompactStringsEachRowWithNamesAndTypes
-    TSKV
-    TabSeparated
-    JSONStringEachRow
-    JSONStringsEachRow
-    TSVRaw
-    Values
-    TabSeparatedWithNamesAndTypes
-    PrettyCompactMonoBlock
-    TSVWithNamesAndTypes
+    ArrowStream
     Avro
-    RowBinaryWithNamesAndTypes
-    LineAsString
-    Native
-    JSONCompactEachRowWithNamesAndTypes
-    PrettySpace
-    Regexp
-    TSV
-    JSONEachRow
-    CustomSeparatedIgnoreSpaces
+    AvroConfluent
+    CSV
     CSVWithNames
-    JSONStrings
-    Null
-    TabSeparatedRaw
-    TSVWithNames
-    Protobuf
-    RowBinary
+    CSVWithNamesAndTypes
+    CapnProto
+    CustomSeparated
+    CustomSeparatedIgnoreSpaces
+    CustomSeparatedIgnoreSpacesWithNames
+    CustomSeparatedIgnoreSpacesWithNamesAndTypes
+    CustomSeparatedWithNames
+    CustomSeparatedWithNamesAndTypes
+    HiveText
+    JSON
+    JSONAsObject
     JSONAsString
+    JSONColumns
+    JSONColumnsWithMetadata
+    JSONCompact
+    JSONCompactColumns
+    JSONCompactEachRow
+    JSONCompactEachRowWithNames
+    JSONCompactEachRowWithNamesAndTypes
+    JSONCompactStrings
     JSONCompactStringsEachRow
+    JSONCompactStringsEachRowWithNames
+    JSONCompactStringsEachRowWithNamesAndTypes
+    JSONEachRow
+    JSONEachRowWithProgress
+    JSONLines
+    JSONStringEachRow
+    JSONStrings
+    JSONStringsEachRow
+    JSONStringsEachRowWithProgress
+    LineAsString
+    LineAsStringWithNames
+    LineAsStringWithNamesAndTypes
+    Markdown
+    MsgPack
+    MySQLDump
+    MySQLWire
+    NDJSON
+    Native
+    Null
+    ODBCDriver2
+    ORC
+    Parquet
+    PostgreSQLWire
+    Pretty
+    PrettyCompact
+    PrettyCompactMonoBlock
+    PrettyCompactNoEscapes
+    PrettyCompactNoEscapesMonoBlock
+    PrettyMonoBlock
+    PrettyNoEscapes
+    PrettyNoEscapesMonoBlock
+    PrettySpace
+    PrettySpaceMonoBlock
+    PrettySpaceNoEscapes
+    PrettySpaceNoEscapesMonoBlock
+    Prometheus
+    Protobuf
+    ProtobufList
+    ProtobufSingle
+    RawBLOB
+    Regexp
+    RowBinary
+    RowBinaryWithNames
+    RowBinaryWithNamesAndTypes
+    SQLInsert
+    TSKV
+    TSV
+    TSVRaw
+    TSVRawWithNames
+    TSVRawWithNamesAndTypes
+    TSVWithNames
+    TSVWithNamesAndTypes
+    TabSeparated
+    TabSeparatedRaw
+    TabSeparatedRawWithNames
+    TabSeparatedRawWithNamesAndTypes
+    TabSeparatedWithNames
+    TabSeparatedWithNamesAndTypes
+    Template
+    TemplateIgnoreSpaces
+    Values
+    Vertical
+    XML
 )
 
 function _clickhouse_bin_exist()
@@ -122,6 +159,10 @@ function _complete_for_clickhouse_generic_bin_impl()
             ;;
         --stage)
             COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryProcessingStage[*]}" -- "$cur") )
+            return 1
+            ;;
+        --query_kind)
+            COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryKind[*]}" -- "$cur") )
             return 1
             ;;
         --send_logs_level)

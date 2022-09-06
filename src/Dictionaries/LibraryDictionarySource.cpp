@@ -12,8 +12,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/registerDictionaries.h>
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
 
@@ -44,19 +42,21 @@ LibraryDictionarySource::LibraryDictionarySource(
     if (created_from_ddl && !fileOrSymlinkPathStartsWith(path, dictionaries_lib_path))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, dictionaries_lib_path);
 
+    namespace fs = std::filesystem;
+
     if (!fs::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);
 
     description.init(sample_block);
 
-    LibraryBridgeHelper::LibraryInitData library_data
+    ExternalDictionaryLibraryBridgeHelper::LibraryInitData library_data
     {
         .library_path = path,
         .library_settings = getLibrarySettingsString(config, config_prefix + ".settings"),
         .dict_attributes = getDictAttributesString()
     };
 
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
+    bridge_helper = std::make_shared<ExternalDictionaryLibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
 
     if (!bridge_helper->initLibrary())
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
@@ -87,7 +87,7 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , context(other.context)
     , description{other.description}
 {
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, other.bridge_helper->getLibraryData());
+    bridge_helper = std::make_shared<ExternalDictionaryLibraryBridgeHelper>(context, description.sample_block, dictionary_id, other.bridge_helper->getLibraryData());
     if (!bridge_helper->cloneLibrary(other.dictionary_id))
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to clone library");
 }
@@ -105,21 +105,21 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-Pipe LibraryDictionarySource::loadAll()
+QueryPipeline LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     return bridge_helper->loadAll();
 }
 
 
-Pipe LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
     return bridge_helper->loadIds(ids);
 }
 
 
-Pipe LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+QueryPipeline LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);

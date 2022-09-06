@@ -18,6 +18,9 @@ namespace ErrorCodes
 
 class IQueryPlanStep;
 
+struct StorageLimits;
+using StorageLimitsList = std::list<StorageLimits>;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
@@ -303,6 +306,56 @@ public:
     uint64_t getElapsedUs() const { return elapsed_us; }
     uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
     uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
+
+    struct ProcessorDataStats
+    {
+        size_t input_rows = 0;
+        size_t input_bytes = 0;
+        size_t output_rows = 0;
+        size_t output_bytes = 0;
+    };
+
+    ProcessorDataStats getProcessorDataStats() const
+    {
+        ProcessorDataStats stats;
+
+        for (const auto & input : inputs)
+        {
+            stats.input_rows += input.rows;
+            stats.input_bytes += input.bytes;
+        }
+
+        for (const auto & output : outputs)
+        {
+            stats.output_rows += output.rows;
+            stats.output_bytes += output.bytes;
+        }
+
+        return stats;
+    }
+
+    struct ReadProgressCounters
+    {
+        uint64_t read_rows = 0;
+        uint64_t read_bytes = 0;
+        uint64_t total_rows_approx = 0;
+    };
+
+    struct ReadProgress
+    {
+        ReadProgressCounters counters;
+        const StorageLimitsList & limits;
+    };
+
+    /// Set limits for current storage.
+    /// Different limits may be applied to different storages, we need to keep it per processor.
+    /// This method is need to be override only for sources.
+    virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}
+
+    /// This method is called for every processor without input ports.
+    /// Processor can return a new progress for the last read operation.
+    /// You should zero internal counters in the call, in order to make in idempotent.
+    virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
 protected:
     virtual void onCancel() {}

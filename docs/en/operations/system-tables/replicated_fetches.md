@@ -1,4 +1,7 @@
-# replicated_fetches {#system_tables-replicated_fetches}
+---
+slug: /en/operations/system-tables/replicated_fetches
+---
+# replicated_fetches
 
 Contains information about currently running background fetches.
 

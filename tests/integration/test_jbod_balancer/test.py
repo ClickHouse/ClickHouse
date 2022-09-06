@@ -158,7 +158,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             node.query("create table tmp2 as tmp1")
 
         node2.query("alter table tbl modify setting always_fetch_merged_part = 1")
-        p = Pool(20)
+        p = Pool(5)
 
         def task(i):
             print("Processing insert {}/{}".format(i, 200))
@@ -166,6 +166,8 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             node1.query(
                 "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
+
+            # Fill jbod disks with garbage data
             node1.query(
                 "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
