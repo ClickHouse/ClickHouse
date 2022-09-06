@@ -13,8 +13,9 @@ IPartMetadataManager::IPartMetadataManager(const IMergeTreeDataPart * part_) : p
 
 bool IPartMetadataManager::isCompressedFromFileName(const String & file_name)
 {
-    const auto & extension = fs::path(file_name).extension();
-    return isCompressedFromMrkExtension(extension) || isCompressedFromIndexExtension(extension);
+    std::string extension = fs::path(file_name).extension();
+    return (MarkType::isMarkFileExtension(extension) && MarkType(extension).compressed)
+        || isCompressedFromIndexExtension(extension);
 }
 
 }

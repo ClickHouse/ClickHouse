@@ -106,6 +106,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (remove_it != columns.end())
             columns.erase(remove_it);
     }
+
     return remove_files;
 }
 

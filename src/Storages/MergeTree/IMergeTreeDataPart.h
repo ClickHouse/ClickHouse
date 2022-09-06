@@ -23,6 +23,7 @@
 
 #include <shared_mutex>
 
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -158,7 +159,7 @@ public:
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
-    String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
+    String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
@@ -585,6 +586,5 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
-bool isCompressedFromMrkExtension(const String & mrk_extension);
 
 }

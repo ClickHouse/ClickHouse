@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
+
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -1648,7 +1649,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
         auto index_name_escaped = escapeForFileName(index_name);
 
         auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
-        auto index_marks_file_name = index_name_escaped + index_granularity_info.marks_file_extension;
+        auto index_marks_file_name = index_name_escaped + getMarksFileExtension();
 
         /// If part does not contain index
         auto bin_checksum = checksums.files.find(index_file_name);
@@ -1826,14 +1827,6 @@ std::optional<std::string> getIndexExtensionFromFilesystem(const DataPartStorage
 bool isCompressedFromIndexExtension(const String & index_extension)
 {
     return index_extension == getIndexExtension(true);
-}
-
-bool isCompressedFromMrkExtension(const String & mrk_extension)
-{
-    return mrk_extension == getNonAdaptiveMrkExtension(true)
-        || mrk_extension == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, true)
-        || mrk_extension == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, true)
-        || mrk_extension == getAdaptiveMrkExtension(MergeTreeDataPartType::InMemory, true);
 }
 
 }

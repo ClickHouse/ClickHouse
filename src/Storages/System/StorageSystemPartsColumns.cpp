@@ -261,7 +261,7 @@ void StorageSystemPartsColumns::processNextStorage(
                     size.data_uncompressed += bin_checksum->second.uncompressed_size;
                 }
 
-                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.marks_file_extension);
+                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.mark_type.getFileExtension());
                 if (mrk_checksum != part->checksums.files.end())
                     size.marks += mrk_checksum->second.file_size;
 
