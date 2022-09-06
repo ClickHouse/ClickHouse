@@ -13,7 +13,7 @@ OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4
 
 ## Get the Dataset {#get-the-dataset}
 
-1. Download the snapshot of the dataset from February 2021: [https://datasets.clickhouse.com/cell_towers.csv.xz] (729 MB).
+1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (729 MB).
 
 2. Validate the integrity (optional step):
 ```
