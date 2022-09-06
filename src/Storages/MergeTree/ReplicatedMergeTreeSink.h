@@ -69,25 +69,34 @@ private:
     };
 
     QuorumInfo quorum_info;
-    /// set quorum if majority_quorum is true and checks active replicas
-    void setMajorityQuorumAndCheckQuorum(zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Checks active replicas.
+    /// Returns total number of replicas.
+    size_t checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(
         zkutil::ZooKeeperPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id,
-        DataPartStorageBuilderPtr part_builder);
+        DataPartStorageBuilderPtr part_builder,
+        size_t replicas_num);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(
         zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
-        const std::string & quorum_path, const std::string & is_active_node_value) const;
+        const std::string & quorum_path, const std::string & is_active_node_value, size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
-    size_t quorum;
+
+    /// Empty means use majority quorum.
+    std::optional<size_t> required_quorum_size;
+
+    size_t getQuorumSize(size_t replicas_num) const;
+    bool isQuorumEnabled() const;
+
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
@@ -95,7 +104,6 @@ private:
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;
-    bool majority_quorum = false;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
@@ -110,10 +118,6 @@ private:
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
     void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
-    bool quorumEnabled() const
-    {
-        return majority_quorum || quorum != 0;
-    }
 };
 
 }
