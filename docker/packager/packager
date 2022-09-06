@@ -142,7 +142,7 @@ def parse_env_variables(
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
-    is_amd64_sse2 = compiler.endswidth(AMD64_SSE2_SUFFIX)
+    is_amd64_sse2 = compiler.endswith(AMD64_SSE2_SUFFIX)
 
     if is_cross_darwin:
         cc = compiler[: -len(DARWIN_SUFFIX)]
