@@ -1,6 +1,6 @@
 # We use vectorscan, a portable and API/ABI-compatible drop-in replacement for hyperscan.
 
-if (ARCH_AMD64)
+if (ARCH_AMD64 OR ARCH_AARCH64)
     option (ENABLE_VECTORSCAN "Enable vectorscan library" ${ENABLE_LIBRARIES})
 endif()
 

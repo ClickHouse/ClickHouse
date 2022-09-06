@@ -1,36 +1,35 @@
-
-#line 1 "Parser.rl"
+#line 1 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
 /*
- * Copyright (c) 2015-2017, Intel Corporation
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *  * Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
+* Copyright (c) 2015-2017, Intel Corporation
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions are met:
+*
+*  * Redistributions of source code must retain the above copyright notice,
+*    this list of conditions and the following disclaimer.
+*  * Redistributions in binary form must reproduce the above copyright
+*    notice, this list of conditions and the following disclaimer in the
+*    documentation and/or other materials provided with the distribution.
+*  * Neither the name of Intel Corporation nor the names of its contributors
+*    may be used to endorse or promote products derived from this software
+*    without specific prior written permission.
+*
+* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+* ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+* LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+* CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+* SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+* INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+* CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+* ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+* POSSIBILITY OF SUCH DAMAGE.
+*/
 
 /** \file
- * \brief Parser code (generated with Ragel from Parser.rl).
- */
+* \brief Parser code (generated with Ragel from Parser.rl).
+*/
 
 #include "config.h"
 
@@ -71,5535 +70,10656 @@
 using namespace std;
 
 namespace ue2 {
-
+	
 #define PUSH_SEQUENCE do {\
-        sequences.push_back(ExprState(currentSeq, (size_t)(ts - ptr), \
-                mode)); \
-    } while(0)
+		sequences.push_back(ExprState(currentSeq, (size_t)(ts - ptr), \
+		mode)); \
+	} while(0)
 #define POP_SEQUENCE do {\
-        currentSeq = sequences.back().seq; \
-        mode = sequences.back().mode; \
-        sequences.pop_back(); \
-    } while(0)
-
-namespace {
-
-/** \brief Structure representing current state as we're parsing (current
- * sequence, current options). Stored in the 'sequences' vector. */
-struct ExprState {
-    ExprState(ComponentSequence *seq_in, size_t offset,
-              const ParseMode &mode_in) :
-        seq(seq_in), seqOffset(offset), mode(mode_in) {}
-
-    ComponentSequence *seq; //!< current sequence
-    size_t seqOffset; //!< offset seq was entered, for error reporting
-    ParseMode mode; //!< current mode flags
-};
-
-} // namespace
-
-static
-unsigned parseAsDecimal(unsigned oct) {
-    // The input was parsed as octal, but should have been parsed as decimal.
-    // Deconstruct the octal number and reconstruct into decimal
-    unsigned ret = 0;
-    unsigned multiplier = 1;
-    while (oct) {
-        ret += (oct & 0x7) * multiplier;
-        oct >>= 3;
-        multiplier *= 10;
-    }
-    return ret;
-}
-
-/** \brief Maximum value for a positive integer. We use INT_MAX, as that's what
- * PCRE uses. */
-static constexpr u32 MAX_NUMBER = INT_MAX;
-
-static
-void pushDec(u32 *acc, char raw_digit) {
-    assert(raw_digit >= '0' && raw_digit <= '9');
-    u32 digit_val = raw_digit - '0';
-
-    // Ensure that we don't overflow.
-    u64a val = ((u64a)*acc * 10) + digit_val;
-    if (val > MAX_NUMBER) {
-        throw LocatedParseError("Number is too big");
-    }
-
-    *acc = verify_u32(val);
-}
-
-static
-void pushOct(u32 *acc, char raw_digit) {
-    assert(raw_digit >= '0' && raw_digit <= '7');
-    u32 digit_val = raw_digit - '0';
-
-    // Ensure that we don't overflow.
-    u64a val = ((u64a)*acc * 8) + digit_val;
-    if (val > MAX_NUMBER) {
-        throw LocatedParseError("Number is too big");
-    }
-
-    *acc = verify_u32(val);
-}
-
-static
-void throwInvalidRepeat(void) {
-    throw LocatedParseError("Invalid repeat");
-}
-
-static
-void throwInvalidUtf8(void) {
-    throw ParseError("Expression is not valid UTF-8.");
-}
-
-/**
- * Adds the given child component to the parent sequence, returning a pointer
- * to the new (child) "current sequence".
- */
-static
-ComponentSequence *enterSequence(ComponentSequence *parent,
-                                 unique_ptr<ComponentSequence> child) {
-    assert(parent);
-    assert(child);
-
-    ComponentSequence *seq = child.get();
-    parent->addComponent(move(child));
-    return seq;
-}
-
-static
-void addLiteral(ComponentSequence *currentSeq, char c, const ParseMode &mode) {
-    if (mode.utf8 && mode.caseless) {
-        /* leverage ComponentClass to generate the vertices */
-        auto cc = getComponentClass(mode);
-        assert(cc);
-        cc->add(c);
-        cc->finalize();
-        currentSeq->addComponent(move(cc));
-    } else {
-        currentSeq->addComponent(getLiteralComponentClass(c, mode.caseless));
-    }
-}
-
-static
-void addEscaped(ComponentSequence *currentSeq, unichar accum,
-                const ParseMode &mode, const char *err_msg) {
-    if (mode.utf8) {
-        /* leverage ComponentClass to generate the vertices */
-        auto cc = getComponentClass(mode);
-        assert(cc);
-        cc->add(accum);
-        cc->finalize();
-        currentSeq->addComponent(move(cc));
-    } else {
-        if (accum > 255) {
-            throw LocatedParseError(err_msg);
-        }
-        addLiteral(currentSeq, (char)accum, mode);
-    }
-}
-
-static
-void addEscapedOctal(ComponentSequence *currentSeq, unichar accum,
-                     const ParseMode &mode) {
-    addEscaped(currentSeq, accum, mode, "Octal value is greater than \\377");
-}
-
-static
-void addEscapedHex(ComponentSequence *currentSeq, unichar accum,
-                   const ParseMode &mode) {
-    addEscaped(currentSeq, accum, mode,
-               "Hexadecimal value is greater than \\xFF");
-}
-
+		currentSeq = sequences.back().seq; \
+		mode = sequences.back().mode; \
+		sequences.pop_back(); \
+	} while(0)
+	
+	namespace {
+		
+		/** \brief Structure representing current state as we're parsing (current
+		* sequence, current options). Stored in the 'sequences' vector. */
+		struct ExprState {
+			ExprState(ComponentSequence *seq_in, size_t offset,
+			const ParseMode &mode_in) :
+			seq(seq_in), seqOffset(offset), mode(mode_in) {}
+			
+			ComponentSequence *seq; //!< current sequence
+			size_t seqOffset; //!< offset seq was entered, for error reporting
+			ParseMode mode; //!< current mode flags
+		};
+		
+	} // namespace
+	
+	static
+	unsigned parseAsDecimal(unsigned oct) {
+		// The input was parsed as octal, but should have been parsed as decimal.
+		// Deconstruct the octal number and reconstruct into decimal
+		unsigned ret = 0;
+		unsigned multiplier = 1;
+		while (oct) {
+			ret += (oct & 0x7) * multiplier;
+			oct >>= 3;
+			multiplier *= 10;
+		}
+		return ret;
+	}
+	
+	/** \brief Maximum value for a positive integer. We use INT_MAX, as that's what
+	* PCRE uses. */
+	static constexpr u32 MAX_NUMBER = INT_MAX;
+	
+	static
+	void pushDec(u32 *acc, char raw_digit) {
+		assert(raw_digit >= '0' && raw_digit <= '9');
+		u32 digit_val = raw_digit - '0';
+		
+		// Ensure that we don't overflow.
+		u64a val = ((u64a)*acc * 10) + digit_val;
+		if (val > MAX_NUMBER) {
+			throw LocatedParseError("Number is too big");
+		}
+		
+		*acc = verify_u32(val);
+	}
+	
+	static
+	void pushOct(u32 *acc, char raw_digit) {
+		assert(raw_digit >= '0' && raw_digit <= '7');
+		u32 digit_val = raw_digit - '0';
+		
+		// Ensure that we don't overflow.
+		u64a val = ((u64a)*acc * 8) + digit_val;
+		if (val > MAX_NUMBER) {
+			throw LocatedParseError("Number is too big");
+		}
+		
+		*acc = verify_u32(val);
+	}
+	
+	static
+	void throwInvalidRepeat(void) {
+		throw LocatedParseError("Invalid repeat");
+	}
+	
+	static
+	void throwInvalidUtf8(void) {
+		throw ParseError("Expression is not valid UTF-8.");
+	}
+	
+	/**
+	* Adds the given child component to the parent sequence, returning a pointer
+	* to the new (child) "current sequence".
+	*/
+	static
+	ComponentSequence *enterSequence(ComponentSequence *parent,
+	unique_ptr<ComponentSequence> child) {
+		assert(parent);
+		assert(child);
+		
+		ComponentSequence *seq = child.get();
+		parent->addComponent(move(child));
+		return seq;
+	}
+	
+	static
+	void addLiteral(ComponentSequence *currentSeq, char c, const ParseMode &mode) {
+		if (mode.utf8 && mode.caseless) {
+			/* leverage ComponentClass to generate the vertices */
+			auto cc = getComponentClass(mode);
+			assert(cc);
+			cc->add(c);
+			cc->finalize();
+			currentSeq->addComponent(move(cc));
+		} else {
+			currentSeq->addComponent(getLiteralComponentClass(c, mode.caseless));
+		}
+	}
+	
+	static
+	void addEscaped(ComponentSequence *currentSeq, unichar accum,
+	const ParseMode &mode, const char *err_msg) {
+		if (mode.utf8) {
+			/* leverage ComponentClass to generate the vertices */
+			auto cc = getComponentClass(mode);
+			assert(cc);
+			cc->add(accum);
+			cc->finalize();
+			currentSeq->addComponent(move(cc));
+		} else {
+			if (accum > 255) {
+				throw LocatedParseError(err_msg);
+			}
+			addLiteral(currentSeq, (char)accum, mode);
+		}
+	}
+	
+	static
+	void addEscapedOctal(ComponentSequence *currentSeq, unichar accum,
+	const ParseMode &mode) {
+		addEscaped(currentSeq, accum, mode, "Octal value is greater than \\377");
+	}
+	
+	static
+	void addEscapedHex(ComponentSequence *currentSeq, unichar accum,
+	const ParseMode &mode) {
+		addEscaped(currentSeq, accum, mode,
+		"Hexadecimal value is greater than \\xFF");
+	}
+	
 #define SLASH_C_ERROR "\\c must be followed by an ASCII character"
+	
+	static
+	u8 decodeCtrl(char raw) {
+		if (raw & 0x80) {
+			throw LocatedParseError(SLASH_C_ERROR);
+		}
+		return mytoupper(raw) ^ 0x40;
+	}
+	
+	static
+	unichar readUtf8CodePoint2c(const char *s) {
+		auto *ts = (const u8 *)s;
+		assert(ts[0] >= 0xc0 && ts[0] < 0xe0);
+		assert(ts[1] >= 0x80 && ts[1] < 0xc0);
+		unichar val = ts[0] & 0x1f;
+		val <<= 6;
+		val |= ts[1] & 0x3f;
+		DEBUG_PRINTF("utf8 %02hhx %02hhx ->\\x{%x}\n", ts[0],
+		ts[1], val);
+		return val;
+	}
+	
+	static
+	unichar readUtf8CodePoint3c(const char *s) {
+		auto *ts = (const u8 *)s;
+		assert(ts[0] >= 0xe0 && ts[0] < 0xf0);
+		assert(ts[1] >= 0x80 && ts[1] < 0xc0);
+		assert(ts[2] >= 0x80 && ts[2] < 0xc0);
+		unichar val = ts[0] & 0x0f;
+		val <<= 6;
+		val |= ts[1] & 0x3f;
+		val <<= 6;
+		val |= ts[2] & 0x3f;
+		DEBUG_PRINTF("utf8 %02hhx %02hhx %02hhx ->\\x{%x}\n", ts[0],
+		ts[1], ts[2], val);
+		return val;
+	}
+	
+	static
+	unichar readUtf8CodePoint4c(const char *s) {
+		auto *ts = (const u8 *)s;
+		assert(ts[0] >= 0xf0 && ts[0] < 0xf8);
+		assert(ts[1] >= 0x80 && ts[1] < 0xc0);
+		assert(ts[2] >= 0x80 && ts[2] < 0xc0);
+		assert(ts[3] >= 0x80 && ts[3] < 0xc0);
+		unichar val = ts[0] & 0x07;
+		val <<= 6;
+		val |= ts[1] & 0x3f;
+		val <<= 6;
+		val |= ts[2] & 0x3f;
+		val <<= 6;
+		val |= ts[3] & 0x3f;
+		DEBUG_PRINTF("utf8 %02hhx %02hhx %02hhx %02hhx ->\\x{%x}\n", ts[0],
+		ts[1], ts[2], ts[3], val);
+		return val;
+	}
+	
+	
+#line 1909 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
 
-static
-u8 decodeCtrl(char raw) {
-    if (raw & 0x80) {
-        throw LocatedParseError(SLASH_C_ERROR);
-    }
-    return mytoupper(raw) ^ 0x40;
-}
+	
 
-static
-unichar readUtf8CodePoint2c(const char *s) {
-    auto *ts = (const u8 *)s;
-    assert(ts[0] >= 0xc0 && ts[0] < 0xe0);
-    assert(ts[1] >= 0x80 && ts[1] < 0xc0);
-    unichar val = ts[0] & 0x1f;
-    val <<= 6;
-    val |= ts[1] & 0x3f;
-    DEBUG_PRINTF("utf8 %02hhx %02hhx ->\\x{%x}\n", ts[0],
-                 ts[1], val);
-    return val;
-}
-
-static
-unichar readUtf8CodePoint3c(const char *s) {
-    auto *ts = (const u8 *)s;
-    assert(ts[0] >= 0xe0 && ts[0] < 0xf0);
-    assert(ts[1] >= 0x80 && ts[1] < 0xc0);
-    assert(ts[2] >= 0x80 && ts[2] < 0xc0);
-    unichar val = ts[0] & 0x0f;
-    val <<= 6;
-    val |= ts[1] & 0x3f;
-    val <<= 6;
-    val |= ts[2] & 0x3f;
-    DEBUG_PRINTF("utf8 %02hhx %02hhx %02hhx ->\\x{%x}\n", ts[0],
-                 ts[1], ts[2], val);
-    return val;
-}
-
-static
-unichar readUtf8CodePoint4c(const char *s) {
-    auto *ts = (const u8 *)s;
-    assert(ts[0] >= 0xf0 && ts[0] < 0xf8);
-    assert(ts[1] >= 0x80 && ts[1] < 0xc0);
-    assert(ts[2] >= 0x80 && ts[2] < 0xc0);
-    assert(ts[3] >= 0x80 && ts[3] < 0xc0);
-    unichar val = ts[0] & 0x07;
-    val <<= 6;
-    val |= ts[1] & 0x3f;
-    val <<= 6;
-    val |= ts[2] & 0x3f;
-    val <<= 6;
-    val |= ts[3] & 0x3f;
-    DEBUG_PRINTF("utf8 %02hhx %02hhx %02hhx %02hhx ->\\x{%x}\n", ts[0],
-                 ts[1], ts[2], ts[3], val);
-    return val;
-}
-
-
-#line 1909 "Parser.rl"
-
-
-
-#line 281 "Parser.cpp"
+#line 277 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
 static const short _regex_actions[] = {
-	0, 1, 0, 1, 1, 1, 2, 1, 
-	3, 1, 4, 1, 7, 1, 8, 1, 
-	9, 1, 10, 1, 11, 1, 12, 1, 
-	13, 1, 15, 1, 16, 1, 17, 1, 
-	18, 1, 19, 1, 20, 1, 21, 1, 
-	22, 1, 23, 1, 24, 1, 25, 1, 
-	26, 1, 27, 1, 28, 1, 29, 1, 
-	30, 1, 31, 1, 32, 1, 33, 1, 
-	34, 1, 35, 1, 36, 1, 37, 1, 
-	38, 1, 39, 1, 40, 1, 41, 1, 
-	42, 1, 43, 1, 44, 1, 45, 1, 
-	46, 1, 47, 1, 48, 1, 49, 1, 
-	50, 1, 51, 1, 52, 1, 53, 1, 
-	54, 1, 55, 1, 56, 1, 57, 1, 
-	58, 1, 59, 1, 60, 1, 61, 1, 
-	62, 1, 63, 1, 64, 1, 65, 1, 
-	66, 1, 67, 1, 68, 1, 69, 1, 
-	70, 1, 71, 1, 72, 1, 73, 1, 
-	74, 1, 75, 1, 76, 1, 77, 1, 
-	78, 1, 79, 1, 80, 1, 81, 1, 
-	82, 1, 83, 1, 84, 1, 85, 1, 
-	86, 1, 87, 1, 88, 1, 89, 1, 
-	90, 1, 91, 1, 92, 1, 93, 1, 
-	94, 1, 95, 1, 96, 1, 97, 1, 
-	98, 1, 99, 1, 100, 1, 101, 1, 
-	102, 1, 103, 1, 104, 1, 105, 1, 
-	106, 1, 107, 1, 108, 1, 109, 1, 
-	110, 1, 111, 1, 112, 1, 113, 1, 
-	114, 1, 115, 1, 116, 1, 117, 1, 
-	118, 1, 119, 1, 120, 1, 121, 1, 
-	122, 1, 123, 1, 124, 1, 125, 1, 
-	126, 1, 127, 1, 128, 1, 129, 1, 
-	130, 1, 131, 1, 132, 1, 133, 1, 
-	134, 1, 135, 1, 136, 1, 137, 1, 
-	138, 1, 139, 1, 140, 1, 141, 1, 
-	142, 1, 143, 1, 144, 1, 145, 1, 
-	146, 1, 147, 1, 148, 1, 149, 1, 
-	150, 1, 151, 1, 152, 1, 153, 1, 
-	154, 1, 155, 1, 156, 1, 157, 1, 
-	158, 1, 159, 1, 160, 1, 161, 1, 
-	162, 1, 163, 1, 164, 1, 165, 1, 
-	166, 1, 167, 1, 168, 1, 169, 1, 
-	170, 1, 171, 1, 172, 1, 173, 1, 
-	174, 1, 175, 1, 176, 1, 177, 1, 
-	178, 1, 179, 1, 180, 1, 181, 1, 
-	182, 1, 183, 1, 184, 1, 185, 1, 
-	186, 1, 187, 1, 188, 1, 189, 1, 
-	190, 1, 191, 1, 192, 1, 193, 1, 
-	194, 1, 195, 1, 196, 1, 197, 1, 
-	198, 1, 199, 1, 200, 1, 201, 1, 
-	202, 1, 203, 1, 204, 1, 205, 1, 
-	206, 1, 207, 1, 208, 1, 209, 1, 
-	210, 1, 211, 1, 212, 1, 213, 1, 
-	214, 1, 215, 1, 216, 1, 217, 1, 
-	218, 1, 219, 1, 220, 1, 221, 1, 
-	222, 1, 223, 1, 224, 1, 225, 1, 
-	226, 1, 227, 1, 228, 1, 229, 1, 
-	230, 1, 231, 1, 232, 1, 233, 1, 
-	234, 1, 235, 1, 236, 1, 237, 1, 
-	240, 1, 242, 1, 243, 1, 244, 1, 
-	245, 1, 246, 1, 247, 1, 248, 1, 
-	249, 1, 250, 1, 251, 1, 252, 1, 
-	253, 1, 254, 1, 255, 1, 256, 1, 
-	257, 1, 258, 1, 259, 1, 260, 1, 
-	261, 1, 262, 1, 263, 1, 264, 1, 
-	265, 1, 266, 1, 267, 1, 268, 1, 
-	269, 1, 270, 1, 271, 1, 272, 1, 
-	273, 1, 274, 1, 275, 1, 276, 1, 
-	277, 1, 278, 1, 279, 1, 280, 1, 
-	281, 1, 282, 1, 283, 1, 284, 1, 
-	285, 1, 286, 1, 287, 1, 288, 1, 
-	289, 1, 290, 1, 291, 1, 292, 1, 
-	293, 1, 294, 1, 295, 1, 296, 1, 
-	297, 1, 298, 1, 299, 1, 300, 1, 
-	301, 1, 302, 1, 303, 1, 307, 1, 
-	308, 1, 309, 1, 310, 1, 311, 1, 
-	312, 1, 313, 1, 314, 1, 315, 1, 
-	316, 1, 317, 1, 318, 1, 319, 1, 
-	320, 1, 321, 1, 322, 1, 323, 1, 
-	324, 1, 325, 1, 326, 1, 327, 1, 
-	328, 1, 329, 1, 330, 1, 331, 1, 
-	332, 1, 333, 1, 334, 1, 335, 1, 
-	336, 1, 337, 1, 338, 1, 342, 1, 
-	343, 1, 344, 1, 345, 1, 346, 1, 
-	347, 1, 348, 1, 349, 1, 350, 1, 
-	352, 1, 353, 1, 354, 1, 355, 1, 
-	356, 1, 357, 1, 358, 1, 359, 1, 
-	360, 1, 361, 1, 362, 1, 363, 1, 
-	364, 1, 365, 1, 366, 1, 367, 1, 
-	368, 1, 369, 1, 370, 1, 371, 1, 
-	372, 1, 373, 1, 374, 1, 375, 1, 
-	376, 1, 377, 1, 378, 1, 379, 1, 
-	380, 1, 381, 1, 382, 1, 383, 1, 
-	384, 1, 385, 1, 386, 1, 387, 1, 
-	388, 1, 389, 1, 390, 1, 391, 1, 
-	392, 1, 393, 1, 394, 1, 395, 1, 
-	396, 1, 397, 1, 398, 1, 399, 1, 
-	400, 1, 401, 1, 402, 1, 403, 1, 
-	404, 1, 405, 1, 406, 1, 407, 1, 
-	408, 1, 409, 1, 410, 1, 411, 1, 
-	412, 1, 413, 1, 414, 1, 415, 1, 
-	416, 1, 417, 1, 418, 1, 419, 1, 
-	420, 1, 421, 1, 422, 1, 423, 1, 
-	424, 1, 425, 1, 426, 1, 427, 1, 
-	428, 1, 429, 1, 430, 1, 431, 1, 
-	432, 1, 433, 1, 434, 1, 435, 1, 
-	436, 2, 3, 0, 2, 4, 5, 2, 
-	5, 1, 2, 9, 10, 2, 9, 238, 
-	2, 9, 239, 2, 9, 339, 2, 10, 
-	1, 2, 10, 340, 2, 10, 341, 2, 
-	11, 241, 2, 11, 351, 2, 12, 241, 
-	2, 12, 351, 2, 13, 241, 2, 13, 
-	351, 2, 14, 375, 2, 14, 376, 2, 
-	25, 0, 2, 25, 3, 2, 25, 6, 
-	2, 25, 14, 3, 25, 5, 306, 3, 
-	25, 10, 305, 3, 25, 14, 15, 4, 
-	25, 9, 304, 10
-};
+		0, 1, 0, 1, 1, 1, 2, 1,
+		3, 1, 4, 1, 7, 1, 8, 1,
+		9, 1, 10, 1, 11, 1, 12, 1,
+		13, 1, 15, 1, 16, 1, 17, 1,
+		18, 1, 19, 1, 20, 1, 21, 1,
+		22, 1, 23, 1, 24, 1, 25, 1,
+		26, 1, 27, 1, 28, 1, 29, 1,
+		30, 1, 31, 1, 32, 1, 33, 1,
+		34, 1, 35, 1, 36, 1, 37, 1,
+		38, 1, 39, 1, 40, 1, 41, 1,
+		42, 1, 43, 1, 44, 1, 45, 1,
+		46, 1, 47, 1, 48, 1, 49, 1,
+		50, 1, 51, 1, 52, 1, 53, 1,
+		54, 1, 55, 1, 56, 1, 57, 1,
+		58, 1, 59, 1, 60, 1, 61, 1,
+		62, 1, 63, 1, 64, 1, 65, 1,
+		66, 1, 67, 1, 68, 1, 69, 1,
+		70, 1, 71, 1, 72, 1, 73, 1,
+		74, 1, 75, 1, 76, 1, 77, 1,
+		78, 1, 79, 1, 80, 1, 81, 1,
+		82, 1, 83, 1, 84, 1, 85, 1,
+		86, 1, 87, 1, 88, 1, 89, 1,
+		90, 1, 91, 1, 92, 1, 93, 1,
+		94, 1, 95, 1, 96, 1, 97, 1,
+		98, 1, 99, 1, 100, 1, 101, 1,
+		102, 1, 103, 1, 104, 1, 105, 1,
+		106, 1, 107, 1, 108, 1, 109, 1,
+		110, 1, 111, 1, 112, 1, 113, 1,
+		114, 1, 115, 1, 116, 1, 117, 1,
+		118, 1, 119, 1, 120, 1, 121, 1,
+		122, 1, 123, 1, 124, 1, 125, 1,
+		126, 1, 127, 1, 128, 1, 129, 1,
+		130, 1, 131, 1, 132, 1, 133, 1,
+		134, 1, 135, 1, 136, 1, 137, 1,
+		138, 1, 139, 1, 140, 1, 141, 1,
+		142, 1, 143, 1, 144, 1, 145, 1,
+		146, 1, 147, 1, 148, 1, 149, 1,
+		150, 1, 151, 1, 152, 1, 153, 1,
+		154, 1, 155, 1, 156, 1, 157, 1,
+		158, 1, 159, 1, 160, 1, 161, 1,
+		162, 1, 163, 1, 164, 1, 165, 1,
+		166, 1, 167, 1, 168, 1, 169, 1,
+		170, 1, 171, 1, 172, 1, 173, 1,
+		174, 1, 175, 1, 176, 1, 177, 1,
+		178, 1, 179, 1, 180, 1, 181, 1,
+		182, 1, 183, 1, 184, 1, 185, 1,
+		186, 1, 187, 1, 188, 1, 189, 1,
+		190, 1, 191, 1, 192, 1, 193, 1,
+		194, 1, 195, 1, 196, 1, 197, 1,
+		198, 1, 199, 1, 200, 1, 201, 1,
+		202, 1, 203, 1, 204, 1, 205, 1,
+		206, 1, 207, 1, 208, 1, 209, 1,
+		210, 1, 211, 1, 212, 1, 213, 1,
+		214, 1, 215, 1, 216, 1, 217, 1,
+		218, 1, 219, 1, 220, 1, 221, 1,
+		222, 1, 223, 1, 224, 1, 225, 1,
+		226, 1, 227, 1, 228, 1, 229, 1,
+		230, 1, 231, 1, 232, 1, 233, 1,
+		234, 1, 235, 1, 236, 1, 237, 1,
+		240, 1, 242, 1, 243, 1, 244, 1,
+		245, 1, 246, 1, 247, 1, 248, 1,
+		249, 1, 250, 1, 251, 1, 252, 1,
+		253, 1, 254, 1, 255, 1, 256, 1,
+		257, 1, 258, 1, 259, 1, 260, 1,
+		261, 1, 262, 1, 263, 1, 264, 1,
+		265, 1, 266, 1, 267, 1, 268, 1,
+		269, 1, 270, 1, 271, 1, 272, 1,
+		273, 1, 274, 1, 275, 1, 276, 1,
+		277, 1, 278, 1, 279, 1, 280, 1,
+		281, 1, 282, 1, 283, 1, 284, 1,
+		285, 1, 286, 1, 287, 1, 288, 1,
+		289, 1, 290, 1, 291, 1, 292, 1,
+		293, 1, 294, 1, 295, 1, 296, 1,
+		297, 1, 298, 1, 299, 1, 300, 1,
+		301, 1, 302, 1, 303, 1, 307, 1,
+		308, 1, 309, 1, 310, 1, 311, 1,
+		312, 1, 313, 1, 314, 1, 315, 1,
+		316, 1, 317, 1, 318, 1, 319, 1,
+		320, 1, 321, 1, 322, 1, 323, 1,
+		324, 1, 325, 1, 326, 1, 327, 1,
+		328, 1, 329, 1, 330, 1, 331, 1,
+		332, 1, 333, 1, 334, 1, 335, 1,
+		336, 1, 337, 1, 338, 1, 342, 1,
+		343, 1, 344, 1, 345, 1, 346, 1,
+		347, 1, 348, 1, 349, 1, 350, 1,
+		352, 1, 353, 1, 354, 1, 355, 1,
+		356, 1, 357, 1, 358, 1, 359, 1,
+		360, 1, 361, 1, 362, 1, 363, 1,
+		364, 1, 365, 1, 366, 1, 367, 1,
+		368, 1, 369, 1, 370, 1, 371, 1,
+		372, 1, 373, 1, 374, 1, 375, 1,
+		376, 1, 377, 1, 378, 1, 379, 1,
+		380, 1, 381, 1, 382, 1, 383, 1,
+		384, 1, 385, 1, 386, 1, 387, 1,
+		388, 1, 389, 1, 390, 1, 391, 1,
+		392, 1, 393, 1, 394, 1, 395, 1,
+		396, 1, 397, 1, 398, 1, 399, 1,
+		400, 1, 401, 1, 402, 1, 403, 1,
+		404, 1, 405, 1, 406, 1, 407, 1,
+		408, 1, 409, 1, 410, 1, 411, 1,
+		412, 1, 413, 1, 414, 1, 415, 1,
+		416, 1, 417, 1, 418, 1, 419, 1,
+		420, 1, 421, 1, 422, 1, 423, 1,
+		424, 1, 425, 1, 426, 1, 427, 1,
+		428, 1, 429, 1, 430, 1, 431, 1,
+		432, 1, 433, 1, 434, 1, 435, 1,
+		436, 2, 3, 0, 2, 4, 5, 2,
+		5, 1, 2, 9, 10, 2, 9, 238,
+		2, 9, 239, 2, 9, 339, 2, 10,
+		1, 2, 10, 340, 2, 10, 341, 2,
+		11, 241, 2, 11, 351, 2, 12, 241,
+		2, 12, 351, 2, 13, 241, 2, 13,
+		351, 2, 14, 375, 2, 14, 376, 2,
+		25, 0, 2, 25, 3, 2, 25, 6,
+		2, 25, 14, 3, 25, 5, 306, 3,
+		25, 10, 305, 3, 25, 14, 15, 4,
+		25, 9, 304, 10, 0
+	};
+	
+	static const short _regex_key_offsets[] = {
+		0, 0, 1, 23, 31, 39, 46, 54,
+		55, 63, 71, 79, 86, 94, 97, 99,
+		108, 115, 123, 131, 134, 140, 148, 151,
+		158, 165, 173, 180, 184, 191, 194, 197,
+		199, 202, 205, 207, 210, 213, 215, 216,
+		218, 219, 227, 229, 232, 235, 236, 244,
+		252, 260, 268, 275, 283, 290, 298, 305,
+		313, 315, 318, 325, 329, 332, 335, 337,
+		339, 341, 342, 344, 345, 347, 349, 350,
+		351, 353, 354, 355, 356, 357, 358, 359,
+		360, 361, 362, 363, 364, 365, 366, 369,
+		370, 371, 372, 373, 374, 375, 376, 377,
+		378, 379, 380, 381, 382, 383, 384, 385,
+		386, 387, 388, 389, 390, 392, 393, 394,
+		395, 396, 397, 399, 400, 401, 402, 403,
+		404, 405, 406, 408, 409, 410, 411, 412,
+		413, 414, 415, 416, 417, 418, 419, 420,
+		421, 422, 423, 424, 425, 426, 427, 429,
+		430, 431, 432, 433, 434, 435, 436, 437,
+		438, 439, 440, 441, 442, 443, 444, 445,
+		446, 447, 448, 450, 451, 452, 453, 454,
+		455, 456, 457, 458, 459, 461, 462, 463,
+		464, 465, 466, 467, 468, 469, 470, 471,
+		472, 473, 474, 475, 476, 477, 478, 479,
+		480, 481, 482, 483, 484, 485, 486, 487,
+		488, 489, 490, 491, 492, 493, 494, 495,
+		496, 497, 498, 499, 500, 501, 502, 503,
+		504, 505, 506, 507, 508, 509, 510, 511,
+		512, 513, 514, 515, 516, 517, 519, 520,
+		521, 522, 523, 524, 525, 526, 527, 528,
+		529, 530, 531, 532, 533, 534, 535, 536,
+		537, 538, 539, 540, 541, 542, 543, 544,
+		545, 546, 547, 548, 549, 550, 551, 552,
+		553, 554, 555, 556, 557, 558, 559, 561,
+		562, 563, 564, 565, 566, 567, 568, 569,
+		570, 571, 572, 573, 574, 575, 576, 577,
+		578, 579, 580, 582, 583, 584, 585, 586,
+		587, 588, 589, 590, 591, 592, 593, 594,
+		595, 596, 597, 601, 602, 603, 604, 605,
+		606, 607, 608, 609, 610, 611, 612, 613,
+		614, 615, 616, 617, 618, 620, 621, 622,
+		623, 624, 625, 626, 627, 628, 629, 631,
+		632, 633, 634, 635, 636, 637, 640, 641,
+		642, 643, 644, 645, 646, 647, 648, 650,
+		651, 652, 653, 654, 655, 656, 658, 659,
+		660, 661, 662, 663, 664, 665, 666, 667,
+		668, 669, 670, 671, 672, 673, 674, 675,
+		676, 677, 678, 679, 680, 681, 682, 683,
+		684, 685, 686, 687, 688, 689, 690, 691,
+		692, 693, 694, 695, 696, 697, 698, 699,
+		700, 701, 702, 704, 705, 706, 707, 708,
+		709, 710, 714, 715, 716, 717, 718, 719,
+		720, 721, 722, 723, 724, 725, 726, 727,
+		728, 729, 730, 731, 732, 733, 734, 735,
+		736, 737, 738, 739, 740, 741, 742, 743,
+		744, 745, 746, 747, 748, 749, 750, 752,
+		753, 754, 755, 756, 757, 758, 759, 760,
+		761, 762, 763, 764, 765, 766, 767, 768,
+		769, 770, 771, 773, 774, 775, 776, 777,
+		778, 779, 780, 781, 782, 783, 784, 785,
+		786, 787, 788, 789, 790, 791, 792, 793,
+		794, 795, 796, 797, 798, 799, 800, 801,
+		802, 803, 805, 806, 807, 808, 809, 810,
+		811, 812, 813, 814, 815, 816, 817, 820,
+		822, 823, 824, 825, 826, 827, 828, 829,
+		830, 833, 834, 835, 836, 837, 838, 839,
+		840, 841, 842, 843, 844, 845, 846, 847,
+		849, 850, 851, 853, 854, 855, 856, 857,
+		858, 859, 860, 861, 862, 863, 864, 865,
+		866, 867, 868, 869, 870, 871, 872, 873,
+		874, 875, 876, 877, 880, 883, 885, 900,
+		903, 906, 908, 922, 927, 932, 936, 940,
+		943, 946, 950, 954, 957, 960, 964, 968,
+		972, 975, 978, 982, 986, 990, 994, 997,
+		1000, 1004, 1008, 1012, 1016, 1019, 1022, 1026,
+		1030, 1034, 1038, 1041, 1044, 1048, 1052, 1056,
+		1060, 1063, 1066, 1070, 1074, 1078, 1082, 1085,
+		1088, 1093, 1097, 1101, 1105, 1108, 1111, 1115,
+		1119, 1123, 1126, 1129, 1133, 1137, 1141, 1145,
+		1148, 1151, 1155, 1159, 1163, 1167, 1170, 1173,
+		1177, 1181, 1185, 1188, 1191, 1195, 1199, 1203,
+		1207, 1211, 1214, 1217, 1222, 1227, 1231, 1235,
+		1238, 1241, 1245, 1249, 1252, 1255, 1259, 1263,
+		1267, 1270, 1273, 1277, 1281, 1285, 1289, 1292,
+		1295, 1299, 1303, 1307, 1311, 1314, 1317, 1321,
+		1325, 1329, 1333, 1336, 1339, 1343, 1347, 1351,
+		1355, 1358, 1361, 1365, 1369, 1373, 1377, 1380,
+		1383, 1388, 1392, 1396, 1400, 1403, 1406, 1410,
+		1414, 1418, 1421, 1424, 1428, 1432, 1436, 1440,
+		1443, 1446, 1450, 1454, 1458, 1462, 1465, 1468,
+		1472, 1476, 1480, 1483, 1486, 1490, 1494, 1498,
+		1502, 1506, 1509, 1512, 1515, 1518, 1520, 1522,
+		1525, 1532, 1534, 1536, 1538, 1540, 1542, 1544,
+		1546, 1548, 1550, 1577, 1579, 1586, 1593, 1607,
+		1609, 1615, 1618, 1627, 1628, 1631, 1634, 1641,
+		1643, 1645, 1647, 1650, 1695, 1697, 1699, 1703,
+		1707, 1709, 1710, 1710, 1716, 1718, 1720, 1722,
+		1724, 1727, 1728, 1729, 1736, 1742, 1748, 1750,
+		1752, 1754, 1756, 1758, 1760, 1761, 1764, 1787,
+		1790, 1795, 1804, 1806, 1807, 1809, 1814, 1817,
+		1819, 1821, 1822, 1824, 1834, 1840, 1841, 1846,
+		1850, 1858, 1860, 1869, 1873, 1874, 1875, 1879,
+		1880, 1883, 1883, 1890, 1904, 1907, 1946, 1948,
+		1950, 1952, 1954, 1955, 1955, 1956, 1957, 1964,
+		1970, 1976, 1978, 1980, 1982, 1985, 1987, 1998,
+		1999, 2001, 2003, 2005, 2016, 2017, 2019, 2021,
+		2023, 2024, 0
+	};
+	
+	static const char _regex_trans_keys[] = {
+		41u, 33u, 35u, 38u, 39u, 40u, 41u, 43u,
+		45u, 58u, 60u, 61u, 62u, 63u, 67u, 80u,
+		105u, 109u, 115u, 120u, 123u, 48u, 57u, 41u,
+		95u, 48u, 57u, 65u, 90u, 97u, 122u, 39u,
+		95u, 48u, 57u, 65u, 90u, 97u, 122u, 95u,
+		48u, 57u, 65u, 90u, 97u, 122u, 39u, 95u,
+		48u, 57u, 65u, 90u, 97u, 122u, 41u, 41u,
+		95u, 48u, 57u, 65u, 90u, 97u, 122u, 41u,
+		95u, 48u, 57u, 65u, 90u, 97u, 122u, 41u,
+		95u, 48u, 57u, 65u, 90u, 97u, 122u, 95u,
+		48u, 57u, 65u, 90u, 97u, 122u, 62u, 95u,
+		48u, 57u, 65u, 90u, 97u, 122u, 33u, 60u,
+		61u, 33u, 61u, 38u, 41u, 95u, 48u, 57u,
+		65u, 90u, 97u, 122u, 95u, 48u, 57u, 65u,
+		90u, 97u, 122u, 41u, 95u, 48u, 57u, 65u,
+		90u, 97u, 122u, 41u, 95u, 48u, 57u, 65u,
+		90u, 97u, 122u, 41u, 48u, 57u, 41u, 58u,
+		105u, 109u, 115u, 120u, 62u, 95u, 48u, 57u,
+		65u, 90u, 97u, 122u, 41u, 48u, 57u, 95u,
+		48u, 57u, 65u, 90u, 97u, 122u, 95u, 48u,
+		57u, 65u, 90u, 97u, 122u, 41u, 95u, 48u,
+		57u, 65u, 90u, 97u, 122u, 95u, 48u, 57u,
+		65u, 90u, 97u, 122u, 105u, 109u, 115u, 120u,
+		41u, 45u, 58u, 105u, 109u, 115u, 120u, 46u,
+		92u, 93u, 46u, 92u, 93u, 46u, 92u, 58u,
+		92u, 93u, 58u, 92u, 93u, 58u, 92u, 61u,
+		92u, 93u, 61u, 92u, 93u, 61u, 92u, 39u,
+		48u, 57u, 62u, 45u, 95u, 48u, 57u, 65u,
+		90u, 97u, 122u, 48u, 57u, 125u, 48u, 57u,
+		125u, 48u, 57u, 125u, 95u, 125u, 48u, 57u,
+		65u, 90u, 97u, 122u, 95u, 125u, 48u, 57u,
+		65u, 90u, 97u, 122u, 95u, 125u, 48u, 57u,
+		65u, 90u, 97u, 122u, 95u, 125u, 48u, 57u,
+		65u, 90u, 97u, 122u, 95u, 48u, 57u, 65u,
+		90u, 97u, 122u, 39u, 95u, 48u, 57u, 65u,
+		90u, 97u, 122u, 95u, 48u, 57u, 65u, 90u,
+		97u, 122u, 62u, 95u, 48u, 57u, 65u, 90u,
+		97u, 122u, 95u, 48u, 57u, 65u, 90u, 97u,
+		122u, 95u, 125u, 48u, 57u, 65u, 90u, 97u,
+		122u, 48u, 55u, 125u, 48u, 55u, 125u, 48u,
+		57u, 65u, 70u, 97u, 102u, 44u, 125u, 48u,
+		57u, 125u, 48u, 57u, 125u, 48u, 57u, 128u,
+		191u, 128u, 191u, 128u, 191u, 41u, 41u, 80u,
+		41u, 41u, 70u, 41u, 56u, 41u, 121u, 97u,
+		109u, 98u, 105u, 99u, 101u, 110u, 105u, 97u,
+		110u, 101u, 115u, 116u, 97u, 110u, 108u, 109u,
+		116u, 105u, 110u, 101u, 115u, 101u, 117u, 109u,
+		97u, 107u, 110u, 103u, 97u, 108u, 105u, 112u,
+		111u, 109u, 111u, 102u, 111u, 97u, 104u, 105u,
+		109u, 105u, 108u, 108u, 101u, 103u, 104u, 105u,
+		110u, 101u, 115u, 101u, 105u, 100u, 110u, 114u,
+		97u, 100u, 105u, 97u, 110u, 95u, 65u, 98u,
+		111u, 114u, 105u, 103u, 105u, 110u, 97u, 108u,
+		105u, 97u, 110u, 97u, 101u, 109u, 114u, 111u,
+		107u, 101u, 101u, 109u, 111u, 110u, 116u, 105u,
+		99u, 110u, 101u, 105u, 102u, 111u, 114u, 109u,
+		112u, 114u, 114u, 105u, 111u, 116u, 105u, 108u,
+		108u, 105u, 99u, 115u, 118u, 101u, 114u, 101u,
+		116u, 97u, 110u, 97u, 103u, 97u, 114u, 105u,
+		121u, 112u, 116u, 105u, 97u, 110u, 95u, 72u,
+		105u, 101u, 114u, 111u, 103u, 108u, 121u, 112u,
+		104u, 115u, 104u, 105u, 111u, 112u, 105u, 99u,
+		111u, 114u, 103u, 105u, 97u, 110u, 97u, 103u,
+		111u, 108u, 105u, 116u, 105u, 99u, 116u, 104u,
+		105u, 99u, 101u, 101u, 107u, 106u, 114u, 97u,
+		114u, 97u, 116u, 105u, 109u, 117u, 107u, 104u,
+		105u, 110u, 117u, 108u, 110u, 111u, 111u, 98u,
+		114u, 101u, 119u, 114u, 97u, 103u, 97u, 110u,
+		97u, 112u, 101u, 114u, 105u, 97u, 108u, 95u,
+		65u, 114u, 97u, 109u, 97u, 105u, 99u, 104u,
+		115u, 101u, 114u, 105u, 116u, 101u, 100u, 99u,
+		114u, 105u, 112u, 116u, 105u, 111u, 110u, 97u,
+		108u, 95u, 80u, 97u, 104u, 114u, 108u, 97u,
+		118u, 105u, 116u, 104u, 105u, 97u, 110u, 118u,
+		97u, 110u, 101u, 115u, 101u, 105u, 110u, 116u,
+		121u, 116u, 104u, 105u, 110u, 97u, 100u, 97u,
+		97u, 107u, 97u, 110u, 97u, 97u, 104u, 95u,
+		76u, 105u, 97u, 109u, 114u, 111u, 115u, 104u,
+		116u, 104u, 105u, 101u, 114u, 111u, 116u, 105u,
+		110u, 112u, 99u, 104u, 97u, 109u, 110u, 115u,
+		98u, 117u, 101u, 97u, 114u, 95u, 66u, 117u,
+		99u, 100u, 105u, 97u, 110u, 105u, 97u, 110u,
+		108u, 110u, 97u, 121u, 97u, 108u, 97u, 109u,
+		100u, 97u, 105u, 99u, 116u, 101u, 105u, 95u,
+		77u, 97u, 121u, 101u, 107u, 110u, 103u, 111u,
+		108u, 105u, 97u, 110u, 97u, 110u, 109u, 97u,
+		114u, 119u, 95u, 84u, 97u, 105u, 95u, 76u,
+		117u, 101u, 111u, 104u, 97u, 109u, 95u, 100u,
+		67u, 104u, 105u, 107u, 105u, 95u, 73u, 80u,
+		83u, 84u, 116u, 97u, 108u, 105u, 99u, 101u,
+		114u, 115u, 105u, 97u, 110u, 111u, 117u, 116u,
+		104u, 95u, 65u, 114u, 97u, 98u, 105u, 97u,
+		110u, 117u, 114u, 107u, 105u, 99u, 105u, 121u,
+		97u, 109u, 97u, 110u, 121u, 97u, 97u, 111u,
+		103u, 115u, 95u, 80u, 97u, 101u, 110u, 105u,
+		99u, 105u, 97u, 110u, 106u, 97u, 110u, 103u,
+		110u, 105u, 99u, 109u, 117u, 97u, 114u, 105u,
+		116u, 97u, 110u, 114u, 97u, 115u, 104u, 116u,
+		114u, 97u, 97u, 118u, 105u, 97u, 110u, 110u,
+		104u, 97u, 108u, 97u, 110u, 100u, 97u, 110u,
+		101u, 115u, 101u, 108u, 114u, 111u, 116u, 105u,
+		95u, 78u, 97u, 103u, 114u, 105u, 105u, 97u,
+		99u, 103u, 105u, 109u, 97u, 98u, 108u, 111u,
+		103u, 97u, 110u, 119u, 97u, 95u, 76u, 84u,
+		86u, 101u, 104u, 97u, 109u, 105u, 101u, 116u,
+		105u, 108u, 108u, 117u, 103u, 117u, 97u, 97u,
+		105u, 110u, 97u, 98u, 102u, 101u, 116u, 97u,
+		110u, 105u, 110u, 97u, 103u, 104u, 97u, 114u,
+		105u, 116u, 105u, 99u, 105u, 110u, 115u, 112u,
+		100u, 123u, 94u, 125u, 94u, 46u, 92u, 93u,
+		46u, 92u, 93u, 46u, 92u, 58u, 92u, 93u,
+		94u, 97u, 98u, 99u, 100u, 103u, 108u, 112u,
+		115u, 117u, 119u, 120u, 58u, 92u, 93u, 58u,
+		92u, 93u, 58u, 92u, 58u, 92u, 93u, 97u,
+		98u, 99u, 100u, 103u, 108u, 112u, 115u, 117u,
+		119u, 120u, 58u, 92u, 93u, 108u, 115u, 58u,
+		92u, 93u, 110u, 112u, 58u, 92u, 93u, 117u,
+		58u, 92u, 93u, 109u, 58u, 92u, 93u, 58u,
+		92u, 93u, 58u, 92u, 93u, 104u, 58u, 92u,
+		93u, 97u, 58u, 92u, 93u, 58u, 92u, 93u,
+		58u, 92u, 93u, 99u, 58u, 92u, 93u, 105u,
+		58u, 92u, 93u, 105u, 58u, 92u, 93u, 58u,
+		92u, 93u, 58u, 92u, 93u, 108u, 58u, 92u,
+		93u, 97u, 58u, 92u, 93u, 110u, 58u, 92u,
+		93u, 107u, 58u, 92u, 93u, 58u, 92u, 93u,
+		58u, 92u, 93u, 110u, 58u, 92u, 93u, 116u,
+		58u, 92u, 93u, 114u, 58u, 92u, 93u, 108u,
+		58u, 92u, 93u, 58u, 92u, 93u, 58u, 92u,
+		93u, 105u, 58u, 92u, 93u, 103u, 58u, 92u,
+		93u, 105u, 58u, 92u, 93u, 116u, 58u, 92u,
+		93u, 58u, 92u, 93u, 58u, 92u, 93u, 114u,
+		58u, 92u, 93u, 97u, 58u, 92u, 93u, 112u,
+		58u, 92u, 93u, 104u, 58u, 92u, 93u, 58u,
+		92u, 93u, 58u, 92u, 93u, 111u, 58u, 92u,
+		93u, 119u, 58u, 92u, 93u, 101u, 58u, 92u,
+		93u, 114u, 58u, 92u, 93u, 58u, 92u, 93u,
+		58u, 92u, 93u, 114u, 117u, 58u, 92u, 93u,
+		105u, 58u, 92u, 93u, 110u, 58u, 92u, 93u,
+		116u, 58u, 92u, 93u, 58u, 92u, 93u, 58u,
+		92u, 93u, 110u, 58u, 92u, 93u, 99u, 58u,
+		92u, 93u, 116u, 58u, 92u, 93u, 58u, 92u,
+		93u, 58u, 92u, 93u, 112u, 58u, 92u, 93u,
+		97u, 58u, 92u, 93u, 99u, 58u, 92u, 93u,
+		101u, 58u, 92u, 93u, 58u, 92u, 93u, 58u,
+		92u, 93u, 112u, 58u, 92u, 93u, 112u, 58u,
+		92u, 93u, 101u, 58u, 92u, 93u, 114u, 58u,
+		92u, 93u, 58u, 92u, 93u, 58u, 92u, 93u,
+		111u, 58u, 92u, 93u, 114u, 58u, 92u, 93u,
+		100u, 58u, 92u, 93u, 58u, 92u, 93u, 58u,
+		92u, 93u, 100u, 58u, 92u, 93u, 105u, 58u,
+		92u, 93u, 103u, 58u, 92u, 93u, 105u, 58u,
+		92u, 93u, 116u, 58u, 92u, 93u, 58u, 92u,
+		93u, 58u, 92u, 93u, 108u, 115u, 58u, 92u,
+		93u, 110u, 112u, 58u, 92u, 93u, 117u, 58u,
+		92u, 93u, 109u, 58u, 92u, 93u, 58u, 92u,
+		93u, 58u, 92u, 93u, 104u, 58u, 92u, 93u,
+		97u, 58u, 92u, 93u, 58u, 92u, 93u, 58u,
+		92u, 93u, 99u, 58u, 92u, 93u, 105u, 58u,
+		92u, 93u, 105u, 58u, 92u, 93u, 58u, 92u,
+		93u, 58u, 92u, 93u, 108u, 58u, 92u, 93u,
+		97u, 58u, 92u, 93u, 110u, 58u, 92u, 93u,
+		107u, 58u, 92u, 93u, 58u, 92u, 93u, 58u,
+		92u, 93u, 110u, 58u, 92u, 93u, 116u, 58u,
+		92u, 93u, 114u, 58u, 92u, 93u, 108u, 58u,
+		92u, 93u, 58u, 92u, 93u, 58u, 92u, 93u,
+		105u, 58u, 92u, 93u, 103u, 58u, 92u, 93u,
+		105u, 58u, 92u, 93u, 116u, 58u, 92u, 93u,
+		58u, 92u, 93u, 58u, 92u, 93u, 114u, 58u,
+		92u, 93u, 97u, 58u, 92u, 93u, 112u, 58u,
+		92u, 93u, 104u, 58u, 92u, 93u, 58u, 92u,
+		93u, 58u, 92u, 93u, 111u, 58u, 92u, 93u,
+		119u, 58u, 92u, 93u, 101u, 58u, 92u, 93u,
+		114u, 58u, 92u, 93u, 58u, 92u, 93u, 58u,
+		92u, 93u, 114u, 117u, 58u, 92u, 93u, 105u,
+		58u, 92u, 93u, 110u, 58u, 92u, 93u, 116u,
+		58u, 92u, 93u, 58u, 92u, 93u, 58u, 92u,
+		93u, 110u, 58u, 92u, 93u, 99u, 58u, 92u,
+		93u, 116u, 58u, 92u, 93u, 58u, 92u, 93u,
+		58u, 92u, 93u, 112u, 58u, 92u, 93u, 97u,
+		58u, 92u, 93u, 99u, 58u, 92u, 93u, 101u,
+		58u, 92u, 93u, 58u, 92u, 93u, 58u, 92u,
+		93u, 112u, 58u, 92u, 93u, 112u, 58u, 92u,
+		93u, 101u, 58u, 92u, 93u, 114u, 58u, 92u,
+		93u, 58u, 92u, 93u, 58u, 92u, 93u, 111u,
+		58u, 92u, 93u, 114u, 58u, 92u, 93u, 100u,
+		58u, 92u, 93u, 58u, 92u, 93u, 58u, 92u,
+		93u, 100u, 58u, 92u, 93u, 105u, 58u, 92u,
+		93u, 103u, 58u, 92u, 93u, 105u, 58u, 92u,
+		93u, 116u, 58u, 92u, 93u, 58u, 92u, 93u,
+		61u, 92u, 93u, 61u, 92u, 93u, 61u, 92u,
+		48u, 55u, 125u, 48u, 55u, 125u, 48u, 57u,
+		65u, 70u, 97u, 102u, 128u, 191u, 128u, 191u,
+		128u, 191u, 128u, 191u, 128u, 191u, 128u, 191u,
+		128u, 191u, 128u, 191u, 128u, 191u, 0u, 32u,
+		35u, 36u, 40u, 41u, 42u, 43u, 46u, 63u,
+		91u, 92u, 94u, 123u, 124u, 9u, 13u, 128u,
+		191u, 192u, 223u, 224u, 239u, 240u, 247u, 248u,
+		255u, 42u, 63u, 95u, 48u, 57u, 65u, 90u,
+		97u, 122u, 95u, 48u, 57u, 65u, 90u, 97u,
+		122u, 39u, 48u, 60u, 63u, 82u, 95u, 49u,
+		55u, 56u, 57u, 65u, 90u, 97u, 122u, 48u,
+		57u, 105u, 109u, 115u, 120u, 48u, 57u, 41u,
+		48u, 57u, 33u, 61u, 95u, 48u, 57u, 65u,
+		90u, 97u, 122u, 123u, 41u, 48u, 57u, 60u,
+		61u, 62u, 41u, 45u, 58u, 105u, 109u, 115u,
+		120u, 43u, 63u, 43u, 63u, 43u, 63u, 46u,
+		58u, 61u, 48u, 65u, 66u, 67u, 68u, 69u,
+		71u, 72u, 75u, 76u, 78u, 80u, 81u, 82u,
+		83u, 85u, 86u, 87u, 88u, 90u, 97u, 98u,
+		99u, 100u, 101u, 102u, 103u, 104u, 107u, 108u,
+		110u, 111u, 112u, 114u, 115u, 116u, 117u, 118u,
+		119u, 120u, 122u, 49u, 55u, 56u, 57u, 48u,
+		55u, 48u, 55u, 48u, 55u, 56u, 57u, 48u,
+		55u, 56u, 57u, 48u, 57u, 123u, 39u, 45u,
+		60u, 123u, 48u, 57u, 48u, 57u, 48u, 57u,
+		48u, 57u, 48u, 57u, 39u, 60u, 123u, 123u,
+		123u, 123u, 48u, 57u, 65u, 70u, 97u, 102u,
+		48u, 57u, 65u, 70u, 97u, 102u, 48u, 57u,
+		65u, 70u, 97u, 102u, 48u, 57u, 43u, 63u,
+		128u, 191u, 128u, 191u, 128u, 191u, 41u, 85u,
+		41u, 41u, 67u, 84u, 65u, 66u, 67u, 68u,
+		69u, 71u, 72u, 73u, 74u, 75u, 76u, 77u,
+		78u, 79u, 80u, 82u, 83u, 84u, 85u, 86u,
+		88u, 89u, 90u, 110u, 114u, 118u, 97u, 101u,
+		111u, 114u, 117u, 97u, 99u, 102u, 104u, 110u,
+		111u, 115u, 117u, 121u, 109u, 112u, 101u, 103u,
+		116u, 101u, 108u, 111u, 114u, 117u, 97u, 101u,
+		105u, 103u, 117u, 109u, 110u, 97u, 97u, 104u,
+		38u, 97u, 101u, 105u, 108u, 109u, 111u, 116u,
+		117u, 121u, 97u, 99u, 101u, 110u, 111u, 121u,
+		101u, 100u, 101u, 107u, 108u, 111u, 103u, 108u,
+		114u, 115u, 99u, 100u, 101u, 102u, 104u, 105u,
+		111u, 115u, 101u, 117u, 97u, 99u, 104u, 105u,
+		107u, 109u, 111u, 117u, 121u, 97u, 101u, 104u,
+		105u, 103u, 97u, 97u, 112u, 115u, 119u, 105u,
+		108u, 112u, 115u, 67u, 76u, 77u, 78u, 80u,
+		83u, 90u, 45u, 91u, 92u, 93u, 128u, 191u,
+		192u, 223u, 224u, 239u, 240u, 247u, 248u, 255u,
+		46u, 58u, 61u, 48u, 68u, 69u, 72u, 76u,
+		78u, 80u, 81u, 83u, 85u, 86u, 87u, 97u,
+		98u, 99u, 100u, 101u, 102u, 103u, 104u, 108u,
+		110u, 111u, 112u, 114u, 115u, 116u, 117u, 118u,
+		119u, 120u, 49u, 55u, 56u, 57u, 65u, 90u,
+		105u, 122u, 48u, 55u, 48u, 55u, 48u, 55u,
+		48u, 55u, 123u, 123u, 123u, 123u, 48u, 57u,
+		65u, 70u, 97u, 102u, 48u, 57u, 65u, 70u,
+		97u, 102u, 48u, 57u, 65u, 70u, 97u, 102u,
+		128u, 191u, 128u, 191u, 128u, 191u, 92u, 93u,
+		94u, 69u, 81u, 92u, 128u, 191u, 192u, 223u,
+		224u, 239u, 240u, 247u, 248u, 255u, 69u, 128u,
+		191u, 128u, 191u, 128u, 191u, 92u, 128u, 191u,
+		192u, 223u, 224u, 239u, 240u, 247u, 248u, 255u,
+		69u, 128u, 191u, 128u, 191u, 128u, 191u, 41u,
+		10u, 0u
+	};
+	
+	static const signed char _regex_single_lengths[] = {
+		0, 1, 20, 2, 2, 1, 2, 1,
+		2, 2, 2, 1, 2, 3, 2, 3,
+		1, 2, 2, 1, 6, 2, 1, 1,
+		1, 2, 1, 4, 7, 3, 3, 2,
+		3, 3, 2, 3, 3, 2, 1, 0,
+		1, 2, 0, 1, 1, 1, 2, 2,
+		2, 2, 1, 2, 1, 2, 1, 2,
+		0, 1, 1, 2, 1, 1, 0, 0,
+		0, 1, 2, 1, 2, 2, 1, 1,
+		2, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 3, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 2, 1, 1, 1,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 2, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 2, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 4, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 2, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 1, 3, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 1, 2, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 4, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 2, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 3, 2,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		3, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 2,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 3, 3, 2, 15, 3,
+		3, 2, 14, 5, 5, 4, 4, 3,
+		3, 4, 4, 3, 3, 4, 4, 4,
+		3, 3, 4, 4, 4, 4, 3, 3,
+		4, 4, 4, 4, 3, 3, 4, 4,
+		4, 4, 3, 3, 4, 4, 4, 4,
+		3, 3, 4, 4, 4, 4, 3, 3,
+		5, 4, 4, 4, 3, 3, 4, 4,
+		4, 3, 3, 4, 4, 4, 4, 3,
+		3, 4, 4, 4, 4, 3, 3, 4,
+		4, 4, 3, 3, 4, 4, 4, 4,
+		4, 3, 3, 5, 5, 4, 4, 3,
+		3, 4, 4, 3, 3, 4, 4, 4,
+		3, 3, 4, 4, 4, 4, 3, 3,
+		4, 4, 4, 4, 3, 3, 4, 4,
+		4, 4, 3, 3, 4, 4, 4, 4,
+		3, 3, 4, 4, 4, 4, 3, 3,
+		5, 4, 4, 4, 3, 3, 4, 4,
+		4, 3, 3, 4, 4, 4, 4, 3,
+		3, 4, 4, 4, 4, 3, 3, 4,
+		4, 4, 3, 3, 4, 4, 4, 4,
+		4, 3, 3, 3, 3, 2, 0, 1,
+		1, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 15, 2, 1, 1, 6, 0,
+		4, 1, 3, 1, 1, 3, 7, 2,
+		2, 2, 3, 41, 0, 0, 0, 0,
+		0, 1, 0, 4, 0, 0, 0, 0,
+		3, 1, 1, 1, 0, 0, 0, 2,
+		0, 0, 0, 2, 1, 3, 23, 3,
+		5, 9, 2, 1, 2, 5, 3, 2,
+		2, 1, 2, 10, 6, 1, 5, 4,
+		8, 2, 9, 4, 1, 1, 4, 1,
+		3, 0, 7, 4, 3, 31, 0, 0,
+		0, 0, 1, 0, 1, 1, 1, 0,
+		0, 0, 0, 0, 3, 2, 1, 1,
+		0, 0, 0, 1, 1, 0, 0, 0,
+		1, 1, 0
+	};
+	
+	static const signed char _regex_range_lengths[] = {
+		0, 0, 1, 3, 3, 3, 3, 0,
+		3, 3, 3, 3, 3, 0, 0, 3,
+		3, 3, 3, 1, 0, 3, 1, 3,
+		3, 3, 3, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 1,
+		0, 3, 1, 1, 1, 0, 3, 3,
+		3, 3, 3, 3, 3, 3, 3, 3,
+		1, 1, 3, 1, 1, 1, 1, 1,
+		1, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 1, 1,
+		3, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 6, 0, 3, 3, 4, 1,
+		1, 1, 3, 0, 1, 0, 0, 0,
+		0, 0, 0, 2, 1, 1, 2, 2,
+		1, 0, 0, 1, 1, 1, 1, 1,
+		0, 0, 0, 3, 3, 3, 1, 0,
+		1, 1, 1, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 5, 0, 4, 1, 1,
+		1, 1, 0, 0, 0, 0, 3, 3,
+		3, 1, 1, 1, 0, 0, 5, 0,
+		1, 1, 1, 5, 0, 1, 1, 1,
+		0, 0, 0
+	};
+	
+	static const short _regex_index_offsets[] = {
+		0, 0, 2, 24, 30, 36, 41, 47,
+		49, 55, 61, 67, 72, 78, 82, 85,
+		92, 97, 103, 109, 112, 119, 125, 128,
+		133, 138, 144, 149, 154, 162, 166, 170,
+		173, 177, 181, 184, 188, 192, 195, 197,
+		199, 201, 207, 209, 212, 215, 217, 223,
+		229, 235, 241, 246, 252, 257, 263, 268,
+		274, 276, 279, 284, 288, 291, 294, 296,
+		298, 300, 302, 305, 307, 310, 313, 315,
+		317, 320, 322, 324, 326, 328, 330, 332,
+		334, 336, 338, 340, 342, 344, 346, 350,
+		352, 354, 356, 358, 360, 362, 364, 366,
+		368, 370, 372, 374, 376, 378, 380, 382,
+		384, 386, 388, 390, 392, 395, 397, 399,
+		401, 403, 405, 408, 410, 412, 414, 416,
+		418, 420, 422, 425, 427, 429, 431, 433,
+		435, 437, 439, 441, 443, 445, 447, 449,
+		451, 453, 455, 457, 459, 461, 463, 466,
+		468, 470, 472, 474, 476, 478, 480, 482,
+		484, 486, 488, 490, 492, 494, 496, 498,
+		500, 502, 504, 507, 509, 511, 513, 515,
+		517, 519, 521, 523, 525, 528, 530, 532,
+		534, 536, 538, 540, 542, 544, 546, 548,
+		550, 552, 554, 556, 558, 560, 562, 564,
+		566, 568, 570, 572, 574, 576, 578, 580,
+		582, 584, 586, 588, 590, 592, 594, 596,
+		598, 600, 602, 604, 606, 608, 610, 612,
+		614, 616, 618, 620, 622, 624, 626, 628,
+		630, 632, 634, 636, 638, 640, 643, 645,
+		647, 649, 651, 653, 655, 657, 659, 661,
+		663, 665, 667, 669, 671, 673, 675, 677,
+		679, 681, 683, 685, 687, 689, 691, 693,
+		695, 697, 699, 701, 703, 705, 707, 709,
+		711, 713, 715, 717, 719, 721, 723, 726,
+		728, 730, 732, 734, 736, 738, 740, 742,
+		744, 746, 748, 750, 752, 754, 756, 758,
+		760, 762, 764, 767, 769, 771, 773, 775,
+		777, 779, 781, 783, 785, 787, 789, 791,
+		793, 795, 797, 802, 804, 806, 808, 810,
+		812, 814, 816, 818, 820, 822, 824, 826,
+		828, 830, 832, 834, 836, 839, 841, 843,
+		845, 847, 849, 851, 853, 855, 857, 860,
+		862, 864, 866, 868, 870, 872, 876, 878,
+		880, 882, 884, 886, 888, 890, 892, 895,
+		897, 899, 901, 903, 905, 907, 910, 912,
+		914, 916, 918, 920, 922, 924, 926, 928,
+		930, 932, 934, 936, 938, 940, 942, 944,
+		946, 948, 950, 952, 954, 956, 958, 960,
+		962, 964, 966, 968, 970, 972, 974, 976,
+		978, 980, 982, 984, 986, 988, 990, 992,
+		994, 996, 998, 1001, 1003, 1005, 1007, 1009,
+		1011, 1013, 1018, 1020, 1022, 1024, 1026, 1028,
+		1030, 1032, 1034, 1036, 1038, 1040, 1042, 1044,
+		1046, 1048, 1050, 1052, 1054, 1056, 1058, 1060,
+		1062, 1064, 1066, 1068, 1070, 1072, 1074, 1076,
+		1078, 1080, 1082, 1084, 1086, 1088, 1090, 1093,
+		1095, 1097, 1099, 1101, 1103, 1105, 1107, 1109,
+		1111, 1113, 1115, 1117, 1119, 1121, 1123, 1125,
+		1127, 1129, 1131, 1134, 1136, 1138, 1140, 1142,
+		1144, 1146, 1148, 1150, 1152, 1154, 1156, 1158,
+		1160, 1162, 1164, 1166, 1168, 1170, 1172, 1174,
+		1176, 1178, 1180, 1182, 1184, 1186, 1188, 1190,
+		1192, 1194, 1197, 1199, 1201, 1203, 1205, 1207,
+		1209, 1211, 1213, 1215, 1217, 1219, 1221, 1225,
+		1228, 1230, 1232, 1234, 1236, 1238, 1240, 1242,
+		1244, 1248, 1250, 1252, 1254, 1256, 1258, 1260,
+		1262, 1264, 1266, 1268, 1270, 1272, 1274, 1276,
+		1279, 1281, 1283, 1286, 1288, 1290, 1292, 1294,
+		1296, 1298, 1300, 1302, 1304, 1306, 1308, 1310,
+		1312, 1314, 1316, 1318, 1320, 1322, 1324, 1326,
+		1328, 1330, 1332, 1334, 1338, 1342, 1345, 1361,
+		1365, 1369, 1372, 1387, 1393, 1399, 1404, 1409,
+		1413, 1417, 1422, 1427, 1431, 1435, 1440, 1445,
+		1450, 1454, 1458, 1463, 1468, 1473, 1478, 1482,
+		1486, 1491, 1496, 1501, 1506, 1510, 1514, 1519,
+		1524, 1529, 1534, 1538, 1542, 1547, 1552, 1557,
+		1562, 1566, 1570, 1575, 1580, 1585, 1590, 1594,
+		1598, 1604, 1609, 1614, 1619, 1623, 1627, 1632,
+		1637, 1642, 1646, 1650, 1655, 1660, 1665, 1670,
+		1674, 1678, 1683, 1688, 1693, 1698, 1702, 1706,
+		1711, 1716, 1721, 1725, 1729, 1734, 1739, 1744,
+		1749, 1754, 1758, 1762, 1768, 1774, 1779, 1784,
+		1788, 1792, 1797, 1802, 1806, 1810, 1815, 1820,
+		1825, 1829, 1833, 1838, 1843, 1848, 1853, 1857,
+		1861, 1866, 1871, 1876, 1881, 1885, 1889, 1894,
+		1899, 1904, 1909, 1913, 1917, 1922, 1927, 1932,
+		1937, 1941, 1945, 1950, 1955, 1960, 1965, 1969,
+		1973, 1979, 1984, 1989, 1994, 1998, 2002, 2007,
+		2012, 2017, 2021, 2025, 2030, 2035, 2040, 2045,
+		2049, 2053, 2058, 2063, 2068, 2073, 2077, 2081,
+		2086, 2091, 2096, 2100, 2104, 2109, 2114, 2119,
+		2124, 2129, 2133, 2137, 2141, 2145, 2148, 2150,
+		2153, 2158, 2160, 2162, 2164, 2166, 2168, 2170,
+		2172, 2174, 2176, 2198, 2201, 2206, 2211, 2222,
+		2224, 2230, 2233, 2240, 2242, 2245, 2249, 2257,
+		2260, 2263, 2266, 2270, 2314, 2316, 2318, 2321,
+		2324, 2326, 2328, 2329, 2335, 2337, 2339, 2341,
+		2343, 2347, 2349, 2351, 2356, 2360, 2364, 2366,
+		2369, 2371, 2373, 2375, 2378, 2380, 2384, 2408,
+		2412, 2418, 2428, 2431, 2433, 2436, 2442, 2446,
+		2449, 2452, 2454, 2457, 2468, 2475, 2477, 2483,
+		2488, 2497, 2500, 2510, 2515, 2517, 2519, 2524,
+		2526, 2530, 2531, 2539, 2549, 2553, 2589, 2591,
+		2593, 2595, 2597, 2599, 2600, 2602, 2604, 2609,
+		2613, 2617, 2619, 2621, 2623, 2627, 2630, 2637,
+		2639, 2641, 2643, 2645, 2652, 2654, 2656, 2658,
+		2660, 2662, 0
+	};
+	
+	static const signed char _regex_trans_cond_spaces[] = {
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, 0, -1,
+		0, -1, 0, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, 0, -1,
+		0, -1, 0, -1, 0, -1, 0, -1,
+		0, -1, 0, -1, 0, -1, 0, -1,
+		-1, -1, 1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		0, 0, 0, 0, 0, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, 0, -1, 0, -1, 0, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, 0,
+		0, 0, 0, 0, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, 0, -1, 0, -1, 0, -1, -1,
+		2, 2, -1, -1, -1, -1, -1, 0,
+		0, 0, 0, 0, -1, -1, -1, 0,
+		-1, 0, -1, 0, -1, -1, 0, 0,
+		0, 0, 0, -1, -1, -1, 0, -1,
+		0, -1, 0, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, 0
+	};
+	
+	static const short _regex_trans_offsets[] = {
+		0, 1, 2, 3, 4, 5, 6, 7,
+		8, 9, 10, 11, 12, 13, 14, 15,
+		16, 17, 18, 19, 20, 21, 22, 23,
+		24, 25, 26, 27, 28, 29, 30, 31,
+		32, 33, 34, 35, 36, 37, 38, 39,
+		40, 41, 42, 43, 44, 45, 46, 47,
+		48, 49, 50, 51, 52, 53, 54, 55,
+		56, 57, 58, 59, 60, 61, 62, 63,
+		64, 65, 66, 67, 68, 69, 70, 71,
+		72, 73, 74, 75, 76, 77, 78, 79,
+		80, 81, 82, 83, 84, 85, 86, 87,
+		88, 89, 90, 91, 92, 93, 94, 95,
+		96, 97, 98, 99, 100, 101, 102, 103,
+		104, 105, 106, 107, 108, 109, 110, 111,
+		112, 113, 114, 115, 116, 117, 118, 119,
+		120, 121, 122, 123, 124, 125, 126, 127,
+		128, 129, 130, 131, 132, 133, 134, 135,
+		136, 137, 138, 139, 140, 141, 142, 143,
+		144, 145, 146, 147, 148, 149, 150, 151,
+		152, 153, 154, 155, 156, 157, 158, 159,
+		160, 161, 162, 163, 164, 165, 166, 167,
+		168, 169, 170, 171, 172, 173, 174, 175,
+		176, 177, 178, 179, 180, 181, 182, 183,
+		184, 185, 186, 187, 188, 189, 190, 191,
+		192, 193, 194, 195, 196, 197, 198, 199,
+		200, 201, 202, 203, 204, 205, 206, 207,
+		208, 209, 210, 211, 212, 213, 214, 215,
+		216, 217, 218, 219, 220, 221, 222, 223,
+		224, 225, 226, 227, 228, 229, 230, 231,
+		232, 233, 234, 235, 236, 237, 238, 239,
+		240, 241, 242, 243, 244, 245, 246, 247,
+		248, 249, 250, 251, 252, 253, 254, 255,
+		256, 257, 258, 259, 260, 261, 262, 263,
+		264, 265, 266, 267, 268, 269, 270, 271,
+		272, 273, 274, 275, 276, 277, 278, 279,
+		280, 281, 282, 283, 284, 285, 286, 287,
+		288, 289, 290, 291, 292, 293, 294, 296,
+		297, 299, 300, 302, 303, 304, 305, 306,
+		307, 308, 309, 310, 311, 312, 313, 314,
+		315, 316, 317, 318, 319, 320, 321, 322,
+		323, 324, 325, 326, 327, 328, 329, 330,
+		331, 332, 333, 334, 335, 336, 337, 338,
+		339, 340, 341, 342, 343, 344, 345, 346,
+		347, 348, 349, 350, 351, 352, 353, 354,
+		355, 356, 357, 358, 359, 360, 361, 362,
+		363, 364, 365, 366, 367, 368, 369, 370,
+		371, 372, 373, 374, 375, 376, 377, 378,
+		379, 380, 381, 382, 383, 384, 385, 386,
+		387, 388, 389, 390, 391, 392, 393, 394,
+		395, 396, 397, 398, 399, 400, 401, 402,
+		403, 404, 405, 406, 407, 408, 409, 410,
+		411, 412, 413, 414, 415, 416, 417, 418,
+		419, 420, 421, 422, 423, 424, 425, 426,
+		427, 428, 429, 430, 431, 432, 433, 434,
+		435, 436, 437, 438, 439, 440, 441, 442,
+		443, 444, 445, 446, 447, 448, 449, 450,
+		451, 452, 453, 454, 455, 456, 457, 458,
+		459, 460, 461, 462, 463, 464, 465, 466,
+		467, 468, 469, 470, 471, 472, 473, 474,
+		475, 476, 477, 478, 479, 480, 481, 482,
+		483, 484, 485, 486, 487, 488, 489, 490,
+		491, 492, 493, 494, 495, 496, 497, 498,
+		499, 500, 501, 502, 503, 504, 505, 506,
+		507, 508, 509, 510, 511, 512, 513, 514,
+		515, 516, 517, 518, 519, 520, 521, 522,
+		523, 524, 525, 526, 527, 528, 529, 530,
+		531, 532, 533, 534, 535, 536, 537, 538,
+		539, 540, 541, 542, 543, 544, 545, 546,
+		547, 548, 549, 550, 551, 552, 553, 554,
+		555, 556, 557, 558, 559, 560, 561, 562,
+		563, 564, 565, 566, 567, 568, 569, 570,
+		571, 572, 573, 574, 575, 576, 577, 578,
+		579, 580, 581, 582, 583, 584, 585, 586,
+		587, 588, 589, 590, 591, 592, 593, 594,
+		595, 596, 597, 598, 599, 600, 601, 602,
+		603, 604, 605, 606, 607, 608, 609, 610,
+		611, 612, 613, 614, 615, 616, 617, 618,
+		619, 620, 621, 622, 623, 624, 625, 626,
+		627, 628, 629, 630, 631, 632, 633, 634,
+		635, 636, 637, 638, 639, 640, 641, 642,
+		643, 644, 645, 646, 647, 648, 649, 650,
+		651, 652, 653, 654, 655, 656, 657, 658,
+		659, 660, 661, 662, 663, 664, 665, 666,
+		667, 668, 669, 670, 671, 672, 673, 674,
+		675, 676, 677, 678, 679, 680, 681, 682,
+		683, 684, 685, 686, 687, 688, 689, 690,
+		691, 692, 693, 694, 695, 696, 697, 698,
+		699, 700, 701, 702, 703, 704, 705, 706,
+		707, 708, 709, 710, 711, 712, 713, 714,
+		715, 716, 717, 718, 719, 720, 721, 722,
+		723, 724, 725, 726, 727, 728, 729, 730,
+		731, 732, 733, 734, 735, 736, 737, 738,
+		739, 740, 741, 742, 743, 744, 745, 746,
+		747, 748, 749, 750, 751, 752, 753, 754,
+		755, 756, 757, 758, 759, 760, 761, 762,
+		763, 764, 765, 766, 767, 768, 769, 770,
+		771, 772, 773, 774, 775, 776, 777, 778,
+		779, 780, 781, 782, 783, 784, 785, 786,
+		787, 788, 789, 790, 791, 792, 793, 794,
+		795, 796, 797, 798, 799, 800, 801, 802,
+		803, 804, 805, 806, 807, 808, 809, 810,
+		811, 812, 813, 814, 815, 816, 817, 818,
+		819, 820, 821, 822, 823, 824, 825, 826,
+		827, 828, 829, 830, 831, 832, 833, 834,
+		835, 836, 837, 838, 839, 840, 841, 842,
+		843, 844, 845, 846, 847, 848, 849, 850,
+		851, 852, 853, 854, 855, 856, 857, 858,
+		859, 860, 861, 862, 863, 864, 865, 866,
+		867, 868, 869, 870, 871, 872, 873, 874,
+		875, 876, 877, 878, 879, 880, 881, 882,
+		883, 884, 885, 886, 887, 888, 889, 890,
+		891, 892, 893, 894, 895, 896, 897, 898,
+		899, 900, 901, 902, 903, 904, 905, 906,
+		907, 908, 909, 910, 911, 912, 913, 914,
+		915, 916, 917, 918, 919, 920, 921, 922,
+		923, 924, 925, 926, 927, 928, 929, 930,
+		931, 932, 933, 934, 935, 936, 937, 938,
+		939, 940, 941, 942, 943, 944, 945, 946,
+		947, 948, 949, 950, 951, 952, 953, 954,
+		955, 956, 957, 958, 959, 960, 961, 962,
+		963, 964, 965, 966, 967, 968, 969, 970,
+		971, 972, 973, 974, 975, 976, 977, 978,
+		979, 980, 981, 982, 983, 984, 985, 986,
+		987, 988, 989, 990, 991, 992, 993, 994,
+		995, 996, 997, 998, 999, 1000, 1001, 1002,
+		1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
+		1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018,
+		1019, 1020, 1021, 1022, 1023, 1024, 1025, 1026,
+		1027, 1028, 1029, 1030, 1031, 1032, 1033, 1034,
+		1035, 1036, 1037, 1038, 1039, 1040, 1041, 1042,
+		1043, 1044, 1045, 1046, 1047, 1048, 1049, 1050,
+		1051, 1052, 1053, 1054, 1055, 1056, 1057, 1058,
+		1059, 1060, 1061, 1062, 1063, 1064, 1065, 1066,
+		1067, 1068, 1069, 1070, 1071, 1072, 1073, 1074,
+		1075, 1076, 1077, 1078, 1079, 1080, 1081, 1082,
+		1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090,
+		1091, 1092, 1093, 1094, 1095, 1096, 1097, 1098,
+		1099, 1100, 1101, 1102, 1103, 1104, 1105, 1106,
+		1107, 1108, 1109, 1110, 1111, 1112, 1113, 1114,
+		1115, 1116, 1117, 1118, 1119, 1120, 1121, 1122,
+		1123, 1124, 1125, 1126, 1127, 1128, 1129, 1130,
+		1131, 1132, 1133, 1134, 1135, 1136, 1137, 1138,
+		1139, 1140, 1141, 1142, 1143, 1144, 1145, 1146,
+		1147, 1148, 1149, 1150, 1151, 1152, 1153, 1154,
+		1155, 1156, 1157, 1158, 1159, 1160, 1161, 1162,
+		1163, 1164, 1165, 1166, 1167, 1168, 1169, 1170,
+		1171, 1172, 1173, 1174, 1175, 1176, 1177, 1178,
+		1179, 1180, 1181, 1182, 1183, 1184, 1185, 1186,
+		1187, 1188, 1189, 1190, 1191, 1192, 1193, 1194,
+		1195, 1196, 1197, 1198, 1199, 1200, 1201, 1202,
+		1203, 1204, 1205, 1206, 1207, 1208, 1209, 1210,
+		1211, 1212, 1213, 1214, 1215, 1216, 1217, 1218,
+		1219, 1220, 1221, 1222, 1223, 1224, 1225, 1226,
+		1227, 1228, 1229, 1230, 1231, 1232, 1233, 1234,
+		1235, 1236, 1237, 1238, 1239, 1240, 1241, 1242,
+		1243, 1244, 1245, 1246, 1247, 1248, 1249, 1250,
+		1251, 1252, 1253, 1254, 1255, 1256, 1257, 1258,
+		1259, 1260, 1261, 1262, 1263, 1264, 1265, 1266,
+		1267, 1268, 1269, 1270, 1271, 1272, 1273, 1274,
+		1275, 1276, 1277, 1278, 1279, 1280, 1281, 1282,
+		1283, 1284, 1285, 1286, 1287, 1288, 1289, 1290,
+		1291, 1292, 1293, 1294, 1295, 1296, 1297, 1298,
+		1299, 1300, 1301, 1302, 1303, 1304, 1305, 1306,
+		1307, 1308, 1309, 1310, 1311, 1312, 1313, 1314,
+		1315, 1316, 1317, 1318, 1319, 1320, 1321, 1322,
+		1323, 1324, 1325, 1326, 1327, 1328, 1329, 1330,
+		1331, 1332, 1333, 1334, 1335, 1336, 1337, 1338,
+		1339, 1340, 1341, 1342, 1343, 1344, 1345, 1346,
+		1347, 1348, 1349, 1350, 1351, 1352, 1353, 1354,
+		1355, 1356, 1357, 1358, 1359, 1360, 1361, 1362,
+		1363, 1364, 1365, 1366, 1367, 1368, 1369, 1370,
+		1371, 1372, 1373, 1374, 1375, 1376, 1377, 1378,
+		1379, 1380, 1381, 1382, 1383, 1384, 1385, 1386,
+		1387, 1388, 1389, 1390, 1391, 1392, 1393, 1394,
+		1395, 1396, 1397, 1398, 1399, 1400, 1401, 1402,
+		1403, 1404, 1405, 1406, 1407, 1408, 1409, 1410,
+		1411, 1412, 1413, 1414, 1415, 1416, 1417, 1418,
+		1419, 1420, 1421, 1422, 1423, 1424, 1425, 1426,
+		1427, 1428, 1429, 1430, 1431, 1432, 1433, 1434,
+		1435, 1436, 1437, 1438, 1439, 1440, 1441, 1442,
+		1443, 1444, 1445, 1446, 1447, 1448, 1449, 1450,
+		1451, 1452, 1453, 1454, 1455, 1456, 1457, 1458,
+		1459, 1460, 1461, 1462, 1463, 1464, 1465, 1466,
+		1467, 1468, 1469, 1470, 1471, 1472, 1473, 1474,
+		1475, 1476, 1477, 1478, 1479, 1480, 1481, 1482,
+		1483, 1484, 1485, 1486, 1487, 1488, 1489, 1490,
+		1491, 1492, 1493, 1494, 1495, 1496, 1497, 1498,
+		1499, 1500, 1501, 1502, 1503, 1504, 1505, 1506,
+		1507, 1508, 1509, 1510, 1511, 1512, 1513, 1514,
+		1515, 1516, 1517, 1518, 1519, 1520, 1521, 1522,
+		1523, 1524, 1525, 1526, 1527, 1528, 1529, 1530,
+		1531, 1532, 1533, 1534, 1535, 1536, 1537, 1538,
+		1539, 1540, 1541, 1542, 1543, 1544, 1545, 1546,
+		1547, 1548, 1549, 1550, 1551, 1552, 1553, 1554,
+		1555, 1556, 1557, 1558, 1559, 1560, 1561, 1562,
+		1563, 1564, 1565, 1566, 1567, 1568, 1569, 1570,
+		1571, 1572, 1573, 1574, 1575, 1576, 1577, 1578,
+		1579, 1580, 1581, 1582, 1583, 1584, 1585, 1586,
+		1587, 1588, 1589, 1590, 1591, 1592, 1593, 1594,
+		1595, 1596, 1597, 1598, 1599, 1600, 1601, 1602,
+		1603, 1604, 1605, 1606, 1607, 1608, 1609, 1610,
+		1611, 1612, 1613, 1614, 1615, 1616, 1617, 1618,
+		1619, 1620, 1621, 1622, 1623, 1624, 1625, 1626,
+		1627, 1628, 1629, 1630, 1631, 1632, 1633, 1634,
+		1635, 1636, 1637, 1638, 1639, 1640, 1641, 1642,
+		1643, 1644, 1645, 1646, 1647, 1648, 1649, 1650,
+		1651, 1652, 1653, 1654, 1655, 1656, 1657, 1658,
+		1659, 1660, 1661, 1662, 1663, 1664, 1665, 1666,
+		1667, 1668, 1669, 1670, 1671, 1672, 1673, 1674,
+		1675, 1676, 1677, 1678, 1679, 1680, 1681, 1682,
+		1683, 1684, 1685, 1686, 1687, 1688, 1689, 1690,
+		1691, 1692, 1693, 1694, 1695, 1696, 1697, 1698,
+		1699, 1700, 1701, 1702, 1703, 1704, 1705, 1706,
+		1707, 1708, 1709, 1710, 1711, 1712, 1713, 1714,
+		1715, 1716, 1717, 1718, 1719, 1720, 1721, 1722,
+		1723, 1724, 1725, 1726, 1727, 1728, 1729, 1730,
+		1731, 1732, 1733, 1734, 1735, 1736, 1737, 1738,
+		1739, 1740, 1741, 1742, 1743, 1744, 1745, 1746,
+		1747, 1748, 1749, 1750, 1751, 1752, 1753, 1754,
+		1755, 1756, 1757, 1758, 1759, 1760, 1761, 1762,
+		1763, 1764, 1765, 1766, 1767, 1768, 1769, 1770,
+		1771, 1772, 1773, 1774, 1775, 1776, 1777, 1778,
+		1779, 1780, 1781, 1782, 1783, 1784, 1785, 1786,
+		1787, 1788, 1789, 1790, 1791, 1792, 1793, 1794,
+		1795, 1796, 1797, 1798, 1799, 1800, 1801, 1802,
+		1803, 1804, 1805, 1806, 1807, 1808, 1809, 1810,
+		1811, 1812, 1813, 1814, 1815, 1816, 1817, 1818,
+		1819, 1820, 1821, 1822, 1823, 1824, 1825, 1826,
+		1827, 1828, 1829, 1830, 1831, 1832, 1833, 1834,
+		1835, 1836, 1837, 1838, 1839, 1840, 1841, 1842,
+		1843, 1844, 1845, 1846, 1847, 1848, 1849, 1850,
+		1851, 1852, 1853, 1854, 1855, 1856, 1857, 1858,
+		1859, 1860, 1861, 1862, 1863, 1864, 1865, 1866,
+		1867, 1868, 1869, 1870, 1871, 1872, 1873, 1874,
+		1875, 1876, 1877, 1878, 1879, 1880, 1881, 1882,
+		1883, 1884, 1885, 1886, 1887, 1888, 1889, 1890,
+		1891, 1892, 1893, 1894, 1895, 1896, 1897, 1898,
+		1899, 1900, 1901, 1902, 1903, 1904, 1905, 1906,
+		1907, 1908, 1909, 1910, 1911, 1912, 1913, 1914,
+		1915, 1916, 1917, 1918, 1919, 1920, 1921, 1922,
+		1923, 1924, 1925, 1926, 1927, 1928, 1929, 1930,
+		1931, 1932, 1933, 1934, 1935, 1936, 1937, 1938,
+		1939, 1940, 1941, 1942, 1943, 1944, 1945, 1946,
+		1947, 1948, 1949, 1950, 1951, 1952, 1953, 1954,
+		1955, 1956, 1957, 1958, 1959, 1960, 1961, 1962,
+		1963, 1964, 1965, 1966, 1967, 1968, 1969, 1970,
+		1971, 1972, 1973, 1974, 1975, 1976, 1977, 1978,
+		1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986,
+		1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
+		1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
+		2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
+		2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018,
+		2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026,
+		2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034,
+		2035, 2036, 2037, 2038, 2039, 2040, 2041, 2042,
+		2043, 2044, 2045, 2046, 2047, 2048, 2049, 2050,
+		2051, 2052, 2053, 2054, 2055, 2056, 2057, 2058,
+		2059, 2060, 2061, 2062, 2063, 2064, 2065, 2066,
+		2067, 2068, 2069, 2070, 2071, 2072, 2073, 2074,
+		2075, 2076, 2077, 2078, 2079, 2080, 2081, 2082,
+		2083, 2084, 2085, 2086, 2087, 2088, 2089, 2090,
+		2091, 2092, 2093, 2094, 2095, 2096, 2097, 2098,
+		2099, 2100, 2101, 2102, 2103, 2104, 2105, 2106,
+		2107, 2108, 2109, 2110, 2111, 2112, 2113, 2114,
+		2115, 2116, 2117, 2118, 2119, 2120, 2121, 2122,
+		2123, 2124, 2125, 2126, 2127, 2128, 2129, 2130,
+		2131, 2132, 2133, 2134, 2135, 2136, 2137, 2138,
+		2139, 2140, 2141, 2142, 2143, 2144, 2145, 2146,
+		2147, 2148, 2149, 2150, 2151, 2152, 2153, 2154,
+		2155, 2156, 2157, 2158, 2159, 2160, 2161, 2163,
+		2164, 2166, 2167, 2169, 2170, 2172, 2173, 2175,
+		2176, 2178, 2179, 2181, 2182, 2184, 2185, 2187,
+		2188, 2189, 2190, 2192, 2193, 2194, 2195, 2196,
+		2197, 2198, 2199, 2200, 2201, 2202, 2203, 2204,
+		2205, 2207, 2209, 2211, 2213, 2215, 2216, 2217,
+		2218, 2219, 2220, 2221, 2222, 2223, 2224, 2225,
+		2226, 2227, 2228, 2229, 2230, 2231, 2232, 2233,
+		2234, 2235, 2236, 2237, 2238, 2239, 2240, 2241,
+		2242, 2243, 2244, 2245, 2246, 2247, 2248, 2249,
+		2250, 2251, 2252, 2253, 2254, 2255, 2256, 2257,
+		2258, 2259, 2260, 2261, 2262, 2263, 2264, 2265,
+		2266, 2267, 2268, 2269, 2270, 2271, 2272, 2273,
+		2274, 2275, 2276, 2277, 2278, 2279, 2280, 2281,
+		2282, 2283, 2284, 2285, 2286, 2287, 2288, 2289,
+		2290, 2291, 2292, 2293, 2294, 2295, 2296, 2297,
+		2298, 2299, 2300, 2301, 2302, 2303, 2304, 2305,
+		2306, 2307, 2308, 2309, 2310, 2311, 2312, 2313,
+		2314, 2315, 2316, 2317, 2318, 2319, 2320, 2321,
+		2322, 2323, 2324, 2325, 2326, 2327, 2328, 2329,
+		2330, 2331, 2332, 2333, 2334, 2335, 2336, 2337,
+		2338, 2339, 2340, 2341, 2342, 2343, 2344, 2345,
+		2346, 2347, 2348, 2349, 2350, 2351, 2352, 2353,
+		2354, 2355, 2356, 2357, 2358, 2359, 2360, 2361,
+		2362, 2363, 2364, 2365, 2366, 2367, 2368, 2369,
+		2370, 2371, 2372, 2373, 2374, 2375, 2376, 2377,
+		2378, 2379, 2380, 2381, 2382, 2383, 2384, 2385,
+		2386, 2387, 2389, 2390, 2392, 2393, 2395, 2396,
+		2397, 2398, 2399, 2400, 2401, 2402, 2403, 2404,
+		2405, 2406, 2407, 2408, 2409, 2410, 2411, 2412,
+		2413, 2414, 2415, 2416, 2417, 2418, 2419, 2420,
+		2421, 2422, 2423, 2424, 2425, 2426, 2427, 2428,
+		2429, 2430, 2431, 2432, 2433, 2434, 2435, 2436,
+		2437, 2438, 2439, 2440, 2441, 2442, 2443, 2444,
+		2445, 2446, 2447, 2448, 2449, 2450, 2451, 2452,
+		2453, 2454, 2455, 2456, 2457, 2458, 2459, 2460,
+		2461, 2462, 2463, 2464, 2465, 2466, 2467, 2468,
+		2469, 2470, 2471, 2472, 2473, 2474, 2475, 2476,
+		2477, 2478, 2479, 2480, 2481, 2482, 2483, 2484,
+		2485, 2486, 2487, 2488, 2489, 2490, 2491, 2492,
+		2493, 2494, 2495, 2496, 2497, 2498, 2499, 2500,
+		2501, 2502, 2503, 2504, 2505, 2506, 2507, 2508,
+		2509, 2510, 2511, 2512, 2513, 2514, 2515, 2516,
+		2517, 2518, 2519, 2520, 2521, 2522, 2523, 2524,
+		2525, 2526, 2527, 2528, 2529, 2530, 2531, 2532,
+		2533, 2534, 2535, 2536, 2537, 2538, 2539, 2540,
+		2541, 2542, 2543, 2544, 2545, 2546, 2547, 2548,
+		2549, 2550, 2551, 2552, 2553, 2554, 2555, 2556,
+		2557, 2558, 2559, 2560, 2561, 2562, 2563, 2564,
+		2566, 2568, 2570, 2572, 2574, 2575, 2576, 2577,
+		2578, 2579, 2580, 2581, 2582, 2583, 2584, 2585,
+		2586, 2587, 2588, 2589, 2590, 2591, 2592, 2593,
+		2594, 2595, 2596, 2597, 2598, 2599, 2600, 2601,
+		2602, 2603, 2604, 2605, 2606, 2607, 2608, 2609,
+		2610, 2611, 2612, 2613, 2614, 2615, 2616, 2617,
+		2618, 2619, 2620, 2621, 2622, 2623, 2624, 2625,
+		2626, 2627, 2628, 2629, 2630, 2631, 2632, 2633,
+		2634, 2635, 2636, 2637, 2638, 2639, 2640, 2641,
+		2642, 2643, 2645, 2646, 2648, 2649, 2651, 2652,
+		2653, 2655, 2657, 2658, 2659, 2660, 2661, 2662,
+		2664, 2666, 2668, 2670, 2672, 2673, 2674, 2675,
+		2677, 2678, 2680, 2681, 2683, 2684, 2685, 2687,
+		2689, 2691, 2693, 2695, 2696, 2697, 2698, 2700,
+		2701, 2703, 2704, 2706, 2707, 2708, 2709, 2710,
+		2711, 2712, 2713, 2714, 2715, 2716, 2717, 2718,
+		2719, 2720, 2721, 2722, 2723, 2724, 2725, 2726,
+		2727, 2728, 2729, 2730, 2731, 2732, 2733, 2734,
+		2735, 2736, 2737, 2738, 2739, 2740, 2741, 2742,
+		2743, 2744, 2745, 2746, 2747, 2748, 2749, 2750,
+		2751, 2752, 2753, 2754, 2755, 2756, 2757, 2758,
+		2759, 2760, 2761, 2762, 2763, 2764, 2765, 2766,
+		2767, 2768, 2769, 2770, 2771, 2772, 2773, 2774,
+		2775, 2776, 2777, 2778, 2779, 2780, 2781, 2782,
+		2783, 2784, 2785, 2786, 2787, 2788, 2789, 2790,
+		2791, 2792, 2793, 2794, 2795, 2796, 2797, 2798,
+		2799, 2800, 2801, 2802, 2803, 2804, 2805, 2806,
+		2807, 2808, 2809, 2810, 2811, 2812, 2813, 2814,
+		2815, 2816, 2817, 2818, 2819, 2820, 2821, 2822,
+		2823, 2824, 2825, 2826, 2827, 2828, 2829, 2830,
+		2831, 2832, 2833, 2834, 2835, 2836, 2837, 2838,
+		2839, 2840, 2841, 2842, 2843, 2844, 2845, 2846,
+		2847, 2848, 2849, 2850, 2851, 2852, 2853, 2854,
+		2855, 2856, 2857, 2858, 2859, 2860, 2861, 2862,
+		2863, 2864, 2865, 2866, 2867, 2868, 2869, 2870,
+		2871, 2872, 2873, 2874, 2875, 2876, 2877, 2878,
+		2879, 2880, 2881, 2882, 2883, 2884, 2885, 2886,
+		2887, 2888, 2889, 2890, 2891, 2892, 2893, 2894,
+		2895, 2896, 2897, 2898, 2899, 2900, 2901, 2902,
+		2903, 2904, 2905, 2906, 2907, 2908, 2909, 2910,
+		2911, 2912, 2913, 2914, 2915, 2916, 2917, 2918,
+		2919, 2920, 2921, 2922, 2923, 2924, 2925, 2926,
+		2927, 2928, 2929, 2930, 2931, 2932, 2933, 2934,
+		2935, 2936, 2937, 2938, 2939, 2940, 2941, 2942,
+		2943, 2944, 2945, 2946, 2947, 2948, 2949, 2950,
+		2951, 2952, 2953, 2954, 2955, 2956, 2957, 2958,
+		2959, 2960, 2961, 2962, 2963, 2964, 2965, 2966,
+		2967, 2968, 2969, 2970, 2971, 2972, 2973, 2974,
+		2975, 2976, 2977, 2978, 2979, 2980, 2981, 2982,
+		2983, 2984, 2985, 2986, 2987, 2988, 2989, 2990,
+		2991, 2992, 2993, 2994, 2995, 2996, 2997, 2998,
+		2999, 3000, 3001, 3002, 3003, 3004, 3005, 3006,
+		3007, 3008, 3009, 3010, 3011, 3012, 3013, 3014,
+		3015, 3016, 3017, 3018, 3019, 3020, 3021, 3022,
+		3023, 3024, 3025, 3026, 3027, 3028, 3029, 3030,
+		3031, 3032, 3033, 3034, 3035, 3036, 3037, 3038,
+		3039, 3040, 3041, 3042, 3043, 3044, 3045, 3046,
+		3047, 3048, 3049, 3050, 3051, 3052, 3053, 3054,
+		3055, 3056, 3057, 3058, 3059, 3060, 3061, 3062,
+		3063, 3064, 3065, 3066, 3067, 3068, 3069, 3070,
+		3071, 3072, 3073, 3074, 3075, 3076, 3077, 3078,
+		3079, 3080, 3081, 3082, 3083, 3084, 3085, 3086,
+		3087, 3088, 3089, 3090, 3091, 3092, 3093, 3094,
+		3095, 3096, 3097, 3098, 3099, 3100, 3101, 3102,
+		3103, 3104, 3105, 3106, 3107, 3108, 3109, 3110,
+		3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118,
+		3119, 3120, 3121, 3122, 3123, 3124, 3125, 3126,
+		3127, 3128, 3129, 3130, 3131, 3132, 3133, 3134,
+		3135, 3136, 3137, 3138, 3139, 3140, 3141, 3142,
+		3143, 3144, 3145, 3146, 3147, 3148, 3149, 3150,
+		3151, 3152, 3153, 3154, 3155, 3156, 3157, 3158,
+		3159, 3160, 3161, 3162, 3163, 3164, 3165, 3166,
+		3167, 3168, 3169, 3170, 3171, 3172, 3173, 3174,
+		3175, 3176, 3177, 3178, 3179, 3180, 3181, 3182,
+		3183, 3184, 3185, 3186, 3187, 3188, 3189, 3190,
+		3191, 3192, 3193, 3194, 3195, 3196, 3197, 3198,
+		3199, 3200, 3201, 3202, 3203, 3204, 3205, 3206,
+		3207, 3208, 3209, 3210, 3211, 3212, 3213, 3214,
+		3215, 3216, 3217, 3218, 3219, 3220, 3221, 3222,
+		3223, 3224, 3225, 3226, 3227, 3228, 3229, 3230,
+		3231, 3232, 3233, 3234, 3235, 3236, 3237, 3238,
+		3239, 3240, 3241, 3242, 3243, 3244, 3245, 3246,
+		3247, 3248, 3249, 3250, 3251, 3252, 3253, 3254,
+		3255, 3256, 3257, 3258, 3259, 3260, 3261, 3262,
+		3263, 3264, 3265, 3266, 3267, 3268, 3269, 3270,
+		3271, 3272, 3273, 3274, 3275, 3276, 3277, 3278,
+		3279, 3280, 3281, 3282, 3283, 3284, 3285, 3286,
+		3287, 3288, 3289, 3290, 3291, 3292, 3293, 3294,
+		3295, 3296, 3297, 3298, 3299, 3300, 3301, 3302,
+		3303, 3304, 3305, 3306, 3307, 3308, 3309, 3310,
+		3311, 3312, 3313, 3314, 3315, 3316, 3317, 3318,
+		3319, 3320, 3321, 3322, 3323, 3324, 3325, 3326,
+		3327, 3328, 3329, 3330, 3331, 3332, 3333, 3334,
+		3335, 3336, 3337, 3338, 3339, 3340, 3341, 3342,
+		3343, 3344, 3345, 3346, 3347, 3348, 3349, 3350,
+		3351, 3352, 3353, 3354, 3355, 3356, 3357, 3358,
+		3359, 3360, 3361, 3362, 3363, 3364, 3365, 3366,
+		3367, 3368, 3369, 3370, 3371, 3372, 3373, 3374,
+		3375, 3376, 3377, 3378, 3379, 3380, 3381, 3382,
+		3383, 3384, 3385, 3386, 3387, 3388, 3389, 3390,
+		3391, 3392, 3393, 3394, 3395, 3396, 3397, 3398,
+		3399, 3400, 3401, 3402, 3403, 3404, 3405, 3406,
+		3407, 3408, 3409, 3410, 3411, 3412, 3413, 3414,
+		3415, 3416, 3417, 3418, 3419, 3420, 3421, 3422,
+		3423, 3424, 3425, 3426, 3427, 3428, 3429, 3430,
+		3431, 3432, 3433, 3434, 3435, 3436, 3437, 3438,
+		3439, 3440, 3441, 3442, 3443, 3444, 3445, 3446,
+		3447, 3448, 3449, 3450, 3451, 3452, 3453, 3454,
+		3455, 3456, 3457, 3458, 3459, 3460, 3461, 3462,
+		3463, 3464, 3465, 3466, 3467, 3468, 3469, 3470,
+		3471, 3472, 3473, 3474, 3475, 3476, 3477, 3478,
+		3479, 3480, 3481, 3482, 3483, 3484, 3485, 3486,
+		3487, 3488, 3489, 3490, 3491, 3492, 3493, 3494,
+		3495, 3496, 3497, 3498, 3499, 3500, 3501, 3502,
+		3503, 3504, 3505, 3506, 3507, 3508, 3509, 3510,
+		3511, 3512, 3513, 3514, 3515, 3516, 3517, 3518,
+		3519, 3520, 3521, 3522, 3523, 3524, 3525, 3526,
+		3527, 3528, 3529, 3530, 3531, 3532, 3533, 3534,
+		3535, 3536, 3537, 3538, 3539, 3540, 3541, 3542,
+		3543, 3544, 3545, 3546, 3547, 3548, 3549, 3550,
+		3551, 3552, 3553, 3554, 3555, 3556, 3557, 3558,
+		3559, 3560, 0
+	};
+	
+	static const signed char _regex_trans_lengths[] = {
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		2, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		2, 1, 2, 1, 2, 1, 2, 1,
+		2, 1, 2, 1, 2, 1, 2, 1,
+		1, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		2, 2, 2, 2, 2, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 2, 1, 2, 1, 2, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 2,
+		2, 2, 2, 2, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 2, 1, 2, 1, 2, 1, 1,
+		2, 2, 1, 1, 1, 1, 1, 2,
+		2, 2, 2, 2, 1, 1, 1, 2,
+		1, 2, 1, 2, 1, 1, 2, 2,
+		2, 2, 2, 1, 1, 1, 2, 1,
+		2, 1, 2, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 0
+	};
+	
+	static const signed char _regex_cond_keys[] = {
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 1,
+		0, 0, 1, 0, 0, 1, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 1, 0, 0, 1, 0, 0,
+		1, 0, 0, 1, 0, 0, 1, 0,
+		0, 1, 0, 0, 1, 0, 0, 1,
+		0, 0, 1, 0, 0, 0, 0, 1,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 1, 0,
+		1, 0, 1, 0, 1, 0, 1, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 1, 0, 0, 1,
+		0, 0, 1, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 1, 0, 1,
+		0, 1, 0, 1, 0, 1, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 1, 0, 0, 1,
+		0, 0, 1, 0, 0, 0, 1, 0,
+		1, 0, 0, 0, 0, 0, 0, 1,
+		0, 1, 0, 1, 0, 1, 0, 1,
+		0, 0, 0, 0, 1, 0, 0, 1,
+		0, 0, 1, 0, 0, 0, 1, 0,
+		1, 0, 1, 0, 1, 0, 1, 0,
+		0, 0, 0, 1, 0, 0, 1, 0,
+		0, 1, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0
+	};
+	
+	static const short _regex_cond_targs[] = {
+		746, 746, 746, 746, 748, 749, 750, 746,
+		751, 752, 746, 754, 746, 746, 755, 756,
+		757, 758, 758, 758, 758, 746, 753, 746,
+		746, 3, 3, 3, 3, 746, 746, 4,
+		4, 4, 4, 746, 6, 6, 6, 6,
+		746, 7, 6, 6, 6, 6, 746, 746,
+		746, 746, 8, 8, 8, 8, 746, 746,
+		8, 9, 8, 8, 746, 746, 8, 9,
+		8, 8, 746, 12, 12, 12, 12, 746,
+		7, 12, 12, 12, 12, 746, 746, 14,
+		746, 746, 746, 746, 746, 16, 746, 8,
+		18, 8, 8, 746, 17, 17, 17, 17,
+		746, 746, 17, 17, 17, 17, 746, 746,
+		8, 18, 8, 8, 746, 746, 19, 746,
+		746, 746, 20, 20, 20, 20, 746, 746,
+		21, 21, 21, 21, 746, 746, 22, 746,
+		21, 21, 21, 21, 746, 25, 25, 25,
+		25, 746, 746, 25, 25, 25, 25, 746,
+		3, 3, 3, 3, 746, 20, 20, 20,
+		20, 746, 746, 27, 746, 28, 28, 28,
+		28, 746, 30, 31, 746, 29, 30, 31,
+		746, 29, 30, 31, 29, 33, 34, 746,
+		32, 33, 34, 746, 32, 33, 34, 32,
+		36, 37, 746, 35, 36, 37, 746, 35,
+		36, 37, 35, 746, 38, 772, 746, 746,
+		40, 42, 49, 46, 49, 49, 746, 43,
+		746, 746, 44, 746, 746, 45, 746, 746,
+		746, 49, 746, 47, 49, 49, 746, 49,
+		746, 48, 49, 49, 746, 49, 746, 49,
+		49, 49, 746, 49, 746, 49, 49, 49,
+		746, 51, 51, 51, 51, 746, 746, 51,
+		51, 51, 51, 746, 53, 53, 53, 53,
+		746, 746, 53, 53, 53, 53, 746, 55,
+		55, 55, 55, 746, 55, 746, 55, 55,
+		55, 746, 57, 746, 746, 57, 746, 746,
+		58, 58, 58, 746, 60, 783, 59, 746,
+		783, 61, 746, 783, 61, 746, 746, 746,
+		746, 746, 64, 746, 746, 746, 746, 787,
+		65, 787, 67, 65, 787, 65, 787, 69,
+		65, 787, 70, 65, 787, 65, 790, 790,
+		73, 76, 790, 74, 790, 75, 790, 790,
+		790, 77, 790, 78, 790, 79, 790, 80,
+		790, 790, 790, 82, 790, 83, 790, 84,
+		790, 85, 790, 790, 790, 87, 92, 94,
+		790, 88, 790, 89, 790, 90, 790, 91,
+		790, 790, 790, 93, 790, 790, 790, 95,
+		790, 790, 790, 97, 790, 98, 790, 99,
+		790, 100, 790, 790, 790, 102, 790, 103,
+		790, 104, 790, 105, 790, 106, 790, 790,
+		790, 108, 790, 109, 111, 790, 110, 790,
+		790, 790, 112, 790, 113, 790, 790, 790,
+		115, 120, 790, 116, 790, 117, 790, 118,
+		790, 119, 790, 790, 790, 121, 790, 790,
+		790, 123, 139, 790, 124, 790, 125, 790,
+		126, 790, 127, 790, 128, 790, 129, 790,
+		130, 790, 131, 790, 132, 790, 133, 790,
+		134, 790, 135, 790, 136, 790, 137, 790,
+		138, 790, 790, 790, 140, 790, 141, 790,
+		790, 790, 143, 144, 790, 790, 790, 145,
+		790, 146, 790, 147, 790, 148, 790, 790,
+		790, 150, 790, 151, 790, 790, 790, 153,
+		790, 154, 790, 790, 790, 156, 790, 157,
+		790, 158, 790, 159, 790, 160, 790, 161,
+		790, 790, 790, 163, 167, 790, 164, 790,
+		165, 790, 166, 790, 790, 790, 168, 790,
+		169, 790, 170, 790, 171, 790, 790, 790,
+		173, 177, 790, 174, 790, 175, 790, 176,
+		790, 790, 790, 178, 790, 179, 790, 180,
+		790, 181, 790, 182, 790, 183, 790, 790,
+		790, 185, 790, 186, 790, 187, 790, 188,
+		790, 189, 790, 190, 790, 191, 790, 192,
+		790, 193, 790, 194, 790, 195, 790, 196,
+		790, 197, 790, 198, 790, 199, 790, 200,
+		790, 201, 790, 790, 790, 203, 790, 204,
+		790, 205, 790, 206, 790, 207, 790, 790,
+		790, 209, 790, 210, 790, 211, 790, 212,
+		790, 213, 790, 790, 790, 215, 790, 216,
+		790, 217, 790, 218, 790, 219, 790, 220,
+		790, 221, 790, 790, 790, 223, 790, 224,
+		790, 225, 790, 790, 790, 227, 790, 228,
+		790, 790, 790, 230, 235, 790, 231, 790,
+		232, 790, 233, 790, 234, 790, 790, 790,
+		236, 790, 237, 790, 238, 790, 239, 790,
+		790, 790, 799, 790, 242, 790, 790, 790,
+		244, 790, 245, 790, 790, 790, 247, 790,
+		248, 790, 249, 790, 790, 790, 251, 790,
+		252, 790, 253, 790, 254, 790, 255, 790,
+		790, 790, 257, 790, 258, 790, 259, 790,
+		260, 790, 261, 790, 262, 790, 263, 790,
+		264, 790, 265, 790, 266, 790, 267, 790,
+		268, 790, 269, 790, 790, 790, 271, 277,
+		790, 272, 790, 273, 790, 274, 790, 275,
+		790, 276, 790, 790, 790, 278, 790, 279,
+		790, 280, 790, 281, 790, 282, 790, 283,
+		790, 284, 790, 285, 790, 286, 790, 287,
+		790, 288, 790, 289, 790, 290, 790, 291,
+		295, 790, 292, 790, 293, 790, 294, 790,
+		790, 790, 296, 790, 297, 790, 298, 790,
+		299, 790, 790, 790, 301, 790, 302, 790,
+		303, 790, 304, 790, 305, 790, 790, 790,
+		307, 310, 314, 319, 790, 308, 790, 309,
+		790, 790, 790, 311, 790, 312, 790, 313,
+		790, 790, 790, 315, 790, 316, 790, 317,
+		790, 318, 790, 790, 790, 320, 790, 321,
+		790, 322, 790, 323, 790, 790, 790, 325,
+		332, 790, 326, 790, 327, 790, 328, 790,
+		329, 790, 330, 790, 331, 790, 790, 790,
+		333, 790, 790, 790, 790, 335, 790, 336,
+		790, 790, 790, 338, 790, 339, 790, 340,
+		790, 790, 790, 342, 344, 349, 790, 343,
+		790, 790, 790, 345, 790, 346, 790, 347,
+		790, 348, 790, 790, 790, 790, 790, 351,
+		354, 790, 352, 790, 353, 790, 790, 790,
+		355, 790, 356, 790, 790, 790, 358, 364,
+		790, 359, 790, 360, 790, 361, 790, 362,
+		790, 363, 790, 790, 790, 365, 790, 366,
+		790, 367, 790, 790, 790, 369, 790, 370,
+		790, 371, 790, 372, 790, 373, 790, 374,
+		790, 375, 790, 376, 790, 790, 790, 378,
+		790, 379, 790, 380, 790, 381, 790, 382,
+		790, 383, 790, 790, 790, 385, 790, 386,
+		790, 387, 790, 388, 790, 790, 790, 390,
+		790, 391, 790, 392, 790, 393, 790, 394,
+		790, 395, 790, 396, 790, 397, 790, 790,
+		790, 790, 790, 400, 790, 401, 790, 790,
+		790, 403, 408, 790, 404, 790, 405, 790,
+		406, 790, 407, 790, 790, 790, 409, 790,
+		410, 415, 421, 433, 790, 411, 790, 412,
+		790, 413, 790, 414, 790, 790, 790, 416,
+		790, 417, 790, 418, 790, 419, 790, 420,
+		790, 790, 790, 422, 790, 423, 790, 424,
+		790, 425, 790, 426, 790, 427, 790, 428,
+		790, 429, 790, 430, 790, 431, 790, 432,
+		790, 790, 790, 434, 790, 435, 790, 436,
+		790, 437, 790, 790, 790, 439, 790, 440,
+		790, 790, 790, 442, 790, 443, 790, 444,
+		790, 445, 790, 790, 790, 447, 452, 790,
+		448, 790, 449, 790, 450, 790, 451, 790,
+		790, 790, 453, 790, 454, 790, 455, 790,
+		456, 790, 457, 790, 458, 790, 790, 790,
+		460, 790, 461, 790, 462, 790, 790, 790,
+		464, 790, 465, 790, 790, 790, 467, 473,
+		790, 468, 790, 469, 790, 470, 790, 471,
+		790, 472, 790, 790, 790, 474, 790, 475,
+		790, 476, 790, 477, 790, 478, 790, 479,
+		790, 790, 790, 481, 790, 482, 790, 483,
+		790, 484, 790, 790, 790, 486, 790, 487,
+		790, 488, 790, 489, 790, 790, 790, 491,
+		790, 492, 790, 493, 790, 494, 790, 495,
+		790, 496, 790, 790, 790, 498, 507, 790,
+		499, 790, 500, 790, 501, 790, 502, 790,
+		503, 790, 504, 790, 505, 790, 506, 790,
+		790, 790, 508, 790, 509, 790, 790, 790,
+		511, 519, 528, 790, 512, 515, 790, 513,
+		790, 514, 790, 790, 790, 516, 790, 517,
+		790, 518, 790, 790, 790, 520, 790, 521,
+		522, 525, 790, 790, 790, 523, 790, 524,
+		790, 790, 790, 526, 790, 527, 790, 790,
+		790, 529, 790, 790, 790, 531, 790, 532,
+		790, 533, 790, 790, 790, 535, 790, 536,
+		790, 790, 537, 790, 790, 790, 539, 543,
+		790, 540, 790, 541, 790, 542, 790, 790,
+		790, 544, 790, 545, 790, 546, 790, 547,
+		790, 790, 790, 549, 790, 550, 790, 551,
+		790, 552, 790, 553, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 560, 0, 562, 561, 817, 0, 0,
+		561, 564, 565, 819, 563, 564, 565, 819,
+		563, 564, 565, 563, 568, 569, 819, 570,
+		651, 666, 672, 678, 684, 690, 696, 707,
+		713, 719, 724, 567, 568, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 567, 568,
+		569, 819, 571, 586, 592, 598, 604, 610,
+		616, 627, 633, 639, 644, 567, 568, 569,
+		819, 572, 581, 567, 568, 569, 819, 573,
+		577, 567, 568, 569, 819, 574, 567, 568,
+		569, 819, 575, 567, 576, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 819, 578,
+		567, 568, 569, 819, 579, 567, 580, 569,
+		819, 567, 568, 569, 819, 567, 568, 569,
+		819, 582, 567, 568, 569, 819, 583, 567,
+		568, 569, 819, 584, 567, 585, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		587, 567, 568, 569, 819, 588, 567, 568,
+		569, 819, 589, 567, 568, 569, 819, 590,
+		567, 591, 569, 819, 567, 568, 569, 819,
+		567, 568, 569, 819, 593, 567, 568, 569,
+		819, 594, 567, 568, 569, 819, 595, 567,
+		568, 569, 819, 596, 567, 597, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		599, 567, 568, 569, 819, 600, 567, 568,
+		569, 819, 601, 567, 568, 569, 819, 602,
+		567, 603, 569, 819, 567, 568, 569, 819,
+		567, 568, 569, 819, 605, 567, 568, 569,
+		819, 606, 567, 568, 569, 819, 607, 567,
+		568, 569, 819, 608, 567, 609, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		611, 567, 568, 569, 819, 612, 567, 568,
+		569, 819, 613, 567, 568, 569, 819, 614,
+		567, 615, 569, 819, 567, 568, 569, 819,
+		567, 568, 569, 819, 617, 622, 567, 568,
+		569, 819, 618, 567, 568, 569, 819, 619,
+		567, 568, 569, 819, 620, 567, 621, 569,
+		819, 567, 568, 569, 819, 567, 568, 569,
+		819, 623, 567, 568, 569, 819, 624, 567,
+		568, 569, 819, 625, 567, 626, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		628, 567, 568, 569, 819, 629, 567, 568,
+		569, 819, 630, 567, 568, 569, 819, 631,
+		567, 632, 569, 819, 567, 568, 569, 819,
+		567, 568, 569, 819, 634, 567, 568, 569,
+		819, 635, 567, 568, 569, 819, 636, 567,
+		568, 569, 819, 637, 567, 638, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		640, 567, 568, 569, 819, 641, 567, 568,
+		569, 819, 642, 567, 643, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 819, 645,
+		567, 568, 569, 819, 646, 567, 568, 569,
+		819, 647, 567, 568, 569, 819, 648, 567,
+		568, 569, 819, 649, 567, 650, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		652, 661, 567, 568, 569, 819, 653, 657,
+		567, 568, 569, 819, 654, 567, 568, 569,
+		819, 655, 567, 656, 569, 819, 567, 568,
+		569, 819, 567, 568, 569, 819, 658, 567,
+		568, 569, 819, 659, 567, 660, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		662, 567, 568, 569, 819, 663, 567, 568,
+		569, 819, 664, 567, 665, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 819, 667,
+		567, 568, 569, 819, 668, 567, 568, 569,
+		819, 669, 567, 568, 569, 819, 670, 567,
+		671, 569, 819, 567, 568, 569, 819, 567,
+		568, 569, 819, 673, 567, 568, 569, 819,
+		674, 567, 568, 569, 819, 675, 567, 568,
+		569, 819, 676, 567, 677, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 819, 679,
+		567, 568, 569, 819, 680, 567, 568, 569,
+		819, 681, 567, 568, 569, 819, 682, 567,
+		683, 569, 819, 567, 568, 569, 819, 567,
+		568, 569, 819, 685, 567, 568, 569, 819,
+		686, 567, 568, 569, 819, 687, 567, 568,
+		569, 819, 688, 567, 689, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 819, 691,
+		567, 568, 569, 819, 692, 567, 568, 569,
+		819, 693, 567, 568, 569, 819, 694, 567,
+		695, 569, 819, 567, 568, 569, 819, 567,
+		568, 569, 819, 697, 702, 567, 568, 569,
+		819, 698, 567, 568, 569, 819, 699, 567,
+		568, 569, 819, 700, 567, 701, 569, 819,
+		567, 568, 569, 819, 567, 568, 569, 819,
+		703, 567, 568, 569, 819, 704, 567, 568,
+		569, 819, 705, 567, 706, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 819, 708,
+		567, 568, 569, 819, 709, 567, 568, 569,
+		819, 710, 567, 568, 569, 819, 711, 567,
+		712, 569, 819, 567, 568, 569, 819, 567,
+		568, 569, 819, 714, 567, 568, 569, 819,
+		715, 567, 568, 569, 819, 716, 567, 568,
+		569, 819, 717, 567, 718, 569, 819, 567,
+		568, 569, 819, 567, 568, 569, 819, 720,
+		567, 568, 569, 819, 721, 567, 568, 569,
+		819, 722, 567, 723, 569, 819, 567, 568,
+		569, 819, 567, 568, 569, 819, 725, 567,
+		568, 569, 819, 726, 567, 568, 569, 819,
+		727, 567, 568, 569, 819, 728, 567, 568,
+		569, 819, 729, 567, 730, 569, 819, 567,
+		568, 569, 819, 567, 732, 733, 819, 731,
+		732, 733, 819, 731, 732, 733, 731, 735,
+		819, 819, 735, 819, 819, 736, 736, 736,
+		819, 819, 819, 819, 819, 739, 819, 819,
+		819, 819, 838, 838, 838, 838, 742, 838,
+		838, 838, 838, 843, 843, 843, 843, 745,
+		843, 843, 843, 843, 746, 746, 746, 746,
+		746, 747, 746, 759, 760, 746, 761, 762,
+		763, 746, 782, 746, 746, 746, 746, 746,
+		784, 746, 785, 746, 786, 746, 746, 746,
+		1, 2, 746, 3, 3, 3, 3, 746,
+		4, 4, 4, 4, 746, 5, 8, 11,
+		13, 15, 8, 9, 10, 8, 8, 746,
+		19, 746, 20, 20, 20, 20, 19, 746,
+		746, 19, 746, 746, 746, 21, 21, 21,
+		21, 746, 746, 746, 746, 22, 746, 23,
+		24, 26, 746, 746, 27, 746, 28, 28,
+		28, 28, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 29, 32, 35, 746,
+		764, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 769, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 770, 746,
+		746, 746, 771, 746, 776, 746, 746, 777,
+		778, 746, 746, 746, 746, 746, 746, 779,
+		746, 766, 768, 746, 765, 746, 746, 746,
+		767, 768, 746, 768, 768, 746, 768, 746,
+		746, 746, 746, 38, 39, 40, 41, 774,
+		746, 773, 746, 746, 746, 775, 746, 746,
+		746, 50, 52, 54, 746, 56, 746, 746,
+		746, 781, 780, 780, 780, 746, 746, 746,
+		746, 746, 58, 58, 58, 746, 59, 746,
+		746, 746, 746, 746, 746, 746, 746, 62,
+		746, 746, 63, 746, 787, 789, 788, 787,
+		65, 787, 66, 68, 65, 791, 792, 793,
+		795, 796, 797, 798, 800, 801, 802, 803,
+		804, 806, 807, 808, 809, 810, 811, 812,
+		813, 814, 815, 816, 790, 71, 72, 81,
+		790, 86, 96, 101, 107, 114, 790, 122,
+		790, 790, 142, 790, 794, 790, 155, 162,
+		790, 149, 152, 790, 172, 790, 184, 202,
+		790, 208, 214, 222, 226, 229, 790, 240,
+		246, 250, 790, 241, 243, 790, 256, 270,
+		790, 300, 790, 306, 324, 790, 790, 334,
+		337, 341, 790, 790, 790, 790, 790, 350,
+		790, 357, 790, 805, 790, 377, 384, 790,
+		368, 790, 790, 389, 398, 790, 790, 790,
+		399, 402, 438, 441, 790, 790, 790, 790,
+		790, 446, 790, 790, 790, 790, 459, 463,
+		790, 466, 790, 480, 485, 790, 790, 790,
+		490, 497, 790, 510, 530, 534, 538, 790,
+		548, 790, 554, 790, 555, 556, 557, 558,
+		790, 790, 790, 790, 790, 790, 790, 0,
+		818, 818, 818, 818, 818, 818, 818, 818,
+		819, 820, 821, 819, 819, 819, 819, 833,
+		819, 834, 819, 835, 819, 819, 819, 563,
+		566, 731, 819, 822, 819, 819, 819, 819,
+		819, 826, 819, 819, 819, 819, 819, 819,
+		819, 827, 819, 819, 819, 819, 819, 819,
+		819, 828, 829, 819, 819, 819, 819, 819,
+		819, 830, 824, 819, 819, 819, 819, 823,
+		819, 819, 819, 825, 819, 819, 819, 819,
+		819, 819, 734, 819, 819, 819, 832, 831,
+		831, 831, 819, 819, 819, 819, 819, 736,
+		736, 736, 819, 819, 819, 819, 819, 737,
+		819, 819, 738, 819, 837, 836, 836, 836,
+		836, 836, 836, 836, 836, 839, 838, 838,
+		838, 840, 838, 841, 838, 842, 838, 838,
+		838, 838, 838, 838, 838, 838, 838, 740,
+		838, 838, 741, 838, 844, 843, 843, 843,
+		845, 843, 846, 843, 847, 843, 843, 843,
+		843, 843, 843, 843, 843, 843, 743, 843,
+		843, 744, 843, 848, 848, 849, 849, 0,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		787, 787, 787, 787, 787, 787, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 559, 560,
+		561, 562, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 838, 838, 838, 843, 843,
+		843, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 746, 746, 746, 746, 746, 746,
+		746, 746, 787, 787, 787, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		790, 790, 790, 790, 790, 790, 790, 790,
+		817, 818, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 819, 819, 819, 819, 819,
+		819, 819, 819, 836, 836, 838, 838, 838,
+		838, 838, 843, 843, 843, 843, 843, 848,
+		849, 0
+	};
+	
+	static const short _regex_cond_actions[] = {
+		827, 631, 731, 723, 45, 903, 903, 897,
+		45, 912, 900, 903, 729, 741, 0, 45,
+		45, 923, 923, 923, 923, 737, 45, 765,
+		747, 0, 0, 0, 0, 841, 743, 3,
+		3, 3, 3, 841, 3, 3, 3, 3,
+		839, 0, 3, 3, 3, 3, 839, 761,
+		839, 761, 3, 3, 3, 3, 839, 759,
+		3, 870, 3, 3, 839, 761, 3, 870,
+		3, 3, 839, 3, 3, 3, 3, 839,
+		0, 3, 3, 3, 3, 839, 751, 0,
+		749, 839, 755, 753, 839, 0, 757, 3,
+		3, 3, 3, 839, 0, 0, 0, 0,
+		839, 757, 0, 0, 0, 0, 839, 757,
+		3, 3, 3, 3, 839, 745, 0, 841,
+		725, 727, 27, 27, 27, 27, 841, 743,
+		3, 3, 3, 3, 841, 763, 0, 841,
+		3, 3, 3, 3, 841, 3, 3, 3,
+		3, 841, 673, 3, 3, 3, 3, 841,
+		0, 0, 0, 0, 841, 27, 27, 27,
+		27, 841, 725, 0, 727, 25, 25, 25,
+		25, 841, 0, 0, 829, 0, 0, 0,
+		603, 0, 0, 0, 0, 0, 0, 829,
+		0, 0, 0, 601, 0, 0, 0, 0,
+		0, 0, 829, 0, 0, 0, 603, 0,
+		0, 0, 0, 675, 0, 17, 831, 675,
+		0, 7, 3, 870, 3, 3, 831, 17,
+		831, 663, 17, 831, 663, 17, 831, 663,
+		831, 3, 661, 870, 3, 3, 831, 3,
+		661, 870, 3, 3, 831, 3, 661, 3,
+		3, 3, 831, 3, 665, 3, 3, 3,
+		831, 3, 3, 3, 3, 837, 671, 3,
+		3, 3, 3, 837, 3, 3, 3, 3,
+		837, 669, 3, 3, 3, 3, 837, 3,
+		3, 3, 3, 837, 3, 667, 3, 3,
+		3, 837, 0, 833, 677, 0, 833, 679,
+		0, 0, 0, 835, 0, 29, 11, 845,
+		31, 13, 845, 0, 13, 845, 843, 769,
+		843, 843, 0, 843, 843, 771, 843, 53,
+		0, 53, 0, 0, 51, 0, 53, 0,
+		0, 49, 0, 0, 47, 0, 315, 359,
+		0, 0, 359, 0, 359, 0, 359, 127,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 129, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 131, 359, 0, 0, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 133, 359, 0, 359, 135, 359, 0,
+		359, 137, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 139, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 141,
+		359, 0, 359, 0, 0, 359, 0, 359,
+		143, 359, 0, 359, 0, 359, 145, 359,
+		0, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 147, 359, 0, 359, 149,
+		359, 0, 0, 341, 0, 341, 0, 341,
+		0, 341, 0, 341, 0, 341, 0, 341,
+		0, 341, 0, 341, 0, 341, 0, 341,
+		0, 341, 0, 341, 0, 341, 0, 341,
+		0, 341, 151, 341, 0, 341, 0, 341,
+		153, 341, 0, 0, 341, 155, 341, 0,
+		341, 0, 341, 0, 341, 0, 341, 157,
+		341, 0, 343, 0, 343, 159, 343, 0,
+		343, 0, 343, 161, 343, 0, 341, 0,
+		341, 0, 341, 0, 341, 0, 341, 0,
+		341, 163, 341, 0, 0, 341, 0, 341,
+		0, 341, 0, 341, 165, 341, 0, 341,
+		0, 341, 0, 341, 0, 341, 167, 341,
+		0, 0, 359, 0, 359, 0, 359, 0,
+		359, 169, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 171,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 173, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 175,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 177, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 179, 359, 0, 359, 0,
+		359, 0, 359, 181, 359, 0, 359, 0,
+		359, 183, 359, 0, 0, 359, 0, 359,
+		0, 359, 0, 359, 0, 359, 185, 359,
+		0, 359, 0, 359, 0, 359, 0, 359,
+		187, 359, 45, 359, 0, 357, 189, 357,
+		0, 357, 0, 357, 191, 357, 0, 359,
+		0, 359, 0, 359, 193, 359, 0, 359,
+		0, 359, 0, 359, 0, 359, 0, 359,
+		195, 359, 0, 359, 0, 359, 0, 359,
+		0, 359, 0, 359, 0, 359, 0, 359,
+		0, 359, 0, 359, 0, 359, 0, 359,
+		0, 359, 0, 359, 197, 359, 0, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 199, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		0, 359, 0, 359, 0, 359, 0, 359,
+		201, 359, 0, 359, 0, 359, 0, 359,
+		0, 359, 203, 359, 0, 359, 0, 359,
+		0, 359, 0, 359, 0, 359, 205, 359,
+		0, 0, 0, 0, 359, 0, 359, 0,
+		359, 207, 359, 0, 359, 0, 359, 0,
+		359, 209, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 211, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 213, 359, 0,
+		0, 359, 0, 359, 0, 359, 0, 359,
+		0, 359, 0, 359, 0, 359, 215, 359,
+		0, 359, 217, 359, 219, 0, 345, 0,
+		345, 221, 345, 0, 345, 0, 345, 0,
+		345, 223, 345, 0, 0, 0, 345, 0,
+		345, 225, 345, 0, 345, 0, 345, 0,
+		345, 0, 345, 227, 345, 229, 345, 0,
+		0, 345, 0, 345, 0, 345, 231, 345,
+		0, 345, 0, 345, 233, 345, 0, 0,
+		347, 0, 347, 0, 347, 0, 347, 0,
+		347, 0, 347, 235, 347, 0, 347, 0,
+		347, 0, 347, 237, 347, 0, 349, 0,
+		349, 0, 349, 0, 349, 0, 349, 0,
+		349, 0, 349, 0, 349, 239, 349, 0,
+		347, 0, 347, 0, 347, 0, 347, 0,
+		347, 0, 347, 241, 347, 0, 347, 0,
+		347, 0, 347, 0, 347, 243, 347, 0,
+		351, 0, 351, 0, 351, 0, 351, 0,
+		351, 0, 351, 0, 351, 0, 351, 245,
+		351, 247, 351, 0, 359, 0, 359, 249,
+		359, 0, 0, 359, 0, 359, 0, 359,
+		0, 359, 0, 359, 251, 359, 0, 359,
+		0, 0, 0, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 253, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 255, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 257, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 259, 359, 0, 359, 0,
+		359, 261, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 263, 359, 0, 0, 353,
+		0, 353, 0, 353, 0, 353, 0, 353,
+		265, 353, 0, 353, 0, 353, 0, 353,
+		0, 353, 0, 353, 0, 353, 267, 353,
+		0, 359, 0, 359, 0, 359, 269, 359,
+		0, 359, 0, 359, 271, 359, 0, 0,
+		355, 0, 355, 0, 355, 0, 355, 0,
+		355, 0, 355, 273, 355, 0, 355, 0,
+		355, 0, 355, 0, 355, 0, 355, 0,
+		355, 275, 355, 0, 355, 0, 355, 0,
+		355, 0, 355, 277, 355, 0, 355, 0,
+		355, 0, 355, 0, 355, 279, 355, 0,
+		355, 0, 355, 0, 355, 0, 355, 0,
+		355, 0, 355, 281, 355, 0, 0, 355,
+		0, 355, 0, 355, 0, 355, 0, 355,
+		0, 355, 0, 355, 0, 355, 0, 355,
+		283, 355, 0, 355, 0, 355, 285, 355,
+		0, 0, 0, 359, 0, 0, 359, 0,
+		359, 0, 359, 287, 359, 0, 359, 0,
+		359, 0, 359, 289, 359, 0, 359, 0,
+		0, 0, 359, 291, 359, 0, 359, 0,
+		359, 293, 359, 0, 359, 0, 359, 295,
+		359, 0, 359, 297, 359, 0, 359, 0,
+		359, 0, 359, 299, 359, 0, 359, 0,
+		303, 359, 0, 359, 301, 359, 0, 0,
+		359, 0, 359, 0, 359, 0, 359, 305,
+		359, 0, 359, 0, 359, 0, 359, 0,
+		359, 307, 359, 0, 359, 0, 359, 0,
+		359, 0, 359, 0, 359, 309, 359, 311,
+		359, 119, 359, 121, 359, 123, 359, 125,
+		359, 0, 39, 33, 35, 37, 39, 39,
+		35, 0, 0, 539, 0, 0, 0, 377,
+		0, 0, 0, 0, 0, 0, 539, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 539, 0,
+		0, 0, 435, 0, 0, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 0, 539, 0,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 381, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 385, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 389, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 393,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 397, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 401,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 405, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 409,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 413, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 417, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 421,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 425, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 429, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 433, 0, 0, 0, 539,
+		0, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 379, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 383, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 387, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 391, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 395, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 399, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 403, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 407, 0,
+		0, 0, 539, 0, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 411, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 415, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 419, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 423, 0, 0, 0, 539, 0,
+		0, 0, 0, 539, 0, 0, 0, 0,
+		539, 0, 0, 0, 0, 539, 0, 0,
+		0, 427, 0, 0, 0, 539, 0, 0,
+		0, 0, 539, 0, 0, 0, 0, 539,
+		0, 0, 0, 0, 539, 0, 0, 0,
+		0, 539, 0, 0, 0, 0, 539, 0,
+		0, 0, 431, 0, 0, 0, 539, 0,
+		0, 0, 377, 0, 0, 0, 0, 0,
+		533, 471, 0, 533, 475, 0, 0, 0,
+		535, 537, 503, 537, 537, 0, 537, 537,
+		505, 537, 569, 557, 569, 569, 0, 569,
+		569, 559, 569, 587, 575, 587, 587, 0,
+		587, 587, 577, 587, 633, 775, 777, 629,
+		637, 45, 597, 0, 0, 609, 0, 45,
+		0, 635, 909, 599, 775, 777, 773, 777,
+		0, 777, 45, 777, 45, 777, 773, 777,
+		0, 0, 779, 0, 0, 0, 0, 821,
+		3, 3, 3, 3, 821, 1, 3, 1,
+		0, 3, 3, 855, 855, 3, 3, 819,
+		0, 821, 27, 27, 27, 27, 0, 821,
+		745, 0, 821, 735, 733, 3, 3, 3,
+		3, 821, 739, 821, 763, 0, 821, 1,
+		1, 0, 821, 725, 0, 727, 25, 25,
+		25, 25, 821, 615, 613, 783, 619, 617,
+		785, 623, 621, 787, 0, 0, 0, 781,
+		5, 639, 647, 611, 695, 607, 717, 699,
+		715, 683, 683, 0, 605, 713, 691, 683,
+		703, 687, 719, 641, 657, 645, 0, 693,
+		659, 655, 906, 697, 45, 683, 651, 45,
+		0, 653, 689, 649, 683, 701, 685, 7,
+		643, 852, 915, 721, 15, 791, 867, 791,
+		858, 919, 795, 927, 919, 793, 919, 847,
+		709, 711, 681, 0, 7, 0, 849, 17,
+		801, 17, 799, 876, 799, 17, 797, 873,
+		797, 1, 1, 1, 815, 0, 803, 705,
+		707, 45, 19, 23, 21, 805, 882, 894,
+		888, 805, 0, 0, 0, 807, 11, 825,
+		627, 625, 789, 823, 767, 823, 823, 0,
+		823, 823, 0, 823, 55, 45, 45, 53,
+		0, 53, 0, 0, 0, 45, 45, 45,
+		45, 45, 45, 45, 45, 45, 45, 45,
+		45, 45, 45, 45, 45, 45, 45, 45,
+		45, 45, 0, 0, 317, 0, 0, 0,
+		339, 0, 0, 0, 0, 0, 339, 0,
+		61, 63, 0, 65, 45, 67, 0, 0,
+		319, 0, 0, 321, 0, 339, 0, 0,
+		339, 0, 0, 0, 0, 0, 339, 0,
+		0, 0, 339, 0, 0, 337, 0, 0,
+		339, 0, 339, 0, 0, 339, 79, 0,
+		0, 0, 69, 71, 73, 75, 77, 0,
+		323, 0, 81, 45, 83, 0, 0, 325,
+		0, 327, 85, 0, 0, 87, 89, 329,
+		0, 0, 0, 0, 339, 91, 93, 95,
+		97, 0, 99, 101, 103, 331, 0, 0,
+		339, 0, 105, 0, 0, 107, 109, 111,
+		0, 0, 333, 0, 0, 0, 0, 339,
+		0, 339, 0, 339, 0, 0, 0, 0,
+		339, 313, 339, 113, 115, 117, 335, 39,
+		361, 363, 365, 367, 369, 371, 373, 375,
+		491, 45, 0, 511, 509, 507, 509, 0,
+		509, 45, 509, 45, 509, 507, 509, 0,
+		0, 0, 531, 5, 489, 439, 457, 493,
+		493, 0, 437, 485, 493, 461, 481, 451,
+		441, 0, 487, 453, 449, 495, 455, 493,
+		445, 45, 0, 447, 483, 443, 493, 459,
+		479, 7, 9, 473, 497, 497, 499, 15,
+		517, 861, 517, 15, 519, 864, 519, 467,
+		469, 477, 0, 521, 463, 465, 45, 19,
+		23, 21, 523, 879, 891, 885, 523, 0,
+		0, 0, 525, 529, 501, 529, 529, 0,
+		529, 529, 0, 529, 0, 549, 543, 549,
+		541, 549, 547, 545, 551, 0, 563, 561,
+		563, 0, 563, 45, 563, 45, 563, 561,
+		563, 553, 567, 565, 555, 565, 565, 0,
+		565, 565, 0, 565, 0, 581, 579, 581,
+		0, 581, 45, 581, 45, 581, 579, 581,
+		571, 585, 583, 573, 583, 583, 0, 583,
+		583, 0, 583, 589, 591, 593, 595, 0,
+		827, 827, 841, 841, 839, 839, 839, 839,
+		839, 839, 839, 839, 839, 839, 839, 839,
+		839, 839, 841, 841, 841, 841, 841, 841,
+		841, 841, 841, 841, 829, 829, 829, 829,
+		829, 829, 829, 829, 829, 831, 831, 831,
+		831, 831, 831, 831, 831, 831, 831, 831,
+		831, 837, 837, 837, 837, 837, 837, 833,
+		833, 835, 845, 845, 845, 843, 843, 843,
+		59, 59, 59, 59, 59, 59, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 341, 341, 341, 341, 341, 341, 341,
+		341, 341, 341, 341, 341, 341, 341, 341,
+		341, 341, 341, 341, 341, 341, 341, 341,
+		341, 341, 341, 341, 343, 343, 343, 343,
+		343, 343, 341, 341, 341, 341, 341, 341,
+		341, 341, 341, 341, 341, 341, 341, 341,
+		341, 341, 341, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		357, 357, 357, 357, 357, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 345, 345, 345,
+		345, 345, 345, 345, 345, 345, 345, 345,
+		345, 345, 345, 345, 345, 345, 345, 345,
+		345, 345, 345, 345, 347, 347, 347, 347,
+		347, 347, 347, 347, 347, 347, 347, 349,
+		349, 349, 349, 349, 349, 349, 349, 349,
+		347, 347, 347, 347, 347, 347, 347, 347,
+		347, 347, 347, 347, 351, 351, 351, 351,
+		351, 351, 351, 351, 351, 351, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 353, 353, 353,
+		353, 353, 353, 353, 353, 353, 353, 353,
+		353, 353, 359, 359, 359, 359, 359, 359,
+		359, 355, 355, 355, 355, 355, 355, 355,
+		355, 355, 355, 355, 355, 355, 355, 355,
+		355, 355, 355, 355, 355, 355, 355, 355,
+		355, 355, 355, 355, 355, 355, 355, 355,
+		355, 355, 355, 355, 355, 355, 355, 355,
+		355, 355, 355, 355, 355, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 359, 359,
+		359, 359, 359, 359, 359, 359, 39, 39,
+		39, 39, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 539, 539, 539,
+		539, 539, 539, 539, 539, 533, 533, 535,
+		537, 537, 537, 569, 569, 569, 587, 587,
+		587, 0, 779, 821, 821, 819, 821, 821,
+		821, 821, 821, 821, 821, 821, 783, 785,
+		787, 781, 817, 791, 791, 795, 793, 847,
+		811, 809, 801, 799, 799, 797, 797, 815,
+		803, 813, 805, 805, 807, 825, 789, 823,
+		823, 823, 0, 57, 57, 0, 339, 339,
+		319, 321, 339, 339, 339, 339, 337, 339,
+		339, 339, 323, 325, 327, 329, 339, 331,
+		339, 333, 339, 339, 339, 339, 339, 335,
+		0, 0, 0, 531, 531, 517, 517, 519,
+		519, 513, 527, 521, 515, 523, 523, 525,
+		529, 529, 529, 0, 551, 0, 567, 565,
+		565, 565, 0, 585, 583, 583, 583, 0,
+		0, 0
+	};
+	
+	static const signed char _regex_to_state_actions[] = {
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 41,
+		0, 41, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 41, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 41, 0, 0, 41, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 41, 41, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 41, 0, 41, 0,
+		0, 0, 0, 41, 0, 0, 0, 0,
+		41, 41, 0
+	};
+	
+	static const signed char _regex_from_state_actions[] = {
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 43, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 43, 0, 0, 43, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 43, 43, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 43, 0, 43, 0,
+		0, 0, 0, 43, 0, 0, 0, 0,
+		43, 43, 0
+	};
+	
+	static const short _regex_eof_trans[] = {
+		2665, 2666, 2667, 2668, 2669, 2670, 2671, 2672,
+		2673, 2674, 2675, 2676, 2677, 2678, 2679, 2680,
+		2681, 2682, 2683, 2684, 2685, 2686, 2687, 2688,
+		2689, 2690, 2691, 2692, 2693, 2694, 2695, 2696,
+		2697, 2698, 2699, 2700, 2701, 2702, 2703, 2704,
+		2705, 2706, 2707, 2708, 2709, 2710, 2711, 2712,
+		2713, 2714, 2715, 2716, 2717, 2718, 2719, 2720,
+		2721, 2722, 2723, 2724, 2725, 2726, 2727, 2728,
+		2729, 2730, 2731, 2732, 2733, 2734, 2735, 2736,
+		2737, 2738, 2739, 2740, 2741, 2742, 2743, 2744,
+		2745, 2746, 2747, 2748, 2749, 2750, 2751, 2752,
+		2753, 2754, 2755, 2756, 2757, 2758, 2759, 2760,
+		2761, 2762, 2763, 2764, 2765, 2766, 2767, 2768,
+		2769, 2770, 2771, 2772, 2773, 2774, 2775, 2776,
+		2777, 2778, 2779, 2780, 2781, 2782, 2783, 2784,
+		2785, 2786, 2787, 2788, 2789, 2790, 2791, 2792,
+		2793, 2794, 2795, 2796, 2797, 2798, 2799, 2800,
+		2801, 2802, 2803, 2804, 2805, 2806, 2807, 2808,
+		2809, 2810, 2811, 2812, 2813, 2814, 2815, 2816,
+		2817, 2818, 2819, 2820, 2821, 2822, 2823, 2824,
+		2825, 2826, 2827, 2828, 2829, 2830, 2831, 2832,
+		2833, 2834, 2835, 2836, 2837, 2838, 2839, 2840,
+		2841, 2842, 2843, 2844, 2845, 2846, 2847, 2848,
+		2849, 2850, 2851, 2852, 2853, 2854, 2855, 2856,
+		2857, 2858, 2859, 2860, 2861, 2862, 2863, 2864,
+		2865, 2866, 2867, 2868, 2869, 2870, 2871, 2872,
+		2873, 2874, 2875, 2876, 2877, 2878, 2879, 2880,
+		2881, 2882, 2883, 2884, 2885, 2886, 2887, 2888,
+		2889, 2890, 2891, 2892, 2893, 2894, 2895, 2896,
+		2897, 2898, 2899, 2900, 2901, 2902, 2903, 2904,
+		2905, 2906, 2907, 2908, 2909, 2910, 2911, 2912,
+		2913, 2914, 2915, 2916, 2917, 2918, 2919, 2920,
+		2921, 2922, 2923, 2924, 2925, 2926, 2927, 2928,
+		2929, 2930, 2931, 2932, 2933, 2934, 2935, 2936,
+		2937, 2938, 2939, 2940, 2941, 2942, 2943, 2944,
+		2945, 2946, 2947, 2948, 2949, 2950, 2951, 2952,
+		2953, 2954, 2955, 2956, 2957, 2958, 2959, 2960,
+		2961, 2962, 2963, 2964, 2965, 2966, 2967, 2968,
+		2969, 2970, 2971, 2972, 2973, 2974, 2975, 2976,
+		2977, 2978, 2979, 2980, 2981, 2982, 2983, 2984,
+		2985, 2986, 2987, 2988, 2989, 2990, 2991, 2992,
+		2993, 2994, 2995, 2996, 2997, 2998, 2999, 3000,
+		3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008,
+		3009, 3010, 3011, 3012, 3013, 3014, 3015, 3016,
+		3017, 3018, 3019, 3020, 3021, 3022, 3023, 3024,
+		3025, 3026, 3027, 3028, 3029, 3030, 3031, 3032,
+		3033, 3034, 3035, 3036, 3037, 3038, 3039, 3040,
+		3041, 3042, 3043, 3044, 3045, 3046, 3047, 3048,
+		3049, 3050, 3051, 3052, 3053, 3054, 3055, 3056,
+		3057, 3058, 3059, 3060, 3061, 3062, 3063, 3064,
+		3065, 3066, 3067, 3068, 3069, 3070, 3071, 3072,
+		3073, 3074, 3075, 3076, 3077, 3078, 3079, 3080,
+		3081, 3082, 3083, 3084, 3085, 3086, 3087, 3088,
+		3089, 3090, 3091, 3092, 3093, 3094, 3095, 3096,
+		3097, 3098, 3099, 3100, 3101, 3102, 3103, 3104,
+		3105, 3106, 3107, 3108, 3109, 3110, 3111, 3112,
+		3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120,
+		3121, 3122, 3123, 3124, 3125, 3126, 3127, 3128,
+		3129, 3130, 3131, 3132, 3133, 3134, 3135, 3136,
+		3137, 3138, 3139, 3140, 3141, 3142, 3143, 3144,
+		3145, 3146, 3147, 3148, 3149, 3150, 3151, 3152,
+		3153, 3154, 3155, 3156, 3157, 3158, 3159, 3160,
+		3161, 3162, 3163, 3164, 3165, 3166, 3167, 3168,
+		3169, 3170, 3171, 3172, 3173, 3174, 3175, 3176,
+		3177, 3178, 3179, 3180, 3181, 3182, 3183, 3184,
+		3185, 3186, 3187, 3188, 3189, 3190, 3191, 3192,
+		3193, 3194, 3195, 3196, 3197, 3198, 3199, 3200,
+		3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208,
+		3209, 3210, 3211, 3212, 3213, 3214, 3215, 3216,
+		3217, 3218, 3219, 3220, 3221, 3222, 3223, 3224,
+		3225, 3226, 3227, 3228, 3229, 3230, 3231, 3232,
+		3233, 3234, 3235, 3236, 3237, 3238, 3239, 3240,
+		3241, 3242, 3243, 3244, 3245, 3246, 3247, 3248,
+		3249, 3250, 3251, 3252, 3253, 3254, 3255, 3256,
+		3257, 3258, 3259, 3260, 3261, 3262, 3263, 3264,
+		3265, 3266, 3267, 3268, 3269, 3270, 3271, 3272,
+		3273, 3274, 3275, 3276, 3277, 3278, 3279, 3280,
+		3281, 3282, 3283, 3284, 3285, 3286, 3287, 3288,
+		3289, 3290, 3291, 3292, 3293, 3294, 3295, 3296,
+		3297, 3298, 3299, 3300, 3301, 3302, 3303, 3304,
+		3305, 3306, 3307, 3308, 3309, 3310, 3311, 3312,
+		3313, 3314, 3315, 3316, 3317, 3318, 3319, 3320,
+		3321, 3322, 3323, 3324, 3325, 3326, 3327, 3328,
+		3329, 3330, 3331, 3332, 3333, 3334, 3335, 3336,
+		3337, 3338, 3339, 3340, 3341, 3342, 3343, 3344,
+		3345, 3346, 3347, 3348, 3349, 3350, 3351, 3352,
+		3353, 3354, 3355, 3356, 3357, 3358, 3359, 3360,
+		3361, 3362, 3363, 3364, 3365, 3366, 3367, 3368,
+		3369, 3370, 3371, 3372, 3373, 3374, 3375, 3376,
+		3377, 3378, 3379, 3380, 3381, 3382, 3383, 3384,
+		3385, 3386, 3387, 3388, 3389, 3390, 3391, 3392,
+		3393, 3394, 3395, 3396, 3397, 3398, 3399, 3400,
+		3401, 3402, 3403, 3404, 3405, 3406, 3407, 3408,
+		3409, 3410, 3411, 3412, 3413, 3414, 3415, 3416,
+		3417, 3418, 3419, 3420, 3421, 3422, 3423, 3424,
+		3425, 3426, 3427, 3428, 3429, 3430, 3431, 3432,
+		3433, 3434, 3435, 3436, 3437, 3438, 3439, 3440,
+		3441, 3442, 3443, 3444, 3445, 3446, 3447, 3448,
+		3449, 3450, 3451, 3452, 3453, 3454, 3455, 3456,
+		3457, 3458, 3459, 3460, 3461, 3462, 3463, 3464,
+		3465, 3466, 3467, 3468, 3469, 3470, 3471, 3472,
+		3473, 3474, 3475, 3476, 3477, 3478, 3479, 3480,
+		3481, 3482, 3483, 3484, 3485, 3486, 3487, 3488,
+		3489, 3490, 3491, 3492, 3493, 3494, 3495, 3496,
+		3497, 3498, 3499, 3500, 3501, 3502, 3503, 3504,
+		3505, 3506, 3507, 3508, 3509, 3510, 3511, 3512,
+		3513, 3514, 0
+	};
+	
+	static const int regex_start = 746;
+	static const int regex_error = 0;
+	
+	static const int regex_en_readVerb = 787;
+	static const int regex_en_readUCP = 790;
+	static const int regex_en_readBracedUCP = 559;
+	static const int regex_en_readUCPSingle = 818;
+	static const int regex_en_charClassGuts = 819;
+	static const int regex_en_readClass = 836;
+	static const int regex_en_readQuotedLiteral = 838;
+	static const int regex_en_readQuotedClass = 843;
+	static const int regex_en_readComment = 848;
+	static const int regex_en_readNewlineTerminatedComment = 849;
+	static const int regex_en_main = 746;
+	
+	
+#line 1911 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
 
-static const char _regex_cond_offsets[] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 1, 
-	2, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	3, 3, 4, 5, 6, 7, 8, 9, 
-	10, 11, 12, 18, 18, 18, 18, 18, 
-	18, 18, 18, 18, 18, 18, 18, 18, 
-	18, 18, 18, 18, 18, 18, 18, 18, 
-	18, 18, 18, 18, 18, 18, 18, 18, 
-	18, 18, 18, 18, 18, 18, 18, 18, 
-	18, 19, 20, 21, 21, 21, 21, 21, 
-	21, 21, 21, 21, 21, 21, 21, 21, 
-	21, 21, 21, 21, 21, 21, 21, 21, 
-	21, 21, 21, 21, 21, 21, 21, 21, 
-	21, 21, 21, 21, 26, 26, 26, 26, 
-	26, 26, 26, 26, 26, 26, 26, 26, 
-	26, 26, 27, 28, 29, 31, 31, 36, 
-	36, 37, 38, 39, 44, 44, 45, 46, 
-	47, 47
-};
+	
+	/** \brief Main parser call, returns root Component or nullptr. */
+	unique_ptr<Component> parse(const char *ptr, ParseMode &globalMode) {
+		assert(ptr);
+		
+		const char *p = ptr;
+		const char *pe = ptr + strlen(ptr);
+		
+		// First, read the control verbs, set any global mode flags and move the
+		// ptr forward.
+		p = read_control_verbs(p, pe, 0, globalMode);
+		
+		const char *eof = pe;
+		int cs;
+		UNUSED int act;
+		int top;
+		vector<int> stack;
+		const char *ts, *te;
+		unichar accumulator = 0;
+		unichar octAccumulator = 0; /* required as we are also accumulating for
+		* back ref when looking for octals */
+		unsigned repeatN = 0;
+		unsigned repeatM = 0;
+		string label;
+		
+		ParseMode mode = globalMode;
+		ParseMode newMode;
+		
+		bool negated = false;
+		bool inComment = false;
+		
+		// Stack of sequences and flags used to store state when we enter
+		// sub-sequences.
+		vector<ExprState> sequences;
+		
+		// Index of the next capturing group. Note that zero is reserved for the
+		// root sequence.
+		unsigned groupIndex = 1;
+		
+		// Set storing group names that are currently in use.
+		flat_set<string> groupNames;
+		
+		// Root sequence.
+		unique_ptr<ComponentSequence> rootSeq = std::make_unique<ComponentSequence>();
+		rootSeq->setCaptureIndex(0);
+		
+		// Current sequence being appended to
+		ComponentSequence *currentSeq = rootSeq.get();
+		
+		// The current character class being appended to. This is used as the
+		// accumulator for both character class and UCP properties.
+		unique_ptr<ComponentClass> currentCls;
+		
+		// True if the machine is currently inside a character class, i.e. square
+		// brackets [..].
+		bool inCharClass = false;
+		
+		// True if the machine is inside a character class but it has not processed
+		// any "real" elements yet, i.e. it's still processing meta-characters like
+		// '^'.
+		bool inCharClassEarly = false;
+		
+		// Location at which the current character class began.
+		const char *currentClsBegin = p;
+		
+		// We throw exceptions on various parsing failures beyond this point: we
+		// use a try/catch block here to clean up our allocated memory before we
+		// re-throw the exception to the caller.
+		try {
+			// Embed the Ragel machine here
 
-static const char _regex_cond_lengths[] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 1, 1, 
-	1, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 6, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	1, 1, 1, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 5, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 1, 1, 1, 2, 0, 5, 0, 
-	1, 1, 1, 5, 0, 1, 1, 1, 
-	0, 0
-};
-
-static const short _regex_cond_keys[] = {
-	-128, -65, -128, -65, -128, -65, -128, -65, 
-	-128, -65, -128, -65, -128, -65, -128, -65, 
-	-128, -65, -128, -65, -128, -65, -128, -65, 
-	-128, -65, -64, -33, -32, -17, -16, -9, 
-	-8, -1, 35, 35, -128, -65, -128, -65, 
-	-128, -65, -128, -65, -64, -33, -32, -17, 
-	-16, -9, -8, -1, -128, -65, -128, -65, 
-	-128, -65, 93, 93, 94, 94, -128, -65, 
-	-64, -33, -32, -17, -16, -9, -8, -1, 
-	-128, -65, -128, -65, -128, -65, -128, -65, 
-	-64, -33, -32, -17, -16, -9, -8, -1, 
-	-128, -65, -128, -65, -128, -65, 0
-};
-
-static const char _regex_cond_spaces[] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 1, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 2, 2, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0
-};
-
-static const short _regex_key_offsets[] = {
-	0, 0, 1, 23, 31, 39, 46, 54, 
-	55, 63, 71, 79, 86, 94, 97, 99, 
-	108, 115, 123, 131, 134, 140, 148, 151, 
-	158, 165, 173, 180, 184, 191, 194, 197, 
-	199, 202, 205, 207, 210, 213, 215, 216, 
-	218, 219, 227, 229, 232, 235, 236, 244, 
-	252, 260, 268, 275, 283, 290, 298, 305, 
-	313, 315, 318, 325, 329, 332, 335, 337, 
-	339, 341, 342, 344, 345, 347, 349, 350, 
-	351, 353, 354, 355, 356, 357, 358, 359, 
-	360, 361, 362, 363, 364, 365, 366, 369, 
-	370, 371, 372, 373, 374, 375, 376, 377, 
-	378, 379, 380, 381, 382, 383, 384, 385, 
-	386, 387, 388, 389, 390, 392, 393, 394, 
-	395, 396, 397, 399, 400, 401, 402, 403, 
-	404, 405, 406, 408, 409, 410, 411, 412, 
-	413, 414, 415, 416, 417, 418, 419, 420, 
-	421, 422, 423, 424, 425, 426, 427, 429, 
-	430, 431, 432, 433, 434, 435, 436, 437, 
-	438, 439, 440, 441, 442, 443, 444, 445, 
-	446, 447, 448, 450, 451, 452, 453, 454, 
-	455, 456, 457, 458, 459, 461, 462, 463, 
-	464, 465, 466, 467, 468, 469, 470, 471, 
-	472, 473, 474, 475, 476, 477, 478, 479, 
-	480, 481, 482, 483, 484, 485, 486, 487, 
-	488, 489, 490, 491, 492, 493, 494, 495, 
-	496, 497, 498, 499, 500, 501, 502, 503, 
-	504, 505, 506, 507, 508, 509, 510, 511, 
-	512, 513, 514, 515, 516, 517, 519, 520, 
-	521, 522, 523, 524, 525, 526, 527, 528, 
-	529, 530, 531, 532, 533, 534, 535, 536, 
-	537, 538, 539, 540, 541, 542, 543, 544, 
-	545, 546, 547, 548, 549, 550, 551, 552, 
-	553, 554, 555, 556, 557, 558, 559, 561, 
-	562, 563, 564, 565, 566, 567, 568, 569, 
-	570, 571, 572, 573, 574, 575, 576, 577, 
-	578, 579, 580, 582, 583, 584, 585, 586, 
-	587, 588, 589, 590, 591, 592, 593, 594, 
-	595, 596, 597, 601, 602, 603, 604, 605, 
-	606, 607, 608, 609, 610, 611, 612, 613, 
-	614, 615, 616, 617, 618, 620, 621, 622, 
-	623, 624, 625, 626, 627, 628, 629, 631, 
-	632, 633, 634, 635, 636, 637, 640, 641, 
-	642, 643, 644, 645, 646, 647, 648, 650, 
-	651, 652, 653, 654, 655, 656, 658, 659, 
-	660, 661, 662, 663, 664, 665, 666, 667, 
-	668, 669, 670, 671, 672, 673, 674, 675, 
-	676, 677, 678, 679, 680, 681, 682, 683, 
-	684, 685, 686, 687, 688, 689, 690, 691, 
-	692, 693, 694, 695, 696, 697, 698, 699, 
-	700, 701, 702, 704, 705, 706, 707, 708, 
-	709, 710, 714, 715, 716, 717, 718, 719, 
-	720, 721, 722, 723, 724, 725, 726, 727, 
-	728, 729, 730, 731, 732, 733, 734, 735, 
-	736, 737, 738, 739, 740, 741, 742, 743, 
-	744, 745, 746, 747, 748, 749, 750, 752, 
-	753, 754, 755, 756, 757, 758, 759, 760, 
-	761, 762, 763, 764, 765, 766, 767, 768, 
-	769, 770, 771, 773, 774, 775, 776, 777, 
-	778, 779, 780, 781, 782, 783, 784, 785, 
-	786, 787, 788, 789, 790, 791, 792, 793, 
-	794, 795, 796, 797, 798, 799, 800, 801, 
-	802, 803, 805, 806, 807, 808, 809, 810, 
-	811, 812, 813, 814, 815, 816, 817, 820, 
-	822, 823, 824, 825, 826, 827, 828, 829, 
-	830, 833, 834, 835, 836, 837, 838, 839, 
-	840, 841, 842, 843, 844, 845, 846, 847, 
-	849, 850, 851, 853, 854, 855, 856, 857, 
-	858, 859, 860, 861, 862, 863, 864, 865, 
-	866, 867, 868, 869, 870, 871, 872, 873, 
-	874, 875, 876, 877, 880, 883, 885, 900, 
-	903, 906, 908, 922, 927, 932, 936, 940, 
-	943, 946, 950, 954, 957, 960, 964, 968, 
-	972, 975, 978, 982, 986, 990, 994, 997, 
-	1000, 1004, 1008, 1012, 1016, 1019, 1022, 1026, 
-	1030, 1034, 1038, 1041, 1044, 1048, 1052, 1056, 
-	1060, 1063, 1066, 1070, 1074, 1078, 1082, 1085, 
-	1088, 1093, 1097, 1101, 1105, 1108, 1111, 1115, 
-	1119, 1123, 1126, 1129, 1133, 1137, 1141, 1145, 
-	1148, 1151, 1155, 1159, 1163, 1167, 1170, 1173, 
-	1177, 1181, 1185, 1188, 1191, 1195, 1199, 1203, 
-	1207, 1211, 1214, 1217, 1222, 1227, 1231, 1235, 
-	1238, 1241, 1245, 1249, 1252, 1255, 1259, 1263, 
-	1267, 1270, 1273, 1277, 1281, 1285, 1289, 1292, 
-	1295, 1299, 1303, 1307, 1311, 1314, 1317, 1321, 
-	1325, 1329, 1333, 1336, 1339, 1343, 1347, 1351, 
-	1355, 1358, 1361, 1365, 1369, 1373, 1377, 1380, 
-	1383, 1388, 1392, 1396, 1400, 1403, 1406, 1410, 
-	1414, 1418, 1421, 1424, 1428, 1432, 1436, 1440, 
-	1443, 1446, 1450, 1454, 1458, 1462, 1465, 1468, 
-	1472, 1476, 1480, 1483, 1486, 1490, 1494, 1498, 
-	1502, 1506, 1509, 1512, 1515, 1518, 1520, 1522, 
-	1525, 1532, 1534, 1536, 1538, 1540, 1542, 1544, 
-	1546, 1548, 1550, 1584, 1586, 1593, 1600, 1614, 
-	1616, 1622, 1625, 1634, 1635, 1638, 1641, 1648, 
-	1650, 1652, 1654, 1657, 1702, 1704, 1706, 1710, 
-	1714, 1716, 1717, 1717, 1723, 1725, 1727, 1729, 
-	1731, 1734, 1735, 1736, 1743, 1749, 1755, 1757, 
-	1759, 1761, 1763, 1765, 1767, 1768, 1771, 1794, 
-	1797, 1802, 1811, 1813, 1814, 1816, 1821, 1824, 
-	1826, 1828, 1829, 1831, 1841, 1847, 1848, 1853, 
-	1857, 1865, 1867, 1876, 1880, 1881, 1882, 1886, 
-	1887, 1890, 1890, 1897, 1913, 1916, 1955, 1957, 
-	1959, 1961, 1963, 1964, 1964, 1965, 1966, 1973, 
-	1979, 1985, 1987, 1989, 1991, 2000, 2002, 2015, 
-	2016, 2018, 2020, 2022, 2035, 2036, 2038, 2040, 
-	2042, 2043
-};
-
-static const short _regex_trans_keys[] = {
-	41, 33, 35, 38, 39, 40, 41, 43, 
-	45, 58, 60, 61, 62, 63, 67, 80, 
-	105, 109, 115, 120, 123, 48, 57, 41, 
-	95, 48, 57, 65, 90, 97, 122, 39, 
-	95, 48, 57, 65, 90, 97, 122, 95, 
-	48, 57, 65, 90, 97, 122, 39, 95, 
-	48, 57, 65, 90, 97, 122, 41, 41, 
-	95, 48, 57, 65, 90, 97, 122, 41, 
-	95, 48, 57, 65, 90, 97, 122, 41, 
-	95, 48, 57, 65, 90, 97, 122, 95, 
-	48, 57, 65, 90, 97, 122, 62, 95, 
-	48, 57, 65, 90, 97, 122, 33, 60, 
-	61, 33, 61, 38, 41, 95, 48, 57, 
-	65, 90, 97, 122, 95, 48, 57, 65, 
-	90, 97, 122, 41, 95, 48, 57, 65, 
-	90, 97, 122, 41, 95, 48, 57, 65, 
-	90, 97, 122, 41, 48, 57, 41, 58, 
-	105, 109, 115, 120, 62, 95, 48, 57, 
-	65, 90, 97, 122, 41, 48, 57, 95, 
-	48, 57, 65, 90, 97, 122, 95, 48, 
-	57, 65, 90, 97, 122, 41, 95, 48, 
-	57, 65, 90, 97, 122, 95, 48, 57, 
-	65, 90, 97, 122, 105, 109, 115, 120, 
-	41, 45, 58, 105, 109, 115, 120, 46, 
-	92, 93, 46, 92, 93, 46, 92, 58, 
-	92, 93, 58, 92, 93, 58, 92, 61, 
-	92, 93, 61, 92, 93, 61, 92, 39, 
-	48, 57, 62, 45, 95, 48, 57, 65, 
-	90, 97, 122, 48, 57, 125, 48, 57, 
-	125, 48, 57, 125, 95, 125, 48, 57, 
-	65, 90, 97, 122, 95, 125, 48, 57, 
-	65, 90, 97, 122, 95, 125, 48, 57, 
-	65, 90, 97, 122, 95, 125, 48, 57, 
-	65, 90, 97, 122, 95, 48, 57, 65, 
-	90, 97, 122, 39, 95, 48, 57, 65, 
-	90, 97, 122, 95, 48, 57, 65, 90, 
-	97, 122, 62, 95, 48, 57, 65, 90, 
-	97, 122, 95, 48, 57, 65, 90, 97, 
-	122, 95, 125, 48, 57, 65, 90, 97, 
-	122, 48, 55, 125, 48, 55, 125, 48, 
-	57, 65, 70, 97, 102, 44, 125, 48, 
-	57, 125, 48, 57, 125, 48, 57, 384, 
-	447, 384, 447, 384, 447, 41, 41, 80, 
-	41, 41, 70, 41, 56, 41, 121, 97, 
-	109, 98, 105, 99, 101, 110, 105, 97, 
-	110, 101, 115, 116, 97, 110, 108, 109, 
-	116, 105, 110, 101, 115, 101, 117, 109, 
-	97, 107, 110, 103, 97, 108, 105, 112, 
-	111, 109, 111, 102, 111, 97, 104, 105, 
-	109, 105, 108, 108, 101, 103, 104, 105, 
-	110, 101, 115, 101, 105, 100, 110, 114, 
-	97, 100, 105, 97, 110, 95, 65, 98, 
-	111, 114, 105, 103, 105, 110, 97, 108, 
-	105, 97, 110, 97, 101, 109, 114, 111, 
-	107, 101, 101, 109, 111, 110, 116, 105, 
-	99, 110, 101, 105, 102, 111, 114, 109, 
-	112, 114, 114, 105, 111, 116, 105, 108, 
-	108, 105, 99, 115, 118, 101, 114, 101, 
-	116, 97, 110, 97, 103, 97, 114, 105, 
-	121, 112, 116, 105, 97, 110, 95, 72, 
-	105, 101, 114, 111, 103, 108, 121, 112, 
-	104, 115, 104, 105, 111, 112, 105, 99, 
-	111, 114, 103, 105, 97, 110, 97, 103, 
-	111, 108, 105, 116, 105, 99, 116, 104, 
-	105, 99, 101, 101, 107, 106, 114, 97, 
-	114, 97, 116, 105, 109, 117, 107, 104, 
-	105, 110, 117, 108, 110, 111, 111, 98, 
-	114, 101, 119, 114, 97, 103, 97, 110, 
-	97, 112, 101, 114, 105, 97, 108, 95, 
-	65, 114, 97, 109, 97, 105, 99, 104, 
-	115, 101, 114, 105, 116, 101, 100, 99, 
-	114, 105, 112, 116, 105, 111, 110, 97, 
-	108, 95, 80, 97, 104, 114, 108, 97, 
-	118, 105, 116, 104, 105, 97, 110, 118, 
-	97, 110, 101, 115, 101, 105, 110, 116, 
-	121, 116, 104, 105, 110, 97, 100, 97, 
-	97, 107, 97, 110, 97, 97, 104, 95, 
-	76, 105, 97, 109, 114, 111, 115, 104, 
-	116, 104, 105, 101, 114, 111, 116, 105, 
-	110, 112, 99, 104, 97, 109, 110, 115, 
-	98, 117, 101, 97, 114, 95, 66, 117, 
-	99, 100, 105, 97, 110, 105, 97, 110, 
-	108, 110, 97, 121, 97, 108, 97, 109, 
-	100, 97, 105, 99, 116, 101, 105, 95, 
-	77, 97, 121, 101, 107, 110, 103, 111, 
-	108, 105, 97, 110, 97, 110, 109, 97, 
-	114, 119, 95, 84, 97, 105, 95, 76, 
-	117, 101, 111, 104, 97, 109, 95, 100, 
-	67, 104, 105, 107, 105, 95, 73, 80, 
-	83, 84, 116, 97, 108, 105, 99, 101, 
-	114, 115, 105, 97, 110, 111, 117, 116, 
-	104, 95, 65, 114, 97, 98, 105, 97, 
-	110, 117, 114, 107, 105, 99, 105, 121, 
-	97, 109, 97, 110, 121, 97, 97, 111, 
-	103, 115, 95, 80, 97, 101, 110, 105, 
-	99, 105, 97, 110, 106, 97, 110, 103, 
-	110, 105, 99, 109, 117, 97, 114, 105, 
-	116, 97, 110, 114, 97, 115, 104, 116, 
-	114, 97, 97, 118, 105, 97, 110, 110, 
-	104, 97, 108, 97, 110, 100, 97, 110, 
-	101, 115, 101, 108, 114, 111, 116, 105, 
-	95, 78, 97, 103, 114, 105, 105, 97, 
-	99, 103, 105, 109, 97, 98, 108, 111, 
-	103, 97, 110, 119, 97, 95, 76, 84, 
-	86, 101, 104, 97, 109, 105, 101, 116, 
-	105, 108, 108, 117, 103, 117, 97, 97, 
-	105, 110, 97, 98, 102, 101, 116, 97, 
-	110, 105, 110, 97, 103, 104, 97, 114, 
-	105, 116, 105, 99, 105, 110, 115, 112, 
-	100, 123, 94, 125, 94, 46, 92, 93, 
-	46, 92, 93, 46, 92, 58, 92, 93, 
-	94, 97, 98, 99, 100, 103, 108, 112, 
-	115, 117, 119, 120, 58, 92, 93, 58, 
-	92, 93, 58, 92, 58, 92, 93, 97, 
-	98, 99, 100, 103, 108, 112, 115, 117, 
-	119, 120, 58, 92, 93, 108, 115, 58, 
-	92, 93, 110, 112, 58, 92, 93, 117, 
-	58, 92, 93, 109, 58, 92, 93, 58, 
-	92, 93, 58, 92, 93, 104, 58, 92, 
-	93, 97, 58, 92, 93, 58, 92, 93, 
-	58, 92, 93, 99, 58, 92, 93, 105, 
-	58, 92, 93, 105, 58, 92, 93, 58, 
-	92, 93, 58, 92, 93, 108, 58, 92, 
-	93, 97, 58, 92, 93, 110, 58, 92, 
-	93, 107, 58, 92, 93, 58, 92, 93, 
-	58, 92, 93, 110, 58, 92, 93, 116, 
-	58, 92, 93, 114, 58, 92, 93, 108, 
-	58, 92, 93, 58, 92, 93, 58, 92, 
-	93, 105, 58, 92, 93, 103, 58, 92, 
-	93, 105, 58, 92, 93, 116, 58, 92, 
-	93, 58, 92, 93, 58, 92, 93, 114, 
-	58, 92, 93, 97, 58, 92, 93, 112, 
-	58, 92, 93, 104, 58, 92, 93, 58, 
-	92, 93, 58, 92, 93, 111, 58, 92, 
-	93, 119, 58, 92, 93, 101, 58, 92, 
-	93, 114, 58, 92, 93, 58, 92, 93, 
-	58, 92, 93, 114, 117, 58, 92, 93, 
-	105, 58, 92, 93, 110, 58, 92, 93, 
-	116, 58, 92, 93, 58, 92, 93, 58, 
-	92, 93, 110, 58, 92, 93, 99, 58, 
-	92, 93, 116, 58, 92, 93, 58, 92, 
-	93, 58, 92, 93, 112, 58, 92, 93, 
-	97, 58, 92, 93, 99, 58, 92, 93, 
-	101, 58, 92, 93, 58, 92, 93, 58, 
-	92, 93, 112, 58, 92, 93, 112, 58, 
-	92, 93, 101, 58, 92, 93, 114, 58, 
-	92, 93, 58, 92, 93, 58, 92, 93, 
-	111, 58, 92, 93, 114, 58, 92, 93, 
-	100, 58, 92, 93, 58, 92, 93, 58, 
-	92, 93, 100, 58, 92, 93, 105, 58, 
-	92, 93, 103, 58, 92, 93, 105, 58, 
-	92, 93, 116, 58, 92, 93, 58, 92, 
-	93, 58, 92, 93, 108, 115, 58, 92, 
-	93, 110, 112, 58, 92, 93, 117, 58, 
-	92, 93, 109, 58, 92, 93, 58, 92, 
-	93, 58, 92, 93, 104, 58, 92, 93, 
-	97, 58, 92, 93, 58, 92, 93, 58, 
-	92, 93, 99, 58, 92, 93, 105, 58, 
-	92, 93, 105, 58, 92, 93, 58, 92, 
-	93, 58, 92, 93, 108, 58, 92, 93, 
-	97, 58, 92, 93, 110, 58, 92, 93, 
-	107, 58, 92, 93, 58, 92, 93, 58, 
-	92, 93, 110, 58, 92, 93, 116, 58, 
-	92, 93, 114, 58, 92, 93, 108, 58, 
-	92, 93, 58, 92, 93, 58, 92, 93, 
-	105, 58, 92, 93, 103, 58, 92, 93, 
-	105, 58, 92, 93, 116, 58, 92, 93, 
-	58, 92, 93, 58, 92, 93, 114, 58, 
-	92, 93, 97, 58, 92, 93, 112, 58, 
-	92, 93, 104, 58, 92, 93, 58, 92, 
-	93, 58, 92, 93, 111, 58, 92, 93, 
-	119, 58, 92, 93, 101, 58, 92, 93, 
-	114, 58, 92, 93, 58, 92, 93, 58, 
-	92, 93, 114, 117, 58, 92, 93, 105, 
-	58, 92, 93, 110, 58, 92, 93, 116, 
-	58, 92, 93, 58, 92, 93, 58, 92, 
-	93, 110, 58, 92, 93, 99, 58, 92, 
-	93, 116, 58, 92, 93, 58, 92, 93, 
-	58, 92, 93, 112, 58, 92, 93, 97, 
-	58, 92, 93, 99, 58, 92, 93, 101, 
-	58, 92, 93, 58, 92, 93, 58, 92, 
-	93, 112, 58, 92, 93, 112, 58, 92, 
-	93, 101, 58, 92, 93, 114, 58, 92, 
-	93, 58, 92, 93, 58, 92, 93, 111, 
-	58, 92, 93, 114, 58, 92, 93, 100, 
-	58, 92, 93, 58, 92, 93, 58, 92, 
-	93, 100, 58, 92, 93, 105, 58, 92, 
-	93, 103, 58, 92, 93, 105, 58, 92, 
-	93, 116, 58, 92, 93, 58, 92, 93, 
-	61, 92, 93, 61, 92, 93, 61, 92, 
-	48, 55, 125, 48, 55, 125, 48, 57, 
-	65, 70, 97, 102, 384, 447, 384, 447, 
-	384, 447, 384, 447, 384, 447, 384, 447, 
-	384, 447, 384, 447, 384, 447, 0, 32, 
-	36, 40, 41, 42, 43, 46, 63, 91, 
-	92, 94, 123, 124, 1315, 1571, 1, 8, 
-	9, 13, 14, 34, 37, 255, 384, 447, 
-	448, 479, 480, 495, 496, 503, 504, 511, 
-	42, 63, 95, 48, 57, 65, 90, 97, 
-	122, 95, 48, 57, 65, 90, 97, 122, 
-	39, 48, 60, 63, 82, 95, 49, 55, 
-	56, 57, 65, 90, 97, 122, 48, 57, 
-	105, 109, 115, 120, 48, 57, 41, 48, 
-	57, 33, 61, 95, 48, 57, 65, 90, 
-	97, 122, 123, 41, 48, 57, 60, 61, 
-	62, 41, 45, 58, 105, 109, 115, 120, 
-	43, 63, 43, 63, 43, 63, 46, 58, 
-	61, 48, 65, 66, 67, 68, 69, 71, 
-	72, 75, 76, 78, 80, 81, 82, 83, 
-	85, 86, 87, 88, 90, 97, 98, 99, 
-	100, 101, 102, 103, 104, 107, 108, 110, 
-	111, 112, 114, 115, 116, 117, 118, 119, 
-	120, 122, 49, 55, 56, 57, 48, 55, 
-	48, 55, 48, 55, 56, 57, 48, 55, 
-	56, 57, 48, 57, 123, 39, 45, 60, 
-	123, 48, 57, 48, 57, 48, 57, 48, 
-	57, 48, 57, 39, 60, 123, 123, 123, 
-	123, 48, 57, 65, 70, 97, 102, 48, 
-	57, 65, 70, 97, 102, 48, 57, 65, 
-	70, 97, 102, 48, 57, 43, 63, 384, 
-	447, 384, 447, 384, 447, 41, 85, 41, 
-	41, 67, 84, 65, 66, 67, 68, 69, 
-	71, 72, 73, 74, 75, 76, 77, 78, 
-	79, 80, 82, 83, 84, 85, 86, 88, 
-	89, 90, 110, 114, 118, 97, 101, 111, 
-	114, 117, 97, 99, 102, 104, 110, 111, 
-	115, 117, 121, 109, 112, 101, 103, 116, 
-	101, 108, 111, 114, 117, 97, 101, 105, 
-	103, 117, 109, 110, 97, 97, 104, 38, 
-	97, 101, 105, 108, 109, 111, 116, 117, 
-	121, 97, 99, 101, 110, 111, 121, 101, 
-	100, 101, 107, 108, 111, 103, 108, 114, 
-	115, 99, 100, 101, 102, 104, 105, 111, 
-	115, 101, 117, 97, 99, 104, 105, 107, 
-	109, 111, 117, 121, 97, 101, 104, 105, 
-	103, 97, 97, 112, 115, 119, 105, 108, 
-	112, 115, 67, 76, 77, 78, 80, 83, 
-	90, 45, 91, 92, 93, 0, 255, 384, 
-	447, 448, 479, 480, 495, 496, 503, 504, 
-	511, 46, 58, 61, 48, 68, 69, 72, 
-	76, 78, 80, 81, 83, 85, 86, 87, 
-	97, 98, 99, 100, 101, 102, 103, 104, 
-	108, 110, 111, 112, 114, 115, 116, 117, 
-	118, 119, 120, 49, 55, 56, 57, 65, 
-	90, 105, 122, 48, 55, 48, 55, 48, 
-	55, 48, 55, 123, 123, 123, 123, 48, 
-	57, 65, 70, 97, 102, 48, 57, 65, 
-	70, 97, 102, 48, 57, 65, 70, 97, 
-	102, 384, 447, 384, 447, 384, 447, 92, 
-	1117, 1118, -128, 91, 95, 127, 861, 862, 
-	69, 81, 92, 0, 255, 384, 447, 448, 
-	479, 480, 495, 496, 503, 504, 511, 69, 
-	384, 447, 384, 447, 384, 447, 92, 0, 
-	255, 384, 447, 448, 479, 480, 495, 496, 
-	503, 504, 511, 69, 384, 447, 384, 447, 
-	384, 447, 41, 10, 0
-};
-
-static const char _regex_single_lengths[] = {
-	0, 1, 20, 2, 2, 1, 2, 1, 
-	2, 2, 2, 1, 2, 3, 2, 3, 
-	1, 2, 2, 1, 6, 2, 1, 1, 
-	1, 2, 1, 4, 7, 3, 3, 2, 
-	3, 3, 2, 3, 3, 2, 1, 0, 
-	1, 2, 0, 1, 1, 1, 2, 2, 
-	2, 2, 1, 2, 1, 2, 1, 2, 
-	0, 1, 1, 2, 1, 1, 0, 0, 
-	0, 1, 2, 1, 2, 2, 1, 1, 
-	2, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 3, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 2, 1, 1, 1, 
-	1, 1, 2, 1, 1, 1, 1, 1, 
-	1, 1, 2, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 2, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 2, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 2, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 2, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 2, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 2, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 4, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 2, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 2, 1, 
-	1, 1, 1, 1, 1, 3, 1, 1, 
-	1, 1, 1, 1, 1, 1, 2, 1, 
-	1, 1, 1, 1, 1, 2, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 2, 1, 1, 1, 1, 1, 
-	1, 4, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 2, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 2, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 2, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 3, 2, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	3, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 2, 
-	1, 1, 2, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 1, 3, 3, 2, 15, 3, 
-	3, 2, 14, 5, 5, 4, 4, 3, 
-	3, 4, 4, 3, 3, 4, 4, 4, 
-	3, 3, 4, 4, 4, 4, 3, 3, 
-	4, 4, 4, 4, 3, 3, 4, 4, 
-	4, 4, 3, 3, 4, 4, 4, 4, 
-	3, 3, 4, 4, 4, 4, 3, 3, 
-	5, 4, 4, 4, 3, 3, 4, 4, 
-	4, 3, 3, 4, 4, 4, 4, 3, 
-	3, 4, 4, 4, 4, 3, 3, 4, 
-	4, 4, 3, 3, 4, 4, 4, 4, 
-	4, 3, 3, 5, 5, 4, 4, 3, 
-	3, 4, 4, 3, 3, 4, 4, 4, 
-	3, 3, 4, 4, 4, 4, 3, 3, 
-	4, 4, 4, 4, 3, 3, 4, 4, 
-	4, 4, 3, 3, 4, 4, 4, 4, 
-	3, 3, 4, 4, 4, 4, 3, 3, 
-	5, 4, 4, 4, 3, 3, 4, 4, 
-	4, 3, 3, 4, 4, 4, 4, 3, 
-	3, 4, 4, 4, 4, 3, 3, 4, 
-	4, 4, 3, 3, 4, 4, 4, 4, 
-	4, 3, 3, 3, 3, 2, 0, 1, 
-	1, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 16, 2, 1, 1, 6, 0, 
-	4, 1, 3, 1, 1, 3, 7, 2, 
-	2, 2, 3, 41, 0, 0, 0, 0, 
-	0, 1, 0, 4, 0, 0, 0, 0, 
-	3, 1, 1, 1, 0, 0, 0, 2, 
-	0, 0, 0, 2, 1, 3, 23, 3, 
-	5, 9, 2, 1, 2, 5, 3, 2, 
-	2, 1, 2, 10, 6, 1, 5, 4, 
-	8, 2, 9, 4, 1, 1, 4, 1, 
-	3, 0, 7, 4, 3, 31, 0, 0, 
-	0, 0, 1, 0, 1, 1, 1, 0, 
-	0, 0, 0, 0, 3, 2, 1, 1, 
-	0, 0, 0, 1, 1, 0, 0, 0, 
-	1, 1
-};
-
-static const char _regex_range_lengths[] = {
-	0, 0, 1, 3, 3, 3, 3, 0, 
-	3, 3, 3, 3, 3, 0, 0, 3, 
-	3, 3, 3, 1, 0, 3, 1, 3, 
-	3, 3, 3, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 1, 
-	0, 3, 1, 1, 1, 0, 3, 3, 
-	3, 3, 3, 3, 3, 3, 3, 3, 
-	1, 1, 3, 1, 1, 1, 1, 1, 
-	1, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 1, 1, 
-	3, 1, 1, 1, 1, 1, 1, 1, 
-	1, 1, 9, 0, 3, 3, 4, 1, 
-	1, 1, 3, 0, 1, 0, 0, 0, 
-	0, 0, 0, 2, 1, 1, 2, 2, 
-	1, 0, 0, 1, 1, 1, 1, 1, 
-	0, 0, 0, 3, 3, 3, 1, 0, 
-	1, 1, 1, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 6, 0, 4, 1, 1, 
-	1, 1, 0, 0, 0, 0, 3, 3, 
-	3, 1, 1, 1, 3, 0, 6, 0, 
-	1, 1, 1, 6, 0, 1, 1, 1, 
-	0, 0
-};
-
-static const short _regex_index_offsets[] = {
-	0, 0, 2, 24, 30, 36, 41, 47, 
-	49, 55, 61, 67, 72, 78, 82, 85, 
-	92, 97, 103, 109, 112, 119, 125, 128, 
-	133, 138, 144, 149, 154, 162, 166, 170, 
-	173, 177, 181, 184, 188, 192, 195, 197, 
-	199, 201, 207, 209, 212, 215, 217, 223, 
-	229, 235, 241, 246, 252, 257, 263, 268, 
-	274, 276, 279, 284, 288, 291, 294, 296, 
-	298, 300, 302, 305, 307, 310, 313, 315, 
-	317, 320, 322, 324, 326, 328, 330, 332, 
-	334, 336, 338, 340, 342, 344, 346, 350, 
-	352, 354, 356, 358, 360, 362, 364, 366, 
-	368, 370, 372, 374, 376, 378, 380, 382, 
-	384, 386, 388, 390, 392, 395, 397, 399, 
-	401, 403, 405, 408, 410, 412, 414, 416, 
-	418, 420, 422, 425, 427, 429, 431, 433, 
-	435, 437, 439, 441, 443, 445, 447, 449, 
-	451, 453, 455, 457, 459, 461, 463, 466, 
-	468, 470, 472, 474, 476, 478, 480, 482, 
-	484, 486, 488, 490, 492, 494, 496, 498, 
-	500, 502, 504, 507, 509, 511, 513, 515, 
-	517, 519, 521, 523, 525, 528, 530, 532, 
-	534, 536, 538, 540, 542, 544, 546, 548, 
-	550, 552, 554, 556, 558, 560, 562, 564, 
-	566, 568, 570, 572, 574, 576, 578, 580, 
-	582, 584, 586, 588, 590, 592, 594, 596, 
-	598, 600, 602, 604, 606, 608, 610, 612, 
-	614, 616, 618, 620, 622, 624, 626, 628, 
-	630, 632, 634, 636, 638, 640, 643, 645, 
-	647, 649, 651, 653, 655, 657, 659, 661, 
-	663, 665, 667, 669, 671, 673, 675, 677, 
-	679, 681, 683, 685, 687, 689, 691, 693, 
-	695, 697, 699, 701, 703, 705, 707, 709, 
-	711, 713, 715, 717, 719, 721, 723, 726, 
-	728, 730, 732, 734, 736, 738, 740, 742, 
-	744, 746, 748, 750, 752, 754, 756, 758, 
-	760, 762, 764, 767, 769, 771, 773, 775, 
-	777, 779, 781, 783, 785, 787, 789, 791, 
-	793, 795, 797, 802, 804, 806, 808, 810, 
-	812, 814, 816, 818, 820, 822, 824, 826, 
-	828, 830, 832, 834, 836, 839, 841, 843, 
-	845, 847, 849, 851, 853, 855, 857, 860, 
-	862, 864, 866, 868, 870, 872, 876, 878, 
-	880, 882, 884, 886, 888, 890, 892, 895, 
-	897, 899, 901, 903, 905, 907, 910, 912, 
-	914, 916, 918, 920, 922, 924, 926, 928, 
-	930, 932, 934, 936, 938, 940, 942, 944, 
-	946, 948, 950, 952, 954, 956, 958, 960, 
-	962, 964, 966, 968, 970, 972, 974, 976, 
-	978, 980, 982, 984, 986, 988, 990, 992, 
-	994, 996, 998, 1001, 1003, 1005, 1007, 1009, 
-	1011, 1013, 1018, 1020, 1022, 1024, 1026, 1028, 
-	1030, 1032, 1034, 1036, 1038, 1040, 1042, 1044, 
-	1046, 1048, 1050, 1052, 1054, 1056, 1058, 1060, 
-	1062, 1064, 1066, 1068, 1070, 1072, 1074, 1076, 
-	1078, 1080, 1082, 1084, 1086, 1088, 1090, 1093, 
-	1095, 1097, 1099, 1101, 1103, 1105, 1107, 1109, 
-	1111, 1113, 1115, 1117, 1119, 1121, 1123, 1125, 
-	1127, 1129, 1131, 1134, 1136, 1138, 1140, 1142, 
-	1144, 1146, 1148, 1150, 1152, 1154, 1156, 1158, 
-	1160, 1162, 1164, 1166, 1168, 1170, 1172, 1174, 
-	1176, 1178, 1180, 1182, 1184, 1186, 1188, 1190, 
-	1192, 1194, 1197, 1199, 1201, 1203, 1205, 1207, 
-	1209, 1211, 1213, 1215, 1217, 1219, 1221, 1225, 
-	1228, 1230, 1232, 1234, 1236, 1238, 1240, 1242, 
-	1244, 1248, 1250, 1252, 1254, 1256, 1258, 1260, 
-	1262, 1264, 1266, 1268, 1270, 1272, 1274, 1276, 
-	1279, 1281, 1283, 1286, 1288, 1290, 1292, 1294, 
-	1296, 1298, 1300, 1302, 1304, 1306, 1308, 1310, 
-	1312, 1314, 1316, 1318, 1320, 1322, 1324, 1326, 
-	1328, 1330, 1332, 1334, 1338, 1342, 1345, 1361, 
-	1365, 1369, 1372, 1387, 1393, 1399, 1404, 1409, 
-	1413, 1417, 1422, 1427, 1431, 1435, 1440, 1445, 
-	1450, 1454, 1458, 1463, 1468, 1473, 1478, 1482, 
-	1486, 1491, 1496, 1501, 1506, 1510, 1514, 1519, 
-	1524, 1529, 1534, 1538, 1542, 1547, 1552, 1557, 
-	1562, 1566, 1570, 1575, 1580, 1585, 1590, 1594, 
-	1598, 1604, 1609, 1614, 1619, 1623, 1627, 1632, 
-	1637, 1642, 1646, 1650, 1655, 1660, 1665, 1670, 
-	1674, 1678, 1683, 1688, 1693, 1698, 1702, 1706, 
-	1711, 1716, 1721, 1725, 1729, 1734, 1739, 1744, 
-	1749, 1754, 1758, 1762, 1768, 1774, 1779, 1784, 
-	1788, 1792, 1797, 1802, 1806, 1810, 1815, 1820, 
-	1825, 1829, 1833, 1838, 1843, 1848, 1853, 1857, 
-	1861, 1866, 1871, 1876, 1881, 1885, 1889, 1894, 
-	1899, 1904, 1909, 1913, 1917, 1922, 1927, 1932, 
-	1937, 1941, 1945, 1950, 1955, 1960, 1965, 1969, 
-	1973, 1979, 1984, 1989, 1994, 1998, 2002, 2007, 
-	2012, 2017, 2021, 2025, 2030, 2035, 2040, 2045, 
-	2049, 2053, 2058, 2063, 2068, 2073, 2077, 2081, 
-	2086, 2091, 2096, 2100, 2104, 2109, 2114, 2119, 
-	2124, 2129, 2133, 2137, 2141, 2145, 2148, 2150, 
-	2153, 2158, 2160, 2162, 2164, 2166, 2168, 2170, 
-	2172, 2174, 2176, 2202, 2205, 2210, 2215, 2226, 
-	2228, 2234, 2237, 2244, 2246, 2249, 2253, 2261, 
-	2264, 2267, 2270, 2274, 2318, 2320, 2322, 2325, 
-	2328, 2330, 2332, 2333, 2339, 2341, 2343, 2345, 
-	2347, 2351, 2353, 2355, 2360, 2364, 2368, 2370, 
-	2373, 2375, 2377, 2379, 2382, 2384, 2388, 2412, 
-	2416, 2422, 2432, 2435, 2437, 2440, 2446, 2450, 
-	2453, 2456, 2458, 2461, 2472, 2479, 2481, 2487, 
-	2492, 2501, 2504, 2514, 2519, 2521, 2523, 2528, 
-	2530, 2534, 2535, 2543, 2554, 2558, 2594, 2596, 
-	2598, 2600, 2602, 2604, 2605, 2607, 2609, 2614, 
-	2618, 2622, 2624, 2626, 2628, 2635, 2638, 2646, 
-	2648, 2650, 2652, 2654, 2662, 2664, 2666, 2668, 
-	2670, 2672
-};
-
-static const short _regex_indicies[] = {
-	0, 1, 3, 4, 5, 6, 7, 8, 
-	9, 10, 12, 13, 14, 15, 16, 17, 
-	18, 19, 19, 19, 19, 20, 11, 2, 
-	22, 23, 23, 23, 23, 21, 24, 25, 
-	25, 25, 25, 21, 27, 27, 27, 27, 
-	26, 28, 27, 27, 27, 27, 26, 29, 
-	26, 29, 30, 30, 30, 30, 26, 31, 
-	30, 32, 30, 30, 26, 29, 30, 32, 
-	30, 30, 26, 33, 33, 33, 33, 26, 
-	28, 33, 33, 33, 33, 26, 34, 35, 
-	36, 26, 37, 38, 26, 39, 40, 30, 
-	41, 30, 30, 26, 42, 42, 42, 42, 
-	26, 40, 42, 42, 42, 42, 26, 40, 
-	30, 41, 30, 30, 26, 43, 44, 21, 
-	45, 46, 47, 47, 47, 47, 21, 24, 
-	48, 48, 48, 48, 21, 49, 50, 21, 
-	48, 48, 48, 48, 21, 51, 51, 51, 
-	51, 21, 52, 51, 51, 51, 51, 21, 
-	23, 23, 23, 23, 21, 47, 47, 47, 
-	47, 21, 45, 53, 46, 54, 54, 54, 
-	54, 21, 57, 58, 55, 56, 57, 58, 
-	59, 56, 57, 58, 56, 61, 62, 55, 
-	60, 61, 62, 63, 60, 61, 62, 60, 
-	65, 66, 55, 64, 65, 66, 59, 64, 
-	65, 66, 64, 69, 68, 70, 67, 69, 
-	71, 72, 74, 73, 74, 74, 67, 75, 
-	67, 77, 76, 67, 77, 78, 67, 77, 
-	67, 74, 80, 79, 74, 74, 67, 74, 
-	80, 81, 74, 74, 67, 74, 80, 74, 
-	74, 74, 67, 74, 82, 74, 74, 74, 
-	67, 84, 84, 84, 84, 83, 85, 84, 
-	84, 84, 84, 83, 86, 86, 86, 86, 
-	83, 87, 86, 86, 86, 86, 83, 88, 
-	88, 88, 88, 83, 88, 89, 88, 88, 
-	88, 83, 91, 90, 92, 91, 90, 95, 
-	94, 94, 94, 93, 97, 99, 98, 96, 
-	101, 100, 96, 102, 100, 96, 104, 103, 
-	105, 103, 106, 103, 109, 108, 109, 110, 
-	108, 111, 108, 109, 112, 108, 113, 114, 
-	108, 115, 108, 117, 116, 118, 119, 116, 
-	120, 116, 121, 116, 122, 116, 123, 116, 
-	124, 116, 125, 116, 126, 116, 127, 116, 
-	128, 116, 129, 116, 130, 116, 131, 116, 
-	132, 116, 133, 134, 135, 116, 136, 116, 
-	137, 116, 138, 116, 139, 116, 140, 116, 
-	141, 116, 142, 116, 143, 116, 144, 116, 
-	145, 116, 146, 116, 147, 116, 148, 116, 
-	149, 116, 150, 116, 151, 116, 152, 116, 
-	153, 116, 154, 116, 155, 116, 156, 116, 
-	157, 158, 116, 159, 116, 160, 116, 161, 
-	116, 162, 116, 163, 116, 164, 165, 116, 
-	166, 116, 167, 116, 168, 116, 169, 116, 
-	170, 116, 171, 116, 172, 116, 174, 175, 
-	173, 176, 173, 177, 173, 178, 173, 179, 
-	173, 180, 173, 181, 173, 182, 173, 183, 
-	173, 184, 173, 185, 173, 186, 173, 187, 
-	173, 188, 173, 189, 173, 190, 173, 191, 
-	173, 192, 173, 193, 173, 194, 173, 195, 
-	196, 173, 197, 173, 198, 173, 199, 173, 
-	200, 173, 201, 173, 202, 173, 204, 203, 
-	205, 203, 206, 203, 207, 203, 208, 203, 
-	209, 203, 210, 173, 211, 173, 212, 173, 
-	213, 173, 214, 173, 215, 173, 216, 173, 
-	217, 218, 173, 219, 173, 220, 173, 221, 
-	173, 222, 173, 223, 173, 224, 173, 225, 
-	173, 226, 173, 227, 173, 228, 229, 116, 
-	230, 116, 231, 116, 232, 116, 233, 116, 
-	234, 116, 235, 116, 236, 116, 237, 116, 
-	238, 116, 239, 116, 240, 116, 241, 116, 
-	242, 116, 243, 116, 244, 116, 245, 116, 
-	246, 116, 247, 116, 248, 116, 249, 116, 
-	250, 116, 251, 116, 252, 116, 253, 116, 
-	254, 116, 255, 116, 256, 116, 257, 116, 
-	258, 116, 259, 116, 260, 116, 261, 116, 
-	262, 116, 263, 116, 264, 116, 265, 116, 
-	266, 116, 267, 116, 268, 116, 269, 116, 
-	270, 116, 271, 116, 272, 116, 273, 116, 
-	274, 116, 275, 116, 276, 116, 277, 116, 
-	278, 116, 279, 116, 280, 116, 281, 116, 
-	282, 116, 283, 116, 284, 116, 285, 116, 
-	286, 287, 116, 288, 116, 289, 116, 290, 
-	116, 291, 116, 292, 116, 293, 116, 294, 
-	116, 295, 116, 296, 116, 297, 116, 298, 
-	116, 300, 299, 301, 299, 302, 299, 303, 
-	299, 304, 299, 305, 116, 306, 116, 307, 
-	116, 308, 116, 309, 116, 310, 116, 311, 
-	116, 312, 116, 313, 116, 314, 116, 315, 
-	116, 316, 116, 317, 116, 318, 116, 319, 
-	116, 320, 116, 321, 116, 322, 116, 323, 
-	116, 324, 116, 325, 116, 326, 116, 327, 
-	116, 328, 116, 329, 330, 116, 331, 116, 
-	332, 116, 333, 116, 334, 116, 335, 116, 
-	336, 116, 337, 116, 338, 116, 339, 116, 
-	340, 116, 341, 116, 342, 116, 343, 116, 
-	344, 116, 345, 116, 346, 116, 347, 116, 
-	348, 116, 349, 116, 350, 351, 116, 352, 
-	116, 353, 116, 354, 116, 355, 116, 356, 
-	116, 357, 116, 358, 116, 359, 116, 360, 
-	116, 361, 116, 362, 116, 363, 116, 364, 
-	116, 365, 116, 366, 116, 367, 368, 369, 
-	370, 116, 371, 116, 372, 116, 373, 116, 
-	374, 116, 375, 116, 376, 116, 377, 116, 
-	378, 116, 379, 116, 380, 116, 381, 116, 
-	382, 116, 383, 116, 384, 116, 385, 116, 
-	386, 116, 387, 116, 388, 389, 116, 390, 
-	116, 391, 116, 392, 116, 393, 116, 394, 
-	116, 395, 116, 396, 116, 397, 116, 398, 
-	116, 400, 401, 399, 402, 399, 403, 399, 
-	404, 399, 405, 399, 406, 399, 407, 399, 
-	408, 409, 410, 399, 411, 399, 412, 399, 
-	413, 399, 414, 399, 415, 399, 416, 399, 
-	417, 399, 418, 399, 419, 420, 399, 421, 
-	399, 422, 399, 423, 399, 424, 399, 425, 
-	399, 426, 399, 428, 429, 427, 430, 427, 
-	431, 427, 432, 427, 433, 427, 434, 427, 
-	435, 427, 436, 427, 437, 427, 438, 427, 
-	439, 427, 441, 440, 442, 440, 443, 440, 
-	444, 440, 445, 440, 446, 440, 447, 440, 
-	448, 440, 449, 440, 450, 427, 451, 427, 
-	452, 427, 453, 427, 454, 427, 455, 427, 
-	456, 427, 457, 427, 458, 427, 459, 427, 
-	460, 427, 461, 427, 463, 462, 464, 462, 
-	465, 462, 466, 462, 467, 462, 468, 462, 
-	469, 462, 470, 462, 471, 462, 472, 462, 
-	473, 116, 474, 116, 475, 116, 476, 477, 
-	116, 478, 116, 479, 116, 480, 116, 481, 
-	116, 482, 116, 483, 116, 484, 485, 486, 
-	487, 116, 488, 116, 489, 116, 490, 116, 
-	491, 116, 492, 116, 493, 116, 494, 116, 
-	495, 116, 496, 116, 497, 116, 498, 116, 
-	499, 116, 500, 116, 501, 116, 502, 116, 
-	503, 116, 504, 116, 505, 116, 506, 116, 
-	507, 116, 508, 116, 509, 116, 510, 116, 
-	511, 116, 512, 116, 513, 116, 514, 116, 
-	515, 116, 516, 116, 517, 116, 518, 116, 
-	519, 116, 520, 116, 521, 116, 522, 116, 
-	523, 116, 525, 526, 524, 527, 524, 528, 
-	524, 529, 524, 530, 524, 531, 524, 532, 
-	524, 533, 524, 534, 524, 535, 524, 536, 
-	524, 537, 524, 538, 524, 539, 116, 540, 
-	116, 541, 116, 542, 116, 543, 116, 544, 
-	116, 545, 116, 547, 548, 546, 549, 546, 
-	550, 546, 551, 546, 552, 546, 553, 546, 
-	554, 546, 555, 546, 556, 546, 557, 546, 
-	558, 546, 559, 546, 560, 546, 561, 546, 
-	562, 546, 563, 546, 564, 546, 565, 546, 
-	566, 546, 567, 546, 568, 546, 569, 546, 
-	570, 546, 571, 546, 572, 546, 573, 546, 
-	574, 546, 575, 546, 576, 546, 577, 546, 
-	578, 546, 579, 580, 546, 581, 546, 582, 
-	546, 583, 546, 584, 546, 585, 546, 586, 
-	546, 587, 546, 588, 546, 589, 546, 590, 
-	546, 591, 546, 592, 546, 593, 594, 595, 
-	116, 596, 597, 116, 598, 116, 599, 116, 
-	600, 116, 601, 116, 602, 116, 603, 116, 
-	604, 116, 605, 116, 606, 607, 608, 116, 
-	609, 116, 610, 116, 611, 116, 612, 116, 
-	613, 116, 614, 116, 615, 116, 616, 116, 
-	617, 116, 618, 116, 619, 116, 620, 116, 
-	621, 116, 622, 116, 623, 624, 116, 625, 
-	116, 626, 116, 627, 628, 116, 629, 116, 
-	630, 116, 631, 116, 632, 116, 633, 116, 
-	634, 116, 635, 116, 636, 116, 637, 116, 
-	638, 116, 639, 116, 640, 116, 641, 116, 
-	642, 116, 643, 116, 644, 116, 645, 116, 
-	646, 116, 647, 116, 648, 116, 650, 649, 
-	652, 651, 653, 649, 649, 651, 656, 657, 
-	654, 655, 656, 657, 658, 655, 656, 657, 
-	655, 660, 661, 654, 662, 663, 664, 665, 
-	666, 667, 668, 669, 670, 671, 672, 673, 
-	659, 660, 661, 654, 659, 660, 661, 674, 
-	659, 660, 661, 659, 660, 661, 654, 675, 
-	676, 677, 678, 679, 680, 681, 682, 683, 
-	684, 685, 659, 660, 661, 654, 686, 687, 
-	659, 660, 661, 654, 688, 689, 659, 660, 
-	661, 654, 690, 659, 660, 661, 654, 691, 
-	659, 692, 661, 654, 659, 660, 661, 693, 
-	659, 660, 661, 654, 694, 659, 660, 661, 
-	654, 695, 659, 696, 661, 654, 659, 660, 
-	661, 697, 659, 660, 661, 654, 698, 659, 
-	660, 661, 654, 699, 659, 660, 661, 654, 
-	700, 659, 701, 661, 654, 659, 660, 661, 
-	702, 659, 660, 661, 654, 703, 659, 660, 
-	661, 654, 704, 659, 660, 661, 654, 705, 
-	659, 660, 661, 654, 706, 659, 707, 661, 
-	654, 659, 660, 661, 708, 659, 660, 661, 
-	654, 709, 659, 660, 661, 654, 710, 659, 
-	660, 661, 654, 711, 659, 660, 661, 654, 
-	712, 659, 713, 661, 654, 659, 660, 661, 
-	714, 659, 660, 661, 654, 715, 659, 660, 
-	661, 654, 716, 659, 660, 661, 654, 717, 
-	659, 660, 661, 654, 718, 659, 719, 661, 
-	654, 659, 660, 661, 720, 659, 660, 661, 
-	654, 721, 659, 660, 661, 654, 722, 659, 
-	660, 661, 654, 723, 659, 660, 661, 654, 
-	724, 659, 725, 661, 654, 659, 660, 661, 
-	726, 659, 660, 661, 654, 727, 659, 660, 
-	661, 654, 728, 659, 660, 661, 654, 729, 
-	659, 660, 661, 654, 730, 659, 731, 661, 
-	654, 659, 660, 661, 732, 659, 660, 661, 
-	654, 733, 734, 659, 660, 661, 654, 735, 
-	659, 660, 661, 654, 736, 659, 660, 661, 
-	654, 737, 659, 738, 661, 654, 659, 660, 
-	661, 739, 659, 660, 661, 654, 740, 659, 
-	660, 661, 654, 741, 659, 660, 661, 654, 
-	742, 659, 743, 661, 654, 659, 660, 661, 
-	744, 659, 660, 661, 654, 745, 659, 660, 
-	661, 654, 746, 659, 660, 661, 654, 747, 
-	659, 660, 661, 654, 748, 659, 749, 661, 
-	654, 659, 660, 661, 750, 659, 660, 661, 
-	654, 751, 659, 660, 661, 654, 752, 659, 
-	660, 661, 654, 753, 659, 660, 661, 654, 
-	754, 659, 755, 661, 654, 659, 660, 661, 
-	756, 659, 660, 661, 654, 757, 659, 660, 
-	661, 654, 758, 659, 660, 661, 654, 759, 
-	659, 760, 661, 654, 659, 660, 661, 761, 
-	659, 660, 661, 654, 762, 659, 660, 661, 
-	654, 763, 659, 660, 661, 654, 764, 659, 
-	660, 661, 654, 765, 659, 660, 661, 654, 
-	766, 659, 767, 661, 654, 659, 660, 661, 
-	768, 659, 660, 661, 654, 769, 770, 659, 
-	660, 661, 654, 771, 772, 659, 660, 661, 
-	654, 773, 659, 660, 661, 654, 774, 659, 
-	775, 661, 654, 659, 660, 661, 776, 659, 
-	660, 661, 654, 777, 659, 660, 661, 654, 
-	778, 659, 779, 661, 654, 659, 660, 661, 
-	780, 659, 660, 661, 654, 781, 659, 660, 
-	661, 654, 782, 659, 660, 661, 654, 783, 
-	659, 784, 661, 654, 659, 660, 661, 785, 
-	659, 660, 661, 654, 786, 659, 660, 661, 
-	654, 787, 659, 660, 661, 654, 788, 659, 
-	660, 661, 654, 789, 659, 790, 661, 654, 
-	659, 660, 661, 791, 659, 660, 661, 654, 
-	792, 659, 660, 661, 654, 793, 659, 660, 
-	661, 654, 794, 659, 660, 661, 654, 795, 
-	659, 796, 661, 654, 659, 660, 661, 797, 
-	659, 660, 661, 654, 798, 659, 660, 661, 
-	654, 799, 659, 660, 661, 654, 800, 659, 
-	660, 661, 654, 801, 659, 802, 661, 654, 
-	659, 660, 661, 803, 659, 660, 661, 654, 
-	804, 659, 660, 661, 654, 805, 659, 660, 
-	661, 654, 806, 659, 660, 661, 654, 807, 
-	659, 808, 661, 654, 659, 660, 661, 809, 
-	659, 660, 661, 654, 810, 659, 660, 661, 
-	654, 811, 659, 660, 661, 654, 812, 659, 
-	660, 661, 654, 813, 659, 814, 661, 654, 
-	659, 660, 661, 815, 659, 660, 661, 654, 
-	816, 817, 659, 660, 661, 654, 818, 659, 
-	660, 661, 654, 819, 659, 660, 661, 654, 
-	820, 659, 821, 661, 654, 659, 660, 661, 
-	822, 659, 660, 661, 654, 823, 659, 660, 
-	661, 654, 824, 659, 660, 661, 654, 825, 
-	659, 826, 661, 654, 659, 660, 661, 827, 
-	659, 660, 661, 654, 828, 659, 660, 661, 
-	654, 829, 659, 660, 661, 654, 830, 659, 
-	660, 661, 654, 831, 659, 832, 661, 654, 
-	659, 660, 661, 833, 659, 660, 661, 654, 
-	834, 659, 660, 661, 654, 835, 659, 660, 
-	661, 654, 836, 659, 660, 661, 654, 837, 
-	659, 838, 661, 654, 659, 660, 661, 839, 
-	659, 660, 661, 654, 840, 659, 660, 661, 
-	654, 841, 659, 660, 661, 654, 842, 659, 
-	843, 661, 654, 659, 660, 661, 844, 659, 
-	660, 661, 654, 845, 659, 660, 661, 654, 
-	846, 659, 660, 661, 654, 847, 659, 660, 
-	661, 654, 848, 659, 660, 661, 654, 849, 
-	659, 850, 661, 654, 659, 660, 661, 851, 
-	659, 853, 854, 654, 852, 853, 854, 658, 
-	852, 853, 854, 852, 856, 855, 857, 856, 
-	855, 860, 859, 859, 859, 858, 862, 861, 
-	863, 861, 864, 861, 866, 865, 867, 865, 
-	868, 865, 870, 869, 871, 869, 872, 869, 
-	873, 876, 877, 878, 879, 880, 881, 882, 
-	883, 884, 885, 886, 887, 888, 875, 893, 
-	875, 876, 875, 875, 889, 890, 891, 892, 
-	889, 874, 895, 896, 894, 23, 23, 23, 
-	23, 897, 25, 25, 25, 25, 897, 899, 
-	30, 902, 903, 904, 30, 900, 901, 30, 
-	30, 898, 44, 897, 47, 47, 47, 47, 
-	44, 897, 43, 44, 897, 905, 906, 48, 
-	48, 48, 48, 897, 907, 897, 49, 50, 
-	897, 908, 909, 910, 897, 45, 53, 46, 
-	54, 54, 54, 54, 897, 912, 913, 911, 
-	915, 916, 914, 918, 919, 917, 56, 60, 
-	64, 920, 923, 926, 927, 928, 929, 930, 
-	931, 932, 933, 934, 934, 935, 936, 937, 
-	938, 934, 939, 940, 941, 942, 943, 944, 
-	945, 946, 947, 948, 949, 950, 951, 934, 
-	952, 953, 954, 955, 956, 957, 934, 958, 
-	959, 960, 961, 924, 925, 922, 963, 962, 
-	964, 962, 966, 967, 965, 969, 967, 968, 
-	967, 970, 973, 972, 975, 68, 977, 71, 
-	979, 978, 976, 981, 980, 982, 980, 984, 
-	983, 985, 983, 987, 988, 989, 986, 991, 
-	990, 994, 993, 999, 996, 997, 998, 995, 
-	1000, 1001, 1002, 995, 94, 94, 94, 1003, 
-	98, 1004, 1006, 1007, 1005, 1009, 1008, 1010, 
-	1008, 1011, 1008, 1013, 1014, 1012, 109, 108, 
-	109, 1016, 1017, 108, 1019, 1020, 1021, 1022, 
-	1023, 1024, 1025, 1026, 1027, 1028, 1029, 1030, 
-	1031, 1032, 1033, 1034, 1035, 1036, 1037, 1038, 
-	1039, 1040, 1041, 1018, 1043, 1044, 1045, 1042, 
-	1046, 1047, 1048, 1049, 1050, 1042, 1052, 1053, 
-	1054, 1055, 1056, 1057, 1058, 1059, 1060, 1051, 
-	1062, 1063, 1061, 1064, 1042, 1065, 1066, 1042, 
-	1067, 1068, 1069, 1070, 1071, 1042, 1072, 1073, 
-	1074, 1042, 1076, 1077, 1075, 1078, 1079, 1042, 
-	1080, 1042, 1081, 1082, 1042, 1084, 1085, 1086, 
-	1087, 1088, 1089, 1090, 1091, 1092, 1093, 1083, 
-	1095, 1096, 1097, 1098, 1099, 1100, 1094, 1102, 
-	1101, 1104, 1105, 1106, 1107, 1108, 1103, 1109, 
-	1110, 1111, 1112, 1042, 1114, 1115, 1116, 1117, 
-	1118, 1119, 1120, 1121, 1113, 1122, 1123, 1042, 
-	1125, 1126, 1127, 1128, 1129, 1130, 1131, 1132, 
-	1133, 1124, 1134, 1135, 1136, 1137, 1042, 1138, 
-	1042, 1139, 1042, 1140, 1141, 1142, 1143, 1042, 
-	1144, 1042, 1146, 1147, 1148, 1145, 649, 1150, 
-	1151, 1152, 1153, 1154, 1155, 1156, 1149, 1158, 
-	1159, 1160, 1161, 1157, 1162, 1163, 1164, 1165, 
-	1162, 874, 655, 1167, 852, 1166, 1169, 1173, 
-	1174, 1175, 1176, 1176, 1177, 1178, 1179, 1176, 
-	1180, 1181, 1182, 1183, 1184, 1185, 1186, 1187, 
-	1188, 1189, 1176, 1190, 1191, 1192, 1193, 1194, 
-	1195, 1176, 1196, 1197, 1198, 1170, 1171, 1172, 
-	1172, 1168, 1200, 1199, 1201, 1199, 1203, 1202, 
-	1204, 1202, 1207, 1206, 1209, 1211, 1210, 1214, 
-	1213, 1219, 1216, 1217, 1218, 1215, 1220, 1221, 
-	1222, 1215, 859, 859, 859, 1223, 1225, 1224, 
-	1226, 1224, 1227, 1224, 1229, 1230, 1231, 1228, 
-	1228, 1228, 874, 1233, 1234, 1232, 1236, 1235, 
-	1237, 1238, 1239, 1240, 1237, 874, 1242, 1241, 
-	1244, 1243, 1245, 1243, 1246, 1243, 1248, 1247, 
-	1249, 1250, 1251, 1252, 1249, 874, 1254, 1253, 
-	1256, 1255, 1257, 1255, 1258, 1255, 1260, 1259, 
-	1262, 1261, 0
-};
-
-static const short _regex_trans_targs[] = {
-	746, 746, 746, 746, 746, 748, 749, 750, 
-	746, 751, 752, 753, 746, 754, 746, 746, 
-	755, 756, 757, 758, 746, 746, 746, 3, 
-	746, 4, 746, 6, 7, 746, 8, 746, 
-	9, 12, 746, 14, 746, 746, 746, 16, 
-	746, 18, 17, 746, 19, 746, 746, 20, 
-	21, 746, 22, 25, 746, 27, 28, 746, 
-	29, 30, 31, 746, 32, 33, 34, 746, 
-	35, 36, 37, 746, 38, 746, 772, 40, 
-	42, 46, 49, 43, 44, 746, 45, 47, 
-	746, 48, 746, 746, 51, 746, 53, 746, 
-	55, 746, 746, 57, 746, 746, 58, 746, 
-	746, 60, 59, 783, 61, 783, 783, 746, 
-	746, 64, 746, 787, 65, 787, 67, 787, 
-	69, 787, 70, 787, 790, 790, 73, 76, 
-	74, 75, 790, 77, 78, 79, 80, 790, 
-	82, 83, 84, 85, 790, 87, 92, 94, 
-	88, 89, 90, 91, 790, 93, 790, 95, 
-	790, 97, 98, 99, 100, 790, 102, 103, 
-	104, 105, 106, 790, 108, 109, 111, 110, 
-	790, 112, 113, 790, 115, 120, 116, 117, 
-	118, 119, 790, 121, 790, 790, 123, 139, 
-	124, 125, 126, 127, 128, 129, 130, 131, 
-	132, 133, 134, 135, 136, 137, 138, 790, 
-	140, 141, 790, 143, 144, 790, 145, 146, 
-	147, 148, 790, 790, 150, 151, 790, 153, 
-	154, 790, 156, 157, 158, 159, 160, 161, 
-	790, 163, 167, 164, 165, 166, 790, 168, 
-	169, 170, 171, 790, 173, 177, 174, 175, 
-	176, 790, 178, 179, 180, 181, 182, 183, 
-	790, 185, 186, 187, 188, 189, 190, 191, 
-	192, 193, 194, 195, 196, 197, 198, 199, 
-	200, 201, 790, 203, 204, 205, 206, 207, 
-	790, 209, 210, 211, 212, 213, 790, 215, 
-	216, 217, 218, 219, 220, 221, 790, 223, 
-	224, 225, 790, 227, 228, 790, 230, 235, 
-	231, 232, 233, 234, 790, 236, 237, 238, 
-	239, 790, 799, 790, 242, 790, 244, 245, 
-	790, 247, 248, 249, 790, 251, 252, 253, 
-	254, 255, 790, 257, 258, 259, 260, 261, 
-	262, 263, 264, 265, 266, 267, 268, 269, 
-	790, 271, 277, 272, 273, 274, 275, 276, 
-	790, 278, 279, 280, 281, 282, 283, 284, 
-	285, 286, 287, 288, 289, 290, 291, 295, 
-	292, 293, 294, 790, 296, 297, 298, 299, 
-	790, 301, 302, 303, 304, 305, 790, 307, 
-	310, 314, 319, 308, 309, 790, 311, 312, 
-	313, 790, 315, 316, 317, 318, 790, 320, 
-	321, 322, 323, 790, 325, 332, 326, 327, 
-	328, 329, 330, 331, 790, 333, 790, 790, 
-	790, 335, 336, 790, 338, 339, 340, 790, 
-	342, 344, 349, 343, 790, 345, 346, 347, 
-	348, 790, 790, 351, 354, 352, 353, 790, 
-	355, 356, 790, 790, 358, 364, 359, 360, 
-	361, 362, 363, 790, 365, 366, 367, 790, 
-	790, 369, 370, 371, 372, 373, 374, 375, 
-	376, 790, 378, 379, 380, 381, 382, 383, 
-	790, 385, 386, 387, 388, 790, 790, 390, 
-	391, 392, 393, 394, 395, 396, 397, 790, 
-	790, 400, 401, 790, 403, 408, 404, 405, 
-	406, 407, 790, 409, 410, 415, 421, 433, 
-	411, 412, 413, 414, 790, 416, 417, 418, 
-	419, 420, 790, 422, 423, 424, 425, 426, 
-	427, 428, 429, 430, 431, 432, 790, 434, 
-	435, 436, 437, 790, 439, 440, 790, 442, 
-	443, 444, 445, 790, 790, 447, 452, 448, 
-	449, 450, 451, 790, 453, 454, 455, 456, 
-	457, 458, 790, 460, 461, 462, 790, 464, 
-	465, 790, 790, 467, 473, 468, 469, 470, 
-	471, 472, 790, 474, 475, 476, 477, 478, 
-	479, 790, 481, 482, 483, 484, 790, 486, 
-	487, 488, 489, 790, 491, 492, 493, 494, 
-	495, 496, 790, 498, 507, 499, 500, 501, 
-	502, 503, 504, 505, 506, 790, 508, 509, 
-	790, 511, 519, 528, 512, 515, 513, 514, 
-	790, 516, 517, 518, 790, 520, 521, 522, 
-	525, 790, 523, 524, 790, 526, 527, 790, 
-	529, 790, 531, 532, 533, 790, 535, 536, 
-	790, 537, 790, 539, 543, 540, 541, 542, 
-	790, 544, 545, 546, 547, 790, 549, 550, 
-	551, 552, 553, 790, 790, 790, 790, 790, 
-	790, 0, 560, 561, 562, 817, 819, 563, 
-	564, 565, 819, 567, 568, 569, 570, 651, 
-	666, 672, 678, 684, 690, 696, 707, 713, 
-	719, 724, 819, 571, 586, 592, 598, 604, 
-	610, 616, 627, 633, 639, 644, 572, 581, 
-	573, 577, 574, 575, 576, 819, 578, 579, 
-	580, 819, 582, 583, 584, 585, 819, 587, 
-	588, 589, 590, 591, 819, 593, 594, 595, 
-	596, 597, 819, 599, 600, 601, 602, 603, 
-	819, 605, 606, 607, 608, 609, 819, 611, 
-	612, 613, 614, 615, 819, 617, 622, 618, 
-	619, 620, 621, 819, 623, 624, 625, 626, 
-	819, 628, 629, 630, 631, 632, 819, 634, 
-	635, 636, 637, 638, 819, 640, 641, 642, 
-	643, 819, 645, 646, 647, 648, 649, 650, 
-	819, 652, 661, 653, 657, 654, 655, 656, 
-	819, 658, 659, 660, 819, 662, 663, 664, 
-	665, 819, 667, 668, 669, 670, 671, 819, 
-	673, 674, 675, 676, 677, 819, 679, 680, 
-	681, 682, 683, 819, 685, 686, 687, 688, 
-	689, 819, 691, 692, 693, 694, 695, 819, 
-	697, 702, 698, 699, 700, 701, 819, 703, 
-	704, 705, 706, 819, 708, 709, 710, 711, 
-	712, 819, 714, 715, 716, 717, 718, 819, 
-	720, 721, 722, 723, 819, 725, 726, 727, 
-	728, 729, 730, 819, 731, 732, 733, 819, 
-	735, 819, 819, 736, 819, 819, 819, 739, 
-	819, 838, 838, 742, 838, 843, 843, 745, 
-	843, 746, 0, 746, 746, 746, 747, 746, 
-	759, 760, 746, 761, 762, 763, 746, 782, 
-	746, 746, 784, 785, 786, 746, 746, 1, 
-	2, 746, 746, 5, 9, 10, 11, 13, 
-	15, 746, 746, 746, 23, 24, 26, 746, 
-	746, 746, 746, 746, 746, 746, 746, 746, 
-	746, 746, 746, 764, 766, 768, 746, 746, 
-	746, 746, 746, 746, 746, 746, 746, 769, 
-	746, 746, 746, 746, 746, 746, 746, 746, 
-	746, 770, 746, 746, 746, 771, 746, 776, 
-	746, 777, 778, 746, 746, 746, 746, 746, 
-	779, 746, 746, 765, 746, 746, 767, 768, 
-	746, 768, 746, 746, 746, 746, 746, 746, 
-	746, 39, 774, 41, 746, 773, 746, 746, 
-	775, 746, 746, 50, 52, 54, 746, 56, 
-	746, 746, 746, 746, 780, 780, 780, 781, 
-	746, 746, 746, 746, 746, 746, 746, 746, 
-	746, 746, 62, 63, 788, 787, 789, 787, 
-	66, 68, 790, 791, 792, 793, 795, 796, 
-	797, 798, 800, 801, 802, 803, 804, 806, 
-	807, 808, 809, 810, 811, 812, 813, 814, 
-	815, 816, 790, 71, 72, 81, 86, 96, 
-	101, 107, 114, 790, 122, 790, 790, 142, 
-	790, 794, 790, 155, 162, 790, 149, 152, 
-	172, 184, 202, 208, 214, 222, 226, 229, 
-	240, 246, 250, 790, 241, 243, 256, 270, 
-	300, 306, 324, 790, 790, 334, 337, 341, 
-	790, 790, 790, 790, 790, 350, 790, 357, 
-	790, 805, 790, 377, 384, 790, 368, 790, 
-	790, 389, 398, 790, 790, 399, 402, 438, 
-	441, 790, 790, 790, 790, 790, 446, 790, 
-	790, 790, 459, 463, 790, 466, 790, 480, 
-	485, 790, 790, 790, 490, 497, 510, 530, 
-	534, 538, 548, 554, 555, 556, 557, 558, 
-	790, 790, 790, 790, 790, 818, 818, 818, 
-	818, 818, 818, 818, 818, 819, 819, 820, 
-	821, 819, 819, 833, 834, 835, 819, 566, 
-	819, 822, 824, 819, 819, 819, 819, 819, 
-	819, 826, 819, 819, 819, 819, 819, 819, 
-	827, 819, 819, 819, 819, 819, 819, 828, 
-	829, 819, 819, 819, 819, 819, 830, 819, 
-	823, 819, 819, 825, 819, 819, 819, 819, 
-	819, 819, 819, 734, 819, 819, 819, 819, 
-	831, 831, 831, 832, 819, 819, 819, 819, 
-	819, 819, 737, 738, 836, 837, 836, 836, 
-	836, 836, 836, 838, 839, 838, 840, 841, 
-	842, 838, 838, 838, 838, 740, 741, 843, 
-	844, 843, 845, 846, 847, 843, 843, 843, 
-	843, 743, 744, 848, 848, 849, 849
-};
-
-static const short _regex_trans_actions[] = {
-	827, 631, 765, 731, 723, 45, 903, 903, 
-	897, 45, 912, 45, 900, 903, 729, 741, 
-	0, 45, 45, 923, 737, 841, 747, 0, 
-	743, 3, 839, 3, 0, 761, 3, 759, 
-	870, 3, 751, 0, 749, 755, 753, 0, 
-	757, 3, 0, 745, 0, 725, 727, 27, 
-	3, 763, 0, 3, 673, 0, 25, 829, 
-	0, 0, 0, 603, 0, 0, 0, 601, 
-	0, 0, 0, 831, 0, 675, 17, 0, 
-	7, 870, 3, 17, 17, 663, 17, 870, 
-	661, 870, 665, 837, 3, 671, 3, 669, 
-	3, 667, 833, 0, 677, 835, 0, 679, 
-	845, 0, 11, 29, 13, 31, 0, 843, 
-	769, 0, 771, 59, 0, 53, 0, 51, 
-	0, 49, 0, 47, 359, 315, 0, 0, 
-	0, 0, 127, 0, 0, 0, 0, 129, 
-	0, 0, 0, 0, 131, 0, 0, 0, 
-	0, 0, 0, 0, 133, 0, 135, 0, 
-	137, 0, 0, 0, 0, 139, 0, 0, 
-	0, 0, 0, 141, 0, 0, 0, 0, 
-	143, 0, 0, 145, 0, 0, 0, 0, 
-	0, 0, 147, 0, 149, 341, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 151, 
-	0, 0, 153, 0, 0, 155, 0, 0, 
-	0, 0, 157, 343, 0, 0, 159, 0, 
-	0, 161, 0, 0, 0, 0, 0, 0, 
-	163, 0, 0, 0, 0, 0, 165, 0, 
-	0, 0, 0, 167, 0, 0, 0, 0, 
-	0, 169, 0, 0, 0, 0, 0, 0, 
-	171, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 173, 0, 0, 0, 0, 0, 
-	175, 0, 0, 0, 0, 0, 177, 0, 
-	0, 0, 0, 0, 0, 0, 179, 0, 
-	0, 0, 181, 0, 0, 183, 0, 0, 
-	0, 0, 0, 0, 185, 0, 0, 0, 
-	0, 187, 45, 357, 0, 189, 0, 0, 
-	191, 0, 0, 0, 193, 0, 0, 0, 
-	0, 0, 195, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	197, 0, 0, 0, 0, 0, 0, 0, 
-	199, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 201, 0, 0, 0, 0, 
-	203, 0, 0, 0, 0, 0, 205, 0, 
-	0, 0, 0, 0, 0, 207, 0, 0, 
-	0, 209, 0, 0, 0, 0, 211, 0, 
-	0, 0, 0, 213, 0, 0, 0, 0, 
-	0, 0, 0, 0, 215, 0, 217, 345, 
-	219, 0, 0, 221, 0, 0, 0, 223, 
-	0, 0, 0, 0, 225, 0, 0, 0, 
-	0, 227, 229, 0, 0, 0, 0, 231, 
-	0, 0, 233, 347, 0, 0, 0, 0, 
-	0, 0, 0, 235, 0, 0, 0, 237, 
-	349, 0, 0, 0, 0, 0, 0, 0, 
-	0, 239, 0, 0, 0, 0, 0, 0, 
-	241, 0, 0, 0, 0, 243, 351, 0, 
-	0, 0, 0, 0, 0, 0, 0, 245, 
-	247, 0, 0, 249, 0, 0, 0, 0, 
-	0, 0, 251, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 253, 0, 0, 0, 
-	0, 0, 255, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 257, 0, 
-	0, 0, 0, 259, 0, 0, 261, 0, 
-	0, 0, 0, 263, 353, 0, 0, 0, 
-	0, 0, 0, 265, 0, 0, 0, 0, 
-	0, 0, 267, 0, 0, 0, 269, 0, 
-	0, 271, 355, 0, 0, 0, 0, 0, 
-	0, 0, 273, 0, 0, 0, 0, 0, 
-	0, 275, 0, 0, 0, 0, 277, 0, 
-	0, 0, 0, 279, 0, 0, 0, 0, 
-	0, 0, 281, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 283, 0, 0, 
-	285, 0, 0, 0, 0, 0, 0, 0, 
-	287, 0, 0, 0, 289, 0, 0, 0, 
-	0, 291, 0, 0, 293, 0, 0, 295, 
-	0, 297, 0, 0, 0, 299, 0, 0, 
-	303, 0, 301, 0, 0, 0, 0, 0, 
-	305, 0, 0, 0, 0, 307, 0, 0, 
-	0, 0, 0, 309, 311, 119, 121, 123, 
-	125, 39, 0, 35, 33, 37, 539, 0, 
-	0, 0, 377, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 435, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 381, 0, 0, 
-	0, 385, 0, 0, 0, 0, 389, 0, 
-	0, 0, 0, 0, 393, 0, 0, 0, 
-	0, 0, 397, 0, 0, 0, 0, 0, 
-	401, 0, 0, 0, 0, 0, 405, 0, 
-	0, 0, 0, 0, 409, 0, 0, 0, 
-	0, 0, 0, 413, 0, 0, 0, 0, 
-	417, 0, 0, 0, 0, 0, 421, 0, 
-	0, 0, 0, 0, 425, 0, 0, 0, 
-	0, 429, 0, 0, 0, 0, 0, 0, 
-	433, 0, 0, 0, 0, 0, 0, 0, 
-	379, 0, 0, 0, 383, 0, 0, 0, 
-	0, 387, 0, 0, 0, 0, 0, 391, 
-	0, 0, 0, 0, 0, 395, 0, 0, 
-	0, 0, 0, 399, 0, 0, 0, 0, 
-	0, 403, 0, 0, 0, 0, 0, 407, 
-	0, 0, 0, 0, 0, 0, 411, 0, 
-	0, 0, 0, 415, 0, 0, 0, 0, 
-	0, 419, 0, 0, 0, 0, 0, 423, 
-	0, 0, 0, 0, 427, 0, 0, 0, 
-	0, 0, 0, 431, 0, 0, 0, 533, 
-	0, 471, 535, 0, 475, 537, 503, 0, 
-	505, 569, 557, 0, 559, 587, 575, 0, 
-	577, 633, 0, 777, 775, 637, 45, 597, 
-	0, 0, 609, 0, 45, 0, 635, 909, 
-	599, 773, 0, 45, 45, 629, 779, 0, 
-	0, 821, 819, 1, 855, 855, 1, 0, 
-	3, 735, 733, 739, 1, 1, 0, 783, 
-	615, 613, 785, 619, 617, 787, 623, 621, 
-	781, 817, 721, 5, 852, 915, 639, 647, 
-	611, 695, 607, 717, 699, 715, 683, 0, 
-	605, 713, 691, 703, 687, 719, 641, 657, 
-	645, 0, 693, 659, 655, 906, 697, 45, 
-	651, 45, 0, 653, 689, 649, 701, 685, 
-	7, 643, 791, 15, 867, 795, 858, 919, 
-	793, 927, 847, 811, 711, 709, 809, 681, 
-	801, 7, 17, 849, 799, 17, 876, 797, 
-	17, 873, 815, 1, 1, 1, 803, 0, 
-	813, 707, 705, 805, 19, 23, 21, 45, 
-	882, 894, 888, 807, 825, 789, 627, 625, 
-	823, 767, 0, 0, 45, 55, 45, 57, 
-	0, 0, 317, 45, 45, 45, 45, 45, 
-	45, 45, 45, 45, 45, 45, 45, 45, 
-	45, 45, 45, 45, 45, 45, 45, 45, 
-	0, 0, 339, 0, 0, 0, 0, 0, 
-	0, 0, 0, 319, 0, 61, 63, 0, 
-	65, 45, 67, 0, 0, 321, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 337, 0, 0, 0, 0, 
-	0, 0, 0, 323, 79, 0, 0, 0, 
-	69, 71, 73, 75, 77, 0, 325, 0, 
-	81, 45, 83, 0, 0, 327, 0, 329, 
-	85, 0, 0, 87, 89, 0, 0, 0, 
-	0, 331, 91, 93, 95, 97, 0, 99, 
-	101, 103, 0, 0, 333, 0, 105, 0, 
-	0, 107, 109, 111, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	313, 335, 113, 115, 117, 375, 361, 363, 
-	365, 367, 369, 371, 373, 509, 491, 45, 
-	0, 511, 507, 0, 45, 45, 531, 0, 
-	499, 5, 9, 473, 497, 489, 439, 457, 
-	493, 0, 437, 485, 461, 481, 451, 441, 
-	0, 487, 453, 449, 495, 455, 445, 45, 
-	0, 447, 483, 443, 459, 479, 7, 517, 
-	15, 861, 519, 15, 864, 513, 469, 467, 
-	527, 477, 521, 0, 515, 465, 463, 523, 
-	19, 23, 21, 45, 879, 891, 885, 525, 
-	529, 501, 0, 0, 549, 0, 543, 541, 
-	551, 547, 545, 563, 0, 561, 0, 45, 
-	45, 567, 553, 565, 555, 0, 0, 581, 
-	0, 579, 0, 45, 45, 585, 571, 583, 
-	573, 0, 0, 591, 589, 595, 593
-};
-
-static const short _regex_to_state_actions[] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 41, 
-	0, 41, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 41, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 41, 0, 0, 41, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 41, 41, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 41, 0, 41, 0, 
-	0, 0, 0, 41, 0, 0, 0, 0, 
-	41, 41
-};
-
-static const short _regex_from_state_actions[] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 43, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 43, 0, 0, 43, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 43, 43, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 43, 0, 43, 0, 
-	0, 0, 0, 43, 0, 0, 0, 0, 
-	43, 43
-};
-
-static const short _regex_eof_actions[] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 39, 
-	39, 39, 39, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0
-};
-
-static const short _regex_eof_trans[] = {
-	0, 1, 1, 22, 22, 27, 27, 27, 
-	27, 27, 27, 27, 27, 27, 27, 27, 
-	27, 27, 27, 22, 22, 22, 22, 22, 
-	22, 22, 22, 22, 22, 56, 56, 56, 
-	56, 56, 56, 56, 56, 56, 68, 68, 
-	68, 68, 68, 68, 68, 68, 68, 68, 
-	68, 68, 84, 84, 84, 84, 84, 84, 
-	91, 91, 94, 97, 97, 97, 104, 104, 
-	104, 108, 108, 108, 108, 108, 108, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 174, 174, 174, 174, 174, 174, 
-	174, 174, 174, 174, 174, 174, 174, 174, 
-	174, 174, 174, 174, 174, 174, 174, 174, 
-	174, 174, 174, 174, 174, 204, 204, 204, 
-	204, 204, 204, 174, 174, 174, 174, 174, 
-	174, 174, 174, 174, 174, 174, 174, 174, 
-	174, 174, 174, 174, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 300, 300, 300, 300, 300, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 400, 400, 
-	400, 400, 400, 400, 400, 400, 400, 400, 
-	400, 400, 400, 400, 400, 400, 400, 400, 
-	400, 400, 400, 400, 400, 428, 428, 428, 
-	428, 428, 428, 428, 428, 428, 428, 428, 
-	441, 441, 441, 441, 441, 441, 441, 441, 
-	441, 428, 428, 428, 428, 428, 428, 428, 
-	428, 428, 428, 428, 428, 463, 463, 463, 
-	463, 463, 463, 463, 463, 463, 463, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 525, 525, 
-	525, 525, 525, 525, 525, 525, 525, 525, 
-	525, 525, 525, 117, 117, 117, 117, 117, 
-	117, 117, 547, 547, 547, 547, 547, 547, 
-	547, 547, 547, 547, 547, 547, 547, 547, 
-	547, 547, 547, 547, 547, 547, 547, 547, 
-	547, 547, 547, 547, 547, 547, 547, 547, 
-	547, 547, 547, 547, 547, 547, 547, 547, 
-	547, 547, 547, 547, 547, 547, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 117, 
-	117, 117, 117, 117, 117, 117, 117, 0, 
-	0, 0, 0, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 655, 655, 
-	655, 655, 655, 655, 655, 655, 856, 856, 
-	859, 862, 862, 862, 866, 866, 866, 870, 
-	870, 870, 0, 895, 898, 898, 899, 898, 
-	898, 898, 898, 898, 898, 898, 898, 912, 
-	915, 918, 921, 922, 963, 963, 966, 969, 
-	971, 972, 975, 977, 981, 981, 984, 984, 
-	987, 991, 993, 996, 996, 1004, 1005, 1006, 
-	1009, 1009, 1009, 0, 1016, 1016, 0, 1043, 
-	1043, 1052, 1062, 1043, 1043, 1043, 1043, 1076, 
-	1043, 1043, 1043, 1084, 1095, 1102, 1104, 1043, 
-	1114, 1043, 1125, 1043, 1043, 1043, 1043, 1043, 
-	1146, 0, 0, 0, 1167, 1167, 1200, 1200, 
-	1203, 1203, 1206, 1209, 1211, 1213, 1216, 1216, 
-	1224, 1225, 1225, 1225, 0, 1233, 0, 1242, 
-	1244, 1244, 1244, 0, 1254, 1256, 1256, 1256, 
-	0, 0
-};
-
-static const int regex_start = 746;
-static const int regex_error = 0;
-
-static const int regex_en_readVerb = 787;
-static const int regex_en_readUCP = 790;
-static const int regex_en_readBracedUCP = 559;
-static const int regex_en_readUCPSingle = 818;
-static const int regex_en_charClassGuts = 819;
-static const int regex_en_readClass = 836;
-static const int regex_en_readQuotedLiteral = 838;
-static const int regex_en_readQuotedClass = 843;
-static const int regex_en_readComment = 848;
-static const int regex_en_readNewlineTerminatedComment = 849;
-static const int regex_en_main = 746;
-
-
-#line 1912 "Parser.rl"
-
-/** \brief Main parser call, returns root Component or nullptr. */
-unique_ptr<Component> parse(const char *ptr, ParseMode &globalMode) {
-    assert(ptr);
-
-    const char *p = ptr;
-    const char *pe = ptr + strlen(ptr);
-
-    // First, read the control verbs, set any global mode flags and move the
-    // ptr forward.
-    p = read_control_verbs(p, pe, 0, globalMode);
-
-    const char *eof = pe;
-    int cs;
-    UNUSED int act;
-    int top;
-    vector<int> stack;
-    const char *ts, *te;
-    unichar accumulator = 0;
-    unichar octAccumulator = 0; /* required as we are also accumulating for
-                                 * back ref when looking for octals */
-    unsigned repeatN = 0;
-    unsigned repeatM = 0;
-    string label;
-
-    ParseMode mode = globalMode;
-    ParseMode newMode;
-
-    bool negated = false;
-    bool inComment = false;
-
-    // Stack of sequences and flags used to store state when we enter
-    // sub-sequences.
-    vector<ExprState> sequences;
-
-    // Index of the next capturing group. Note that zero is reserved for the
-    // root sequence.
-    unsigned groupIndex = 1;
-
-    // Set storing group names that are currently in use.
-    flat_set<string> groupNames;
-
-    // Root sequence.
-    unique_ptr<ComponentSequence> rootSeq = std::make_unique<ComponentSequence>();
-    rootSeq->setCaptureIndex(0);
-
-    // Current sequence being appended to
-    ComponentSequence *currentSeq = rootSeq.get();
-
-    // The current character class being appended to. This is used as the
-    // accumulator for both character class and UCP properties.
-    unique_ptr<ComponentClass> currentCls;
-
-    // True if the machine is currently inside a character class, i.e. square
-    // brackets [..].
-    bool inCharClass = false;
-
-    // True if the machine is inside a character class but it has not processed
-    // any "real" elements yet, i.e. it's still processing meta-characters like
-    // '^'.
-    bool inCharClassEarly = false;
-
-    // Location at which the current character class began.
-    const char *currentClsBegin = p;
-
-    // We throw exceptions on various parsing failures beyond this point: we
-    // use a try/catch block here to clean up our allocated memory before we
-    // re-throw the exception to the caller.
-    try {
-        // Embed the Ragel machine here
-        
-#line 2533 "Parser.cpp"
+#line 4187 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
 	{
-	cs = regex_start;
-	top = 0;
-	ts = 0;
-	te = 0;
-	act = 0;
-	}
+				cs = (int)regex_start;
+				top = 0;
+				ts = 0;
+				te = 0;
+				act = 0;
+			}
+			
+#line 1982 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
 
-#line 1983 "Parser.rl"
-        
-#line 2544 "Parser.cpp"
+
+#line 4196 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
 	{
-	int _klen;
-	unsigned int _trans;
-	short _widec;
-	const short *_acts;
-	unsigned int _nacts;
-	const short *_keys;
-
-	if ( p == pe )
-		goto _test_eof;
-	if ( cs == 0 )
-		goto _out;
-_resume:
-	_acts = _regex_actions + _regex_from_state_actions[cs];
-	_nacts = (unsigned int) *_acts++;
-	while ( _nacts-- > 0 ) {
-		switch ( *_acts++ ) {
-	case 24:
+				int _cpc;
+				int _klen;
+				const signed char * _ckeys;
+				unsigned int _trans = 0;
+				unsigned int _cond = 0;
+				const char * _keys;
+				const short * _acts;
+				unsigned int _nacts;
+				_resume: {}
+				if ( p == pe && p != eof )
+					goto _out;
+				_acts = ( _regex_actions + (_regex_from_state_actions[cs]));
+				_nacts = (unsigned int)(*( _acts));
+				_acts += 1;
+				while ( _nacts > 0 ) {
+					switch ( (*( _acts)) ) {
+						case 24:  {
+								{
 #line 1 "NONE"
-	{ts = p;}
-	break;
-#line 2566 "Parser.cpp"
-		}
-	}
+								{ts = p;}}
+							
+#line 4218 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
 
-	_widec = (*p);
-	_klen = _regex_cond_lengths[cs];
-	_keys = _regex_cond_keys + (_regex_cond_offsets[cs]*2);
-	if ( _klen > 0 ) {
-		const short *_lower = _keys;
-		const short *_mid;
-		const short *_upper = _keys + (_klen<<1) - 2;
-		while (1) {
-			if ( _upper < _lower )
-				break;
-
-			_mid = _lower + (((_upper-_lower) >> 1) & ~1);
-			if ( _widec < _mid[0] )
-				_upper = _mid - 2;
-			else if ( _widec > _mid[1] )
-				_lower = _mid + 2;
-			else {
-				switch ( _regex_cond_spaces[_regex_cond_offsets[cs] + ((_mid - _keys)>>1)] ) {
-	case 0: {
-		_widec = (short)(128 + ((*p) - -128));
-		if ( 
-#line 475 "Parser.rl"
- mode.utf8  ) _widec += 256;
-		break;
-	}
-	case 1: {
-		_widec = (short)(1152 + ((*p) - -128));
-		if ( 
-#line 476 "Parser.rl"
- mode.ignore_space  ) _widec += 256;
-		break;
-	}
-	case 2: {
-		_widec = (short)(640 + ((*p) - -128));
-		if ( 
-#line 477 "Parser.rl"
- inCharClassEarly  ) _widec += 256;
-		break;
-	}
+							break; 
+						}
+					}
+					_nacts -= 1;
+					_acts += 1;
 				}
-				break;
+				
+				if ( p == eof ) {
+					if ( _regex_eof_trans[cs] > 0 ) {
+						_trans = (unsigned int)_regex_eof_trans[cs] - 1;
+					}
+				}
+				else {
+					_keys = ( _regex_trans_keys + (_regex_key_offsets[cs]));
+					_trans = (unsigned int)_regex_index_offsets[cs];
+					
+					_klen = (int)_regex_single_lengths[cs];
+					if ( _klen > 0 ) {
+						const char *_lower = _keys;
+						const char *_upper = _keys + _klen - 1;
+						const char *_mid;
+						while ( 1 ) {
+							if ( _upper < _lower ) {
+								_keys += _klen;
+								_trans += (unsigned int)_klen;
+								break;
+							}
+							
+							_mid = _lower + ((_upper-_lower) >> 1);
+							if ( ( (*( p))) < (*( _mid)) )
+								_upper = _mid - 1;
+							else if ( ( (*( p))) > (*( _mid)) )
+								_lower = _mid + 1;
+							else {
+								_trans += (unsigned int)(_mid - _keys);
+								goto _match;
+							}
+						}
+					}
+					
+					_klen = (int)_regex_range_lengths[cs];
+					if ( _klen > 0 ) {
+						const char *_lower = _keys;
+						const char *_upper = _keys + (_klen<<1) - 2;
+						const char *_mid;
+						while ( 1 ) {
+							if ( _upper < _lower ) {
+								_trans += (unsigned int)_klen;
+								break;
+							}
+							
+							_mid = _lower + (((_upper-_lower) >> 1) & ~1);
+							if ( ( (*( p))) < (*( _mid)) )
+								_upper = _mid - 2;
+							else if ( ( (*( p))) > (*( _mid + 1)) )
+								_lower = _mid + 2;
+							else {
+								_trans += (unsigned int)((_mid - _keys)>>1);
+								break;
+							}
+						}
+					}
+					
+					_match: {}
+				}
+				_ckeys = ( _regex_cond_keys + (_regex_trans_offsets[_trans]));
+				_klen = (int)_regex_trans_lengths[_trans];
+				_cond = (unsigned int)_regex_trans_offsets[_trans];
+				
+				_cpc = 0;
+				switch ( _regex_trans_cond_spaces[_trans] ) {
+					
+					case 0:  {
+						if ( ( mode.utf8 )
+#line 4293 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+ ) _cpc += 1;
+						break; 
+					}
+					case 1:  {
+						if ( ( mode.ignore_space )
+#line 4298 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+ ) _cpc += 1;
+						break; 
+					}
+					case 2:  {
+						if ( ( inCharClassEarly )
+#line 4303 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+ ) _cpc += 1;
+						break; 
+					}
+				}
+				{
+					const signed char *_lower = _ckeys;
+					const signed char *_upper = _ckeys + _klen - 1;
+					const signed char *_mid;
+					while ( 1 ) {
+						if ( _upper < _lower ) {
+							_cond = 3561;
+							
+							break;
+						}
+						
+						_mid = _lower + ((_upper-_lower) >> 1);
+						if ( _cpc < (int)(*( _mid)) )
+							_upper = _mid - 1;
+						else if ( _cpc > (int)(*( _mid)) )
+							_lower = _mid + 1;
+						else {
+							_cond += (unsigned int)(_mid - _ckeys);
+							
+							break;
+						}
+					}
+				}
+				cs = (int)_regex_cond_targs[_cond];
+				
+				if ( _regex_cond_actions[_cond] != 0 ) {
+					
+					_acts = ( _regex_actions + (_regex_cond_actions[_cond]));
+					_nacts = (unsigned int)(*( _acts));
+					_acts += 1;
+					while ( _nacts > 0 ) {
+						switch ( (*( _acts)) )
+						{
+							case 0:  {
+									{
+#line 285 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									label.clear();}
+								
+#line 4345 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 1:  {
+									{
+#line 286 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									label.push_back((( (*( p)))));}
+								
+#line 4353 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 2:  {
+									{
+#line 287 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									octAccumulator = 0;}
+								
+#line 4361 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 3:  {
+									{
+#line 288 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									accumulator = 0;}
+								
+#line 4369 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 4:  {
+									{
+#line 289 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									octAccumulator = 0;
+									pushOct(&octAccumulator, (( (*( p)))));
+								}
+								
+#line 4380 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 5:  {
+									{
+#line 293 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									accumulator = 0;
+									pushDec(&accumulator, (( (*( p)))));
+								}
+								
+#line 4391 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 6:  {
+									{
+#line 297 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									repeatN = 0; repeatM = 0; }
+								
+#line 4399 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 7:  {
+									{
+#line 298 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									pushDec(&repeatN, (( (*( p))))); }
+								
+#line 4407 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 8:  {
+									{
+#line 299 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									pushDec(&repeatM, (( (*( p))))); }
+								
+#line 4415 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 9:  {
+									{
+#line 300 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									pushOct(&octAccumulator, (( (*( p))))); }
+								
+#line 4423 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 10:  {
+									{
+#line 301 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									pushDec(&accumulator, (( (*( p))))); }
+								
+#line 4431 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 11:  {
+									{
+#line 302 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									accumulator *= 16;
+									accumulator += (( (*( p)))) - '0';
+								}
+								
+#line 4442 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 12:  {
+									{
+#line 306 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									accumulator *= 16;
+									accumulator += 10 + (( (*( p)))) - 'a';
+								}
+								
+#line 4453 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 13:  {
+									{
+#line 310 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									accumulator *= 16;
+									accumulator += 10 + (( (*( p)))) - 'A';
+								}
+								
+#line 4464 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 14:  {
+									{
+#line 430 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									newMode = mode;
+								}
+								
+#line 4474 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 15:  {
+									{
+#line 437 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									switch ((( (*( p))))) {
+										case 'i':
+										newMode.caseless = true;
+										break;
+										case 'm':
+										newMode.multiline = true;
+										break;
+										case 's':
+										newMode.dotall = true;
+										break;
+										case 'x':
+										newMode.ignore_space = true;
+										break;
+										default:
+										assert(0); // this action only called for [imsx]
+										break;
+									}
+								}
+								
+#line 4500 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 16:  {
+									{
+#line 456 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									switch ((( (*( p))))) {
+										case 'i':
+										newMode.caseless = false;
+										break;
+										case 'm':
+										newMode.multiline = false;
+										break;
+										case 's':
+										newMode.dotall = false;
+										break;
+										case 'x':
+										newMode.ignore_space = false;
+										break;
+										default:
+										assert(0); // this action only called for [imsx]
+										break;
+									}
+								}
+								
+#line 4526 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 17:  {
+									{
+#line 510 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									repeatM = repeatN;}
+								
+#line 4534 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 18:  {
+									{
+#line 510 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									repeatM = ComponentRepeat::NoLimit;}
+								
+#line 4542 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 19:  {
+									{
+#line 722 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									negated = !negated; }
+								
+#line 4550 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 20:  {
+									{
+#line 723 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = p - 1; } {{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+											if ((int)stack.size() == top) {
+												stack.resize(2 * (top + 1));
+											}
+										}
+										stack[top] = cs; top += 1;cs = 790;goto _again;}}
+								
+#line 4566 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 21:  {
+									{
+#line 724 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									if (!inCharClass) { // not inside [..]
+										currentCls->finalize();
+										currentSeq->addComponent(move(currentCls));
+									}
+									{top -= 1;cs = stack[top];goto _again;} 
+								}
+								
+#line 4579 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 22:  {
+									{
+#line 730 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									throw LocatedParseError("Malformed property"); }
+								
+#line 4587 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 25:  {
+									{
+#line 1 "NONE"
+									{te = p+1;}}
+								
+#line 4595 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 26:  {
+									{
+#line 550 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 550 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("(*UTF8) must be at start of "
+											"expression, encountered");
+										}
+									}}
+								
+#line 4609 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 27:  {
+									{
+#line 554 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 554 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("(*UTF) must be at start of "
+											"expression, encountered");
+										}
+									}}
+								
+#line 4623 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 28:  {
+									{
+#line 558 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 558 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("(*UCP) must be at start of "
+											"expression, encountered");
+										}
+									}}
+								
+#line 4637 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 29:  {
+									{
+#line 564 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 564 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											ParseMode temp_mode;
+											assert(ts - 2 >= ptr); // parser needs the '(*' at the start too.
+											read_control_verbs(ts - 2, te, (ts - 2 - ptr), temp_mode);
+											assert(0); // Should have thrown a parse error.
+											throw LocatedParseError("Unknown control verb");
+										}
+									}}
+								
+#line 4654 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 30:  {
+									{
+#line 571 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 571 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("Unknown control verb");
+										}
+									}}
+								
+#line 4667 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 31:  {
+									{
+#line 571 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 571 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("Unknown control verb");
+										}
+									}}
+								
+#line 4680 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 32:  {
+									{
+#line 571 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 571 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("Unknown control verb");
+										}
+									}}
+								
+#line 4694 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 33:  {
+									{
+#line 581 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 581 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_CC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4705 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 34:  {
+									{
+#line 582 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 582 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_CF, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4716 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 35:  {
+									{
+#line 583 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 583 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_CN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4727 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 36:  {
+									{
+#line 585 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 585 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_CS, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4738 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 37:  {
+									{
+#line 587 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 587 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_LL, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4749 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 38:  {
+									{
+#line 588 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 588 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_LM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4760 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 39:  {
+									{
+#line 589 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 589 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_LO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4771 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 40:  {
+									{
+#line 590 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 590 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_LT, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4782 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 41:  {
+									{
+#line 591 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 591 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_LU, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4793 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 42:  {
+									{
+#line 592 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 592 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_L_AND, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4804 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 43:  {
+									{
+#line 594 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 594 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_MC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4815 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 44:  {
+									{
+#line 596 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 596 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_MN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4826 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 45:  {
+									{
+#line 598 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 598 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_ND, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4837 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 46:  {
+									{
+#line 599 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 599 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_NL, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4848 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 47:  {
+									{
+#line 600 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 600 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_NO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4859 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 48:  {
+									{
+#line 602 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 602 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_PC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4870 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 49:  {
+									{
+#line 603 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 603 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_PD, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4881 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 50:  {
+									{
+#line 604 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 604 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_PE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4892 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 51:  {
+									{
+#line 605 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 605 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_PF, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4903 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 52:  {
+									{
+#line 606 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 606 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_PI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4914 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 53:  {
+									{
+#line 607 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 607 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_PO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4925 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 54:  {
+									{
+#line 608 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 608 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_PS, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4936 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 55:  {
+									{
+#line 610 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 610 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_SC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4947 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 56:  {
+									{
+#line 611 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 611 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_SK, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4958 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 57:  {
+									{
+#line 612 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 612 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_SM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4969 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 58:  {
+									{
+#line 613 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 613 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_SO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4980 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 59:  {
+									{
+#line 615 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 615 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_ZL, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 4991 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 60:  {
+									{
+#line 616 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 616 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_ZP, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5002 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 61:  {
+									{
+#line 617 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 617 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_ZS, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5013 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 62:  {
+									{
+#line 618 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 618 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_XAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5024 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 63:  {
+									{
+#line 619 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 619 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_XPS, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5035 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 64:  {
+									{
+#line 620 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 620 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_XSP, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5046 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 65:  {
+									{
+#line 621 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 621 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_XWD, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5057 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 66:  {
+									{
+#line 622 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 622 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_ARABIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5068 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 67:  {
+									{
+#line 623 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 623 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_ARMENIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5079 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 68:  {
+									{
+#line 624 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 624 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_AVESTAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5090 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 69:  {
+									{
+#line 625 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 625 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BALINESE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5101 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 70:  {
+									{
+#line 626 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 626 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BAMUM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5112 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 71:  {
+									{
+#line 627 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 627 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BATAK, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5123 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 72:  {
+									{
+#line 628 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 628 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BENGALI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5134 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 73:  {
+									{
+#line 629 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 629 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BOPOMOFO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5145 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 74:  {
+									{
+#line 630 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 630 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BRAHMI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5156 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 75:  {
+									{
+#line 631 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 631 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BRAILLE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5167 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 76:  {
+									{
+#line 632 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 632 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BUGINESE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5178 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 77:  {
+									{
+#line 633 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 633 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_BUHID, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5189 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 78:  {
+									{
+#line 634 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 634 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_CANADIAN_ABORIGINAL, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5200 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 79:  {
+									{
+#line 635 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 635 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_CARIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5211 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 80:  {
+									{
+#line 636 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 636 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_CHAM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5222 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 81:  {
+									{
+#line 637 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 637 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_CHEROKEE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5233 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 82:  {
+									{
+#line 638 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 638 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_COMMON, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5244 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 83:  {
+									{
+#line 639 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 639 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_COPTIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5255 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 84:  {
+									{
+#line 640 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 640 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_CUNEIFORM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5266 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 85:  {
+									{
+#line 641 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 641 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_CYPRIOT, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5277 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 86:  {
+									{
+#line 642 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 642 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_CYRILLIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5288 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 87:  {
+									{
+#line 643 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 643 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_DESERET, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5299 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 88:  {
+									{
+#line 644 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 644 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_DEVANAGARI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5310 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 89:  {
+									{
+#line 645 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 645 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_EGYPTIAN_HIEROGLYPHS, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5321 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 90:  {
+									{
+#line 646 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 646 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_ETHIOPIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5332 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 91:  {
+									{
+#line 647 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 647 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_GEORGIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5343 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 92:  {
+									{
+#line 648 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 648 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_GLAGOLITIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5354 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 93:  {
+									{
+#line 649 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 649 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_GOTHIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5365 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 94:  {
+									{
+#line 650 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 650 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_GREEK, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5376 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 95:  {
+									{
+#line 651 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 651 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_GUJARATI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5387 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 96:  {
+									{
+#line 652 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 652 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_GURMUKHI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5398 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 97:  {
+									{
+#line 654 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 654 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_HANGUL, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5409 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 98:  {
+									{
+#line 655 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 655 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_HANUNOO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5420 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 99:  {
+									{
+#line 656 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 656 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_HEBREW, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5431 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 100:  {
+									{
+#line 657 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 657 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_HIRAGANA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5442 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 101:  {
+									{
+#line 658 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 658 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_IMPERIAL_ARAMAIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5453 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 102:  {
+									{
+#line 659 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 659 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_INHERITED, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5464 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 103:  {
+									{
+#line 660 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 660 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_INSCRIPTIONAL_PAHLAVI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5475 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 104:  {
+									{
+#line 661 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 661 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_INSCRIPTIONAL_PARTHIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5486 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 105:  {
+									{
+#line 662 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 662 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_JAVANESE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5497 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 106:  {
+									{
+#line 663 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 663 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_KAITHI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5508 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 107:  {
+									{
+#line 664 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 664 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_KANNADA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5519 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 108:  {
+									{
+#line 665 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 665 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_KATAKANA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5530 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 109:  {
+									{
+#line 666 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 666 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_KAYAH_LI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5541 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 110:  {
+									{
+#line 667 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 667 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_KHAROSHTHI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5552 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 111:  {
+									{
+#line 668 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 668 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_KHMER, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5563 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 112:  {
+									{
+#line 669 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 669 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LAO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5574 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 113:  {
+									{
+#line 670 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 670 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LATIN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5585 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 114:  {
+									{
+#line 671 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 671 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LEPCHA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5596 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 115:  {
+									{
+#line 672 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 672 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LIMBU, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5607 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 116:  {
+									{
+#line 673 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 673 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LINEAR_B, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5618 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 117:  {
+									{
+#line 674 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 674 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LISU, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5629 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 118:  {
+									{
+#line 675 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 675 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LYCIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5640 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 119:  {
+									{
+#line 676 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 676 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_LYDIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5651 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 120:  {
+									{
+#line 677 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 677 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_MALAYALAM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5662 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 121:  {
+									{
+#line 678 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 678 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_MANDAIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5673 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 122:  {
+									{
+#line 679 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 679 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_MEETEI_MAYEK, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5684 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 123:  {
+									{
+#line 680 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 680 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_MONGOLIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5695 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 124:  {
+									{
+#line 681 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 681 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_MYANMAR, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5706 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 125:  {
+									{
+#line 682 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 682 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_NEW_TAI_LUE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5717 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 126:  {
+									{
+#line 683 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 683 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_NKO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5728 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 127:  {
+									{
+#line 684 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 684 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_OGHAM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5739 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 128:  {
+									{
+#line 685 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 685 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_OL_CHIKI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5750 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 129:  {
+									{
+#line 686 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 686 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_OLD_ITALIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5761 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 130:  {
+									{
+#line 687 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 687 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_OLD_PERSIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5772 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 131:  {
+									{
+#line 688 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 688 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_OLD_SOUTH_ARABIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5783 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 132:  {
+									{
+#line 689 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 689 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_OLD_TURKIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5794 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 133:  {
+									{
+#line 690 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 690 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_ORIYA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5805 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 134:  {
+									{
+#line 691 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 691 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_OSMANYA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5816 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 135:  {
+									{
+#line 692 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 692 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_PHAGS_PA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5827 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 136:  {
+									{
+#line 693 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 693 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_PHOENICIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5838 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 137:  {
+									{
+#line 694 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 694 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_REJANG, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5849 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 138:  {
+									{
+#line 695 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 695 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_RUNIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5860 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 139:  {
+									{
+#line 696 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 696 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_SAMARITAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5871 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 140:  {
+									{
+#line 697 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 697 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_SAURASHTRA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5882 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 141:  {
+									{
+#line 698 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 698 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_SHAVIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5893 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 142:  {
+									{
+#line 699 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 699 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_SINHALA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5904 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 143:  {
+									{
+#line 700 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 700 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_SUNDANESE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5915 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 144:  {
+									{
+#line 701 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 701 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_SYLOTI_NAGRI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5926 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 145:  {
+									{
+#line 702 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 702 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_SYRIAC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5937 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 146:  {
+									{
+#line 703 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 703 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TAGALOG, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5948 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 147:  {
+									{
+#line 704 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 704 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TAGBANWA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5959 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 148:  {
+									{
+#line 705 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 705 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TAI_LE, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5970 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 149:  {
+									{
+#line 706 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 706 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TAI_THAM, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5981 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 150:  {
+									{
+#line 707 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 707 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TAI_VIET, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 5992 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 151:  {
+									{
+#line 708 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 708 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TAMIL, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6003 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 152:  {
+									{
+#line 709 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 709 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TELUGU, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6014 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 153:  {
+									{
+#line 710 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 710 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_THAANA, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6025 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 154:  {
+									{
+#line 711 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 711 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_THAI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6036 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 155:  {
+									{
+#line 712 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 712 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TIBETAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6047 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 156:  {
+									{
+#line 713 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 713 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_TIFINAGH, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6058 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 157:  {
+									{
+#line 714 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 714 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_UGARITIC, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6069 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 158:  {
+									{
+#line 715 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 715 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_VAI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6080 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 159:  {
+									{
+#line 716 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 716 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_YI, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6091 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 160:  {
+									{
+#line 717 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 717 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_ANY, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6102 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 161:  {
+									{
+#line 718 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 718 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											throw LocatedParseError("Unknown property"); }
+									}}
+								
+#line 6113 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 162:  {
+									{
+#line 580 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 580 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_C, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6124 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 163:  {
+									{
+#line 584 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 584 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_CO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6135 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 164:  {
+									{
+#line 586 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 586 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_L, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6146 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 165:  {
+									{
+#line 593 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 593 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_M, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6157 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 166:  {
+									{
+#line 595 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 595 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_ME, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6168 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 167:  {
+									{
+#line 597 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 597 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_N, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6179 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 168:  {
+									{
+#line 601 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 601 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_P, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6190 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 169:  {
+									{
+#line 609 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 609 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_S, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6201 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 170:  {
+									{
+#line 614 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 614 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_Z, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6212 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 171:  {
+									{
+#line 653 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 653 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_HAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6223 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 172:  {
+									{
+#line 718 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 718 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											throw LocatedParseError("Unknown property"); }
+									}}
+								
+#line 6234 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 173:  {
+									{
+#line 580 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 580 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_C, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6246 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 174:  {
+									{
+#line 584 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 584 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_CO, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6258 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 175:  {
+									{
+#line 586 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 586 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_L, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6270 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 176:  {
+									{
+#line 593 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 593 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_M, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6282 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 177:  {
+									{
+#line 595 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 595 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_ME, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6294 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 178:  {
+									{
+#line 597 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 597 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_N, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6306 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 179:  {
+									{
+#line 601 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 601 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_P, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6318 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 180:  {
+									{
+#line 609 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 609 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_UCP_S, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6330 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 181:  {
+									{
+#line 653 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 653 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											currentCls->add(CLASS_SCRIPT_HAN, negated); {top -= 1;cs = stack[top];goto _again;} }
+									}}
+								
+#line 6342 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 182:  {
+									{
+#line 718 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = ((te))-1;
+										{
+#line 718 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											throw LocatedParseError("Unknown property"); }
+									}}
+								
+#line 6354 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 183:  {
+									{
+#line 733 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 733 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UCP_C, negated); 
+											if (!inCharClass) {
+												currentCls->finalize();
+												currentSeq->addComponent(move(currentCls));
+											}
+											{top -= 1;cs = stack[top];goto _again;} 
+										}
+									}}
+								
+#line 6372 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 184:  {
+									{
+#line 741 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 741 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UCP_L, negated); 
+											if (!inCharClass) {
+												currentCls->finalize();
+												currentSeq->addComponent(move(currentCls));
+											}
+											{top -= 1;cs = stack[top];goto _again;} 
+										}
+									}}
+								
+#line 6390 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 185:  {
+									{
+#line 749 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 749 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UCP_M, negated); 
+											if (!inCharClass) {
+												currentCls->finalize();
+												currentSeq->addComponent(move(currentCls));
+											}
+											{top -= 1;cs = stack[top];goto _again;} 
+										}
+									}}
+								
+#line 6408 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 186:  {
+									{
+#line 757 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 757 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UCP_N, negated); 
+											if (!inCharClass) {
+												currentCls->finalize();
+												currentSeq->addComponent(move(currentCls));
+											}
+											{top -= 1;cs = stack[top];goto _again;}
+										}
+									}}
+								
+#line 6426 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 187:  {
+									{
+#line 765 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 765 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UCP_P, negated); 
+											if (!inCharClass) {
+												currentCls->finalize();
+												currentSeq->addComponent(move(currentCls));
+											}
+											{top -= 1;cs = stack[top];goto _again;} 
+										}
+									}}
+								
+#line 6444 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 188:  {
+									{
+#line 773 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 773 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UCP_S, negated); 
+											if (!inCharClass) {
+												currentCls->finalize();
+												currentSeq->addComponent(move(currentCls));
+											}
+											{top -= 1;cs = stack[top];goto _again;} 
+										}
+									}}
+								
+#line 6462 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 189:  {
+									{
+#line 781 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 781 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UCP_Z, negated); 
+											if (!inCharClass) {
+												currentCls->finalize();
+												currentSeq->addComponent(move(currentCls));
+											}
+											{top -= 1;cs = stack[top];goto _again;} 
+										}
+									}}
+								
+#line 6480 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 190:  {
+									{
+#line 790 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 790 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											throw LocatedParseError("Unknown property"); }
+									}}
+								
+#line 6491 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 191:  {
+									{
+#line 796 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 796 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("Unsupported POSIX collating "
+											"element");
+										}
+									}}
+								
+#line 6505 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 192:  {
+									{
+#line 803 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 803 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_ALNUM, false);
+										}
+									}}
+								
+#line 6518 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 193:  {
+									{
+#line 806 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 806 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_ALNUM, true);
+										}
+									}}
+								
+#line 6531 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 194:  {
+									{
+#line 809 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 809 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_ALPHA, false);
+										}
+									}}
+								
+#line 6544 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 195:  {
+									{
+#line 812 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 812 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_ALPHA, true);
+										}
+									}}
+								
+#line 6557 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 196:  {
+									{
+#line 815 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 815 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_ASCII, false);
+										}
+									}}
+								
+#line 6570 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 197:  {
+									{
+#line 818 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 818 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_ASCII, true);
+										}
+									}}
+								
+#line 6583 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 198:  {
+									{
+#line 821 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 821 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_BLANK, false);
+										}
+									}}
+								
+#line 6596 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 199:  {
+									{
+#line 824 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 824 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_BLANK, true);
+										}
+									}}
+								
+#line 6609 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 200:  {
+									{
+#line 827 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 827 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_CNTRL, false);
+										}
+									}}
+								
+#line 6622 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 201:  {
+									{
+#line 830 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 830 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_CNTRL, true);
+										}
+									}}
+								
+#line 6635 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 202:  {
+									{
+#line 833 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 833 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_DIGIT, false);
+										}
+									}}
+								
+#line 6648 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 203:  {
+									{
+#line 836 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 836 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_DIGIT, true);
+										}
+									}}
+								
+#line 6661 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 204:  {
+									{
+#line 839 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 839 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_GRAPH, false);
+										}
+									}}
+								
+#line 6674 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 205:  {
+									{
+#line 842 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 842 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_GRAPH, true);
+										}
+									}}
+								
+#line 6687 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 206:  {
+									{
+#line 845 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 845 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_LOWER, false);
+										}
+									}}
+								
+#line 6700 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 207:  {
+									{
+#line 848 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 848 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_LOWER, true);
+										}
+									}}
+								
+#line 6713 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 208:  {
+									{
+#line 851 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 851 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_PRINT, false);
+										}
+									}}
+								
+#line 6726 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 209:  {
+									{
+#line 854 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 854 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_PRINT, true);
+										}
+									}}
+								
+#line 6739 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 210:  {
+									{
+#line 857 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 857 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_PUNCT, false);
+										}
+									}}
+								
+#line 6752 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 211:  {
+									{
+#line 860 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 860 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_PUNCT, true);
+										}
+									}}
+								
+#line 6765 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 212:  {
+									{
+#line 864 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 864 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_SPACE, false);
+										}
+									}}
+								
+#line 6778 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 213:  {
+									{
+#line 867 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 867 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_SPACE, true);
+										}
+									}}
+								
+#line 6791 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 214:  {
+									{
+#line 870 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 870 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UPPER, false);
+										}
+									}}
+								
+#line 6804 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 215:  {
+									{
+#line 873 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 873 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_UPPER, true);
+										}
+									}}
+								
+#line 6817 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 216:  {
+									{
+#line 876 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 876 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_WORD, false);
+										}
+									}}
+								
+#line 6830 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 217:  {
+									{
+#line 879 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 879 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_WORD, true);
+										}
+									}}
+								
+#line 6843 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 218:  {
+									{
+#line 882 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 882 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_XDIGIT, false);
+										}
+									}}
+								
+#line 6856 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 219:  {
+									{
+#line 885 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 885 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_XDIGIT, true);
+										}
+									}}
+								
+#line 6869 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 220:  {
+									{
+#line 890 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 890 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("Invalid POSIX named class");
+										}
+									}}
+								
+#line 6882 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 221:  {
+									{
+#line 893 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 893 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+													
+													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+													if ((int)stack.size() == top) {
+														stack.resize(2 * (top + 1));
+													}
+												}
+												stack[top] = cs; top += 1;cs = 843;goto _again;}}
+									}}
+								
+#line 6902 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 222:  {
+									{
+#line 896 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 896 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											/*noop*/}
+									}}
+								
+#line 6913 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 223:  {
+									{
+#line 898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add('\x08');
+										}
+									}}
+								
+#line 6926 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 224:  {
+									{
+#line 902 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 902 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add('\x09');
+										}
+									}}
+								
+#line 6939 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 225:  {
+									{
+#line 906 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 906 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add('\x0a');
+										}
+									}}
+								
+#line 6952 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 226:  {
+									{
+#line 910 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 910 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add('\x0d');
+										}
+									}}
+								
+#line 6965 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 227:  {
+									{
+#line 914 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 914 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add('\x0c');
+										}
+									}}
+								
+#line 6978 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 228:  {
+									{
+#line 918 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 918 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add('\x07');
+										}
+									}}
+								
+#line 6991 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 229:  {
+									{
+#line 922 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 922 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add('\x1b');
+										}
+									}}
+								
+#line 7004 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 230:  {
+									{
+#line 926 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 926 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_HORZ, false);
+										}
+									}}
+								
+#line 7017 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 231:  {
+									{
+#line 930 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 930 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_HORZ, true);
+										}
+									}}
+								
+#line 7030 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 232:  {
+									{
+#line 934 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 934 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_VERT, false);
+										}
+									}}
+								
+#line 7043 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 233:  {
+									{
+#line 938 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 938 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_VERT, true);
+										}
+									}}
+								
+#line 7056 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 234:  {
+									{
+#line 942 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 942 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											negated = false;
+											{p = p - 1; }
+											{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+													
+													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+													if ((int)stack.size() == top) {
+														stack.resize(2 * (top + 1));
+													}
+												}
+												stack[top] = cs; top += 1;cs = 559;goto _again;}}
+									}}
+								
+#line 7078 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 235:  {
+									{
+#line 948 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 948 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											negated = false;
+											{p = p - 1; }
+											{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+													
+													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+													if ((int)stack.size() == top) {
+														stack.resize(2 * (top + 1));
+													}
+												}
+												stack[top] = cs; top += 1;cs = 818;goto _again;}}
+									}}
+								
+#line 7100 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 236:  {
+									{
+#line 954 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 954 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											negated = true;
+											{p = p - 1; }
+											{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+													
+													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+													if ((int)stack.size() == top) {
+														stack.resize(2 * (top + 1));
+													}
+												}
+												stack[top] = cs; top += 1;cs = 559;goto _again;}}
+									}}
+								
+#line 7122 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 237:  {
+									{
+#line 960 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 960 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											negated = true;
+											{p = p - 1; }
+											{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+													
+													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+													if ((int)stack.size() == top) {
+														stack.resize(2 * (top + 1));
+													}
+												}
+												stack[top] = cs; top += 1;cs = 818;goto _again;}}
+									}}
+								
+#line 7144 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 238:  {
+									{
+#line 970 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 970 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(octAccumulator);
+										}
+									}}
+								
+#line 7157 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 239:  {
+									{
+#line 973 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 973 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(octAccumulator);
+										}
+									}}
+								
+#line 7170 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 240:  {
+									{
+#line 977 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 977 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											string oct(ts + 3, te - ts - 4);
+											unsigned long val;
+											try {
+												val = stoul(oct, nullptr, 8);
+											} catch (const std::out_of_range &) {
+												val = MAX_UNICODE + 1;
+											}
+											if ((!mode.utf8 && val > 255) || val > MAX_UNICODE) {
+												throw LocatedParseError("Value in \\o{...} sequence is too large");
+											}
+											currentCls->add((unichar)val);
+										}
+									}}
+								
+#line 7193 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 241:  {
+									{
+#line 997 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 997 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(accumulator);
+										}
+									}}
+								
+#line 7206 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 242:  {
+									{
+#line 1001 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1001 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											// whatever we found here
+											currentCls->add(*(ts + 1));
+											
+										}
+									}}
+								
+#line 7221 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 243:  {
+									{
+#line 1007 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1007 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											string hex(ts + 3, te - ts - 4);
+											unsigned long val;
+											try {
+												val = stoul(hex, nullptr, 16);
+											} catch (const std::out_of_range &) {
+												val = MAX_UNICODE + 1;
+											}
+											if (val > MAX_UNICODE) {
+												throw LocatedParseError("Value in \\x{...} sequence is too large");
+											}
+											currentCls->add((unichar)val);
+										}
+									}}
+								
+#line 7244 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 244:  {
+									{
+#line 1025 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1025 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											if (te - ts < 3) {
+												assert(te - ts == 2);
+												throw LocatedParseError(SLASH_C_ERROR);
+											} else {
+												assert(te - ts == 3);
+												currentCls->add(decodeCtrl(ts[2]));
+											}
+										}
+									}}
+								
+#line 7263 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 245:  {
+									{
+#line 1035 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1035 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_WORD, false);
+										}
+									}}
+								
+#line 7276 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 246:  {
+									{
+#line 1039 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1039 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_WORD, true);
+										}
+									}}
+								
+#line 7289 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 247:  {
+									{
+#line 1043 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1043 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_SPACE, false);
+										}
+									}}
+								
+#line 7302 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 248:  {
+									{
+#line 1047 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1047 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_SPACE, true);
+										}
+									}}
+								
+#line 7315 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 249:  {
+									{
+#line 1051 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1051 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_DIGIT, false);
+										}
+									}}
+								
+#line 7328 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 250:  {
+									{
+#line 1055 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1055 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(CLASS_DIGIT, true);
+										}
+									}}
+								
+#line 7341 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 251:  {
+									{
+#line 1058 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1058 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->addDash();
+										}
+									}}
+								
+#line 7354 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 252:  {
+									{
+#line 276 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 276 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											ostringstream str;
+											str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
+											<< " not supported in a character class.";
+											throw ParseError(str.str());
+										}
+									}}
+								
+#line 7370 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 253:  {
+									{
+#line 276 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 276 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											ostringstream str;
+											str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
+											<< " not supported in a character class.";
+											throw ParseError(str.str());
+										}
+									}}
+								
+#line 7386 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 254:  {
+									{
+#line 276 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 276 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											ostringstream str;
+											str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
+											<< " not supported in a character class.";
+											throw ParseError(str.str());
+										}
+									}}
+								
+#line 7402 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 255:  {
+									{
+#line 1075 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1075 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											// add the literal char
+											currentCls->add(*(ts + 1));
+										}
+									}}
+								
+#line 7416 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 256:  {
+									{
+#line 1081 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1081 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											assert(mode.utf8);
+											currentCls->add(readUtf8CodePoint2c(ts));
+										}
+									}}
+								
+#line 7430 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 257:  {
+									{
+#line 1086 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1086 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											assert(mode.utf8);
+											currentCls->add(readUtf8CodePoint3c(ts));
+										}
+									}}
+								
+#line 7444 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 258:  {
+									{
+#line 1091 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1091 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											assert(mode.utf8);
+											currentCls->add(readUtf8CodePoint4c(ts));
+										}
+									}}
+								
+#line 7458 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 259:  {
+									{
+#line 1096 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1096 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											assert(mode.utf8);
+											throwInvalidUtf8();
+										}
+									}}
+								
+#line 7472 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 260:  {
+									{
+#line 1102 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1102 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add((u8)*ts);
+										}
+									}}
+								
+#line 7485 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 261:  {
+									{
+#line 1106 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p+1;{
+#line 1106 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->finalize();
+											currentSeq->addComponent(move(currentCls));
+											inCharClass = false;
+											{cs = 746;goto _again;}}
+									}}
+								
+#line 7500 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 262:  {
+									{
+#line 966 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 966 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											throw LocatedParseError("Malformed property"); }
+									}}
+								
+#line 7511 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 263:  {
+									{
+#line 967 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 967 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											throw LocatedParseError("Malformed property"); }
+									}}
+								
+#line 7522 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 264:  {
+									{
+#line 970 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 970 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(octAccumulator);
+										}
+									}}
+								
+#line 7535 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 265:  {
+									{
+#line 973 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 973 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(octAccumulator);
+										}
+									}}
+								
+#line 7548 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 266:  {
+									{
+#line 992 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 992 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
+										}
+									}}
+								
+#line 7561 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 267:  {
+									{
+#line 997 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 997 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											currentCls->add(accumulator);
+										}
+									}}
+								
+#line 7574 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+								break; 
+							}
+							case 268:  {
+									{
+#line 1021 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{te = p;p = p - 1;{
+#line 1021 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
+									}
+								}}
+							
+#line 7587 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+							break; 
+						}
+						case 269:  {
+								{
+#line 1025 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								{te = p;p = p - 1;{
+#line 1025 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+										
+										if (te - ts < 3) {
+											assert(te - ts == 2);
+											throw LocatedParseError(SLASH_C_ERROR);
+										} else {
+											assert(te - ts == 3);
+											currentCls->add(decodeCtrl(ts[2]));
+										}
+									}
+								}}
+							
+#line 7606 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+							break; 
+						}
+						case 270:  {
+								{
+#line 1096 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								{te = p;p = p - 1;{
+#line 1096 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+										
+										assert(mode.utf8);
+										throwInvalidUtf8();
+									}
+								}}
+							
+#line 7620 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+							break; 
+						}
+						case 271:  {
+								{
+#line 1102 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								{te = p;p = p - 1;{
+#line 1102 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+										
+										currentCls->add((u8)*ts);
+									}
+								}}
+							
+#line 7633 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+							break; 
+						}
+						case 272:  {
+								{
+#line 992 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								{p = ((te))-1;
+									{
+#line 992 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+										
+										throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
+									}
+								}}
+							
+#line 7647 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+							break; 
+						}
+						case 273:  {
+								{
+#line 1021 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								{p = ((te))-1;
+									{
+#line 1021 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+										
+										throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
+								}
+							}}
+						
+#line 7661 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 274:  {
+							{
+#line 1096 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{p = ((te))-1;
+								{
+#line 1096 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 7676 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 275:  {
+							{
+#line 1102 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{p = ((te))-1;
+								{
+#line 1102 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentCls->add((u8)*ts);
+								}
+							}}
+						
+#line 7690 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 276:  {
+							{
+#line 1120 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1120 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (currentCls->isNegated()) {
+										// Already seen a caret; the second one is not a meta-character.
+										inCharClassEarly = false;
+										{p = p - 1; } {cs = 819;goto _again;}} else {
+										currentCls->negate();
+										// Note: we cannot switch off inCharClassEarly here, as /[^]]/
+										// needs to use the right square bracket path below.
+									}
+								}
+							}}
+						
+#line 7710 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 277:  {
+							{
+#line 1133 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1133 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentCls->add(']');
+									inCharClassEarly = false;
+								}
+							}}
+						
+#line 7724 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 278:  {
+							{
+#line 1138 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1138 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+											if ((int)stack.size() == top) {
+												stack.resize(2 * (top + 1));
+											}
+										}
+										stack[top] = cs; top += 1;cs = 843;goto _again;}}
+							}}
+						
+#line 7743 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 279:  {
+							{
+#line 1139 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1139 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									/*noop*/}
+							}}
+						
+#line 7754 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 280:  {
+							{
+#line 1142 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1142 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									inCharClassEarly = false;
+									{p = p - 1; }
+									{cs = 819;goto _again;}}
+							}}
+						
+#line 7768 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 281:  {
+							{
+#line 1142 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1142 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									inCharClassEarly = false;
+									{p = p - 1; }
+									{cs = 819;goto _again;}}
+							}}
+						
+#line 7782 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 282:  {
+							{
+#line 1154 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1154 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									{cs = 746;goto _again;}}
+							}}
+						
+#line 7794 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 283:  {
+							{
+#line 1159 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1159 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									/* leverage ComponentClass to generate the vertices */
+									auto cc = getComponentClass(mode);
+									cc->add(readUtf8CodePoint2c(ts));
+									cc->finalize();
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 7812 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 284:  {
+							{
+#line 1168 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1168 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									/* leverage ComponentClass to generate the vertices */
+									auto cc = getComponentClass(mode);
+									cc->add(readUtf8CodePoint3c(ts));
+									cc->finalize();
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 7830 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 285:  {
+							{
+#line 1177 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1177 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									/* leverage ComponentClass to generate the vertices */
+									auto cc = getComponentClass(mode);
+									cc->add(readUtf8CodePoint4c(ts));
+									cc->finalize();
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 7848 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 286:  {
+							{
+#line 1186 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1186 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 7862 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 287:  {
+							{
+#line 1192 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1192 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, *ts, mode);
+								}
+							}}
+						
+#line 7875 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 288:  {
+							{
+#line 1186 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1186 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 7889 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 289:  {
+							{
+#line 1192 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1192 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, *ts, mode);
+								}
+							}}
+						
+#line 7902 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 290:  {
+							{
+#line 1186 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{p = ((te))-1;
+								{
+#line 1186 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 7917 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 291:  {
+							{
+#line 1202 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1202 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									{top -= 1;cs = stack[top];goto _again;}
+								}
+							}}
+						
+#line 7930 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 292:  {
+							{
+#line 1207 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1207 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									currentCls->add(readUtf8CodePoint2c(ts));
+									inCharClassEarly = false;
+								}
+							}}
+						
+#line 7945 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 293:  {
+							{
+#line 1213 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1213 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									currentCls->add(readUtf8CodePoint3c(ts));
+									inCharClassEarly = false;
+								}
+							}}
+						
+#line 7960 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 294:  {
+							{
+#line 1219 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1219 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									currentCls->add(readUtf8CodePoint4c(ts));
+									inCharClassEarly = false;
+								}
+							}}
+						
+#line 7975 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 295:  {
+							{
+#line 1225 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1225 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 7989 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 296:  {
+							{
+#line 1231 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1231 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentCls->add(*ts);
+									inCharClassEarly = false;
+								}
+							}}
+						
+#line 8003 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 297:  {
+							{
+#line 1225 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1225 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 8017 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 298:  {
+							{
+#line 1231 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1231 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentCls->add(*ts);
+									inCharClassEarly = false;
+								}
+							}}
+						
+#line 8031 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 299:  {
+							{
+#line 1225 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{p = ((te))-1;
+								{
+#line 1225 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 8046 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 300:  {
+							{
+#line 1243 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1243 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									inComment = false; {cs = 746;goto _again;}}
+							}}
+						
+#line 8057 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 301:  {
+							{
+#line 1 "-"
+							{te = p+1;}}
+						
+#line 8065 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 302:  {
+							{
+#line 1255 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1255 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									inComment = false; {cs = 746;goto _again;}}
+							}}
+						
+#line 8076 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 303:  {
+							{
+#line 1 "-"
+							{te = p+1;}}
+						
+#line 8084 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 304:  {
+							{
+#line 1491 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{act = 288;}}
+						
+#line 8092 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 305:  {
+							{
+#line 1508 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{act = 290;}}
+						
+#line 8100 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 306:  {
+							{
+#line 1737 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{act = 330;}}
+						
+#line 8108 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 307:  {
+							{
+#line 362 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 362 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (sequences.empty()) {
+										throw LocatedParseError("Unmatched parentheses");
+									}
+									currentSeq->finalize();
+									POP_SEQUENCE;
+								}
+							}}
+						
+#line 8125 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 308:  {
+							{
+#line 1274 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1274 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addAlternation();
+								}
+							}}
+						
+#line 8138 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 309:  {
+							{
+#line 1279 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1279 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("POSIX named classes are only "
+									"supported inside a class");
+								}
+							}}
+						
+#line 8152 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 310:  {
+							{
+#line 1286 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1286 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Unsupported POSIX collating "
+									"element");
+								}
+							}}
+						
+#line 8166 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 311:  {
+							{
+#line 1293 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1293 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									{cs = 838;goto _again;}}
+							}}
+						
+#line 8178 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 312:  {
+							{
+#line 1297 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1297 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									/* noop */ }
+							}}
+						
+#line 8189 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 313:  {
+							{
+#line 1299 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1299 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(generateComponent(CLASS_ANY, false, mode));
+								}
+							}}
+						
+#line 8202 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 314:  {
+							{
+#line 1303 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1303 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (mode.utf8) {
+										throw LocatedParseError("\\C is unsupported in UTF8");
+									}
+									currentSeq->addComponent(std::make_unique<ComponentByte>());
+								}
+							}}
+						
+#line 8218 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 315:  {
+							{
+#line 1317 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1317 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
+									ComponentRepeat::REPEAT_NONGREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8234 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 316:  {
+							{
+#line 1324 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1324 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
+									ComponentRepeat::REPEAT_POSSESSIVE)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8250 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 317:  {
+							{
+#line 1338 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1338 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
+									ComponentRepeat::REPEAT_NONGREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8266 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 318:  {
+							{
+#line 1345 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1345 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
+									ComponentRepeat::REPEAT_POSSESSIVE)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8282 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 319:  {
+							{
+#line 1359 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1359 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(
+									0, 1, ComponentRepeat::REPEAT_NONGREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8298 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 320:  {
+							{
+#line 1366 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1366 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(
+									0, 1, ComponentRepeat::REPEAT_POSSESSIVE)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8314 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 321:  {
+							{
+#line 1383 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1383 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (repeatN > repeatM || repeatM == 0) {
+										throwInvalidRepeat();
+									} else if (!currentSeq->addRepeat(
+									repeatN, repeatM,
+									ComponentRepeat::REPEAT_NONGREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8333 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 322:  {
+							{
+#line 1393 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1393 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (repeatN > repeatM || repeatM == 0) {
+										throwInvalidRepeat();
+									} else if (!currentSeq->addRepeat(
+									repeatN, repeatM,
+									ComponentRepeat::REPEAT_POSSESSIVE)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 8352 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 323:  {
+							{
+#line 322 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 322 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									inComment = true;
+									{cs = 849;goto _again;}}
+							}}
+						
+#line 8365 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 324:  {
+							{
+#line 1410 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1410 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									{p = p - 1; } {{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+											if ((int)stack.size() == top) {
+												stack.resize(2 * (top + 1));
+											}
+										}
+										stack[top] = cs; top += 1;cs = 787;goto _again;}}
+							}}
+						
+#line 8384 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 325:  {
+							{
+#line 1414 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1414 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									assert(0); {p += 1; goto _out; } }
+							}}
+						
+#line 8395 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 326:  {
+							{
+#line 1421 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1421 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto bound = mode.multiline ? ComponentBoundary::BEGIN_LINE
+									: ComponentBoundary::BEGIN_STRING;
+									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
+								}
+							}}
+						
+#line 8410 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 327:  {
+							{
+#line 1428 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1428 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto bound = mode.multiline ? ComponentBoundary::END_LINE
+									: ComponentBoundary::END_STRING_OPTIONAL_LF;
+									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
+								}
+							}}
+						
+#line 8425 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 328:  {
+							{
+#line 1434 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1434 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto bound = ComponentBoundary::BEGIN_STRING;
+									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
+								}
+							}}
+						
+#line 8439 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 329:  {
+							{
+#line 1439 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1439 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto bound = ComponentBoundary::END_STRING_OPTIONAL_LF;
+									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
+								}
+							}}
+						
+#line 8453 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 330:  {
+							{
+#line 1444 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1444 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto bound = ComponentBoundary::END_STRING;
+									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
+								}
+							}}
+						
+#line 8467 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 331:  {
+							{
+#line 1449 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1449 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(
+									std::make_unique<ComponentWordBoundary>(ts - ptr, false, mode));
+								}
+							}}
+						
+#line 8481 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 332:  {
+							{
+#line 1454 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1454 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(
+									std::make_unique<ComponentWordBoundary>(ts - ptr, true, mode));
+								}
+							}}
+						
+#line 8495 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 333:  {
+							{
+#line 1464 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1464 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, '\x09', mode);
+								}
+							}}
+						
+#line 8508 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 334:  {
+							{
+#line 1468 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1468 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, '\x0a', mode);
+								}
+							}}
+						
+#line 8521 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 335:  {
+							{
+#line 1472 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1472 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, '\x0d', mode);
+								}
+							}}
+						
+#line 8534 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 336:  {
+							{
+#line 1476 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1476 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, '\x0c', mode);
+								}
+							}}
+						
+#line 8547 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 337:  {
+							{
+#line 1480 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1480 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, '\x07', mode);
+								}
+							}}
+						
+#line 8560 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 338:  {
+							{
+#line 1484 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1484 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, '\x1b', mode);
+								}
+							}}
+						
+#line 8573 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 339:  {
+							{
+#line 1488 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1488 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, octAccumulator, mode);
+								}
+							}}
+						
+#line 8586 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 340:  {
+							{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
+								}
+							}}
+						
+#line 8602 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 341:  {
+							{
+#line 486 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 486 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									// Accumulator is a negative offset.
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									if (accumulator >= groupIndex) {
+										throw LocatedParseError("Invalid reference");
+									}
+									unsigned idx = groupIndex - accumulator;
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(idx));
+								}
+							}}
+						
+#line 8623 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 342:  {
+							{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
+								}
+							}}
+						
+#line 8639 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 343:  {
+							{
+#line 486 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 486 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									// Accumulator is a negative offset.
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									if (accumulator >= groupIndex) {
+										throw LocatedParseError("Invalid reference");
+									}
+									unsigned idx = groupIndex - accumulator;
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(idx));
+								}
+							}}
+						
+#line 8660 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 344:  {
+							{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
+								}
+							}}
+						
+#line 8673 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 345:  {
+							{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
+								}
+							}}
+						
+#line 8686 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 346:  {
+							{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
+								}
+							}}
+						
+#line 8699 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 347:  {
+							{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
+								}
+							}}
+						
+#line 8712 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 348:  {
+							{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 498 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
+								}
+							}}
+						
+#line 8725 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 349:  {
+							{
+#line 1549 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1549 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									ostringstream str;
+									str << "Onigiruma subroutine call at index " << ts - ptr <<
+									" not supported.";
+									throw ParseError(str.str());
+								}
+							}}
+						
+#line 8741 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 350:  {
+							{
+#line 1560 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1560 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									string oct(ts + 3, te - ts - 4);
+									unsigned long val;
+									try {
+										val = stoul(oct, nullptr, 8);
+									} catch (const std::out_of_range &) {
+										val = MAX_UNICODE + 1;
+									}
+									if ((!mode.utf8 && val > 255) || val > MAX_UNICODE) {
+										throw LocatedParseError("Value in \\o{...} sequence is too large");
+									}
+									addEscapedOctal(currentSeq, (unichar)val, mode);
+								}
+							}}
+						
+#line 8764 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 351:  {
+							{
+#line 1578 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1578 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addEscapedHex(currentSeq, accumulator, mode);
+								}
+							}}
+						
+#line 8777 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 352:  {
+							{
+#line 1582 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1582 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									string hex(ts + 3, te - ts - 4);
+									unsigned long val;
+									try {
+										val = stoul(hex, nullptr, 16);
+									} catch (const std::out_of_range &) {
+										val = MAX_UNICODE + 1;
+									}
+									if (val > MAX_UNICODE) {
+										throw LocatedParseError("Value in \\x{...} sequence is too large");
+									}
+									addEscapedHex(currentSeq, (unichar)val, mode);
+								}
+							}}
+						
+#line 8800 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 353:  {
+							{
+#line 1600 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1600 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (te - ts < 3) {
+										assert(te - ts == 2);
+										throw LocatedParseError(SLASH_C_ERROR);
+									} else {
+										assert(te - ts == 3);
+										addLiteral(currentSeq, decodeCtrl(ts[2]), mode);
+									}
+								}
+							}}
+						
+#line 8819 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 354:  {
+							{
+#line 1610 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1610 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									ostringstream str;
+									str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
+									<< " not supported.";
+									throw ParseError(str.str());
+								}
+							}}
+						
+#line 8835 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 355:  {
+							{
+#line 1618 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1618 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_WORD, false, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8849 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 356:  {
+							{
+#line 1623 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1623 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_WORD, true, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8863 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 357:  {
+							{
+#line 1628 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1628 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_SPACE, false, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8877 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 358:  {
+							{
+#line 1633 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1633 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_SPACE, true, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8891 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 359:  {
+							{
+#line 1638 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1638 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_DIGIT, false, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8905 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 360:  {
+							{
+#line 1643 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1643 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_DIGIT, true, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8919 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 361:  {
+							{
+#line 1648 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1648 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_HORZ, false, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8933 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 362:  {
+							{
+#line 1653 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1653 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_HORZ, true, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8947 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 363:  {
+							{
+#line 1658 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1658 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_VERT, false, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8961 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 364:  {
+							{
+#line 1663 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1663 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto cc = generateComponent(CLASS_VERT, true, mode);
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 8975 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 365:  {
+							{
+#line 1668 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1668 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(!currentCls && !inCharClass);
+									currentCls = getComponentClass(mode);
+									negated = false;
+									{p = p - 1; }
+									{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+											if ((int)stack.size() == top) {
+												stack.resize(2 * (top + 1));
+											}
+										}
+										stack[top] = cs; top += 1;cs = 559;goto _again;}}
+							}}
+						
+#line 8999 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 366:  {
+							{
+#line 1676 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1676 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(!currentCls && !inCharClass);
+									currentCls = getComponentClass(mode);
+									negated = false;
+									{p = p - 1; }
+									{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+											if ((int)stack.size() == top) {
+												stack.resize(2 * (top + 1));
+											}
+										}
+										stack[top] = cs; top += 1;cs = 818;goto _again;}}
+							}}
+						
+#line 9023 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 367:  {
+							{
+#line 1684 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1684 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(!currentCls && !inCharClass);
+									currentCls = getComponentClass(mode);
+									negated = true;
+									{p = p - 1; }
+									{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+											if ((int)stack.size() == top) {
+												stack.resize(2 * (top + 1));
+											}
+										}
+										stack[top] = cs; top += 1;cs = 559;goto _again;}}
+							}}
+						
+#line 9047 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 368:  {
+							{
+#line 1692 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1692 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(!currentCls && !inCharClass);
+									currentCls = getComponentClass(mode);
+									negated = true;
+									{p = p - 1; }
+									{{
+#line 1903 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+											
+											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
+											if ((int)stack.size() == top) {
+												stack.resize(2 * (top + 1));
+											}
+										}
+										stack[top] = cs; top += 1;cs = 818;goto _again;}}
+							}}
+						
+#line 9071 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 369:  {
+							{
+#line 1704 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1704 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									ostringstream str;
+									str << "\\R at index " << ts - ptr << " not supported.";
+									throw ParseError(str.str());
+								}
+							}}
+						
+#line 9086 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 370:  {
+							{
+#line 1711 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1711 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									ostringstream str;
+									str << "\\K at index " << ts - ptr << " not supported.";
+									throw ParseError(str.str());
+								}
+							}}
+						
+#line 9101 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 371:  {
+							{
+#line 1726 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1726 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									ostringstream str;
+									str << "\\G at index " << ts - ptr << " not supported.";
+									throw ParseError(str.str());
+								}
+							}}
+						
+#line 9116 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 372:  {
+							{
+#line 1732 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1732 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									currentSeq->addComponent(std::make_unique<ComponentEUS>(ts - ptr, mode));
+								}
+							}}
+						
+#line 9129 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 373:  {
+							{
+#line 1737 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1737 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, *(ts + 1), mode);
+								}
+							}}
+						
+#line 9142 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 374:  {
+							{
+#line 316 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 316 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									inComment = true;
+									{cs = 848;goto _again;}}
+							}}
+						
+#line 9155 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 375:  {
+							{
+#line 433 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 433 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									mode = newMode;
+									currentSeq->addComponent(std::make_unique<ComponentEmpty>());
+								}
+							}}
+						
+#line 9169 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 376:  {
+							{
+#line 355 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 355 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									mode = newMode;
+									currentSeq =
+									enterSequence(currentSeq, std::make_unique<ComponentSequence>());
+								}
+							}}
+						
+#line 9185 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 377:  {
+							{
+#line 369 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 369 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKAHEAD,
+									ComponentAssertion::POS));
+								}
+							}}
+						
+#line 9201 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 378:  {
+							{
+#line 375 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 375 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKAHEAD,
+									ComponentAssertion::NEG));
+								}
+							}}
+						
+#line 9217 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 379:  {
+							{
+#line 381 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 381 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKBEHIND,
+									ComponentAssertion::POS));
+								}
+							}}
+						
+#line 9233 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 380:  {
+							{
+#line 387 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 387 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKBEHIND,
+									ComponentAssertion::NEG));
+								}
+							}}
+						
+#line 9249 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 381:  {
+							{
+#line 393 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 393 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Embedded code is not supported");
+								}
+							}}
+						
+#line 9262 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 382:  {
+							{
+#line 393 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 393 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Embedded code is not supported");
+								}
+							}}
+						
+#line 9275 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 383:  {
+							{
+#line 416 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 416 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentAtomicGroup>());
+								}
+							}}
+						
+#line 9290 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 384:  {
+							{
+#line 336 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 336 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(!label.empty()); // should be guaranteed by machine
+									char c = *label.begin();
+									if (c >= '0' && c <= '9') {
+										throw LocatedParseError("Group name cannot begin with a digit");
+									}
+									if (!groupNames.insert(label).second) {
+										throw LocatedParseError("Two named subpatterns use the name '" + label + "'");
+									}
+									PUSH_SEQUENCE;
+									auto seq = std::make_unique<ComponentSequence>();
+									seq->setCaptureIndex(groupIndex++);
+									seq->setCaptureName(label);
+									currentSeq = enterSequence(currentSeq, move(seq));
+								}
+							}}
+						
+#line 9315 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 385:  {
+							{
+#line 399 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 399 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Subpattern reference unsupported");
+								}
+							}}
+						
+#line 9328 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 386:  {
+							{
+#line 399 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 399 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Subpattern reference unsupported");
+								}
+							}}
+						
+#line 9341 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 387:  {
+							{
+#line 1783 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1783 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto a = std::make_unique<ComponentAssertion>(
+									ComponentAssertion::LOOKAHEAD, ComponentAssertion::POS);
+									ComponentAssertion *a_seq = a.get();
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentCondReference>(move(a)));
+									PUSH_SEQUENCE;
+									currentSeq = a_seq;
+								}
+							}}
+						
+#line 9361 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 388:  {
+							{
+#line 1794 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1794 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto a = std::make_unique<ComponentAssertion>(
+									ComponentAssertion::LOOKAHEAD, ComponentAssertion::NEG);
+									ComponentAssertion *a_seq = a.get();
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentCondReference>(move(a)));
+									PUSH_SEQUENCE;
+									currentSeq = a_seq;
+								}
+							}}
+						
+#line 9381 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 389:  {
+							{
+#line 1805 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1805 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto a = std::make_unique<ComponentAssertion>(
+									ComponentAssertion::LOOKBEHIND, ComponentAssertion::POS);
+									ComponentAssertion *a_seq = a.get();
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentCondReference>(move(a)));
+									PUSH_SEQUENCE;
+									currentSeq = a_seq;
+								}
+							}}
+						
+#line 9401 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 390:  {
+							{
+#line 1816 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1816 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									auto a = std::make_unique<ComponentAssertion>(
+									ComponentAssertion::LOOKBEHIND, ComponentAssertion::NEG);
+									ComponentAssertion *a_seq = a.get();
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentCondReference>(move(a)));
+									PUSH_SEQUENCE;
+									currentSeq = a_seq;
+								}
+							}}
+						
+#line 9421 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 391:  {
+							{
+#line 1828 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1828 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Pattern recursion not supported");
+								}
+							}}
+						
+#line 9434 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 392:  {
+							{
+#line 402 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 402 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									PUSH_SEQUENCE;
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentCondReference>(accumulator));
+								}
+							}}
+						
+#line 9452 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 393:  {
+							{
+#line 410 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 410 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									assert(!label.empty());
+									currentSeq = enterSequence(currentSeq,
+									std::make_unique<ComponentCondReference>(label));
+								}
+							}}
+						
+#line 9468 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 394:  {
+							{
+#line 1844 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1844 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									ostringstream str;
+									str << "Callout at index " << ts - ptr << " not supported.";
+									throw ParseError(str.str());
+								}
+							}}
+						
+#line 9483 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 395:  {
+							{
+#line 1852 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1852 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Unrecognised character after (?");
+								}
+							}}
+						
+#line 9496 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 396:  {
+							{
+#line 1857 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1857 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									/* leverage ComponentClass to generate the vertices */
+									auto cc = getComponentClass(mode);
+									cc->add(readUtf8CodePoint2c(ts));
+									cc->finalize();
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 9514 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 397:  {
+							{
+#line 1866 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1866 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									/* leverage ComponentClass to generate the vertices */
+									auto cc = getComponentClass(mode);
+									cc->add(readUtf8CodePoint3c(ts));
+									cc->finalize();
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 9532 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 398:  {
+							{
+#line 1875 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1875 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									/* leverage ComponentClass to generate the vertices */
+									auto cc = getComponentClass(mode);
+									cc->add(readUtf8CodePoint4c(ts));
+									cc->finalize();
+									currentSeq->addComponent(move(cc));
+								}
+							}}
+						
+#line 9550 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 399:  {
+							{
+#line 1884 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1884 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(mode.utf8);
+									throwInvalidUtf8();
+								}
+							}}
+						
+#line 9564 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 400:  {
+							{
+#line 1893 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1893 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (mode.ignore_space == false) {
+										addLiteral(currentSeq, *ts, mode);
+									}
+								}
+							}}
+						
+#line 9579 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 401:  {
+							{
+#line 1898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p+1;{
+#line 1898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, *ts, mode);
+								}
+							}}
+						
+#line 9592 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 402:  {
+							{
+#line 328 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 328 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									PUSH_SEQUENCE;
+									auto seq = std::make_unique<ComponentSequence>();
+									seq->setCaptureIndex(groupIndex++);
+									currentSeq = enterSequence(currentSeq, move(seq));
+								}
+							}}
+						
+#line 9608 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 403:  {
+							{
+#line 421 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 421 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									assert(!currentCls);
+									assert(!inCharClass); // not reentrant
+									currentCls = getComponentClass(mode);
+									inCharClass = true;
+									inCharClassEarly = true;
+									currentClsBegin = ts;
+									{cs = 836;goto _again;}}
+							}}
+						
+#line 9626 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 404:  {
+							{
+#line 1310 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1310 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
+									ComponentRepeat::REPEAT_GREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 9642 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 405:  {
+							{
+#line 1331 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1331 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
+									ComponentRepeat::REPEAT_GREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 9658 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 406:  {
+							{
+#line 1352 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1352 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (!currentSeq->addRepeat(
+									0, 1, ComponentRepeat::REPEAT_GREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 9674 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 407:  {
+							{
+#line 1373 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1373 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (repeatN > repeatM || repeatM == 0) {
+										throwInvalidRepeat();
+									} else if (!currentSeq->addRepeat(
+									repeatN, repeatM,
+									ComponentRepeat::REPEAT_GREEDY)) {
+										throwInvalidRepeat();
+									}
+								}
+							}}
+						
+#line 9693 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 408:  {
+							{
+#line 1488 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1488 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, octAccumulator, mode);
+								}
+							}}
+						
+#line 9706 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 409:  {
+							{
+#line 1491 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1491 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									// If there are enough capturing sub expressions, this may be
+									// a back reference
+									accumulator = parseAsDecimal(octAccumulator);
+									if (accumulator < groupIndex) {
+										currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
+									} else {
+										addEscapedOctal(currentSeq, octAccumulator, mode);
+									}
+								}
+							}}
+						
+#line 9726 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 410:  {
+							{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
+								}
+							}}
+						
+#line 9742 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 411:  {
+							{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 479 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
+								}
+							}}
+						
+#line 9758 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 412:  {
+							{
+#line 486 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 486 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									// Accumulator is a negative offset.
+									if (accumulator == 0) {
+										throw LocatedParseError("Numbered reference cannot be zero");
+									}
+									if (accumulator >= groupIndex) {
+										throw LocatedParseError("Invalid reference");
+									}
+									unsigned idx = groupIndex - accumulator;
+									currentSeq->addComponent(std::make_unique<ComponentBackReference>(idx));
+								}
+							}}
+						
+#line 9779 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 413:  {
+							{
+#line 1557 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1557 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Invalid reference after \\g");
+								}
+							}}
+						
+#line 9792 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 414:  {
+							{
+#line 1574 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1574 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
+								}
+							}}
+						
+#line 9805 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 415:  {
+							{
+#line 1578 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1578 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addEscapedHex(currentSeq, accumulator, mode);
+								}
+							}}
+						
+#line 9818 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+						break; 
+					}
+					case 416:  {
+							{
+#line 1596 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							{te = p;p = p - 1;{
+#line 1596 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
+							}
+						}}
+					
+#line 9831 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 417:  {
+						{
+#line 1600 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1600 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								if (te - ts < 3) {
+									assert(te - ts == 2);
+									throw LocatedParseError(SLASH_C_ERROR);
+								} else {
+									assert(te - ts == 3);
+									addLiteral(currentSeq, decodeCtrl(ts[2]), mode);
+								}
+							}
+						}}
+					
+#line 9850 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 418:  {
+						{
+#line 1700 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1700 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								throw LocatedParseError("Malformed property"); }
+						}}
+					
+#line 9861 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 419:  {
+						{
+#line 1701 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1701 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								throw LocatedParseError("Malformed property"); }
+						}}
+					
+#line 9872 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 420:  {
+						{
+#line 1719 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1719 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								ostringstream str;
+								str << "\\k at index " << ts - ptr << " not supported.";
+								throw ParseError(str.str());
+							}
+						}}
+					
+#line 9887 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 421:  {
+						{
+#line 1742 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1742 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								assert(ts + 1 == pe);
+								ostringstream str;
+								str << "Unescaped \\ at end of input, index " << ts - ptr << ".";
+								throw ParseError(str.str());
+							}
+						}}
+					
+#line 9903 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 422:  {
+						{
+#line 396 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 396 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								throw LocatedParseError("Conditional subpattern unsupported");
+							}
+						}}
+					
+#line 9916 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 423:  {
+						{
+#line 1852 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1852 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								throw LocatedParseError("Unrecognised character after (?");
+							}
+						}}
+					
+#line 9929 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 424:  {
+						{
+#line 1884 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1884 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								assert(mode.utf8);
+								throwInvalidUtf8();
+							}
+						}}
+					
+#line 9943 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 425:  {
+						{
+#line 1898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{te = p;p = p - 1;{
+#line 1898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								addLiteral(currentSeq, *ts, mode);
+							}
+						}}
+					
+#line 9956 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 426:  {
+						{
+#line 328 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{p = ((te))-1;
+							{
+#line 328 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								PUSH_SEQUENCE;
+								auto seq = std::make_unique<ComponentSequence>();
+								seq->setCaptureIndex(groupIndex++);
+								currentSeq = enterSequence(currentSeq, move(seq));
+							}
+						}}
+					
+#line 9973 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 427:  {
+						{
+#line 421 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{p = ((te))-1;
+							{
+#line 421 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								assert(!currentCls);
+								assert(!inCharClass); // not reentrant
+								currentCls = getComponentClass(mode);
+								inCharClass = true;
+								inCharClassEarly = true;
+								currentClsBegin = ts;
+								{cs = 836;goto _again;}}
+						}}
+					
+#line 9992 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 428:  {
+						{
+#line 1557 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{p = ((te))-1;
+							{
+#line 1557 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								throw LocatedParseError("Invalid reference after \\g");
+							}
+						}}
+					
+#line 10006 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 429:  {
+						{
+#line 1574 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{p = ((te))-1;
+							{
+#line 1574 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
+							}
+						}}
+					
+#line 10020 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+					break; 
+				}
+				case 430:  {
+						{
+#line 1596 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+						{p = ((te))-1;
+							{
+#line 1596 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+								
+								throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
+						}
+					}}
+				
+#line 10034 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
+			}
+			case 431:  {
+					{
+#line 1719 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+					{p = ((te))-1;
+						{
+#line 1719 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							
+							ostringstream str;
+							str << "\\k at index " << ts - ptr << " not supported.";
+							throw ParseError(str.str());
+						}
+					}}
+				
+#line 10050 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
+			}
+			case 432:  {
+					{
+#line 396 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+					{p = ((te))-1;
+						{
+#line 396 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							
+							throw LocatedParseError("Conditional subpattern unsupported");
+						}
+					}}
+				
+#line 10064 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
+			}
+			case 433:  {
+					{
+#line 1852 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+					{p = ((te))-1;
+						{
+#line 1852 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							
+							throw LocatedParseError("Unrecognised character after (?");
+						}
+					}}
+				
+#line 10078 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
+			}
+			case 434:  {
+					{
+#line 1884 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+					{p = ((te))-1;
+						{
+#line 1884 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							
+							assert(mode.utf8);
+							throwInvalidUtf8();
+						}
+					}}
+				
+#line 10093 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
+			}
+			case 435:  {
+					{
+#line 1898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+					{p = ((te))-1;
+						{
+#line 1898 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+							
+							addLiteral(currentSeq, *ts, mode);
+						}
+					}}
+				
+#line 10107 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
+			}
+			case 436:  {
+					{
+#line 1 "NONE"
+					{switch( act ) {
+							case 288:  {
+								p = ((te))-1;
+								{
+#line 1491 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									// If there are enough capturing sub expressions, this may be
+									// a back reference
+									accumulator = parseAsDecimal(octAccumulator);
+									if (accumulator < groupIndex) {
+										currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
+									} else {
+										addEscapedOctal(currentSeq, octAccumulator, mode);
+									}
+								}
+								break; 
+							}
+							case 290:  {
+								p = ((te))-1;
+								{
+#line 1508 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									// if there are enough left parens to this point, back ref
+									if (accumulator < groupIndex) {
+										currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
+									} else {
+										// Otherwise, we interpret the first three digits as an
+										// octal escape, and the remaining characters stand for
+										// themselves as literals.
+										const char *s = ts;
+										unsigned int accum = 0;
+										unsigned int oct_digits = 0;
+										assert(*s == '\\'); // token starts at backslash
+										for (++s; s < te && oct_digits < 3; ++oct_digits, ++s) {
+											u8 digit = *s - '0';
+											if (digit < 8) {
+												accum = digit + accum * 8;
+											} else {
+												break;
+											}
+										}
+										
+										if (oct_digits > 0) {
+											addEscapedOctal(currentSeq, accum, mode);
+										}
+										
+										// And then the rest of the digits, if any, are literal.
+										for (; s < te; ++s) {
+											addLiteral(currentSeq, *s, mode);
+										}
+									}
+								}
+								break; 
+							}
+							case 330:  {
+								p = ((te))-1;
+								{
+#line 1737 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
+									
+									addLiteral(currentSeq, *(ts + 1), mode);
+								}
+								break; 
+							}
+						}}
+				}
+				
+#line 10179 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
 			}
 		}
+		_nacts -= 1;
+		_acts += 1;
 	}
+	
+}
 
-	_keys = _regex_trans_keys + _regex_key_offsets[cs];
-	_trans = _regex_index_offsets[cs];
-
-	_klen = _regex_single_lengths[cs];
-	if ( _klen > 0 ) {
-		const short *_lower = _keys;
-		const short *_mid;
-		const short *_upper = _keys + _klen - 1;
-		while (1) {
-			if ( _upper < _lower )
-				break;
-
-			_mid = _lower + ((_upper-_lower) >> 1);
-			if ( _widec < *_mid )
-				_upper = _mid - 1;
-			else if ( _widec > *_mid )
-				_lower = _mid + 1;
-			else {
-				_trans += (unsigned int)(_mid - _keys);
-				goto _match;
-			}
-		}
-		_keys += _klen;
-		_trans += _klen;
-	}
-
-	_klen = _regex_range_lengths[cs];
-	if ( _klen > 0 ) {
-		const short *_lower = _keys;
-		const short *_mid;
-		const short *_upper = _keys + (_klen<<1) - 2;
-		while (1) {
-			if ( _upper < _lower )
-				break;
-
-			_mid = _lower + (((_upper-_lower) >> 1) & ~1);
-			if ( _widec < _mid[0] )
-				_upper = _mid - 2;
-			else if ( _widec > _mid[1] )
-				_lower = _mid + 2;
-			else {
-				_trans += (unsigned int)((_mid - _keys)>>1);
-				goto _match;
-			}
-		}
-		_trans += _klen;
-	}
-
-_match:
-	_trans = _regex_indicies[_trans];
-_eof_trans:
-	cs = _regex_trans_targs[_trans];
-
-	if ( _regex_trans_actions[_trans] == 0 )
-		goto _again;
-
-	_acts = _regex_actions + _regex_trans_actions[_trans];
-	_nacts = (unsigned int) *_acts++;
-	while ( _nacts-- > 0 )
-	{
-		switch ( *_acts++ )
-		{
-	case 0:
-#line 285 "Parser.rl"
-	{ label.clear();}
-	break;
-	case 1:
-#line 286 "Parser.rl"
-	{ label.push_back((*p));}
-	break;
-	case 2:
-#line 287 "Parser.rl"
-	{ octAccumulator = 0;}
-	break;
-	case 3:
-#line 288 "Parser.rl"
-	{ accumulator = 0;}
-	break;
-	case 4:
-#line 289 "Parser.rl"
-	{
-        octAccumulator = 0;
-        pushOct(&octAccumulator, (*p));
-    }
-	break;
-	case 5:
-#line 293 "Parser.rl"
-	{
-        accumulator = 0;
-        pushDec(&accumulator, (*p));
-    }
-	break;
-	case 6:
-#line 297 "Parser.rl"
-	{ repeatN = 0; repeatM = 0; }
-	break;
-	case 7:
-#line 298 "Parser.rl"
-	{ pushDec(&repeatN, (*p)); }
-	break;
-	case 8:
-#line 299 "Parser.rl"
-	{ pushDec(&repeatM, (*p)); }
-	break;
-	case 9:
-#line 300 "Parser.rl"
-	{ pushOct(&octAccumulator, (*p)); }
-	break;
-	case 10:
-#line 301 "Parser.rl"
-	{ pushDec(&accumulator, (*p)); }
-	break;
-	case 11:
-#line 302 "Parser.rl"
-	{
-        accumulator *= 16;
-        accumulator += (*p) - '0';
-    }
-	break;
-	case 12:
-#line 306 "Parser.rl"
-	{
-        accumulator *= 16;
-        accumulator += 10 + (*p) - 'a';
-    }
-	break;
-	case 13:
-#line 310 "Parser.rl"
-	{
-        accumulator *= 16;
-        accumulator += 10 + (*p) - 'A';
-    }
-	break;
-	case 14:
-#line 430 "Parser.rl"
-	{
-        newMode = mode;
-    }
-	break;
-	case 15:
-#line 437 "Parser.rl"
-	{
-        switch ((*p)) {
-            case 'i':
-                newMode.caseless = true;
-                break;
-            case 'm':
-                newMode.multiline = true;
-                break;
-            case 's':
-                newMode.dotall = true;
-                break;
-            case 'x':
-                newMode.ignore_space = true;
-                break;
-            default:
-                assert(0); // this action only called for [imsx]
-                break;
-        }
-    }
-	break;
-	case 16:
-#line 456 "Parser.rl"
-	{
-        switch ((*p)) {
-            case 'i':
-                newMode.caseless = false;
-                break;
-            case 'm':
-                newMode.multiline = false;
-                break;
-            case 's':
-                newMode.dotall = false;
-                break;
-            case 'x':
-                newMode.ignore_space = false;
-                break;
-            default:
-                assert(0); // this action only called for [imsx]
-                break;
-        }
-    }
-	break;
-	case 17:
-#line 510 "Parser.rl"
-	{repeatM = repeatN;}
-	break;
-	case 18:
-#line 510 "Parser.rl"
-	{repeatM = ComponentRepeat::NoLimit;}
-	break;
-	case 19:
-#line 722 "Parser.rl"
-	{ negated = !negated; }
-	break;
-	case 20:
-#line 723 "Parser.rl"
-	{ p--; {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 790;goto _again;}} }
-	break;
-	case 21:
-#line 724 "Parser.rl"
-	{ if (!inCharClass) { // not inside [..]
-                                 currentCls->finalize();
-                                 currentSeq->addComponent(move(currentCls));
-                             }
-                             {cs = stack[--top]; goto _again;} 
-                           }
-	break;
-	case 22:
-#line 730 "Parser.rl"
-	{ throw LocatedParseError("Malformed property"); }
-	break;
-	case 25:
-#line 1 "NONE"
-	{te = p+1;}
-	break;
-	case 26:
-#line 550 "Parser.rl"
-	{te = p+1;{
-            throw LocatedParseError("(*UTF8) must be at start of "
-                                    "expression, encountered");
-        }}
-	break;
-	case 27:
-#line 554 "Parser.rl"
-	{te = p+1;{
-            throw LocatedParseError("(*UTF) must be at start of "
-                                    "expression, encountered");
-        }}
-	break;
-	case 28:
-#line 558 "Parser.rl"
-	{te = p+1;{
-            throw LocatedParseError("(*UCP) must be at start of "
-                                    "expression, encountered");
-        }}
-	break;
-	case 29:
-#line 564 "Parser.rl"
-	{te = p+1;{
-            ParseMode temp_mode;
-            assert(ts - 2 >= ptr); // parser needs the '(*' at the start too.
-            read_control_verbs(ts - 2, te, (ts - 2 - ptr), temp_mode);
-            assert(0); // Should have thrown a parse error.
-            throw LocatedParseError("Unknown control verb");
-        }}
-	break;
-	case 30:
-#line 571 "Parser.rl"
-	{te = p+1;{
-            throw LocatedParseError("Unknown control verb");
-        }}
-	break;
-	case 31:
-#line 571 "Parser.rl"
-	{te = p;p--;{
-            throw LocatedParseError("Unknown control verb");
-        }}
-	break;
-	case 32:
-#line 571 "Parser.rl"
-	{{p = ((te))-1;}{
-            throw LocatedParseError("Unknown control verb");
-        }}
-	break;
-	case 33:
-#line 581 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_CC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 34:
-#line 582 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_CF, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 35:
-#line 583 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_CN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 36:
-#line 585 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_CS, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 37:
-#line 587 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_LL, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 38:
-#line 588 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_LM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 39:
-#line 589 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_LO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 40:
-#line 590 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_LT, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 41:
-#line 591 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_LU, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 42:
-#line 592 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_L_AND, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 43:
-#line 594 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_MC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 44:
-#line 596 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_MN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 45:
-#line 598 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_ND, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 46:
-#line 599 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_NL, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 47:
-#line 600 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_NO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 48:
-#line 602 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_PC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 49:
-#line 603 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_PD, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 50:
-#line 604 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_PE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 51:
-#line 605 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_PF, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 52:
-#line 606 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_PI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 53:
-#line 607 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_PO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 54:
-#line 608 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_PS, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 55:
-#line 610 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_SC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 56:
-#line 611 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_SK, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 57:
-#line 612 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_SM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 58:
-#line 613 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_SO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 59:
-#line 615 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_ZL, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 60:
-#line 616 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_ZP, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 61:
-#line 617 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_ZS, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 62:
-#line 618 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_XAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 63:
-#line 619 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_XPS, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 64:
-#line 620 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_XSP, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 65:
-#line 621 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_XWD, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 66:
-#line 622 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_ARABIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 67:
-#line 623 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_ARMENIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 68:
-#line 624 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_AVESTAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 69:
-#line 625 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BALINESE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 70:
-#line 626 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BAMUM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 71:
-#line 627 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BATAK, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 72:
-#line 628 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BENGALI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 73:
-#line 629 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BOPOMOFO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 74:
-#line 630 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BRAHMI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 75:
-#line 631 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BRAILLE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 76:
-#line 632 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BUGINESE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 77:
-#line 633 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_BUHID, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 78:
-#line 634 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_CANADIAN_ABORIGINAL, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 79:
-#line 635 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_CARIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 80:
-#line 636 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_CHAM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 81:
-#line 637 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_CHEROKEE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 82:
-#line 638 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_COMMON, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 83:
-#line 639 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_COPTIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 84:
-#line 640 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_CUNEIFORM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 85:
-#line 641 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_CYPRIOT, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 86:
-#line 642 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_CYRILLIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 87:
-#line 643 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_DESERET, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 88:
-#line 644 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_DEVANAGARI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 89:
-#line 645 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_EGYPTIAN_HIEROGLYPHS, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 90:
-#line 646 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_ETHIOPIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 91:
-#line 647 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_GEORGIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 92:
-#line 648 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_GLAGOLITIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 93:
-#line 649 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_GOTHIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 94:
-#line 650 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_GREEK, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 95:
-#line 651 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_GUJARATI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 96:
-#line 652 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_GURMUKHI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 97:
-#line 654 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_HANGUL, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 98:
-#line 655 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_HANUNOO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 99:
-#line 656 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_HEBREW, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 100:
-#line 657 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_HIRAGANA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 101:
-#line 658 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_IMPERIAL_ARAMAIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 102:
-#line 659 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_INHERITED, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 103:
-#line 660 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_INSCRIPTIONAL_PAHLAVI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 104:
-#line 661 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_INSCRIPTIONAL_PARTHIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 105:
-#line 662 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_JAVANESE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 106:
-#line 663 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_KAITHI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 107:
-#line 664 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_KANNADA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 108:
-#line 665 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_KATAKANA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 109:
-#line 666 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_KAYAH_LI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 110:
-#line 667 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_KHAROSHTHI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 111:
-#line 668 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_KHMER, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 112:
-#line 669 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LAO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 113:
-#line 670 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LATIN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 114:
-#line 671 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LEPCHA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 115:
-#line 672 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LIMBU, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 116:
-#line 673 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LINEAR_B, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 117:
-#line 674 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LISU, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 118:
-#line 675 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LYCIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 119:
-#line 676 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_LYDIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 120:
-#line 677 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_MALAYALAM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 121:
-#line 678 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_MANDAIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 122:
-#line 679 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_MEETEI_MAYEK, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 123:
-#line 680 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_MONGOLIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 124:
-#line 681 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_MYANMAR, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 125:
-#line 682 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_NEW_TAI_LUE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 126:
-#line 683 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_NKO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 127:
-#line 684 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_OGHAM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 128:
-#line 685 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_OL_CHIKI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 129:
-#line 686 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_OLD_ITALIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 130:
-#line 687 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_OLD_PERSIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 131:
-#line 688 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_OLD_SOUTH_ARABIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 132:
-#line 689 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_OLD_TURKIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 133:
-#line 690 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_ORIYA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 134:
-#line 691 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_OSMANYA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 135:
-#line 692 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_PHAGS_PA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 136:
-#line 693 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_PHOENICIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 137:
-#line 694 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_REJANG, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 138:
-#line 695 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_RUNIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 139:
-#line 696 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_SAMARITAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 140:
-#line 697 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_SAURASHTRA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 141:
-#line 698 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_SHAVIAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 142:
-#line 699 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_SINHALA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 143:
-#line 700 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_SUNDANESE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 144:
-#line 701 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_SYLOTI_NAGRI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 145:
-#line 702 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_SYRIAC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 146:
-#line 703 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TAGALOG, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 147:
-#line 704 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TAGBANWA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 148:
-#line 705 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TAI_LE, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 149:
-#line 706 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TAI_THAM, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 150:
-#line 707 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TAI_VIET, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 151:
-#line 708 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TAMIL, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 152:
-#line 709 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TELUGU, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 153:
-#line 710 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_THAANA, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 154:
-#line 711 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_THAI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 155:
-#line 712 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TIBETAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 156:
-#line 713 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_TIFINAGH, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 157:
-#line 714 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_UGARITIC, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 158:
-#line 715 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_VAI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 159:
-#line 716 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_SCRIPT_YI, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 160:
-#line 717 "Parser.rl"
-	{te = p+1;{ currentCls->add(CLASS_UCP_ANY, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 161:
-#line 718 "Parser.rl"
-	{te = p+1;{ throw LocatedParseError("Unknown property"); }}
-	break;
-	case 162:
-#line 580 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_C, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 163:
-#line 584 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_CO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 164:
-#line 586 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_L, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 165:
-#line 593 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_M, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 166:
-#line 595 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_ME, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 167:
-#line 597 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_N, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 168:
-#line 601 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_P, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 169:
-#line 609 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_S, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 170:
-#line 614 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_UCP_Z, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 171:
-#line 653 "Parser.rl"
-	{te = p;p--;{ currentCls->add(CLASS_SCRIPT_HAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 172:
-#line 718 "Parser.rl"
-	{te = p;p--;{ throw LocatedParseError("Unknown property"); }}
-	break;
-	case 173:
-#line 580 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_C, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 174:
-#line 584 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_CO, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 175:
-#line 586 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_L, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 176:
-#line 593 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_M, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 177:
-#line 595 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_ME, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 178:
-#line 597 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_N, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 179:
-#line 601 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_P, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 180:
-#line 609 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_UCP_S, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 181:
-#line 653 "Parser.rl"
-	{{p = ((te))-1;}{ currentCls->add(CLASS_SCRIPT_HAN, negated); {cs = stack[--top]; goto _again;} }}
-	break;
-	case 182:
-#line 718 "Parser.rl"
-	{{p = ((te))-1;}{ throw LocatedParseError("Unknown property"); }}
-	break;
-	case 183:
-#line 733 "Parser.rl"
-	{te = p+1;{ 
-            currentCls->add(CLASS_UCP_C, negated); 
-            if (!inCharClass) {
-                currentCls->finalize();
-                currentSeq->addComponent(move(currentCls));
-            }
-            {cs = stack[--top]; goto _again;} 
-        }}
-	break;
-	case 184:
-#line 741 "Parser.rl"
-	{te = p+1;{ 
-            currentCls->add(CLASS_UCP_L, negated); 
-            if (!inCharClass) {
-                currentCls->finalize();
-                currentSeq->addComponent(move(currentCls));
-            }
-            {cs = stack[--top]; goto _again;} 
-        }}
-	break;
-	case 185:
-#line 749 "Parser.rl"
-	{te = p+1;{ 
-            currentCls->add(CLASS_UCP_M, negated); 
-            if (!inCharClass) {
-                currentCls->finalize();
-                currentSeq->addComponent(move(currentCls));
-            }
-            {cs = stack[--top]; goto _again;} 
-        }}
-	break;
-	case 186:
-#line 757 "Parser.rl"
-	{te = p+1;{
-            currentCls->add(CLASS_UCP_N, negated); 
-            if (!inCharClass) {
-                currentCls->finalize();
-                currentSeq->addComponent(move(currentCls));
-            }
-            {cs = stack[--top]; goto _again;}
-        }}
-	break;
-	case 187:
-#line 765 "Parser.rl"
-	{te = p+1;{ 
-            currentCls->add(CLASS_UCP_P, negated); 
-            if (!inCharClass) {
-                currentCls->finalize();
-                currentSeq->addComponent(move(currentCls));
-            }
-            {cs = stack[--top]; goto _again;} 
-        }}
-	break;
-	case 188:
-#line 773 "Parser.rl"
-	{te = p+1;{ 
-            currentCls->add(CLASS_UCP_S, negated); 
-            if (!inCharClass) {
-                currentCls->finalize();
-                currentSeq->addComponent(move(currentCls));
-            }
-            {cs = stack[--top]; goto _again;} 
-        }}
-	break;
-	case 189:
-#line 781 "Parser.rl"
-	{te = p+1;{ 
-            currentCls->add(CLASS_UCP_Z, negated); 
-            if (!inCharClass) {
-                currentCls->finalize();
-                currentSeq->addComponent(move(currentCls));
-            }
-            {cs = stack[--top]; goto _again;} 
-        }}
-	break;
-	case 190:
-#line 790 "Parser.rl"
-	{te = p+1;{ throw LocatedParseError("Unknown property"); }}
-	break;
-	case 191:
-#line 796 "Parser.rl"
-	{te = p+1;{
-                  throw LocatedParseError("Unsupported POSIX collating "
-                                          "element");
-              }}
-	break;
-	case 192:
-#line 803 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_ALNUM, false);
-              }}
-	break;
-	case 193:
-#line 806 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_ALNUM, true);
-              }}
-	break;
-	case 194:
-#line 809 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_ALPHA, false);
-              }}
-	break;
-	case 195:
-#line 812 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_ALPHA, true);
-              }}
-	break;
-	case 196:
-#line 815 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_ASCII, false);
-              }}
-	break;
-	case 197:
-#line 818 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_ASCII, true);
-              }}
-	break;
-	case 198:
-#line 821 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_BLANK, false);
-              }}
-	break;
-	case 199:
-#line 824 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_BLANK, true);
-              }}
-	break;
-	case 200:
-#line 827 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_CNTRL, false);
-              }}
-	break;
-	case 201:
-#line 830 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_CNTRL, true);
-              }}
-	break;
-	case 202:
-#line 833 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_DIGIT, false);
-              }}
-	break;
-	case 203:
-#line 836 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_DIGIT, true);
-              }}
-	break;
-	case 204:
-#line 839 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_GRAPH, false);
-              }}
-	break;
-	case 205:
-#line 842 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_GRAPH, true);
-              }}
-	break;
-	case 206:
-#line 845 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_LOWER, false);
-              }}
-	break;
-	case 207:
-#line 848 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_LOWER, true);
-              }}
-	break;
-	case 208:
-#line 851 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_PRINT, false);
-              }}
-	break;
-	case 209:
-#line 854 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_PRINT, true);
-              }}
-	break;
-	case 210:
-#line 857 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_PUNCT, false);
-              }}
-	break;
-	case 211:
-#line 860 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_PUNCT, true);
-              }}
-	break;
-	case 212:
-#line 864 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_SPACE, false);
-              }}
-	break;
-	case 213:
-#line 867 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_SPACE, true);
-              }}
-	break;
-	case 214:
-#line 870 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_UPPER, false);
-              }}
-	break;
-	case 215:
-#line 873 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_UPPER, true);
-              }}
-	break;
-	case 216:
-#line 876 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_WORD, false);
-              }}
-	break;
-	case 217:
-#line 879 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_WORD, true);
-              }}
-	break;
-	case 218:
-#line 882 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_XDIGIT, false);
-              }}
-	break;
-	case 219:
-#line 885 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_XDIGIT, true);
-              }}
-	break;
-	case 220:
-#line 890 "Parser.rl"
-	{te = p+1;{
-                  throw LocatedParseError("Invalid POSIX named class");
-              }}
-	break;
-	case 221:
-#line 893 "Parser.rl"
-	{te = p+1;{
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 843;goto _again;}}
-              }}
-	break;
-	case 222:
-#line 896 "Parser.rl"
-	{te = p+1;{ /*noop*/}}
-	break;
-	case 223:
-#line 898 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add('\x08');
-              }}
-	break;
-	case 224:
-#line 902 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add('\x09');
-              }}
-	break;
-	case 225:
-#line 906 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add('\x0a');
-              }}
-	break;
-	case 226:
-#line 910 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add('\x0d');
-              }}
-	break;
-	case 227:
-#line 914 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add('\x0c');
-              }}
-	break;
-	case 228:
-#line 918 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add('\x07');
-              }}
-	break;
-	case 229:
-#line 922 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add('\x1b');
-              }}
-	break;
-	case 230:
-#line 926 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_HORZ, false);
-              }}
-	break;
-	case 231:
-#line 930 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_HORZ, true);
-              }}
-	break;
-	case 232:
-#line 934 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_VERT, false);
-              }}
-	break;
-	case 233:
-#line 938 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_VERT, true);
-              }}
-	break;
-	case 234:
-#line 942 "Parser.rl"
-	{te = p+1;{
-                  negated = false;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 559;goto _again;}}
-              }}
-	break;
-	case 235:
-#line 948 "Parser.rl"
-	{te = p+1;{
-                  negated = false;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 818;goto _again;}}
-              }}
-	break;
-	case 236:
-#line 954 "Parser.rl"
-	{te = p+1;{
-                  negated = true;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 559;goto _again;}}
-              }}
-	break;
-	case 237:
-#line 960 "Parser.rl"
-	{te = p+1;{
-                  negated = true;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 818;goto _again;}}
-              }}
-	break;
-	case 238:
-#line 970 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(octAccumulator);
-              }}
-	break;
-	case 239:
-#line 973 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(octAccumulator);
-              }}
-	break;
-	case 240:
-#line 977 "Parser.rl"
-	{te = p+1;{
-                  string oct(ts + 3, te - ts - 4);
-                  unsigned long val;
-                  try {
-                      val = stoul(oct, nullptr, 8);
-                  } catch (const std::out_of_range &) {
-                      val = MAX_UNICODE + 1;
-                  }
-                  if ((!mode.utf8 && val > 255) || val > MAX_UNICODE) {
-                      throw LocatedParseError("Value in \\o{...} sequence is too large");
-                  }
-                  currentCls->add((unichar)val);
-              }}
-	break;
-	case 241:
-#line 997 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(accumulator);
-              }}
-	break;
-	case 242:
-#line 1001 "Parser.rl"
-	{te = p+1;{
-                  // whatever we found here
-                  currentCls->add(*(ts + 1));
-
-              }}
-	break;
-	case 243:
-#line 1007 "Parser.rl"
-	{te = p+1;{
-                  string hex(ts + 3, te - ts - 4);
-                  unsigned long val;
-                  try {
-                      val = stoul(hex, nullptr, 16);
-                  } catch (const std::out_of_range &) {
-                      val = MAX_UNICODE + 1;
-                  }
-                  if (val > MAX_UNICODE) {
-                      throw LocatedParseError("Value in \\x{...} sequence is too large");
-                  }
-                  currentCls->add((unichar)val);
-              }}
-	break;
-	case 244:
-#line 1025 "Parser.rl"
-	{te = p+1;{
-                  if (te - ts < 3) {
-                      assert(te - ts == 2);
-                      throw LocatedParseError(SLASH_C_ERROR);
-                  } else {
-                      assert(te - ts == 3);
-                      currentCls->add(decodeCtrl(ts[2]));
-                  }
-              }}
-	break;
-	case 245:
-#line 1035 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_WORD, false);
-              }}
-	break;
-	case 246:
-#line 1039 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_WORD, true);
-              }}
-	break;
-	case 247:
-#line 1043 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_SPACE, false);
-              }}
-	break;
-	case 248:
-#line 1047 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_SPACE, true);
-              }}
-	break;
-	case 249:
-#line 1051 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_DIGIT, false);
-              }}
-	break;
-	case 250:
-#line 1055 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(CLASS_DIGIT, true);
-              }}
-	break;
-	case 251:
-#line 1058 "Parser.rl"
-	{te = p+1;{
-                  currentCls->addDash();
-              }}
-	break;
-	case 252:
-#line 276 "Parser.rl"
-	{te = p+1;{
-        ostringstream str;
-        str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
-            << " not supported in a character class.";
-        throw ParseError(str.str());
-    }}
-	break;
-	case 253:
-#line 276 "Parser.rl"
-	{te = p+1;{
-        ostringstream str;
-        str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
-            << " not supported in a character class.";
-        throw ParseError(str.str());
-    }}
-	break;
-	case 254:
-#line 276 "Parser.rl"
-	{te = p+1;{
-        ostringstream str;
-        str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
-            << " not supported in a character class.";
-        throw ParseError(str.str());
-    }}
-	break;
-	case 255:
-#line 1075 "Parser.rl"
-	{te = p+1;{
-                  // add the literal char
-                  currentCls->add(*(ts + 1));
-              }}
-	break;
-	case 256:
-#line 1081 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  currentCls->add(readUtf8CodePoint2c(ts));
-              }}
-	break;
-	case 257:
-#line 1086 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  currentCls->add(readUtf8CodePoint3c(ts));
-              }}
-	break;
-	case 258:
-#line 1091 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  currentCls->add(readUtf8CodePoint4c(ts));
-              }}
-	break;
-	case 259:
-#line 1096 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 260:
-#line 1102 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add((u8)*ts);
-              }}
-	break;
-	case 261:
-#line 1106 "Parser.rl"
-	{te = p+1;{
-                  currentCls->finalize();
-                  currentSeq->addComponent(move(currentCls));
-                  inCharClass = false;
-                  {cs = 746;goto _again;}
-              }}
-	break;
-	case 262:
-#line 966 "Parser.rl"
-	{te = p;p--;{ throw LocatedParseError("Malformed property"); }}
-	break;
-	case 263:
-#line 967 "Parser.rl"
-	{te = p;p--;{ throw LocatedParseError("Malformed property"); }}
-	break;
-	case 264:
-#line 970 "Parser.rl"
-	{te = p;p--;{
-                  currentCls->add(octAccumulator);
-              }}
-	break;
-	case 265:
-#line 973 "Parser.rl"
-	{te = p;p--;{
-                  currentCls->add(octAccumulator);
-              }}
-	break;
-	case 266:
-#line 992 "Parser.rl"
-	{te = p;p--;{
-                  throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
-              }}
-	break;
-	case 267:
-#line 997 "Parser.rl"
-	{te = p;p--;{
-                  currentCls->add(accumulator);
-              }}
-	break;
-	case 268:
-#line 1021 "Parser.rl"
-	{te = p;p--;{
-                  throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
-              }}
-	break;
-	case 269:
-#line 1025 "Parser.rl"
-	{te = p;p--;{
-                  if (te - ts < 3) {
-                      assert(te - ts == 2);
-                      throw LocatedParseError(SLASH_C_ERROR);
-                  } else {
-                      assert(te - ts == 3);
-                      currentCls->add(decodeCtrl(ts[2]));
-                  }
-              }}
-	break;
-	case 270:
-#line 1096 "Parser.rl"
-	{te = p;p--;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 271:
-#line 1102 "Parser.rl"
-	{te = p;p--;{
-                  currentCls->add((u8)*ts);
-              }}
-	break;
-	case 272:
-#line 992 "Parser.rl"
-	{{p = ((te))-1;}{
-                  throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
-              }}
-	break;
-	case 273:
-#line 1021 "Parser.rl"
-	{{p = ((te))-1;}{
-                  throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
-              }}
-	break;
-	case 274:
-#line 1096 "Parser.rl"
-	{{p = ((te))-1;}{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 275:
-#line 1102 "Parser.rl"
-	{{p = ((te))-1;}{
-                  currentCls->add((u8)*ts);
-              }}
-	break;
-	case 276:
-#line 1120 "Parser.rl"
-	{te = p+1;{
-            if (currentCls->isNegated()) {
-                // Already seen a caret; the second one is not a meta-character.
-                inCharClassEarly = false;
-                p--; {cs = 819;goto _again;}
-            } else {
-                currentCls->negate();
-                // Note: we cannot switch off inCharClassEarly here, as /[^]]/
-                // needs to use the right square bracket path below.
-            }
-        }}
-	break;
-	case 277:
-#line 1133 "Parser.rl"
-	{te = p+1;{
-            currentCls->add(']');
-            inCharClassEarly = false;
-        }}
-	break;
-	case 278:
-#line 1138 "Parser.rl"
-	{te = p+1;{ {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 843;goto _again;}} }}
-	break;
-	case 279:
-#line 1139 "Parser.rl"
-	{te = p+1;{ /*noop*/}}
-	break;
-	case 280:
-#line 1142 "Parser.rl"
-	{te = p+1;{
-            inCharClassEarly = false;
-            p--;
-            {cs = 819;goto _again;}
-        }}
-	break;
-	case 281:
-#line 1142 "Parser.rl"
-	{te = p;p--;{
-            inCharClassEarly = false;
-            p--;
-            {cs = 819;goto _again;}
-        }}
-	break;
-	case 282:
-#line 1154 "Parser.rl"
-	{te = p+1;{
-                  {cs = 746;goto _again;}
-              }}
-	break;
-	case 283:
-#line 1159 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  /* leverage ComponentClass to generate the vertices */
-                  auto cc = getComponentClass(mode);
-                  cc->add(readUtf8CodePoint2c(ts));
-                  cc->finalize();
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 284:
-#line 1168 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  /* leverage ComponentClass to generate the vertices */
-                  auto cc = getComponentClass(mode);
-                  cc->add(readUtf8CodePoint3c(ts));
-                  cc->finalize();
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 285:
-#line 1177 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  /* leverage ComponentClass to generate the vertices */
-                  auto cc = getComponentClass(mode);
-                  cc->add(readUtf8CodePoint4c(ts));
-                  cc->finalize();
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 286:
-#line 1186 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 287:
-#line 1192 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, *ts, mode);
-              }}
-	break;
-	case 288:
-#line 1186 "Parser.rl"
-	{te = p;p--;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 289:
-#line 1192 "Parser.rl"
-	{te = p;p--;{
-                  addLiteral(currentSeq, *ts, mode);
-              }}
-	break;
-	case 290:
-#line 1186 "Parser.rl"
-	{{p = ((te))-1;}{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 291:
-#line 1202 "Parser.rl"
-	{te = p+1;{
-                  {cs = stack[--top]; goto _again;}
-              }}
-	break;
-	case 292:
-#line 1207 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  currentCls->add(readUtf8CodePoint2c(ts));
-                  inCharClassEarly = false;
-              }}
-	break;
-	case 293:
-#line 1213 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  currentCls->add(readUtf8CodePoint3c(ts));
-                  inCharClassEarly = false;
-              }}
-	break;
-	case 294:
-#line 1219 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  currentCls->add(readUtf8CodePoint4c(ts));
-                  inCharClassEarly = false;
-              }}
-	break;
-	case 295:
-#line 1225 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 296:
-#line 1231 "Parser.rl"
-	{te = p+1;{
-                  currentCls->add(*ts);
-                  inCharClassEarly = false;
-              }}
-	break;
-	case 297:
-#line 1225 "Parser.rl"
-	{te = p;p--;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 298:
-#line 1231 "Parser.rl"
-	{te = p;p--;{
-                  currentCls->add(*ts);
-                  inCharClassEarly = false;
-              }}
-	break;
-	case 299:
-#line 1225 "Parser.rl"
-	{{p = ((te))-1;}{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 300:
-#line 1243 "Parser.rl"
-	{te = p+1;{ inComment = false; {cs = 746;goto _again;} }}
-	break;
-	case 301:
-#line 1247 "Parser.rl"
-	{te = p+1;}
-	break;
-	case 302:
-#line 1255 "Parser.rl"
-	{te = p+1;{ inComment = false; {cs = 746;goto _again;} }}
-	break;
-	case 303:
-#line 1259 "Parser.rl"
-	{te = p+1;}
-	break;
-	case 304:
-#line 1491 "Parser.rl"
-	{act = 288;}
-	break;
-	case 305:
-#line 1508 "Parser.rl"
-	{act = 290;}
-	break;
-	case 306:
-#line 1737 "Parser.rl"
-	{act = 330;}
-	break;
-	case 307:
-#line 362 "Parser.rl"
-	{te = p+1;{
-        if (sequences.empty()) {
-            throw LocatedParseError("Unmatched parentheses");
-        }
-        currentSeq->finalize();
-        POP_SEQUENCE;
-    }}
-	break;
-	case 308:
-#line 1274 "Parser.rl"
-	{te = p+1;{
-                  currentSeq->addAlternation();
-              }}
-	break;
-	case 309:
-#line 1279 "Parser.rl"
-	{te = p+1;{
-                  throw LocatedParseError("POSIX named classes are only "
-                                          "supported inside a class");
-              }}
-	break;
-	case 310:
-#line 1286 "Parser.rl"
-	{te = p+1;{
-                  throw LocatedParseError("Unsupported POSIX collating "
-                                          "element");
-              }}
-	break;
-	case 311:
-#line 1293 "Parser.rl"
-	{te = p+1;{
-                  {cs = 838;goto _again;}
-              }}
-	break;
-	case 312:
-#line 1297 "Parser.rl"
-	{te = p+1;{ /* noop */ }}
-	break;
-	case 313:
-#line 1299 "Parser.rl"
-	{te = p+1;{
-                  currentSeq->addComponent(generateComponent(CLASS_ANY, false, mode));
-              }}
-	break;
-	case 314:
-#line 1303 "Parser.rl"
-	{te = p+1;{
-                  if (mode.utf8) {
-                      throw LocatedParseError("\\C is unsupported in UTF8");
-                  }
-                  currentSeq->addComponent(std::make_unique<ComponentByte>());
-              }}
-	break;
-	case 315:
-#line 1317 "Parser.rl"
-	{te = p+1;{
-                  if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
-                                        ComponentRepeat::REPEAT_NONGREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 316:
-#line 1324 "Parser.rl"
-	{te = p+1;{
-                  if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
-                                        ComponentRepeat::REPEAT_POSSESSIVE)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 317:
-#line 1338 "Parser.rl"
-	{te = p+1;{
-                  if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
-                                        ComponentRepeat::REPEAT_NONGREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 318:
-#line 1345 "Parser.rl"
-	{te = p+1;{
-                  if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
-                                        ComponentRepeat::REPEAT_POSSESSIVE)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 319:
-#line 1359 "Parser.rl"
-	{te = p+1;{
-                  if (!currentSeq->addRepeat(
-                           0, 1, ComponentRepeat::REPEAT_NONGREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 320:
-#line 1366 "Parser.rl"
-	{te = p+1;{
-                  if (!currentSeq->addRepeat(
-                           0, 1, ComponentRepeat::REPEAT_POSSESSIVE)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 321:
-#line 1383 "Parser.rl"
-	{te = p+1;{
-                  if (repeatN > repeatM || repeatM == 0) {
-                      throwInvalidRepeat();
-                  } else if (!currentSeq->addRepeat(
-                                  repeatN, repeatM,
-                                  ComponentRepeat::REPEAT_NONGREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 322:
-#line 1393 "Parser.rl"
-	{te = p+1;{
-                  if (repeatN > repeatM || repeatM == 0) {
-                      throwInvalidRepeat();
-                  } else if (!currentSeq->addRepeat(
-                                  repeatN, repeatM,
-                                  ComponentRepeat::REPEAT_POSSESSIVE)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 323:
-#line 322 "Parser.rl"
-	{te = p+1;{
-        inComment = true;
-        {cs = 849;goto _again;}
-    }}
-	break;
-	case 324:
-#line 1410 "Parser.rl"
-	{te = p+1;{ p--; {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 787;goto _again;}} }}
-	break;
-	case 325:
-#line 1414 "Parser.rl"
-	{te = p+1;{ assert(0); {p++; goto _out; } }}
-	break;
-	case 326:
-#line 1421 "Parser.rl"
-	{te = p+1;{
-                  auto bound = mode.multiline ? ComponentBoundary::BEGIN_LINE
-                                              : ComponentBoundary::BEGIN_STRING;
-                  currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
-              }}
-	break;
-	case 327:
-#line 1428 "Parser.rl"
-	{te = p+1;{
-                  auto bound = mode.multiline ? ComponentBoundary::END_LINE
-                                              : ComponentBoundary::END_STRING_OPTIONAL_LF;
-                  currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
-              }}
-	break;
-	case 328:
-#line 1434 "Parser.rl"
-	{te = p+1;{
-                  auto bound = ComponentBoundary::BEGIN_STRING;
-                  currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
-              }}
-	break;
-	case 329:
-#line 1439 "Parser.rl"
-	{te = p+1;{
-                  auto bound = ComponentBoundary::END_STRING_OPTIONAL_LF;
-                  currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
-              }}
-	break;
-	case 330:
-#line 1444 "Parser.rl"
-	{te = p+1;{
-                  auto bound = ComponentBoundary::END_STRING;
-                  currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
-              }}
-	break;
-	case 331:
-#line 1449 "Parser.rl"
-	{te = p+1;{
-                  currentSeq->addComponent(
-                      std::make_unique<ComponentWordBoundary>(ts - ptr, false, mode));
-              }}
-	break;
-	case 332:
-#line 1454 "Parser.rl"
-	{te = p+1;{
-                  currentSeq->addComponent(
-                      std::make_unique<ComponentWordBoundary>(ts - ptr, true, mode));
-              }}
-	break;
-	case 333:
-#line 1464 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, '\x09', mode);
-              }}
-	break;
-	case 334:
-#line 1468 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, '\x0a', mode);
-              }}
-	break;
-	case 335:
-#line 1472 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, '\x0d', mode);
-              }}
-	break;
-	case 336:
-#line 1476 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, '\x0c', mode);
-              }}
-	break;
-	case 337:
-#line 1480 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, '\x07', mode);
-              }}
-	break;
-	case 338:
-#line 1484 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, '\x1b', mode);
-              }}
-	break;
-	case 339:
-#line 1488 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, octAccumulator, mode);
-              }}
-	break;
-	case 340:
-#line 479 "Parser.rl"
-	{te = p+1;{
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
-    }}
-	break;
-	case 341:
-#line 486 "Parser.rl"
-	{te = p+1;{
-        // Accumulator is a negative offset.
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        if (accumulator >= groupIndex) {
-            throw LocatedParseError("Invalid reference");
-        }
-        unsigned idx = groupIndex - accumulator;
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(idx));
-    }}
-	break;
-	case 342:
-#line 479 "Parser.rl"
-	{te = p+1;{
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
-    }}
-	break;
-	case 343:
-#line 486 "Parser.rl"
-	{te = p+1;{
-        // Accumulator is a negative offset.
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        if (accumulator >= groupIndex) {
-            throw LocatedParseError("Invalid reference");
-        }
-        unsigned idx = groupIndex - accumulator;
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(idx));
-    }}
-	break;
-	case 344:
-#line 498 "Parser.rl"
-	{te = p+1;{
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
-    }}
-	break;
-	case 345:
-#line 498 "Parser.rl"
-	{te = p+1;{
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
-    }}
-	break;
-	case 346:
-#line 498 "Parser.rl"
-	{te = p+1;{
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
-    }}
-	break;
-	case 347:
-#line 498 "Parser.rl"
-	{te = p+1;{
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
-    }}
-	break;
-	case 348:
-#line 498 "Parser.rl"
-	{te = p+1;{
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
-    }}
-	break;
-	case 349:
-#line 1549 "Parser.rl"
-	{te = p+1;{
-                  ostringstream str;
-                  str << "Onigiruma subroutine call at index " << ts - ptr <<
-                         " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 350:
-#line 1560 "Parser.rl"
-	{te = p+1;{
-                  string oct(ts + 3, te - ts - 4);
-                  unsigned long val;
-                  try {
-                      val = stoul(oct, nullptr, 8);
-                  } catch (const std::out_of_range &) {
-                      val = MAX_UNICODE + 1;
-                  }
-                  if ((!mode.utf8 && val > 255) || val > MAX_UNICODE) {
-                      throw LocatedParseError("Value in \\o{...} sequence is too large");
-                  }
-                  addEscapedOctal(currentSeq, (unichar)val, mode);
-              }}
-	break;
-	case 351:
-#line 1578 "Parser.rl"
-	{te = p+1;{
-                  addEscapedHex(currentSeq, accumulator, mode);
-              }}
-	break;
-	case 352:
-#line 1582 "Parser.rl"
-	{te = p+1;{
-                  string hex(ts + 3, te - ts - 4);
-                  unsigned long val;
-                  try {
-                      val = stoul(hex, nullptr, 16);
-                  } catch (const std::out_of_range &) {
-                      val = MAX_UNICODE + 1;
-                  }
-                  if (val > MAX_UNICODE) {
-                      throw LocatedParseError("Value in \\x{...} sequence is too large");
-                  }
-                  addEscapedHex(currentSeq, (unichar)val, mode);
-              }}
-	break;
-	case 353:
-#line 1600 "Parser.rl"
-	{te = p+1;{
-                  if (te - ts < 3) {
-                      assert(te - ts == 2);
-                      throw LocatedParseError(SLASH_C_ERROR);
-                  } else {
-                      assert(te - ts == 3);
-                      addLiteral(currentSeq, decodeCtrl(ts[2]), mode);
-                  }
-              }}
-	break;
-	case 354:
-#line 1610 "Parser.rl"
-	{te = p+1;{
-                  ostringstream str;
-                  str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
-                      << " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 355:
-#line 1618 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_WORD, false, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 356:
-#line 1623 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_WORD, true, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 357:
-#line 1628 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_SPACE, false, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 358:
-#line 1633 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_SPACE, true, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 359:
-#line 1638 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_DIGIT, false, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 360:
-#line 1643 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_DIGIT, true, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 361:
-#line 1648 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_HORZ, false, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 362:
-#line 1653 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_HORZ, true, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 363:
-#line 1658 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_VERT, false, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 364:
-#line 1663 "Parser.rl"
-	{te = p+1;{
-                  auto cc = generateComponent(CLASS_VERT, true, mode);
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 365:
-#line 1668 "Parser.rl"
-	{te = p+1;{
-                  assert(!currentCls && !inCharClass);
-                  currentCls = getComponentClass(mode);
-                  negated = false;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 559;goto _again;}}
-              }}
-	break;
-	case 366:
-#line 1676 "Parser.rl"
-	{te = p+1;{
-                  assert(!currentCls && !inCharClass);
-                  currentCls = getComponentClass(mode);
-                  negated = false;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 818;goto _again;}}
-              }}
-	break;
-	case 367:
-#line 1684 "Parser.rl"
-	{te = p+1;{
-                  assert(!currentCls && !inCharClass);
-                  currentCls = getComponentClass(mode);
-                  negated = true;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 559;goto _again;}}
-              }}
-	break;
-	case 368:
-#line 1692 "Parser.rl"
-	{te = p+1;{
-                  assert(!currentCls && !inCharClass);
-                  currentCls = getComponentClass(mode);
-                  negated = true;
-                  p--;
-                  {
-        DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
-        if ((int)stack.size() == top) {
-            stack.resize(2 * (top + 1));
-        }
-    {stack[top++] = cs; cs = 818;goto _again;}}
-              }}
-	break;
-	case 369:
-#line 1704 "Parser.rl"
-	{te = p+1;{
-                  ostringstream str;
-                  str << "\\R at index " << ts - ptr << " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 370:
-#line 1711 "Parser.rl"
-	{te = p+1;{
-                  ostringstream str;
-                  str << "\\K at index " << ts - ptr << " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 371:
-#line 1726 "Parser.rl"
-	{te = p+1;{
-                  ostringstream str;
-                  str << "\\G at index " << ts - ptr << " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 372:
-#line 1732 "Parser.rl"
-	{te = p+1;{
-                  currentSeq->addComponent(std::make_unique<ComponentEUS>(ts - ptr, mode));
-              }}
-	break;
-	case 373:
-#line 1737 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, *(ts + 1), mode);
-              }}
-	break;
-	case 374:
-#line 316 "Parser.rl"
-	{te = p+1;{ 
-        inComment = true;
-        {cs = 848;goto _again;}
-    }}
-	break;
-	case 375:
-#line 433 "Parser.rl"
-	{te = p+1;{
-        mode = newMode;
-        currentSeq->addComponent(std::make_unique<ComponentEmpty>());
-    }}
-	break;
-	case 376:
-#line 355 "Parser.rl"
-	{te = p+1;{
-        PUSH_SEQUENCE;
-        mode = newMode;
-        currentSeq =
-            enterSequence(currentSeq, std::make_unique<ComponentSequence>());
-    }}
-	break;
-	case 377:
-#line 369 "Parser.rl"
-	{te = p+1;{
-        PUSH_SEQUENCE;
-        currentSeq = enterSequence(currentSeq,
-            std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKAHEAD,
-                                                 ComponentAssertion::POS));
-    }}
-	break;
-	case 378:
-#line 375 "Parser.rl"
-	{te = p+1;{
-        PUSH_SEQUENCE;
-        currentSeq = enterSequence(currentSeq,
-            std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKAHEAD,
-                                                 ComponentAssertion::NEG));
-    }}
-	break;
-	case 379:
-#line 381 "Parser.rl"
-	{te = p+1;{
-        PUSH_SEQUENCE;
-        currentSeq = enterSequence(currentSeq,
-            std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKBEHIND,
-                                                 ComponentAssertion::POS));
-    }}
-	break;
-	case 380:
-#line 387 "Parser.rl"
-	{te = p+1;{
-        PUSH_SEQUENCE;
-        currentSeq = enterSequence(currentSeq,
-            std::make_unique<ComponentAssertion>(ComponentAssertion::LOOKBEHIND,
-                                                 ComponentAssertion::NEG));
-    }}
-	break;
-	case 381:
-#line 393 "Parser.rl"
-	{te = p+1;{
-        throw LocatedParseError("Embedded code is not supported");
-    }}
-	break;
-	case 382:
-#line 393 "Parser.rl"
-	{te = p+1;{
-        throw LocatedParseError("Embedded code is not supported");
-    }}
-	break;
-	case 383:
-#line 416 "Parser.rl"
-	{te = p+1;{
-        PUSH_SEQUENCE;
-        currentSeq = enterSequence(currentSeq,
-                                   std::make_unique<ComponentAtomicGroup>());
-    }}
-	break;
-	case 384:
-#line 336 "Parser.rl"
-	{te = p+1;{
-        assert(!label.empty()); // should be guaranteed by machine
-        char c = *label.begin();
-        if (c >= '0' && c <= '9') {
-            throw LocatedParseError("Group name cannot begin with a digit");
-        }
-        if (!groupNames.insert(label).second) {
-            throw LocatedParseError("Two named subpatterns use the name '" + label + "'");
-        }
-        PUSH_SEQUENCE;
-        auto seq = std::make_unique<ComponentSequence>();
-        seq->setCaptureIndex(groupIndex++);
-        seq->setCaptureName(label);
-        currentSeq = enterSequence(currentSeq, move(seq));
-    }}
-	break;
-	case 385:
-#line 399 "Parser.rl"
-	{te = p+1;{
-        throw LocatedParseError("Subpattern reference unsupported");
-    }}
-	break;
-	case 386:
-#line 399 "Parser.rl"
-	{te = p+1;{
-        throw LocatedParseError("Subpattern reference unsupported");
-    }}
-	break;
-	case 387:
-#line 1783 "Parser.rl"
-	{te = p+1;{
-                  auto a = std::make_unique<ComponentAssertion>(
-                        ComponentAssertion::LOOKAHEAD, ComponentAssertion::POS);
-                  ComponentAssertion *a_seq = a.get();
-                  PUSH_SEQUENCE;
-                  currentSeq = enterSequence(currentSeq,
-                        std::make_unique<ComponentCondReference>(move(a)));
-                  PUSH_SEQUENCE;
-                  currentSeq = a_seq;
-              }}
-	break;
-	case 388:
-#line 1794 "Parser.rl"
-	{te = p+1;{
-                  auto a = std::make_unique<ComponentAssertion>(
-                        ComponentAssertion::LOOKAHEAD, ComponentAssertion::NEG);
-                  ComponentAssertion *a_seq = a.get();
-                  PUSH_SEQUENCE;
-                  currentSeq = enterSequence(currentSeq,
-                        std::make_unique<ComponentCondReference>(move(a)));
-                  PUSH_SEQUENCE;
-                  currentSeq = a_seq;
-              }}
-	break;
-	case 389:
-#line 1805 "Parser.rl"
-	{te = p+1;{
-                  auto a = std::make_unique<ComponentAssertion>(
-                      ComponentAssertion::LOOKBEHIND, ComponentAssertion::POS);
-                  ComponentAssertion *a_seq = a.get();
-                  PUSH_SEQUENCE;
-                  currentSeq = enterSequence(currentSeq,
-                        std::make_unique<ComponentCondReference>(move(a)));
-                  PUSH_SEQUENCE;
-                  currentSeq = a_seq;
-              }}
-	break;
-	case 390:
-#line 1816 "Parser.rl"
-	{te = p+1;{
-                  auto a = std::make_unique<ComponentAssertion>(
-                      ComponentAssertion::LOOKBEHIND, ComponentAssertion::NEG);
-                  ComponentAssertion *a_seq = a.get();
-                  PUSH_SEQUENCE;
-                  currentSeq = enterSequence(currentSeq,
-                        std::make_unique<ComponentCondReference>(move(a)));
-                  PUSH_SEQUENCE;
-                  currentSeq = a_seq;
-              }}
-	break;
-	case 391:
-#line 1828 "Parser.rl"
-	{te = p+1;{
-                  throw LocatedParseError("Pattern recursion not supported");
-              }}
-	break;
-	case 392:
-#line 402 "Parser.rl"
-	{te = p+1;{
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        PUSH_SEQUENCE;
-        currentSeq = enterSequence(currentSeq,
-                std::make_unique<ComponentCondReference>(accumulator));
-    }}
-	break;
-	case 393:
-#line 410 "Parser.rl"
-	{te = p+1;{
-        PUSH_SEQUENCE;
-        assert(!label.empty());
-        currentSeq = enterSequence(currentSeq,
-                std::make_unique<ComponentCondReference>(label));
-    }}
-	break;
-	case 394:
-#line 1844 "Parser.rl"
-	{te = p+1;{
-                  ostringstream str;
-                  str << "Callout at index " << ts - ptr << " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 395:
-#line 1852 "Parser.rl"
-	{te = p+1;{
-                  throw LocatedParseError("Unrecognised character after (?");
-              }}
-	break;
-	case 396:
-#line 1857 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  /* leverage ComponentClass to generate the vertices */
-                  auto cc = getComponentClass(mode);
-                  cc->add(readUtf8CodePoint2c(ts));
-                  cc->finalize();
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 397:
-#line 1866 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  /* leverage ComponentClass to generate the vertices */
-                  auto cc = getComponentClass(mode);
-                  cc->add(readUtf8CodePoint3c(ts));
-                  cc->finalize();
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 398:
-#line 1875 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  /* leverage ComponentClass to generate the vertices */
-                  auto cc = getComponentClass(mode);
-                  cc->add(readUtf8CodePoint4c(ts));
-                  cc->finalize();
-                  currentSeq->addComponent(move(cc));
-              }}
-	break;
-	case 399:
-#line 1884 "Parser.rl"
-	{te = p+1;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 400:
-#line 1893 "Parser.rl"
-	{te = p+1;{
-                  if (mode.ignore_space == false) {
-                      addLiteral(currentSeq, *ts, mode);
-                  }
-              }}
-	break;
-	case 401:
-#line 1898 "Parser.rl"
-	{te = p+1;{
-                  addLiteral(currentSeq, *ts, mode);
-              }}
-	break;
-	case 402:
-#line 328 "Parser.rl"
-	{te = p;p--;{
-        PUSH_SEQUENCE;
-        auto seq = std::make_unique<ComponentSequence>();
-        seq->setCaptureIndex(groupIndex++);
-        currentSeq = enterSequence(currentSeq, move(seq));
-    }}
-	break;
-	case 403:
-#line 421 "Parser.rl"
-	{te = p;p--;{
-        assert(!currentCls);
-        assert(!inCharClass); // not reentrant
-        currentCls = getComponentClass(mode);
-        inCharClass = true;
-        inCharClassEarly = true;
-        currentClsBegin = ts;
-        {cs = 836;goto _again;}
-    }}
-	break;
-	case 404:
-#line 1310 "Parser.rl"
-	{te = p;p--;{
-                  if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
-                                             ComponentRepeat::REPEAT_GREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 405:
-#line 1331 "Parser.rl"
-	{te = p;p--;{
-                  if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
-                                             ComponentRepeat::REPEAT_GREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 406:
-#line 1352 "Parser.rl"
-	{te = p;p--;{
-                  if (!currentSeq->addRepeat(
-                           0, 1, ComponentRepeat::REPEAT_GREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 407:
-#line 1373 "Parser.rl"
-	{te = p;p--;{
-                  if (repeatN > repeatM || repeatM == 0) {
-                      throwInvalidRepeat();
-                  } else if (!currentSeq->addRepeat(
-                                  repeatN, repeatM,
-                                  ComponentRepeat::REPEAT_GREEDY)) {
-                      throwInvalidRepeat();
-                  }
-              }}
-	break;
-	case 408:
-#line 1488 "Parser.rl"
-	{te = p;p--;{
-                  addLiteral(currentSeq, octAccumulator, mode);
-              }}
-	break;
-	case 409:
-#line 1491 "Parser.rl"
-	{te = p;p--;{
-                  // If there are enough capturing sub expressions, this may be
-                  // a back reference
-                  accumulator = parseAsDecimal(octAccumulator);
-                  if (accumulator < groupIndex) {
-                      currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
-                  } else {
-                      addEscapedOctal(currentSeq, octAccumulator, mode);
-                  }
-              }}
-	break;
-	case 410:
-#line 479 "Parser.rl"
-	{te = p;p--;{
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
-    }}
-	break;
-	case 411:
-#line 479 "Parser.rl"
-	{te = p;p--;{
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
-    }}
-	break;
-	case 412:
-#line 486 "Parser.rl"
-	{te = p;p--;{
-        // Accumulator is a negative offset.
-        if (accumulator == 0) {
-            throw LocatedParseError("Numbered reference cannot be zero");
-        }
-        if (accumulator >= groupIndex) {
-            throw LocatedParseError("Invalid reference");
-        }
-        unsigned idx = groupIndex - accumulator;
-        currentSeq->addComponent(std::make_unique<ComponentBackReference>(idx));
-    }}
-	break;
-	case 413:
-#line 1557 "Parser.rl"
-	{te = p;p--;{
-                  throw LocatedParseError("Invalid reference after \\g");
-              }}
-	break;
-	case 414:
-#line 1574 "Parser.rl"
-	{te = p;p--;{
-                  throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
-              }}
-	break;
-	case 415:
-#line 1578 "Parser.rl"
-	{te = p;p--;{
-                  addEscapedHex(currentSeq, accumulator, mode);
-              }}
-	break;
-	case 416:
-#line 1596 "Parser.rl"
-	{te = p;p--;{
-                  throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
-              }}
-	break;
-	case 417:
-#line 1600 "Parser.rl"
-	{te = p;p--;{
-                  if (te - ts < 3) {
-                      assert(te - ts == 2);
-                      throw LocatedParseError(SLASH_C_ERROR);
-                  } else {
-                      assert(te - ts == 3);
-                      addLiteral(currentSeq, decodeCtrl(ts[2]), mode);
-                  }
-              }}
-	break;
-	case 418:
-#line 1700 "Parser.rl"
-	{te = p;p--;{ throw LocatedParseError("Malformed property"); }}
-	break;
-	case 419:
-#line 1701 "Parser.rl"
-	{te = p;p--;{ throw LocatedParseError("Malformed property"); }}
-	break;
-	case 420:
-#line 1719 "Parser.rl"
-	{te = p;p--;{
-                  ostringstream str;
-                  str << "\\k at index " << ts - ptr << " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 421:
-#line 1742 "Parser.rl"
-	{te = p;p--;{
-                  assert(ts + 1 == pe);
-                  ostringstream str;
-                  str << "Unescaped \\ at end of input, index " << ts - ptr << ".";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 422:
-#line 396 "Parser.rl"
-	{te = p;p--;{
-        throw LocatedParseError("Conditional subpattern unsupported");
-    }}
-	break;
-	case 423:
-#line 1852 "Parser.rl"
-	{te = p;p--;{
-                  throw LocatedParseError("Unrecognised character after (?");
-              }}
-	break;
-	case 424:
-#line 1884 "Parser.rl"
-	{te = p;p--;{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 425:
-#line 1898 "Parser.rl"
-	{te = p;p--;{
-                  addLiteral(currentSeq, *ts, mode);
-              }}
-	break;
-	case 426:
-#line 328 "Parser.rl"
-	{{p = ((te))-1;}{
-        PUSH_SEQUENCE;
-        auto seq = std::make_unique<ComponentSequence>();
-        seq->setCaptureIndex(groupIndex++);
-        currentSeq = enterSequence(currentSeq, move(seq));
-    }}
-	break;
-	case 427:
-#line 421 "Parser.rl"
-	{{p = ((te))-1;}{
-        assert(!currentCls);
-        assert(!inCharClass); // not reentrant
-        currentCls = getComponentClass(mode);
-        inCharClass = true;
-        inCharClassEarly = true;
-        currentClsBegin = ts;
-        {cs = 836;goto _again;}
-    }}
-	break;
-	case 428:
-#line 1557 "Parser.rl"
-	{{p = ((te))-1;}{
-                  throw LocatedParseError("Invalid reference after \\g");
-              }}
-	break;
-	case 429:
-#line 1574 "Parser.rl"
-	{{p = ((te))-1;}{
-                  throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
-              }}
-	break;
-	case 430:
-#line 1596 "Parser.rl"
-	{{p = ((te))-1;}{
-                  throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
-              }}
-	break;
-	case 431:
-#line 1719 "Parser.rl"
-	{{p = ((te))-1;}{
-                  ostringstream str;
-                  str << "\\k at index " << ts - ptr << " not supported.";
-                  throw ParseError(str.str());
-              }}
-	break;
-	case 432:
-#line 396 "Parser.rl"
-	{{p = ((te))-1;}{
-        throw LocatedParseError("Conditional subpattern unsupported");
-    }}
-	break;
-	case 433:
-#line 1852 "Parser.rl"
-	{{p = ((te))-1;}{
-                  throw LocatedParseError("Unrecognised character after (?");
-              }}
-	break;
-	case 434:
-#line 1884 "Parser.rl"
-	{{p = ((te))-1;}{
-                  assert(mode.utf8);
-                  throwInvalidUtf8();
-              }}
-	break;
-	case 435:
-#line 1898 "Parser.rl"
-	{{p = ((te))-1;}{
-                  addLiteral(currentSeq, *ts, mode);
-              }}
-	break;
-	case 436:
-#line 1 "NONE"
-	{	switch( act ) {
-	case 288:
-	{{p = ((te))-1;}
-                  // If there are enough capturing sub expressions, this may be
-                  // a back reference
-                  accumulator = parseAsDecimal(octAccumulator);
-                  if (accumulator < groupIndex) {
-                      currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
-                  } else {
-                      addEscapedOctal(currentSeq, octAccumulator, mode);
-                  }
-              }
-	break;
-	case 290:
-	{{p = ((te))-1;}
-                  // if there are enough left parens to this point, back ref
-                  if (accumulator < groupIndex) {
-                      currentSeq->addComponent(std::make_unique<ComponentBackReference>(accumulator));
-                  } else {
-                      // Otherwise, we interpret the first three digits as an
-                      // octal escape, and the remaining characters stand for
-                      // themselves as literals.
-                      const char *s = ts;
-                      unsigned int accum = 0;
-                      unsigned int oct_digits = 0;
-                      assert(*s == '\\'); // token starts at backslash
-                      for (++s; s < te && oct_digits < 3; ++oct_digits, ++s) {
-                          u8 digit = *s - '0';
-                          if (digit < 8) {
-                              accum = digit + accum * 8;
-                          } else {
-                              break;
-                          }
-                      }
-
-                      if (oct_digits > 0) {
-                          addEscapedOctal(currentSeq, accum, mode);
-                      }
-
-                      // And then the rest of the digits, if any, are literal.
-                      for (; s < te; ++s) {
-                          addLiteral(currentSeq, *s, mode);
-                      }
-                  }
-              }
-	break;
-	case 330:
-	{{p = ((te))-1;}
-                  addLiteral(currentSeq, *(ts + 1), mode);
-              }
-	break;
-	}
-	}
-	break;
-#line 5508 "Parser.cpp"
-		}
-	}
-
-_again:
-	_acts = _regex_actions + _regex_to_state_actions[cs];
-	_nacts = (unsigned int) *_acts++;
-	while ( _nacts-- > 0 ) {
-		switch ( *_acts++ ) {
-	case 23:
-#line 1 "NONE"
-	{ts = 0;}
-	break;
-#line 5521 "Parser.cpp"
-		}
-	}
-
-	if ( cs == 0 )
+_again: {}
+if ( p == eof ) {
+	if ( cs >= 746 )
 		goto _out;
-	if ( ++p != pe )
-		goto _resume;
-	_test_eof: {}
-	if ( p == eof )
-	{
-	if ( _regex_eof_trans[cs] > 0 ) {
-		_trans = _regex_eof_trans[cs] - 1;
-		goto _eof_trans;
-	}
-	const short *__acts = _regex_actions + _regex_eof_actions[cs];
-	unsigned int __nacts = (unsigned int) *__acts++;
-	while ( __nacts-- > 0 ) {
-		switch ( *__acts++ ) {
-	case 22:
-#line 730 "Parser.rl"
-	{ throw LocatedParseError("Malformed property"); }
-	break;
-#line 5544 "Parser.cpp"
+}
+else {
+	_acts = ( _regex_actions + (_regex_to_state_actions[cs]));
+	_nacts = (unsigned int)(*( _acts));
+	_acts += 1;
+	while ( _nacts > 0 ) {
+		switch ( (*( _acts)) ) {
+			case 23:  {
+					{
+#line 1 "NONE"
+					{ts = 0;}}
+				
+#line 10205 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/Parser.cpp"
+
+				break; 
+			}
 		}
+		_nacts -= 1;
+		_acts += 1;
 	}
+	
+	if ( cs != 0 ) {
+		p += 1;
+		goto _resume;
 	}
+}
+_out: {}
+}
 
-	_out: {}
-	}
+#line 1983 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/Parser.rl"
 
-#line 1984 "Parser.rl"
 
-        if (p != pe && *p != '\0') {
-            // didn't make it to the end of our input, but we didn't throw a ParseError?
-            assert(0);
-            ostringstream str;
-            str << "Parse error at index " << (p - ptr) << ".";
-            throw ParseError(str.str());
-        }
+if (p != pe && *p != '\0') {
+// didn't make it to the end of our input, but we didn't throw a ParseError?
+assert(0);
+ostringstream str;
+str << "Parse error at index " << (p - ptr) << ".";
+throw ParseError(str.str());
+}
 
-        if (currentCls) {
-            assert(inCharClass);
-            assert(currentClsBegin);
-            ostringstream oss;
-            oss << "Unterminated character class starting at index "
-                << currentClsBegin - ptr << ".";
-            throw ParseError(oss.str());
-        }
+if (currentCls) {
+assert(inCharClass);
+assert(currentClsBegin);
+ostringstream oss;
+oss << "Unterminated character class starting at index "
+<< currentClsBegin - ptr << ".";
+throw ParseError(oss.str());
+}
 
-        if (inComment) {
-            throw ParseError("Unterminated comment.");
-        }
+if (inComment) {
+throw ParseError("Unterminated comment.");
+}
 
-        if (!sequences.empty()) {
-            ostringstream str;
-            str << "Missing close parenthesis for group started at index "
-                << sequences.back().seqOffset << ".";
-            throw ParseError(str.str());
-        }
+if (!sequences.empty()) {
+ostringstream str;
+str << "Missing close parenthesis for group started at index "
+<< sequences.back().seqOffset << ".";
+throw ParseError(str.str());
+}
 
-        // Unlikely, but possible
-        if (groupIndex > 65535) {
-            throw ParseError("The maximum number of capturing subexpressions is 65535.");
-        }
+// Unlikely, but possible
+if (groupIndex > 65535) {
+throw ParseError("The maximum number of capturing subexpressions is 65535.");
+}
 
-        // Finalize the top-level sequence, which will take care of any
-        // top-level alternation.
-        currentSeq->finalize();
-        assert(currentSeq == rootSeq.get());
+// Finalize the top-level sequence, which will take care of any
+// top-level alternation.
+currentSeq->finalize();
+assert(currentSeq == rootSeq.get());
 
-        // Ensure that all references are valid.
-        checkReferences(*rootSeq, groupIndex, groupNames);
+// Ensure that all references are valid.
+checkReferences(*rootSeq, groupIndex, groupNames);
 
-        return move(rootSeq);
-    } catch (LocatedParseError &error) {
-        if (ts >= ptr && ts <= pe) {
-            error.locate(ts - ptr);
-        } else {
-            error.locate(0);
-        }
-        throw;
-    }
+return move(rootSeq);
+} catch (LocatedParseError &error) {
+if (ts >= ptr && ts <= pe) {
+error.locate(ts - ptr);
+} else {
+error.locate(0);
+}
+throw;
+}
 }
 
 } // namespace ue2
