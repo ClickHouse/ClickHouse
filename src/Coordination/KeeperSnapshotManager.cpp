@@ -365,8 +365,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
 
     ConcurrentBoundedQueue<PathNodePairPtr> node_queue(snapshot_container_size);
     std::atomic<bool> force_stop = false;
-    auto node_load_thread = ThreadFromGlobalPool([&] 
-    { 
+    auto node_load_thread = ThreadFromGlobalPool([&]
+    {
         size_t loaded = 0;
         while (loaded != snapshot_container_size)
         {
