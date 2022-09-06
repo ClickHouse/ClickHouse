@@ -297,8 +297,10 @@ ProcessListEntry::~ProcessListEntry()
         }
     }
 
+    it->onStop();
     /// This removes the memory_tracker of one request.
-    parent.processes.erase(it);
+    if (!parent.block_processes)
+        parent.processes.erase(it);
 
     if (!found)
     {
@@ -343,14 +345,6 @@ QueryStatus::QueryStatus(
 QueryStatus::~QueryStatus()
 {
     assert(executors.empty());
-
-    if (auto * memory_tracker = getMemoryTracker())
-    {
-        if (user_process_list)
-            user_process_list->user_overcommit_tracker.onQueryStop(memory_tracker);
-        if (auto shared_context = getContext())
-            shared_context->getGlobalOvercommitTracker()->onQueryStop(memory_tracker);
-    }
 }
 
 CancellationCode QueryStatus::cancelQuery(bool)
@@ -365,6 +359,18 @@ CancellationCode QueryStatus::cancelQuery(bool)
         e->cancel();
 
     return CancellationCode::CancelSent;
+}
+
+void QueryStatus::onStop()
+{
+    if (auto * memory_tracker = getMemoryTracker())
+    {
+        if (user_process_list)
+            user_process_list->user_overcommit_tracker.onQueryStop(memory_tracker);
+        if (auto shared_context = getContext())
+            shared_context->getGlobalOvercommitTracker()->onQueryStop(memory_tracker);
+    }
+    thread_group.reset();
 }
 
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
@@ -414,6 +420,8 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
 
 QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {
+    auto lock = safeLock();
+
     auto user_it = user_to_queries.find(current_user);
     if (user_it != user_to_queries.end())
     {
@@ -430,8 +438,6 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    auto lock = safeLock();
-
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
 
     if (!elem)
@@ -443,10 +449,20 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 
 void ProcessList::killAllQueries()
 {
-    auto lock = safeLock();
+    auto [lock, blocker] = safeLock();
+    block_processes = true;
 
+    std::vector<QueryStatus *> query_statuses;
+    query_statuses.reserve(processes.size());
     for (auto & process : processes)
-        process.cancelQuery(true);
+        query_statuses.push_back(&process);
+    lock.unlock();
+
+    for (auto * status : query_statuses)
+        status->cancelQuery(true);
+
+    lock.lock();
+    block_processes = false;
 }
 
 

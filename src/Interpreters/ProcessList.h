@@ -197,6 +197,8 @@ public:
 
     CancellationCode cancelQuery(bool kill);
 
+    void onStop();
+
     bool isKilled() const { return is_killed; }
 
     bool isAllDataSent() const { return is_all_data_sent; }
@@ -328,6 +330,9 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
+
+    /// Do not allow to modify processes list during killAllQueries operations
+    bool block_processes = false;
 
     /// List of queries
     Container processes;
