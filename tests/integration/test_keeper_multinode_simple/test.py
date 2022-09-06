@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -32,6 +33,7 @@ from kazoo.client import KazooClient, KazooState
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
         yield cluster
 
@@ -41,31 +43,6 @@ def started_cluster():
 
 def smaller_exception(ex):
     return "\n".join(str(ex).split("\n")[0:2])
-
-
-def wait_node(node):
-    for _ in range(100):
-        zk = None
-        try:
-            node.query("SELECT * FROM system.zookeeper WHERE path = '/'")
-            zk = get_fake_zk(node.name, timeout=30.0)
-            zk.create("/test", sequence=True)
-            print("node", node.name, "ready")
-            break
-        except Exception as ex:
-            time.sleep(0.2)
-            print("Waiting until", node.name, "will be ready, exception", ex)
-        finally:
-            if zk:
-                zk.stop()
-                zk.close()
-    else:
-        raise Exception("Can't wait node", node.name, "to become ready")
-
-
-def wait_nodes():
-    for node in [node1, node2, node3]:
-        wait_node(node)
 
 
 def get_fake_zk(nodename, timeout=30.0):
@@ -78,7 +55,6 @@ def get_fake_zk(nodename, timeout=30.0):
 
 def test_read_write_multinode(started_cluster):
     try:
-        wait_nodes()
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3")
@@ -120,7 +96,6 @@ def test_read_write_multinode(started_cluster):
 
 def test_watch_on_follower(started_cluster):
     try:
-        wait_nodes()
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3")
@@ -177,7 +152,6 @@ def test_watch_on_follower(started_cluster):
 
 def test_session_expiration(started_cluster):
     try:
-        wait_nodes()
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3", timeout=3.0)
@@ -219,7 +193,6 @@ def test_session_expiration(started_cluster):
 
 def test_follower_restart(started_cluster):
     try:
-        wait_nodes()
         node1_zk = get_fake_zk("node1")
 
         node1_zk.create("/test_restart_node", b"hello")
@@ -244,7 +217,6 @@ def test_follower_restart(started_cluster):
 
 
 def test_simple_replicated_table(started_cluster):
-    wait_nodes()
     for i, node in enumerate([node1, node2, node3]):
         node.query(
             "CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{}') ORDER BY tuple()".format(

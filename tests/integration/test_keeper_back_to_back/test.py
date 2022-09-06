@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -61,6 +62,7 @@ def stop_zk(zk):
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_until_connected(cluster, node)
 
         yield cluster
 

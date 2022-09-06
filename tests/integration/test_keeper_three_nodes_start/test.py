@@ -3,6 +3,7 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -31,6 +32,7 @@ def get_fake_zk(nodename, timeout=30.0):
 def test_smoke():
     try:
         cluster.start()
+        keeper_utils.wait_nodes(cluster, [node1, node2])
 
         node1_zk = get_fake_zk("node1")
         node1_zk.create("/test_alive", b"aaaa")

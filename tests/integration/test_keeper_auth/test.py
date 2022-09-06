@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 from kazoo.client import KazooClient, KazooState
 from kazoo.security import ACL, make_digest_acl, make_acl
 from kazoo.exceptions import (
@@ -25,6 +26,7 @@ SUPERAUTH = "super:admin"
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_until_connected(cluster, node)
 
         yield cluster
 
@@ -455,6 +457,7 @@ def test_auth_snapshot(started_cluster):
         )
 
     node.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node)
 
     connection = get_fake_zk()
 

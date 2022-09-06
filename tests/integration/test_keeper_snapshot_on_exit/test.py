@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import os
 from kazoo.client import KazooClient
 
@@ -27,6 +28,7 @@ def get_fake_zk(node, timeout=30.0):
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_nodes(cluster, [node1, node2])
 
         yield cluster
 

@@ -1,6 +1,7 @@
 import socket
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -23,6 +24,10 @@ node3 = cluster.add_instance(
 )
 
 from kazoo.client import KazooClient, KazooState
+
+
+def wait_nodes():
+    keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
 
 @pytest.fixture(scope="module")
@@ -56,28 +61,6 @@ def clear_znodes():
         destroy_zk_client(zk)
 
 
-def wait_node(node):
-    for _ in range(100):
-        zk = None
-        try:
-            zk = get_fake_zk(node.name, timeout=30.0)
-            # zk.create("/test", sequence=True)
-            print("node", node.name, "ready")
-            break
-        except Exception as ex:
-            time.sleep(0.2)
-            print("Waiting until", node.name, "will be ready, exception", ex)
-        finally:
-            destroy_zk_client(zk)
-    else:
-        raise Exception("Can't wait node", node.name, "to become ready")
-
-
-def wait_nodes():
-    for n in [node1, node2, node3]:
-        wait_node(n)
-
-
 def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
         hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
@@ -86,23 +69,15 @@ def get_fake_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
-def get_keeper_socket(node_name):
-    hosts = cluster.get_instance_ip(node_name)
-    client = socket.socket()
-    client.settimeout(10)
-    client.connect((hosts, 9181))
-    return client
-
-
 def close_keeper_socket(cli):
     if cli is not None:
         cli.close()
 
 
-def reset_node_stats(node_name=node1.name):
+def reset_node_stats(node=node1):
     client = None
     try:
-        client = get_keeper_socket(node_name)
+        client = keeper_utils.get_keeper_socket(cluster, node)
         client.send(b"srst")
         client.recv(10)
     finally:
@@ -110,23 +85,10 @@ def reset_node_stats(node_name=node1.name):
             client.close()
 
 
-def send_4lw_cmd(node_name=node1.name, cmd="ruok"):
+def reset_conn_stats(node=node1):
     client = None
     try:
-        client = get_keeper_socket(node_name)
-        client.send(cmd.encode())
-        data = client.recv(100_000)
-        data = data.decode()
-        return data
-    finally:
-        if client is not None:
-            client.close()
-
-
-def reset_conn_stats(node_name=node1.name):
-    client = None
-    try:
-        client = get_keeper_socket(node_name)
+        client = keeper_utils.get_keeper_socket(cluster, node)
         client.send(b"crst")
         client.recv(10_000)
     finally:
@@ -138,7 +100,7 @@ def test_cmd_ruok(started_cluster):
     client = None
     try:
         wait_nodes()
-        data = send_4lw_cmd(cmd="ruok")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="ruok")
         assert data == "imok"
     finally:
         close_keeper_socket(client)
@@ -187,7 +149,7 @@ def test_cmd_mntr(started_cluster):
         clear_znodes()
 
         # reset stat first
-        reset_node_stats(node1.name)
+        reset_node_stats(node1)
 
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(
@@ -200,7 +162,7 @@ def test_cmd_mntr(started_cluster):
             delete_cnt=2,
         )
 
-        data = send_4lw_cmd(cmd="mntr")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
 
         # print(data.decode())
         reader = csv.reader(data.split("\n"), delimiter="\t")
@@ -252,10 +214,10 @@ def test_cmd_srst(started_cluster):
         wait_nodes()
         clear_znodes()
 
-        data = send_4lw_cmd(cmd="srst")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="srst")
         assert data.strip() == "Server stats reset."
 
-        data = send_4lw_cmd(cmd="mntr")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
         assert len(data) != 0
 
         # print(data)
@@ -279,7 +241,7 @@ def test_cmd_conf(started_cluster):
         wait_nodes()
         clear_znodes()
 
-        data = send_4lw_cmd(cmd="conf")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="conf")
 
         reader = csv.reader(data.split("\n"), delimiter="=")
         result = {}
@@ -335,8 +297,8 @@ def test_cmd_conf(started_cluster):
 
 def test_cmd_isro(started_cluster):
     wait_nodes()
-    assert send_4lw_cmd(node1.name, "isro") == "rw"
-    assert send_4lw_cmd(node2.name, "isro") == "ro"
+    assert keeper_utils.send_4lw_cmd(cluster, node1, "isro") == "rw"
+    assert keeper_utils.send_4lw_cmd(cluster, node2, "isro") == "ro"
 
 
 def test_cmd_srvr(started_cluster):
@@ -345,12 +307,12 @@ def test_cmd_srvr(started_cluster):
         wait_nodes()
         clear_znodes()
 
-        reset_node_stats(node1.name)
+        reset_node_stats(node1)
 
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = send_4lw_cmd(cmd="srvr")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="srvr")
 
         print("srvr output -------------------------------------")
         print(data)
@@ -380,13 +342,13 @@ def test_cmd_stat(started_cluster):
     try:
         wait_nodes()
         clear_znodes()
-        reset_node_stats(node1.name)
-        reset_conn_stats(node1.name)
+        reset_node_stats(node1)
+        reset_conn_stats(node1)
 
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = send_4lw_cmd(cmd="stat")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="stat")
 
         print("stat output -------------------------------------")
         print(data)
@@ -440,7 +402,7 @@ def test_cmd_cons(started_cluster):
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = send_4lw_cmd(cmd="cons")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="cons")
 
         print("cons output -------------------------------------")
         print(data)
@@ -485,12 +447,12 @@ def test_cmd_crst(started_cluster):
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = send_4lw_cmd(cmd="crst")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="crst")
 
         print("crst output -------------------------------------")
         print(data)
 
-        data = send_4lw_cmd(cmd="cons")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="cons")
         print("cons output(after crst) -------------------------------------")
         print(data)
 
@@ -537,7 +499,7 @@ def test_cmd_dump(started_cluster):
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, ephemeral_cnt=2)
 
-        data = send_4lw_cmd(cmd="dump")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="dump")
 
         print("dump output -------------------------------------")
         print(data)
@@ -563,7 +525,7 @@ def test_cmd_wchs(started_cluster):
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=2, watch_cnt=2)
 
-        data = send_4lw_cmd(cmd="wchs")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="wchs")
 
         print("wchs output -------------------------------------")
         print(data)
@@ -598,7 +560,7 @@ def test_cmd_wchc(started_cluster):
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=2, watch_cnt=2)
 
-        data = send_4lw_cmd(cmd="wchc")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="wchc")
 
         print("wchc output -------------------------------------")
         print(data)
@@ -622,7 +584,7 @@ def test_cmd_wchp(started_cluster):
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=2, watch_cnt=2)
 
-        data = send_4lw_cmd(cmd="wchp")
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="wchp")
 
         print("wchp output -------------------------------------")
         print(data)
