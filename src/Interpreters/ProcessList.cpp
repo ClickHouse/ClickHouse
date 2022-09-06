@@ -8,6 +8,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
+#include <Parsers/toOneLineQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
@@ -81,7 +82,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
     bool is_unlimited_query = isUnlimitedQuery(ast);
 
     {
-        std::unique_lock lock(mutex);
+        auto [lock, overcommit_blocker] = safeLock(); // To avoid deadlock in case of OOM
         IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
@@ -208,11 +209,12 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             thread_group->query = query_;
+            thread_group->one_line_query = toOneLineQuery(query_);
             thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
-            thread_group->memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage);
+            thread_group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
 
             if (query_context->hasTraceCollector())
             {
@@ -224,6 +226,8 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             thread_group->memory_tracker.setDescription("(for query)");
             if (settings.memory_tracker_fault_probability)
                 thread_group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
+
+            thread_group->memory_tracker.setOvercommitWaitingTime(settings.memory_usage_overcommit_max_wait_microseconds);
 
             /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
             ///  since allocation and deallocation could happen in different threads
@@ -242,9 +246,8 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
-        user_process_list.user_memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator_for_user);
         user_process_list.user_memory_tracker.setDescription("(for user)");
-        user_process_list.user_overcommit_tracker.setMaxWaitTime(settings.memory_usage_overcommit_max_wait_microseconds);
 
         if (!user_process_list.user_throttler)
         {
@@ -266,7 +269,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
 ProcessListEntry::~ProcessListEntry()
 {
-    std::lock_guard lock(parent.mutex);
+    auto lock = parent.safeLock();
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;
@@ -427,7 +430,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
 
@@ -440,7 +443,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 
 void ProcessList::killAllQueries()
 {
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     for (auto & process : processes)
         process.cancelQuery(true);
@@ -492,7 +495,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 {
     Info per_query_infos;
 
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     per_query_infos.reserve(processes.size());
     for (const auto & process : processes)
@@ -527,7 +530,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 {
     UserInfo per_user_infos;
 
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     per_user_infos.reserve(user_to_queries.size());
 

@@ -47,6 +47,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         header_,
         *buf_,
         params_,
+        false,
         with_names_,
         with_types_,
         format_settings_,
@@ -317,6 +318,11 @@ DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
     return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
 }
 
+void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings, reader.getEscapingRule());
+}
+
 void registerInputFormatCustomSeparated(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
@@ -333,6 +339,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
             });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);
     }
 }
 
@@ -345,6 +352,19 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
             factory.registerSchemaReader(format_name, [with_names, with_types, ignore_spaces](ReadBuffer & buf, const FormatSettings & settings)
             {
                 return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings);
+            });
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+            {
+                String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
+                return result + fmt::format(
+                        ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                        " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                        settings.custom.result_before_delimiter,
+                        settings.custom.row_before_delimiter,
+                        settings.custom.field_delimiter,
+                        settings.custom.row_after_delimiter,
+                        settings.custom.row_between_delimiter,
+                        settings.custom.result_after_delimiter);
             });
         };
 

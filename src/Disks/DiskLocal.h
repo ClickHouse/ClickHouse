@@ -58,7 +58,7 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void createFile(const String & path) override;
 
@@ -70,7 +70,7 @@ public:
 
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
-    void listFiles(const String & path, std::vector<String> & file_names) override;
+    void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -91,7 +91,9 @@ public:
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
-    Poco::Timestamp getLastModified(const String & path) override;
+    Poco::Timestamp getLastModified(const String & path) const override;
+
+    time_t getLastChanged(const String & path) const override;
 
     void setReadOnly(const String & path) override;
 
@@ -99,7 +101,8 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType getType() const override { return DiskType::Local; }
+    DataSourceDescription getDataSourceDescription() const override;
+
     bool isRemote() const override { return false; }
 
     bool supportZeroCopyReplication() const override { return false; }
@@ -110,7 +113,7 @@ public:
 
     bool isBroken() const override { return broken; }
 
-    void startup() override;
+    void startup(ContextPtr) override;
 
     void shutdown() override;
 
@@ -120,8 +123,18 @@ public:
     bool canRead() const noexcept;
     bool canWrite() const noexcept;
 
+    DiskObjectStoragePtr createDiskObjectStorage() override;
+
+    bool supportsStat() const override { return true; }
+    struct stat stat(const String & path) const override;
+
+    bool supportsChmod() const override { return true; }
+    void chmod(const String & path, mode_t mode) override;
+
+    MetadataStoragePtr getMetadataStorage() override;
+
 private:
-    bool tryReserve(UInt64 bytes);
+    std::optional<UInt64> tryReserve(UInt64 bytes);
 
     /// Setup disk for healthy check. Returns true if it's read-write, false if read-only.
     /// Throw exception if it's not possible to setup necessary files and directories.
@@ -135,13 +148,12 @@ private:
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
     Poco::Logger * logger;
+    DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
-
-    Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};

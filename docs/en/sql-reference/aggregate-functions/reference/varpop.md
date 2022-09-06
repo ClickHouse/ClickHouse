@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/varpop
 sidebar_position: 32
 ---
 
-# varPop(x) {#varpopx}
+# varPop(x)
 
 Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 

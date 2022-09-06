@@ -1,15 +1,15 @@
 ---
+slug: /en/sql-reference/ansi
 sidebar_position: 40
 sidebar_label: ANSI Compatibility
+title: "ANSI SQL Compatibility of ClickHouse SQL Dialect"
 ---
-
-# ANSI SQL Compatibility of ClickHouse SQL Dialect {#ansi-sql-compatibility-of-clickhouse-sql-dialect}
 
 :::note    
 This article relies on Table 38, “Feature taxonomy and definition for mandatory features”, Annex F of [ISO/IEC CD 9075-2:2011](https://www.iso.org/obp/ui/#iso:std:iso-iec:9075:-2:ed-4:v1:en:sec:8).
 :::
 
-## Differences in Behaviour {#differences-in-behaviour}
+## Differences in Behaviour
 
 The following table lists cases when query feature works in ClickHouse, but behaves not as specified in ANSI SQL.
 
@@ -20,7 +20,7 @@ The following table lists cases when query feature works in ClickHouse, but beha
 | E141-01    | NOT NULL constraints        | `NOT NULL` is implied for table columns by default                                                        |
 | E011-04    | Arithmetic operators        | ClickHouse overflows instead of checked arithmetic and changes the result data type based on custom rules |
 
-## Feature Status {#feature-status}
+## Feature Status
 
 | Feature ID | Feature Name                                                                                                             | Status                     | Comment                                                                                                                                                                                   |
 |------------|--------------------------------------------------------------------------------------------------------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

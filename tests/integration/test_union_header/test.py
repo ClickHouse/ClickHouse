@@ -27,7 +27,7 @@ def started_cluster():
                 log_type UInt32,
                 account_id String
             )
-            ENGINE = MergeTree(event_date, (event_time, account_id), 8192);
+            ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_time, account_id);
             """
             )
 

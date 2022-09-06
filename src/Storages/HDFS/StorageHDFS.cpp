@@ -15,6 +15,8 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/CompressionMethod.h>
+#include <IO/WriteSettings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -27,12 +29,14 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
@@ -61,7 +65,7 @@ namespace
     /* Recursive directory listing with matched paths as a result.
      * Have the same method in StorageFile.
      */
-    Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
+    Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match, std::unordered_map<String, time_t> * last_mod_times)
     {
         const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -96,13 +100,15 @@ namespace
                 if (re2::RE2::FullMatch(file_name, matcher))
                 {
                     result.push_back(String(ls.file_info[i].mName));
+                    if (last_mod_times)
+                        (*last_mod_times)[result.back()] = ls.file_info[i].mLastMod;
                 }
             }
             else if (is_directory && looking_for_directory)
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
                 {
-                    Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
+                    Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash), last_mod_times);
                     /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                     std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                 }
@@ -118,12 +124,12 @@ namespace
         return {uri.substr(begin_of_path), uri.substr(0, begin_of_path)};
     }
 
-    std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context)
+    std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)
     {
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        return LSWithRegexpMatching("/", fs, path_from_uri);
+        return LSWithRegexpMatching("/", fs, path_from_uri, last_mod_times);
     }
 }
 
@@ -146,6 +152,7 @@ StorageHDFS::StorageHDFS(
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
 
@@ -181,7 +188,8 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     ContextPtr ctx)
 {
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-    auto paths = getPathsList(path_from_uri, uri, ctx);
+    std::unordered_map<String, time_t> last_mod_time;
+    auto paths = getPathsList(path_from_uri, uri, ctx, &last_mod_time);
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
@@ -189,15 +197,30 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
             "specify table structure manually",
             format);
 
-    ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
+    std::optional<ColumnsDescription> columns_from_cache;
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
+        columns_from_cache = tryGetColumnsFromCache(paths, path_from_uri, last_mod_time, format, ctx);
+
+    ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == paths.end())
             return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression);
+        auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
+        const auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
     };
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
+
+    ColumnsDescription columns;
+    if (columns_from_cache)
+        columns = *columns_from_cache;
+    else
+        columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
+
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
+        addColumnsToCache(paths, path_from_uri, columns, format, ctx);
+
+    return columns;
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl
@@ -236,7 +259,7 @@ public:
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
-        HDFSFSPtr fs = createHDFSFS(builder.get());
+        auto fs = createHDFSFS(builder.get());
         for (const auto & uri : uris_)
         {
             path_and_uri = getPathFromUriAndUriWithoutPath(uri);
@@ -296,7 +319,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : SourceWithProgress(getHeader(block_for_format_, requested_virtual_columns_))
+    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -324,7 +347,10 @@ bool HDFSSource::initialize()
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression);
+    auto impl = std::make_unique<ReadBufferFromHDFS>(
+        uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
+    const auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -404,7 +430,13 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication), compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            std::make_unique<WriteBufferFromHDFS>(
+                uri,
+                context->getGlobalContext()->getConfigRef(),
+                context->getSettingsRef().hdfs_replication,
+                context->getWriteSettings()),
+            compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
@@ -412,11 +444,37 @@ public:
 
     void consume(Chunk chunk) override
     {
+        std::lock_guard lock(cancel_mutex);
+        if (cancelled)
+            return;
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onCancel() override
+    {
+        std::lock_guard lock(cancel_mutex);
+        finalize();
+        cancelled = true;
+    }
+
+    void onException() override
+    {
+        std::lock_guard lock(cancel_mutex);
+        finalize();
     }
 
     void onFinish() override
     {
+        std::lock_guard lock(cancel_mutex);
+        finalize();
+    }
+
+private:
+    void finalize()
+    {
+        if (!writer)
+            return;
+
         try
         {
             writer->finalize();
@@ -426,14 +484,16 @@ public:
         }
         catch (...)
         {
+            /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
             throw;
         }
     }
 
-private:
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 class PartitionedHDFSSink : public PartitionedSink
@@ -471,9 +531,9 @@ private:
 };
 
 
-bool StorageHDFS::isColumnOriented() const
+bool StorageHDFS::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe StorageHDFS::read(
@@ -522,7 +582,7 @@ Pipe StorageHDFS::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();
@@ -534,8 +594,7 @@ Pipe StorageHDFS::read(
         if (fetch_columns.empty())
             fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -628,7 +687,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
     const String url = uris[0].substr(0, begin_of_path);
 
     HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", local_context->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder.get());
+    auto fs = createHDFSFS(builder.get());
 
     for (const auto & uri : uris)
     {
@@ -652,13 +711,13 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
-        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
 
         String format_name = "auto";
         if (engine_args.size() > 1)
         {
             engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
-            format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            format_name = checkAndGetLiteralArgument<String>(engine_args[1], "format_name");
         }
 
         if (format_name == "auto")
@@ -668,7 +727,7 @@ void registerStorageHDFS(StorageFactory & factory)
         if (engine_args.size() == 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
-            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[2], "compression_method");
         } else compression_method = "auto";
 
         ASTPtr partition_by;
@@ -688,6 +747,55 @@ void registerStorageHDFS(StorageFactory & factory)
 NamesAndTypesList StorageHDFS::getVirtuals() const
 {
     return virtual_columns;
+}
+
+SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)
+{
+    static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+    return schema_cache;
+}
+
+std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
+    const Strings & paths,
+    const String & uri_without_path,
+    std::unordered_map<String, time_t> & last_mod_time,
+    const String & format_name,
+    const ContextPtr & ctx)
+{
+    auto & schema_cache = getSchemaCache(ctx);
+    for (const auto & path : paths)
+    {
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        {
+            auto it = last_mod_time.find(path);
+            if (it == last_mod_time.end())
+                return std::nullopt;
+            return it->second;
+        };
+
+        String url = fs::path(uri_without_path) / path;
+        auto cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
+        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
+        if (columns)
+            return columns;
+    }
+
+    return std::nullopt;
+}
+
+void StorageHDFS::addColumnsToCache(
+    const Strings & paths,
+    const String & uri_without_path,
+    const ColumnsDescription & columns,
+    const String & format_name,
+    const ContextPtr & ctx)
+{
+    auto & schema_cache = getSchemaCache(ctx);
+    Strings sources;
+    sources.reserve(paths.size());
+    std::transform(paths.begin(), paths.end(), std::back_inserter(sources), [&](const String & path){ return fs::path(uri_without_path) / path; });
+    auto cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
+    schema_cache.addMany(cache_keys, columns);
 }
 
 }

@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/log-family/stripelog
 toc_priority: 32
 toc_title: StripeLog
 ---
 
-# Stripelog {#stripelog}
+# Stripelog
 
 This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 

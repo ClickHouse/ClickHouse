@@ -33,6 +33,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/toOneLineQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -41,18 +42,19 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/QueryLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/TransactionLog.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/executeQuery.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -67,6 +69,7 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
+#include <memory>
 #include <random>
 
 
@@ -104,38 +107,6 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 }
 
 
-static String joinLines(const String & query)
-{
-    /// Care should be taken. We don't join lines inside non-whitespace tokens (e.g. multiline string literals)
-    ///  and we don't join line after comment (because it can be single-line comment).
-    /// All other whitespaces replaced to a single whitespace.
-
-    String res;
-    const char * begin = query.data();
-    const char * end = begin + query.size();
-
-    Lexer lexer(begin, end);
-    Token token = lexer.nextToken();
-    for (; !token.isEnd(); token = lexer.nextToken())
-    {
-        if (token.type == TokenType::Whitespace)
-        {
-            res += ' ';
-        }
-        else if (token.type == TokenType::Comment)
-        {
-            res.append(token.begin, token.end);
-            if (token.end < end && *token.end == '\n')
-                res += '\n';
-        }
-        else
-            res.append(token.begin, token.end);
-    }
-
-    return res;
-}
-
-
 static String prepareQueryForLogging(const String & query, ContextPtr context)
 {
     String res = query;
@@ -158,11 +129,11 @@ static String prepareQueryForLogging(const String & query, ContextPtr context)
 
 
 /// Log query into text log (not into system table).
-static void logQuery(const String & query, ContextPtr context, bool internal)
+static void logQuery(const String & query, ContextPtr context, bool internal, QueryProcessingStage::Enum stage)
 {
     if (internal)
     {
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {}", joinLines(query));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
     }
     else
     {
@@ -185,13 +156,14 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
-            joinLines(query));
+            toOneLineQuery(query),
+            QueryProcessingStage::toString(stage));
 
         if (client_info.client_trace_context.trace_id != UUID())
         {
@@ -208,7 +180,8 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     try
     {
@@ -236,7 +209,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            joinLines(elem.query));
+            toOneLineQuery(elem.query));
     else
         LOG_ERROR(
             &Poco::Logger::get("executeQuery"),
@@ -245,7 +218,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            joinLines(elem.query),
+            toOneLineQuery(elem.query),
             elem.stack_trace);
 }
 
@@ -260,7 +233,7 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
-static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast)
+static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span)
 {
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
@@ -318,42 +291,13 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         if (auto query_log = context->getQueryLog())
             query_log->add(elem);
 
-    if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-        context->query_trace_context.trace_id != UUID()
-            && opentelemetry_span_log)
+    if (query_span)
     {
-        OpenTelemetrySpanLogElement span;
-        span.trace_id = context->query_trace_context.trace_id;
-        span.span_id = context->query_trace_context.span_id;
-        span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
-        span.operation_name = "query";
-        span.start_time_us = current_time_us;
-        span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
-
-        /// Keep values synchronized to type enum in QueryLogElement::createBlock.
-        span.attribute_names.push_back("clickhouse.query_status");
-        span.attribute_values.push_back("ExceptionBeforeStart");
-
-        span.attribute_names.push_back("db.statement");
-        span.attribute_values.push_back(elem.query);
-
-        span.attribute_names.push_back("clickhouse.query_id");
-        span.attribute_values.push_back(elem.client_info.current_query_id);
-
-        span.attribute_names.push_back("clickhouse.exception");
-        span.attribute_values.push_back(elem.exception);
-
-        span.attribute_names.push_back("clickhouse.exception_code");
-        span.attribute_values.push_back(elem.exception_code);
-
-        if (!context->query_trace_context.tracestate.empty())
-        {
-            span.attribute_names.push_back("clickhouse.tracestate");
-            span.attribute_values.push_back(
-                context->query_trace_context.tracestate);
-        }
-
-        opentelemetry_span_log->add(span);
+        query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
+        query_span->addAttribute("clickhouse.exception", elem.exception);
+        query_span->addAttribute("db.statement", elem.query);
+        query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+        query_span->finish();
     }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
@@ -404,6 +348,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
+    /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
+    /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
+    /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
+    ///
+    /// This does not have impact on the final span logs, because these internal queries are issued by external queries,
+    /// we still have enough span logs for the execution of external queries.
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
+
     const auto current_time = std::chrono::system_clock::now();
 
     auto & client_info = context->getClientInfo();
@@ -443,9 +395,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (auto txn = context->getCurrentTransaction())
         {
-            assert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
+                throw Exception(
+                    ErrorCodes::INVALID_TRANSACTION,
+                    "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
@@ -498,11 +453,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
 
         auto query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal);
+        logQuery(query_for_logging, context, internal, stage);
 
         if (!internal)
         {
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
         }
 
         throw;
@@ -527,6 +482,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
 
     String query_for_logging;
+    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
 
     try
     {
@@ -548,7 +504,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
         query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal);
+        logQuery(query_for_logging, context, internal, stage);
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
@@ -557,13 +513,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         {
-            SelectIntersectExceptQueryVisitor::Data data;
+            SelectIntersectExceptQueryVisitor::Data data{settings.intersect_default_mode, settings.except_default_mode};
             SelectIntersectExceptQueryVisitor{data}.visit(ast);
         }
 
         {
             /// Normalize SelectWithUnionQuery
-            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
+            NormalizeSelectWithUnionQueryVisitor::Data data{settings.union_default_mode};
             NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
         }
 
@@ -650,11 +606,37 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (!table_id.empty())
                 context->setInsertionTable(table_id);
 
-            if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+            if (context->getCurrentTransaction() && settings.throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+            if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
         }
         else
         {
+            /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
+            if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
+            {
+                try
+                {
+                    if (context->isGlobalContext())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
+
+                    /// If there is no session (which is the default for the HTTP Handler), set up one just for this as it is necessary
+                    /// to control the transaction lifetime
+                    if (!context->hasSessionContext())
+                        context->makeSessionContext();
+
+                    auto tc = std::make_shared<InterpreterTransactionControlQuery>(ast, context);
+                    tc->executeBegin(context->getSessionContext());
+                    implicit_txn_control = std::move(tc);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("while starting a transaction with 'implicit_transaction'");
+                    throw;
+                }
+            }
+
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
             if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
@@ -694,12 +676,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             {
-                std::unique_ptr<OpenTelemetrySpanHolder> span;
-                if (context->query_trace_context.trace_id != UUID())
+                std::unique_ptr<OpenTelemetry::SpanHolder> span;
+                if (OpenTelemetry::CurrentContext().isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
                     std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
-                    span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
+                    span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();
             }
@@ -821,7 +803,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 element.profile_counters = info.profile_counters;
 
                 /// We need to refresh the access info since dependent views might have added extra information, either during
-                /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT
+                /// creation of the view (PushingToViews chain) or while executing its internal SELECT
                 const auto & access_info = context_ptr->getQueryAccessInfo();
                 element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
                 element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
@@ -842,15 +824,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, context, ast,
-                 log_queries,
-                 log_queries_min_type = settings.log_queries_min_type,
-                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 log_processors_profiles = settings.log_processors_profiles,
-                 status_info_to_query_log,
-                 pulling_pipeline = pipeline.pulling()
-            ]
-                (QueryPipeline & query_pipeline) mutable
+            auto finish_callback = [elem,
+                                    context,
+                                    ast,
+                                    log_queries,
+                                    log_queries_min_type = settings.log_queries_min_type,
+                                    log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                                    log_processors_profiles = settings.log_processors_profiles,
+                                    status_info_to_query_log,
+                                    implicit_txn_control,
+                                    pulling_pipeline = pipeline.pulling(),
+                                    query_span](QueryPipeline & query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 
@@ -873,11 +857,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.event_time_microseconds = time_in_microseconds(finish_time);
                 status_info_to_query_log(elem, info, ast, context);
 
-                auto progress_callback = context->getProgressCallback();
-
-                if (progress_callback)
-                    progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
-
                 if (pulling_pipeline)
                 {
                     query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
@@ -886,7 +865,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     auto progress_out = process_list_elem->getProgressOut();
                     elem.result_rows = progress_out.written_rows;
-                    elem.result_bytes = progress_out.written_rows;
+                    elem.result_bytes = progress_out.written_bytes;
+                }
+
+                auto progress_callback = context->getProgressCallback();
+                if (progress_callback)
+                {
+                    Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                    p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+                    progress_callback(p);
                 }
 
                 if (elem.read_rows != 0)
@@ -930,56 +917,74 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             processor_elem.id = get_proc_id(*processor);
                             processor_elem.parent_ids = std::move(parents);
 
+                            processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                            processor_elem.plan_group = processor->getQueryPlanStepGroup();
+
                             processor_elem.processor_name = processor->getName();
 
                             processor_elem.elapsed_us = processor->getElapsedUs();
                             processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
                             processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
 
+                            auto stats = processor->getProcessorDataStats();
+                            processor_elem.input_rows = stats.input_rows;
+                            processor_elem.input_bytes = stats.input_bytes;
+                            processor_elem.output_rows = stats.output_rows;
+                            processor_elem.output_bytes = stats.output_bytes;
+
                             processors_profile_log->add(processor_elem);
                         }
                     }
                 }
 
-                if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-                    context->query_trace_context.trace_id != UUID()
-                        && opentelemetry_span_log)
+                if (query_span)
                 {
-                    OpenTelemetrySpanLogElement span;
-                    span.trace_id = context->query_trace_context.trace_id;
-                    span.span_id = context->query_trace_context.span_id;
-                    span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
-                    span.operation_name = "query";
-                    span.start_time_us = elem.query_start_time_microseconds;
-                    span.finish_time_us = time_in_microseconds(finish_time);
+                    query_span->addAttribute("db.statement", elem.query);
+                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                    query_span->addAttribute("clickhouse.query_status", "QueryFinish");
+                    query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::CurrentContext().tracestate);
+                    query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.written_rows", info.written_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+                    query_span->finish();
+                }
 
-                    /// Keep values synchronized to type enum in QueryLogElement::createBlock.
-                    span.attribute_names.push_back("clickhouse.query_status");
-                    span.attribute_values.push_back("QueryFinish");
-
-                    span.attribute_names.push_back("db.statement");
-                    span.attribute_values.push_back(elem.query);
-
-                    span.attribute_names.push_back("clickhouse.query_id");
-                    span.attribute_values.push_back(elem.client_info.current_query_id);
-                    if (!context->query_trace_context.tracestate.empty())
+                if (implicit_txn_control)
+                {
+                    try
                     {
-                        span.attribute_names.push_back("clickhouse.tracestate");
-                        span.attribute_values.push_back(
-                            context->query_trace_context.tracestate);
+                        implicit_txn_control->executeCommit(context->getSessionContext());
+                        implicit_txn_control.reset();
                     }
-
-                    opentelemetry_span_log->add(span);
+                    catch (const Exception &)
+                    {
+                        /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
+                        /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
+                        implicit_txn_control.reset();
+                        throw;
+                    }
                 }
             };
 
-            auto exception_callback = [elem, context, ast,
-                 log_queries,
-                 log_queries_min_type = settings.log_queries_min_type,
-                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 quota(quota), status_info_to_query_log] () mutable
+            auto exception_callback = [elem,
+                                       context,
+                                       ast,
+                                       log_queries,
+                                       log_queries_min_type = settings.log_queries_min_type,
+                                       log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                                       quota(quota),
+                                       status_info_to_query_log,
+                                       implicit_txn_control,
+                                       query_span]() mutable
             {
-                if (auto txn = context->getCurrentTransaction())
+                if (implicit_txn_control)
+                {
+                    implicit_txn_control->executeRollback(context->getSessionContext());
+                    implicit_txn_control.reset();
+                }
+                else if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
                 if (quota)
@@ -1030,6 +1035,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
 
+                if (query_span)
+                {
+                    query_span->addAttribute("db.statement", elem.query);
+                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                    query_span->addAttribute("clickhouse.exception", elem.exception);
+                    query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
+                    query_span->finish();
+                }
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -1038,15 +1051,22 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        if (auto txn = context->getCurrentTransaction())
+        if (implicit_txn_control)
+        {
+            implicit_txn_control->executeRollback(context->getSessionContext());
+            implicit_txn_control.reset();
+        }
+        else if (auto txn = context->getCurrentTransaction())
+        {
             txn->onException();
+        }
 
         if (!internal)
         {
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
         }
 
         throw;

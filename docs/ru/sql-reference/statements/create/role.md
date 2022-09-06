@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/create/role
 sidebar_position: 40
 sidebar_label: "Роль"
 ---

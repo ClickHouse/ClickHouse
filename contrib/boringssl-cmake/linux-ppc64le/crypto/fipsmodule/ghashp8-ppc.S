@@ -584,3 +584,4 @@ gcm_ghash_p8:
 .align	2
 .align	2
 #endif  // !OPENSSL_NO_ASM && __powerpc64__
+.section	.note.GNU-stack,"",@progbits

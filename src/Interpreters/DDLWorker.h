@@ -91,7 +91,7 @@ protected:
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
     /// Most of these queries can be executed on non-leader replica, but actually they still send
-    /// query via RemoteBlockOutputStream to leader, so to avoid such "2-phase" query execution we
+    /// query via RemoteQueryExecutor to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
@@ -124,7 +124,7 @@ protected:
     std::string queue_dir;      /// dir with queue of queries
 
     mutable std::mutex zookeeper_mutex;
-    ZooKeeperPtr current_zookeeper;
+    ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
 
     /// Save state of executed task to avoid duplicate execution on ZK error
     std::optional<String> last_skipped_entry_name;
@@ -138,7 +138,7 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = false;
+    std::atomic<bool> stop_flag = true;
 
     ThreadFromGlobalPool main_thread;
     ThreadFromGlobalPool cleanup_thread;

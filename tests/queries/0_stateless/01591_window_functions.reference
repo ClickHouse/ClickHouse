@@ -62,9 +62,18 @@ select number, quantileExact(number) over (partition by intDiv(number, 3) AS val
 7	7
 8	7
 9	9
--- can't reference it yet -- the window functions are calculated at the
--- last stage of select, after all other functions.
-select q * 10, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10); -- { serverError 47 }
+-- now we should be able to compute expressions with window functions
+select number, q * 10, quantileExact(number) over (partition by intDiv(number, 3) order by number rows unbounded preceding) q from numbers(10) order by number;
+0	0	0
+1	10	1
+2	10	1
+3	30	3
+4	40	4
+5	40	4
+6	60	6
+7	70	7
+8	70	7
+9	90	9
 -- must work in WHERE if you wrap it in a subquery
 select * from (select count(*) over (rows unbounded preceding) c from numbers(3)) where c > 0;
 1
@@ -912,8 +921,7 @@ Expression ((Projection + Before ORDER BY))
       Window (Window step for window \'PARTITION BY p ORDER BY o ASC\')
         Sorting (Sorting for window \'PARTITION BY p ORDER BY o ASC\')
           Expression ((Before window functions + (Projection + Before ORDER BY)))
-            SettingQuotaAndLimits (Set limits and quota after reading from storage)
-              ReadFromStorage (SystemNumbers)
+            ReadFromStorage (SystemNumbers)
 explain select
     count(*) over (order by o, number),
     count(*) over (order by number)
@@ -928,8 +936,7 @@ Expression ((Projection + Before ORDER BY))
         Expression ((Before window functions + (Projection + Before ORDER BY)) [lifted up part])
           Sorting (Sorting for window \'ORDER BY number ASC\')
             Expression ((Before window functions + (Projection + Before ORDER BY)))
-              SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                ReadFromStorage (SystemNumbers)
+              ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.
 SELECT
     max(number) OVER (ORDER BY number DESC NULLS FIRST),

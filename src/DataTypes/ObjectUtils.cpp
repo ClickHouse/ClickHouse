@@ -208,10 +208,9 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
 
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
-        const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
-
-        const auto & tuple_columns = column_tuple.getColumns();
+        const auto & tuple_columns = assert_cast<const ColumnTuple &>(*column).getColumns();
         const auto & tuple_types = type_tuple->getElements();
+
         assert(tuple_columns.size() == tuple_types.size());
         const size_t tuple_size = tuple_types.size();
 
@@ -343,7 +342,7 @@ static DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool che
                     key.getPath(), subtypes[0]->getName(), subtypes[i]->getName());
 
         tuple_paths.emplace_back(key);
-        tuple_types.emplace_back(getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
+        tuple_types.emplace_back(getLeastSupertypeOrString(subtypes));
     }
 
     if (tuple_paths.empty())
@@ -661,7 +660,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         }
 
         /// Sort to always create the same type for the same set of subcolumns.
-        std::sort(tuple_elements.begin(), tuple_elements.end(),
+        ::sort(tuple_elements.begin(), tuple_elements.end(),
             [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
         auto tuple_names = extractVector<0>(tuple_elements);
@@ -778,6 +777,28 @@ DataTypePtr unflattenTuple(const PathsInData & paths, const DataTypes & tuple_ty
     return unflattenTuple(paths, tuple_types, tuple_columns).second;
 }
 
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column)
+{
+    const auto & subcolumns = column.getSubcolumns();
+
+    PathsInData paths;
+    DataTypes types;
+    Columns columns;
+
+    paths.reserve(subcolumns.size());
+    types.reserve(subcolumns.size());
+    columns.reserve(subcolumns.size());
+
+    for (const auto & entry : subcolumns)
+    {
+        paths.emplace_back(entry->path);
+        types.emplace_back(entry->data.getLeastCommonType());
+        columns.emplace_back(entry->data.getFinalizedColumnPtr());
+    }
+
+    return unflattenTuple(paths, types, columns);
+}
+
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types,
@@ -876,7 +897,7 @@ void replaceMissedSubcolumnsByConstants(
                 res.emplace_back(full_name, types[i]);
             }
 
-            std::sort(res.begin(), res.end());
+            ::sort(res.begin(), res.end());
             return res;
         };
 
@@ -914,14 +935,33 @@ Field FieldVisitorReplaceScalars::operator()(const Array & x) const
     return res;
 }
 
-size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x)
 {
     const size_t size = x.size();
     size_t dimensions = 0;
     for (size_t i = 0; i < size; ++i)
-        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
+    {
+        size_t element_dimensions = applyVisitor(*this, x[i]);
+        if (i > 0 && element_dimensions != dimensions)
+            need_fold_dimension = true;
+
+        dimensions = std::max(dimensions, element_dimensions);
+    }
 
     return 1 + dimensions;
+}
+
+Field FieldVisitorFoldDimension::operator()(const Array & x) const
+{
+    if (num_dimensions_to_fold == 0)
+        return x;
+
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+        res[i] = applyVisitor(FieldVisitorFoldDimension(num_dimensions_to_fold - 1), x[i]);
+
+    return res;
 }
 
 }

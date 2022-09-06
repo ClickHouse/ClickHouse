@@ -3,6 +3,7 @@
 #include <Processors/Transforms/SortingTransform.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Common/logger_useful.h>
 
 
@@ -23,6 +24,7 @@ public:
         const SortDescription & description_,
         size_t max_merged_block_size_,
         UInt64 limit_,
+        bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
@@ -54,7 +56,7 @@ private:
     bool remerge_is_useful = true;
 
     /// Everything below is for external sorting.
-    std::vector<std::unique_ptr<TemporaryFile>> temporary_files;
+    std::vector<TemporaryFileOnDiskHolder> temporary_files;
 
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();

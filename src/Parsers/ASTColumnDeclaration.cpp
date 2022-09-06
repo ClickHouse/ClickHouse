@@ -43,6 +43,11 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
     }
+    if (collation)
+    {
+        res->collation = collation->clone();
+        res->children.push_back(res->collation);
+    }
 
     return res;
 }
@@ -96,6 +101,12 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "TTL" << (settings.hilite ? hilite_none : "") << ' ';
         ttl->formatImpl(settings, state, frame);
+    }
+
+    if (collation)
+    {
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COLLATE" << (settings.hilite ? hilite_none : "") << ' ';
+        collation->formatImpl(settings, state, frame);
     }
 }
 

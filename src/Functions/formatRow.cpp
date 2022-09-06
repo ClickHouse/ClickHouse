@@ -125,7 +125,7 @@ private:
 
 }
 
-void registerFunctionFormatRow(FunctionFactory & factory)
+REGISTER_FUNCTION(FormatRow)
 {
     factory.registerFunction<FormatRowOverloadResolver<true>>();
     factory.registerFunction<FormatRowOverloadResolver<false>>();

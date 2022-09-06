@@ -1,4 +1,7 @@
-# disks {#system_tables-disks}
+---
+slug: /en/operations/system-tables/disks
+---
+# disks
 
 Contains information about disks defined in the [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

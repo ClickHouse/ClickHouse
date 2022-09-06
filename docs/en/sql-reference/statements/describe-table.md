@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/describe-table
 sidebar_position: 42
 sidebar_label: DESCRIBE
+title: "DESCRIBE TABLE"
 ---
-
-# DESCRIBE TABLE {#misc-describe-table}
 
 Returns information about table columns.
 

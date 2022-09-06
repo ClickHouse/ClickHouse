@@ -43,6 +43,7 @@ FlatDictionary::FlatDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -104,7 +105,7 @@ ColumnPtr FlatDictionary::getColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     ids,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -114,7 +115,7 @@ ColumnPtr FlatDictionary::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     ids,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else
@@ -183,7 +184,11 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
     const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-    const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+    std::optional<UInt64> null_value;
+
+    if (!dictionary_attribute.null_value.isNull())
+        null_value = dictionary_attribute.null_value.get<UInt64>();
+
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
@@ -192,13 +197,26 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
 
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
+        std::optional<UInt64> result;
+
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
-        std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
+
+        if (!is_key_valid)
+            return result;
+
+        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            return result;
+
+        UInt64 parent_key = parent_keys[hierarchy_key];
+        if (null_value && *null_value == parent_key)
+            return result;
+
+        result = parent_key;
+        keys_found += 1;
         return result;
     };
 
-    auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_key_func);
+    auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -221,7 +239,11 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-    const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+    std::optional<UInt64> null_value;
+
+    if (!dictionary_attribute.null_value.isNull())
+        null_value = dictionary_attribute.null_value.get<UInt64>();
+
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
@@ -230,13 +252,26 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
 
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
+        std::optional<UInt64> result;
+
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
-        std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
+
+        if (!is_key_valid)
+            return result;
+
+        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            return result;
+
+        UInt64 parent_key = parent_keys[hierarchy_key];
+        if (null_value && *null_value == parent_key)
+            return result;
+
+        result = parent_keys[hierarchy_key];
+        keys_found += 1;
         return result;
     };
 
-    auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
+    auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -244,30 +279,46 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     return result;
 }
 
-ColumnPtr FlatDictionary::getDescendants(
-    ColumnPtr key_column,
-    const DataTypePtr &,
-    size_t level) const
+DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() const
 {
-    PaddedPODArray<UInt64> keys_backup;
-    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+    if (hierarhical_index)
+        return hierarhical_index;
 
     size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
     HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+    parent_to_child.reserve(element_count);
 
-    for (size_t i = 0; i < parent_keys.size(); ++i)
+    UInt64 child_keys_size = static_cast<UInt64>(parent_keys.size());
+
+    for (UInt64 child_key = 0; child_key < child_keys_size; ++child_key)
     {
-        auto parent_key = parent_keys[i];
+        if (!loaded_keys[child_key])
+            continue;
 
-        if (loaded_keys[i])
-            parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
+        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(child_key))
+            continue;
+
+        auto parent_key = parent_keys[child_key];
+        parent_to_child[parent_key].emplace_back(child_key);
     }
 
+    return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
+}
+
+ColumnPtr FlatDictionary::getDescendants(
+    ColumnPtr key_column,
+    const DataTypePtr &,
+    size_t level,
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const
+{
+    PaddedPODArray<UInt64> keys_backup;
+    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
     size_t keys_found;
-    auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+    auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -365,11 +416,11 @@ void FlatDictionary::updateData()
     }
     else
     {
-        Pipe pipe(source_ptr->loadUpdatedAll());
+        auto pipeline(source_ptr->loadUpdatedAll());
         mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            std::move(pipeline));
     }
 
     if (update_field_loaded_block)
@@ -398,6 +449,15 @@ void FlatDictionary::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+}
+
+void FlatDictionary::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarhical_index = getHierarchicalIndex();
 }
 
 void FlatDictionary::calculateBytesAllocated()
@@ -438,6 +498,12 @@ void FlatDictionary::calculateBytesAllocated()
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarhical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarhical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
 
     bytes_allocated += string_arena.size();
 }
@@ -614,7 +680,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
-        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), std::move(configuration));
+        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("flat", create_layout, false);

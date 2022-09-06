@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/summingmergetree
+---
 # SummingMergeTree {#summingmergetree}
 
 该引擎继承自 [MergeTree](mergetree.md)。区别在于，当合并 `SummingMergeTree` 表的数据片段时，ClickHouse 会把所有具有相同主键的行合并为一行，该行包含了被合并的行中具有数值数据类型的列的汇总值。如果主键的组合方式使得单个键值对应于大量的行，则可以显著的减少存储空间并加快数据查询的速度。

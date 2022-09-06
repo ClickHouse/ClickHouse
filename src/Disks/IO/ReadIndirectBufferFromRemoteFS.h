@@ -2,7 +2,6 @@
 
 #include <Common/config.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Disks/IDiskRemote.h>
 #include <utility>
 
 
@@ -10,6 +9,7 @@ namespace DB
 {
 
 class ReadBufferFromRemoteFSGather;
+struct ReadSettings;
 
 /**
 * Reads data from S3/HDFS/Web using stored paths in metadata.
@@ -19,7 +19,7 @@ class ReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 
 public:
-    explicit ReadIndirectBufferFromRemoteFS(std::shared_ptr<ReadBufferFromRemoteFSGather> impl_);
+    explicit ReadIndirectBufferFromRemoteFS(std::shared_ptr<ReadBufferFromRemoteFSGather> impl_, const ReadSettings & settings);
 
     off_t seek(off_t offset_, int whence) override;
 
@@ -30,6 +30,10 @@ public:
     void setReadUntilPosition(size_t position) override;
 
     void setReadUntilEnd() override;
+
+    bool isIntegratedWithFilesystemCache() const override { return true; }
+
+    size_t getFileSize() override;
 
 private:
     bool nextImpl() override;

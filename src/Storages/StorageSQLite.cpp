@@ -1,12 +1,10 @@
 #include "StorageSQLite.h"
 
 #if USE_SQLITE
-#include <base/range.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
@@ -16,6 +14,8 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
 
 
@@ -167,8 +167,8 @@ void registerStorageSQLite(StorageFactory & factory)
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-        const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
+        const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
 
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 

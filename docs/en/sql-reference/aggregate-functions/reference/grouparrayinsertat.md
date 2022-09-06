@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/grouparrayinsertat
 sidebar_position: 112
 ---
 
-# groupArrayInsertAt {#grouparrayinsertat}
+# groupArrayInsertAt
 
 Inserts a value into the array at the specified position.
 

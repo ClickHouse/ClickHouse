@@ -33,32 +33,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize(
-    "dictionary_name,dictionary_type",
-    [
-        ("flat_update_field_dictionary", "FLAT"),
-        ("simple_key_hashed_update_field_dictionary", "HASHED"),
-        ("complex_key_hashed_update_field_dictionary", "COMPLEX_KEY_HASHED"),
-    ],
-)
-def test_update_field(started_cluster, dictionary_name, dictionary_type):
-    create_dictionary_query = """
-        CREATE DICTIONARY {dictionary_name}
-        (
-            key UInt64,
-            value String,
-            last_insert_time DateTime
-        )
-        PRIMARY KEY key
-        SOURCE(CLICKHOUSE(table 'table_for_update_field_dictionary' update_field 'last_insert_time'))
-        LAYOUT({dictionary_type}())
-        LIFETIME(1);
-        """.format(
-        dictionary_name=dictionary_name, dictionary_type=dictionary_type
-    )
-
-    node.query(create_dictionary_query)
-
+def dictionary_update_field_actions(dictionary_name):
     node.query(
         "INSERT INTO table_for_update_field_dictionary VALUES (1, 'First', now());"
     )
@@ -72,6 +47,7 @@ def test_update_field(started_cluster, dictionary_name, dictionary_type):
     node.query(
         "INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());"
     )
+
     time.sleep(10)
 
     query_result = node.query(
@@ -103,3 +79,59 @@ def test_update_field(started_cluster, dictionary_name, dictionary_type):
     node.query(
         "DROP DICTIONARY {dictionary_name}".format(dictionary_name=dictionary_name)
     )
+
+
+@pytest.mark.parametrize(
+    "dictionary_name,dictionary_type",
+    [
+        ("flat_update_field_dictionary", "FLAT"),
+        ("simple_key_hashed_update_field_dictionary", "HASHED"),
+        ("complex_key_hashed_update_field_dictionary", "COMPLEX_KEY_HASHED"),
+    ],
+)
+def test_update_field(started_cluster, dictionary_name, dictionary_type):
+    create_dictionary_query = """
+        CREATE DICTIONARY {dictionary_name}
+        (
+            key UInt64,
+            value String,
+            last_insert_time DateTime
+        )
+        PRIMARY KEY key
+        SOURCE(CLICKHOUSE(table 'table_for_update_field_dictionary' update_field 'last_insert_time'))
+        LAYOUT({dictionary_type}())
+        LIFETIME(1);
+        """.format(
+        dictionary_name=dictionary_name, dictionary_type=dictionary_type
+    )
+
+    node.query(create_dictionary_query)
+    dictionary_update_field_actions(dictionary_name)
+
+
+@pytest.mark.parametrize(
+    "dictionary_name,dictionary_type",
+    [
+        ("flat_update_field_dictionary", "FLAT"),
+        ("simple_key_hashed_update_field_dictionary", "HASHED"),
+        ("complex_key_hashed_update_field_dictionary", "COMPLEX_KEY_HASHED"),
+    ],
+)
+def test_update_field_custom_query(started_cluster, dictionary_name, dictionary_type):
+    create_dictionary_query = """
+        CREATE DICTIONARY {dictionary_name}
+        (
+            key UInt64,
+            value String,
+            last_insert_time DateTime
+        )
+        PRIMARY KEY key
+        SOURCE(CLICKHOUSE(query $doc$SELECT key, value, last_insert_time FROM table_for_update_field_dictionary WHERE {{condition}};$doc$ update_field 'last_insert_time'))
+        LAYOUT({dictionary_type}())
+        LIFETIME(1);
+        """.format(
+        dictionary_name=dictionary_name, dictionary_type=dictionary_type
+    )
+
+    node.query(create_dictionary_query)
+    dictionary_update_field_actions(dictionary_name)

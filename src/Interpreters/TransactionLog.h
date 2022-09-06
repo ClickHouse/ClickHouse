@@ -97,7 +97,8 @@ public:
     /// Tries to commit transaction. Returns Commit Sequence Number.
     /// Throw if transaction was concurrently killed or if some precommit check failed.
     /// May throw if ZK connection is lost. Transaction status is unknown in this case.
-    CSN commitTransaction(const MergeTreeTransactionPtr & txn);
+    /// Returns CommittingCSN if throw_on_unknown_status is false and connection was lost.
+    CSN commitTransaction(const MergeTreeTransactionPtr & txn, bool throw_on_unknown_status);
 
     /// Releases locks that that were acquired by transaction, releases snapshot, removes transaction from the list of active transactions.
     /// Normally it should not throw, but if it does for some reason (global memory limit exceeded, disk failure, etc)
@@ -119,13 +120,25 @@ public:
     /// Returns copy of list of running transactions.
     TransactionsList getTransactionsList() const;
 
+    /// Waits for provided CSN (and all previous ones) to be loaded from the log.
+    /// Returns false if waiting was interrupted (e.g. by shutdown)
+    bool waitForCSNLoaded(CSN csn) const;
+
+    bool isShuttingDown() const { return stop_flag.load(); }
+
+    void sync() const;
+
 private:
-    void loadLogFromZooKeeper();
+    void loadLogFromZooKeeper() TSA_REQUIRES(mutex);
     void runUpdatingThread();
 
     void loadEntries(Strings::const_iterator beg, Strings::const_iterator end);
     void loadNewEntries();
     void removeOldEntries();
+
+    CSN finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept;
+
+    void tryFinalizeUnknownStateTransactions();
 
     static UInt64 deserializeCSN(const String & csn_node_name);
     static String serializeCSN(CSN csn);
@@ -136,8 +149,8 @@ private:
 
     CSN getCSNImpl(const TIDHash & tid_hash) const;
 
-    ContextPtr global_context;
-    Poco::Logger * log;
+    const ContextPtr global_context;
+    Poco::Logger * const log;
 
     /// The newest snapshot available for reading
     std::atomic<CSN> latest_snapshot;
@@ -154,20 +167,24 @@ private:
         TransactionID tid;
     };
     using TIDMap = std::unordered_map<TIDHash, CSNEntry>;
-    TIDMap tid_to_csn;
+    TIDMap tid_to_csn TSA_GUARDED_BY(mutex);
 
     mutable std::mutex running_list_mutex;
     /// Transactions that are currently processed
-    TransactionsList running_list;
+    TransactionsList running_list TSA_GUARDED_BY(running_list_mutex);
+    /// If we lost connection on attempt to create csn- node then we don't know transaction's state.
+    using UnknownStateList = std::vector<std::pair<MergeTreeTransaction *, scope_guard>>;
+    UnknownStateList unknown_state_list TSA_GUARDED_BY(running_list_mutex);
+    UnknownStateList unknown_state_list_loaded TSA_GUARDED_BY(running_list_mutex);
     /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.
-    std::list<CSN> snapshots_in_use;
+    std::list<CSN> snapshots_in_use TSA_GUARDED_BY(running_list_mutex);
 
-    ZooKeeperPtr zookeeper;
-    String zookeeper_path;
+    ZooKeeperPtr zookeeper TSA_GUARDED_BY(mutex);
+    const String zookeeper_path;
 
-    String zookeeper_path_log;
+    const String zookeeper_path_log;
     /// Name of the newest entry that was loaded from log in ZK
-    String last_loaded_entry;
+    String last_loaded_entry TSA_GUARDED_BY(mutex);
     /// The oldest CSN such that we store in log entries with TransactionIDs containing this CSN.
     std::atomic<CSN> tail_ptr = Tx::UnknownCSN;
 
@@ -175,6 +192,9 @@ private:
 
     std::atomic_bool stop_flag = false;
     ThreadFromGlobalPool updating_thread;
+
+    const Float64 fault_probability_before_commit = 0;
+    const Float64 fault_probability_after_commit = 0;
 };
 
 template <typename Derived>

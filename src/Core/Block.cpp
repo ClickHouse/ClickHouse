@@ -8,6 +8,7 @@
 
 #include <Common/assert_cast.h>
 
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 
@@ -35,7 +36,7 @@ static ReturnType onError(const std::string & message [[maybe_unused]], int code
         throw Exception(message, code);
     else
         return false;
-};
+}
 
 
 template <typename ReturnType>
@@ -68,9 +69,27 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
                 actual_column = &column_sparse->getValuesColumn();
     }
 
-    if (actual_column->getName() != expected.column->getName())
-        return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different columns:\n"
-            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
+    const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
+    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected.column.get());
+    if (actual_column_maybe_agg && expected_column_maybe_agg)
+    {
+        if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
+            return onError<ReturnType>(
+                fmt::format(
+                    "Block structure mismatch in {} stream: different columns:\n{}\n{}",
+                    context_description,
+                    actual.dumpStructure(),
+                    expected.dumpStructure()),
+                code);
+    }
+    else if (actual_column->getName() != expected.column->getName())
+        return onError<ReturnType>(
+            fmt::format(
+                "Block structure mismatch in {} stream: different columns:\n{}\n{}",
+                context_description,
+                actual.dumpStructure(),
+                expected.dumpStructure()),
+            code);
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
     {
@@ -498,6 +517,15 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     Block res;
 
     size_t num_columns = data.size();
+
+    if (num_columns != columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
+    }
+
     res.reserve(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
@@ -514,8 +542,12 @@ Block Block::cloneWithColumns(const Columns & columns) const
     size_t num_columns = data.size();
 
     if (num_columns != columns.size())
-        throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
-                        "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
+    }
 
     res.reserve(num_columns);
 
@@ -588,6 +620,15 @@ NamesAndTypesList Block::getNamesAndTypesList() const
     return res;
 }
 
+NamesAndTypes Block::getNamesAndTypes() const
+{
+    NamesAndTypes res;
+
+    for (const auto & elem : data)
+        res.emplace_back(elem.name, elem.type);
+
+    return res;
+}
 
 Names Block::getNames() const
 {
@@ -741,6 +782,17 @@ void Block::updateHash(SipHash & hash) const
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
         for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
+}
+
+Serializations Block::getSerializations() const
+{
+    Serializations res;
+    res.reserve(data.size());
+
+    for (const auto & column : data)
+        res.push_back(column.type->getDefaultSerialization());
+
+    return res;
 }
 
 void convertToFullIfSparse(Block & block)

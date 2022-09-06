@@ -156,6 +156,16 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "covered-by-broken",
     });
 
+    static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
+        "broken",
+        "unexpected",
+        "noquorum",
+        "ignored",
+        "broken-on-start",
+        "deleting",
+        "clone"
+    });
+
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
     // This method has different semantics with MergeTreePartInfo::tryParsePartName.
