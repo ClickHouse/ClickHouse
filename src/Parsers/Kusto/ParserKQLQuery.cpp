@@ -90,7 +90,7 @@ String ParserKQLBase :: getExprFromToken(Pos & pos)
         tokens.push_back(alias);
     }
 
-    for (auto token:tokens)
+    for (auto const &token : tokens)
         res = res.empty()? token : res +" " + token;
     return res;
 }
@@ -231,7 +231,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else
         {
-            while (operation_pos.size() > 0)
+            while (!operation_pos.empty())
             {
                 auto prev_op = operation_pos.back().first;
                 auto prev_pos = operation_pos.back().second;
