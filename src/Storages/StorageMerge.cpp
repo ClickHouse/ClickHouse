@@ -225,11 +225,15 @@ SelectQueryInfo getModifiedQueryInfo(
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
 
-    /// Original query could contain JOIN but we need only the first joined table and its columns.
-    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
-    removeJoin(modified_select, new_analyzer_res, modified_context);
-    modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
+    /// TODO: Analyzer syntax analyzer result
+    if (modified_query_info.syntax_analyzer_result)
+    {
+        /// Original query could contain JOIN but we need only the first joined table and its columns.
+        auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+        TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
+        removeJoin(modified_select, new_analyzer_res, modified_context);
+        modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
+    }
 
     if (!is_merge_engine)
     {

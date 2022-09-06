@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 /** Query node represents query in query tree.
   */
 class QueryNode;

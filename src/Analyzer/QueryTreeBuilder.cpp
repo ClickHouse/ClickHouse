@@ -55,10 +55,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace

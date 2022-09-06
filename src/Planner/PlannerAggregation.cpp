@@ -137,7 +137,7 @@ public:
 
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
-        return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
+        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
 };
 

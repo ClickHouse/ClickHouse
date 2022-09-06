@@ -28,9 +28,6 @@ TableFunctionNode::TableFunctionNode(String table_function_name_)
 
 void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context)
 {
-    if (isResolved())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function node {} already resolved", table_function_name);
-
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
@@ -130,11 +127,8 @@ ASTPtr TableFunctionNode::toASTImpl() const
     table_function_ast->name = table_function_name;
 
     const auto & arguments = getArguments();
-    if (!arguments.getNodes().empty())
-    {
-        table_function_ast->children.push_back(arguments.toAST());
-        table_function_ast->arguments = table_function_ast->children.back();
-    }
+    table_function_ast->children.push_back(arguments.toAST());
+    table_function_ast->arguments = table_function_ast->children.back();
 
     return table_function_ast;
 }

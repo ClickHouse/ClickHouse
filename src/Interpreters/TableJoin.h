@@ -175,7 +175,7 @@ private:
 
     void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr);
 
-    void assertHasSingleClause() const;
+    void assertHasOneOnExpr() const;
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
@@ -239,8 +239,8 @@ public:
     ASTTableJoin & getTableJoin() { return table_join; }
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
-    JoinOnClause & getOnlyClause() { assertHasSingleClause(); return clauses[0]; }
-    const JoinOnClause & getOnlyClause() const { assertHasSingleClause(); return clauses[0]; }
+    JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
+    const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }
 
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
@@ -282,7 +282,10 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-    void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value);
+    void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
+    {
+        columns_added_by_join = columns_added_by_join_value;
+    }
 
     template <typename TColumns>
     void addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, bool correct_nullability);
@@ -304,7 +307,11 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix);
+    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix)
+    {
+        columns_from_joined_table = std::move(columns_from_joined_table_value);
+        deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
+    }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 

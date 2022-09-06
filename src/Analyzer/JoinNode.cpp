@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     QueryTreeNodePtr right_table_expression_,
     QueryTreeNodePtr join_expression_,

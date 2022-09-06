@@ -8,6 +8,7 @@
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/ConstantValue.h>
 
 #include <DataTypes/DataTypeSet.h>
 
@@ -32,8 +33,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -514,56 +514,86 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
         }
         case QueryTreeNodeType::FUNCTION:
         {
-            const auto & function_node = node->as<FunctionNode &>();
-
-            WriteBufferFromOwnString buffer;
-            buffer << "__function_" + function_node.getFunctionName();
-
-            const auto & function_parameters_nodes = function_node.getParameters().getNodes();
-
-            if (!function_parameters_nodes.empty())
+            if (auto node_constant_value = node->getConstantValueOrNull())
             {
+                result = calculateConstantActionNodeName(node_constant_value->getValue(), node_constant_value->getType());
+            }
+            else
+            {
+                const auto & function_node = node->as<FunctionNode &>();
+                String in_function_second_argument_node_name;
+
+                if (isNameOfInFunction(function_node.getFunctionName()))
+                {
+                    const auto & in_second_argument_node = function_node.getArguments().getNodes().at(1);
+                    in_function_second_argument_node_name = planner_context.getGlobalPlannerContext()->getSetKey(in_second_argument_node);
+                }
+
+                WriteBufferFromOwnString buffer;
+                buffer << "__function_" + function_node.getFunctionName();
+
+                const auto & function_parameters_nodes = function_node.getParameters().getNodes();
+
+                if (!function_parameters_nodes.empty())
+                {
+                    buffer << '(';
+
+                    size_t function_parameters_nodes_size = function_parameters_nodes.size();
+                    for (size_t i = 0; i < function_parameters_nodes_size; ++i)
+                    {
+                        const auto & function_parameter_node = function_parameters_nodes[i];
+                        buffer << calculateActionNodeName(function_parameter_node, planner_context, node_to_name);
+
+                        if (i + 1 != function_parameters_nodes_size)
+                            buffer << ", ";
+                    }
+
+                    buffer << ')';
+                }
+
+                const auto & function_arguments_nodes = function_node.getArguments().getNodes();
+                String function_argument_name;
+
                 buffer << '(';
 
-                size_t function_parameters_nodes_size = function_parameters_nodes.size();
-                for (size_t i = 0; i < function_parameters_nodes_size; ++i)
+                size_t function_arguments_nodes_size = function_arguments_nodes.size();
+                for (size_t i = 0; i < function_arguments_nodes_size; ++i)
                 {
-                    const auto & function_parameter_node = function_parameters_nodes[i];
-                    buffer << calculateActionNodeName(function_parameter_node, planner_context, node_to_name);
+                    if (i == 1 && !in_function_second_argument_node_name.empty())
+                    {
+                        function_argument_name = in_function_second_argument_node_name;
+                    }
+                    else
+                    {
+                        const auto & function_argument_node = function_arguments_nodes[i];
+                        function_argument_name = calculateActionNodeName(function_argument_node, planner_context, node_to_name);
+                    }
 
-                    if (i + 1 != function_parameters_nodes_size)
+                    buffer << function_argument_name;
+
+                    if (i + 1 != function_arguments_nodes_size)
                         buffer << ", ";
                 }
 
                 buffer << ')';
+
+                result = buffer.str();
             }
-
-            const auto & function_arguments_nodes = function_node.getArguments().getNodes();
-
-            buffer << '(';
-
-            size_t function_arguments_nodes_size = function_arguments_nodes.size();
-            for (size_t i = 0; i < function_arguments_nodes_size; ++i)
-            {
-                const auto & function_argument_node = function_arguments_nodes[i];
-                buffer << calculateActionNodeName(function_argument_node, planner_context, node_to_name);
-
-                if (i + 1 != function_arguments_nodes_size)
-                    buffer << ", ";
-            }
-
-            buffer << ')';
-
-            result = buffer.str();
             break;
         }
         case QueryTreeNodeType::UNION:
             [[fallthrough]];
         case QueryTreeNodeType::QUERY:
         {
-            auto query_hash = node->getTreeHash();
-
-            result = "__subquery_" + std::to_string(query_hash.first) + '_' + std::to_string(query_hash.second);
+            if (auto node_constant_value = node->getConstantValueOrNull())
+            {
+                result = calculateConstantActionNodeName(node_constant_value->getValue(), node_constant_value->getType());
+            }
+            else
+            {
+                auto query_hash = node->getTreeHash();
+                result = "__subquery_" + std::to_string(query_hash.first) + '_' + std::to_string(query_hash.second);
+            }
             break;
         }
         case QueryTreeNodeType::LAMBDA:
@@ -575,9 +605,7 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
         }
         default:
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Invalid action query tree node {}",
-                node->formatASTForErrorMessage());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action query tree node {}", node->formatASTForErrorMessage());
         }
     }
 

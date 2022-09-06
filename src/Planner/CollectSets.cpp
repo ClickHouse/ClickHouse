@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 namespace
 {
 
@@ -79,14 +84,14 @@ public:
         else
         {
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function IN is supported only if second argument is constant or table expression");
+                "Function {} is supported only if second argument is constant or table expression",
+                function_node->getFunctionName());
         }
     }
 
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
-        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY ||
-            child_node->getNodeType() == QueryTreeNodeType::UNION);
+        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
 };
 

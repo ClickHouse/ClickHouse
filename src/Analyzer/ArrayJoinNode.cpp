@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 ArrayJoinNode::ArrayJoinNode(QueryTreeNodePtr table_expression_, QueryTreeNodePtr join_expressions_, bool is_left_)
     : is_left(is_left_)
 {

@@ -74,6 +74,7 @@ namespace
 {
 
 std::optional<JoinTableSide> extractJoinTableSideFromExpression(const ActionsDAG::Node * expression_root_node,
+    const std::unordered_set<const ActionsDAG::Node *> & join_expression_dag_input_nodes,
     const NameSet & left_table_expression_columns_names,
     const NameSet & right_table_expression_columns_names,
     const JoinNode & join_node)
@@ -90,7 +91,7 @@ std::optional<JoinTableSide> extractJoinTableSideFromExpression(const ActionsDAG
         for (const auto & child : node_to_process->children)
             nodes_to_process.push_back(child);
 
-        if (node_to_process->type != ActionsDAG::ActionType::INPUT)
+        if (!join_expression_dag_input_nodes.contains(node_to_process))
             continue;
 
         const auto & input_name = node_to_process->result_name;
@@ -119,6 +120,7 @@ std::optional<JoinTableSide> extractJoinTableSideFromExpression(const ActionsDAG
 }
 
 void buildJoinClause(ActionsDAGPtr join_expression_dag,
+    const std::unordered_set<const ActionsDAG::Node *> & join_expression_dag_input_nodes,
     const ActionsDAG::Node * join_expressions_actions_node,
     const NameSet & left_table_expression_columns_names,
     const NameSet & right_table_expression_columns_names,
@@ -131,6 +133,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
         for (const auto & child : join_expressions_actions_node->children)
         {
             buildJoinClause(join_expression_dag,
+                join_expression_dag_input_nodes,
                 child,
                 left_table_expression_columns_names,
                 right_table_expression_columns_names,
@@ -147,11 +150,13 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
         const auto * equals_right_child = join_expressions_actions_node->children.at(1);
 
         auto left_equals_expression_side_optional = extractJoinTableSideFromExpression(equals_left_child,
+            join_expression_dag_input_nodes,
             left_table_expression_columns_names,
             right_table_expression_columns_names,
             join_node);
 
         auto right_equals_expression_side_optional = extractJoinTableSideFromExpression(equals_right_child,
+            join_expression_dag_input_nodes,
             left_table_expression_columns_names,
             right_table_expression_columns_names,
             join_node);
@@ -199,6 +204,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
     }
 
     auto expression_side_optional = extractJoinTableSideFromExpression(join_expressions_actions_node,
+        join_expression_dag_input_nodes,
         left_table_expression_columns_names,
         right_table_expression_columns_names,
         join_node);
@@ -220,6 +226,18 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
     const PlannerContextPtr & planner_context)
 {
     ActionsDAGPtr join_expression_actions = std::make_shared<ActionsDAG>(join_expression_input_columns);
+
+    /** In ActionsDAG if input node has constant representation additional constant column is added.
+      * That way we cannot simply check that node has INPUT type during resolution of expression join table side.
+      * Put all nodes after actions dag initialization in set.
+      * To check if actions dag node is input column, we set contains node.
+      */
+    const auto & join_expression_actions_nodes = join_expression_actions->getNodes();
+
+    std::unordered_set<const ActionsDAG::Node *> join_expression_dag_input_nodes;
+    join_expression_dag_input_nodes.reserve(join_expression_actions_nodes.size());
+    for (const auto & node : join_expression_actions_nodes)
+        join_expression_dag_input_nodes.insert(&node);
 
     PlannerActionsVisitor join_expression_visitor(planner_context);
     auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_expression_actions, join_node.getJoinExpression());
@@ -273,6 +291,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
             result.join_clauses.emplace_back();
 
             buildJoinClause(join_expression_actions,
+                join_expression_dag_input_nodes,
                 child,
                 join_left_actions_names_set,
                 join_right_actions_names_set,
@@ -285,6 +304,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
         result.join_clauses.emplace_back();
 
         buildJoinClause(join_expression_actions,
+                join_expression_dag_input_nodes,
                 join_expressions_actions_root_node,
                 join_left_actions_names_set,
                 join_right_actions_names_set,
@@ -421,8 +441,8 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
 }
 
 JoinClausesAndActions buildJoinClausesAndActions(
-    const ColumnsWithTypeAndName & left_stream_columns,
-    const ColumnsWithTypeAndName & right_stream_columns,
+    const ColumnsWithTypeAndName & left_table_expression_columns,
+    const ColumnsWithTypeAndName & right_table_expression_columns,
     const QueryTreeNodePtr & join_node,
     const PlannerContextPtr & planner_context)
 {
@@ -432,10 +452,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
             "JOIN {} join does not have ON section",
             join_node_typed.formatASTForErrorMessage());
 
-    auto join_expression_input_columns = left_stream_columns;
-    join_expression_input_columns.insert(join_expression_input_columns.end(), right_stream_columns.begin(), right_stream_columns.end());
+    auto join_expression_input_columns = left_table_expression_columns;
+    join_expression_input_columns.insert(join_expression_input_columns.end(), right_table_expression_columns.begin(), right_table_expression_columns.end());
 
-    return buildJoinClausesAndActions(join_expression_input_columns, left_stream_columns, right_stream_columns, join_node_typed, planner_context);
+    return buildJoinClausesAndActions(join_expression_input_columns, left_table_expression_columns, right_table_expression_columns, join_node_typed, planner_context);
 }
 
 }

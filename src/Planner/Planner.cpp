@@ -75,12 +75,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int INVALID_JOIN_ON_EXPRESSION;
-    extern const int ILLEGAL_AGGREGATION;
-    extern const int NOT_AN_AGGREGATE;
-    extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** ClickHouse query planner.
@@ -102,6 +97,7 @@ namespace ErrorCodes
   * TODO: Support max streams
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
+  * TODO: Support Key Condition
   */
 
 namespace
@@ -243,10 +239,12 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             join_tree_node,
             planner_context);
 
+        join_clauses_and_actions.left_join_expressions_actions->projectInput();
         auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), join_clauses_and_actions.left_join_expressions_actions);
         left_join_expressions_actions_step->setStepDescription("JOIN actions");
         left_plan.addStep(std::move(left_join_expressions_actions_step));
 
+        join_clauses_and_actions.right_join_expressions_actions->projectInput();
         auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), join_clauses_and_actions.right_join_expressions_actions);
         right_join_expressions_actions_step->setStepDescription("JOIN actions");
         right_plan.addStep(std::move(right_join_expressions_actions_step));
@@ -312,6 +310,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             output_node = &cast_actions_dag->addFunction(func_builder_cast, std::move(children), output_node->result_name);
         }
 
+        cast_actions_dag->projectInput();
         auto cast_join_columns_step
             = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
         cast_join_columns_step->setStepDescription("Cast JOIN USING columns");
@@ -339,6 +338,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
                 output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
         }
 
+        cast_actions_dag->projectInput();
         auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
         cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
         plan_to_add_cast.addStep(std::move(cast_join_columns_step));
@@ -478,6 +478,21 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     auto result_plan = QueryPlan();
     result_plan.unitePlans(std::move(join_step), {std::move(plans)});
 
+    auto drop_unused_columns_after_join = std::make_shared<ActionsDAG>(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs updated_outputs;
+
+    for (auto & output : drop_unused_columns_after_join->getOutputs())
+    {
+        if (output->result_name.starts_with("__column"))
+            updated_outputs.push_back(output);
+    }
+
+    drop_unused_columns_after_join->getOutputs() = std::move(updated_outputs);
+
+    auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentDataStream(), std::move(drop_unused_columns_after_join));
+    drop_unused_columns_after_join_transform_step->setStepDescription("DROP unused columns after JOIN");
+    result_plan.addStep(std::move(drop_unused_columns_after_join_transform_step));
+
     return result_plan;
 }
 
@@ -512,6 +527,7 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
         }
     }
 
+    array_join_action_dag->projectInput();
     auto array_join_actions = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), array_join_action_dag);
     array_join_actions->setStepDescription("ARRAY JOIN actions");
     left_plan.addStep(std::move(array_join_actions));
@@ -715,6 +731,23 @@ void Planner::buildQueryPlanIfNeeded()
 
     auto & query_node = query_tree->as<QueryNode &>();
 
+    if (query_node.hasPrewhere())
+    {
+        if (query_node.hasWhere())
+        {
+            auto function_node = std::make_shared<FunctionNode>("and");
+            auto and_function = FunctionFactory::instance().get("and", query_context);
+            function_node->resolveAsFunction(std::move(and_function), std::make_shared<DataTypeUInt8>());
+            function_node->getArguments().getNodes() = {query_node.getPrewhere(), query_node.getWhere()};
+            query_node.getWhere() = std::move(function_node);
+            query_node.getPrewhere() = {};
+        }
+        else
+        {
+            query_node.getWhere() = query_node.getPrewhere();
+        }
+    }
+
     SelectQueryInfo select_query_info;
     select_query_info.original_query = queryNodeToSelectQuery(query_tree);
     select_query_info.query = select_query_info.original_query;
@@ -765,6 +798,7 @@ void Planner::buildQueryPlanIfNeeded()
     PlannerActionsVisitor actions_visitor(planner_context);
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
+    bool disable_grouping_sets = false;
 
     if (query_node.hasGroupBy())
     {
@@ -818,6 +852,13 @@ void Planner::buildQueryPlanIfNeeded()
 
                 grouping_sets_parameter.used_keys = std::move(grouping_sets_keys);
             }
+
+            /// It is expected by execution layer that if there are only 1 grouping sets it will be removed
+            if (grouping_sets_parameters_list.size() == 1)
+            {
+                disable_grouping_sets = true;
+                grouping_sets_parameters_list.clear();
+            }
         }
         else
         {
@@ -864,8 +905,8 @@ void Planner::buildQueryPlanIfNeeded()
         /** For non ordinary GROUP BY we add virtual __grouping_set column
           * With set number, which is used as an additional key at the stage of merging aggregating data.
           */
-        if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets())
-            aggregates_columns.emplace_back(nullptr,  std::make_shared<DataTypeUInt64>(), "__grouping_set");
+        if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || (query_node.isGroupByWithGroupingSets() && !disable_grouping_sets))
+            aggregates_columns.emplace_back(nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
         resolveGroupingFunctions(query_tree, aggregation_keys, grouping_sets_parameters_list, *planner_context);
         auto aggregate_step = std::make_unique<ActionsChainStep>(std::move(group_by_actions_dag), ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
@@ -1249,11 +1290,29 @@ void Planner::buildQueryPlanIfNeeded()
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                         const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
-                        const auto & alias_name = expression_to_interpolate->result_name;
+                        const auto & expression_to_interpolate_name = expression_to_interpolate->result_name;
 
                         const auto * interpolate_expression = interpolate_expression_nodes[0];
-                        const auto * alias_node = &interpolate_actions_dag->addAlias(*interpolate_expression, alias_name);
+                        if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
+                        {
+                            auto cast_type_name = expression_to_interpolate->result_type->getName();
 
+                            ColumnWithTypeAndName column;
+                            column.name = "__constant_" + cast_type_name;
+                            column.column = DataTypeString().createColumnConst(0, cast_type_name);
+                            column.type = std::make_shared<DataTypeString>();
+
+                            const auto * cast_type_constant_node = &interpolate_actions_dag->addColumn(std::move(column));
+
+                            FunctionCastBase::Diagnostic diagnostic = {interpolate_expression->result_name, interpolate_expression->result_name};
+                            FunctionOverloadResolverPtr func_builder_cast
+                                = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
+
+                            ActionsDAG::NodeRawConstPtrs children = {interpolate_expression, cast_type_constant_node};
+                            interpolate_expression = &interpolate_actions_dag->addFunction(func_builder_cast, std::move(children), interpolate_expression->result_name);
+                        }
+
+                        const auto * alias_node = &interpolate_actions_dag->addAlias(*interpolate_expression, expression_to_interpolate_name);
                         interpolate_actions_dag->getOutputs().push_back(alias_node);
                     }
 

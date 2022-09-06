@@ -20,7 +20,10 @@ public:
     /// Construct constant query tree node from constant value
     explicit ConstantNode(ConstantValuePtr constant_value_);
 
-    /// Construct constant query tree node from field and data type
+    /** Construct constant query tree node from field and data type.
+      *
+      * Throws exception if value cannot be converted to value data type.
+      */
     explicit ConstantNode(Field value_, DataTypePtr value_data_type_);
 
     /// Construct constant query tree node from field, data type will be derived from field value

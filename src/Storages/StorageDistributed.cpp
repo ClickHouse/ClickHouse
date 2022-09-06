@@ -564,6 +564,10 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return {};
+
     // GROUP BY
     const ASTPtr group_by = select.groupBy();
     if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)

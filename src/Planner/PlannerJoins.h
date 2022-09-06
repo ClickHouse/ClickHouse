@@ -141,8 +141,8 @@ struct JoinClausesAndActions
   * planner_context - planner context.
   */
 JoinClausesAndActions buildJoinClausesAndActions(
-    const ColumnsWithTypeAndName & left_stream_columns,
-    const ColumnsWithTypeAndName & right_stream_columns,
+    const ColumnsWithTypeAndName & left_table_expression_columns,
+    const ColumnsWithTypeAndName & right_table_expression_columns,
     const QueryTreeNodePtr & join_node,
     const PlannerContextPtr & planner_context);
 

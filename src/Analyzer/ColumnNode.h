@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /** Column node represents column in query tree.
   * Column must have some column source.
   * Column can be table expression, lambda, subquery.

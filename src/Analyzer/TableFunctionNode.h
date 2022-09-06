@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class ITableFunction;
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 
@@ -84,7 +89,7 @@ public:
     const StoragePtr & getStorageOrThrow() const
     {
         if (!storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function node is not resolved");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function node is not resolved");
 
         return storage;
     }

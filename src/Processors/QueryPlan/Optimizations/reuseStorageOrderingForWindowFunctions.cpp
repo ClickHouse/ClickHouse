@@ -70,6 +70,10 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
 
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return 0;
+
     ManyExpressionActions order_by_elements_actions;
     const auto & window_desc = window->getWindowDescription();
 
