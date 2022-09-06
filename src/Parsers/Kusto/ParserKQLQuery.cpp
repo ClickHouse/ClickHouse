@@ -18,11 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_FUNCTION;
-}
-
 String ParserKQLBase :: getExprFromToken(const String & text, const uint32_t & max_depth)
 {
     Tokens tokens(text.c_str(), text.c_str() + text.size());
@@ -95,7 +90,7 @@ String ParserKQLBase :: getExprFromToken(Pos & pos)
         tokens.push_back(alias);
     }
 
-    for (auto token:tokens) 
+    for (auto token:tokens)
         res = res.empty()? token : res +" " + token;
     return res;
 }
@@ -120,7 +115,7 @@ std::unique_ptr<IParserBase> ParserKQLQuery::getOperator(String & op_name)
 
 bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    struct KQLOperatorDataFlowState 
+    struct KQLOperatorDataFlowState
     {
         String operator_name;
         bool need_input;
@@ -206,7 +201,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ParserKQLTable().parse(npos, node, expected))
             return false;
     }
-    else 
+    else
     {
         String project_clause, order_clause, where_clause, limit_clause;
         auto last_pos = operation_pos.back().second;
@@ -252,7 +247,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
-        if (operation_pos.size() > 0) 
+        if (operation_pos.size() > 0)
         {
             for (auto i = 0; i< kql_parser[last_op].backspace_steps; ++i)
                 --last_pos;
@@ -274,7 +269,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto set_query_clasue =[&](String op_str, String op_calsue)
         {
             auto oprator = getOperator(op_str);
-            if (oprator) 
+            if (oprator)
             {
                 Tokens token_clause(op_calsue.c_str(), op_calsue.c_str() + op_calsue.size());
                 IParser::Pos pos_clause(token_clause, pos.max_depth);

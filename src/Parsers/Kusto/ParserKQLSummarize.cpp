@@ -49,7 +49,7 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         expr_groupby = String(pos_groupby->begin, pos->end);
     else
         expr_aggregation = begin <= pos ? String(begin->begin, pos->end) : "";
-    
+
     auto expr_aggregation_str = expr_aggregation.empty() ? "" : expr_aggregation +",";
     expr_columns = groupby ? expr_aggregation_str + expr_groupby : expr_aggregation_str;
 
