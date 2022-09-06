@@ -144,7 +144,7 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/ClickHouse/libcpuid.git
+	url = https://github.com/azat-ch/libcpuid.git
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/ClickHouse/openldap.git
