@@ -65,7 +65,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     try
     {
         NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
-        DB::fillMissingColumns(res_columns, num_rows, requested_columns, available_columns, metadata_snapshot);
+        DB::fillMissingColumns(res_columns, num_rows, requested_columns, available_columns, partially_read_columns, metadata_snapshot);
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -206,9 +206,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 
 IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
-    auto get_offset_streams = [](const auto & serialization, const auto & name_in_storage)
+    auto get_offsets_streams = [](const auto & serialization, const auto & name_in_storage)
     {
-        NameSet offset_streams;
+        Names offsets_streams;
         serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
@@ -216,31 +216,44 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const Na
 
             auto subname = ISerialization::getSubcolumnNameForStream(subpath);
             auto full_name = Nested::concatenateName(name_in_storage, subname);
-            offset_streams.insert(full_name);
+            offsets_streams.push_back(full_name);
         });
 
-        return offset_streams;
+        return offsets_streams;
     };
 
     auto required_name_in_storage = Nested::extractTableName(required_column.getNameInStorage());
-    auto required_offset_streams = get_offset_streams(getSerializationInPart(required_column), required_name_in_storage);
+    auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_name_in_storage);
 
+    size_t max_matched_streams = 0;
+    ColumnPosition position;
+
+    /// Find column that has maximal number of matching
+    /// offsets columns with required_column.
     for (const auto & part_column : data_part->getColumns())
     {
         auto name_in_storage = Nested::extractTableName(part_column.name);
         if (name_in_storage != required_name_in_storage)
             continue;
 
-        auto offset_streams = get_offset_streams(data_part->getSerialization(part_column.name), name_in_storage);
+        auto offsets_streams = get_offsets_streams(data_part->getSerialization(part_column.name), name_in_storage);
+        NameSet offsets_streams_set(offsets_streams.begin(), offsets_streams.end());
 
-        bool has_all_offsets = std::all_of(required_offset_streams.begin(), required_offset_streams.end(),
-            [&](const auto & stream_name) { return offset_streams.contains(stream_name); });
+        size_t i = 0;
+        for (; i < required_offsets_streams.size(); ++i)
+        {
+            if (!offsets_streams_set.contains(required_offsets_streams[i]))
+                break;
+        }
 
-        if (has_all_offsets)
-            return data_part->getColumnPosition(part_column.name);
+        if (i && (!position || i > max_matched_streams))
+        {
+            max_matched_streams = i;
+            position = data_part->getColumnPosition(part_column.name);
+        }
     }
 
-    return {};
+    return position;
 }
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const

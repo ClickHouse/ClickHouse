@@ -159,12 +159,18 @@ void MergeTreeReaderWide::addStreams(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
 {
+    bool has_any_stream = false;
+    bool has_all_streams = true;
+
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         if (streams.contains(stream_name))
+        {
+            has_any_stream = true;
             return;
+        }
 
         bool data_file_exists = data_part->checksums.files.contains(stream_name + DATA_FILE_EXTENSION);
 
@@ -172,8 +178,12 @@ void MergeTreeReaderWide::addStreams(
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
           */
         if (!data_file_exists)
+        {
+            has_all_streams = false;
             return;
+        }
 
+        has_any_stream = true;
         bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
@@ -185,6 +195,9 @@ void MergeTreeReaderWide::addStreams(
     };
 
     serialization->enumerateStreams(callback);
+
+    if (has_any_stream && !has_all_streams)
+        partially_read_columns.insert(name_and_type.name);
 }
 
 

@@ -142,6 +142,8 @@ void MergeTreeReaderCompact::fillColumnPositions()
         }
 
         column_positions[i] = std::move(position);
+        if (read_only_offsets[i])
+            partially_read_columns.insert(column_to_read.name);
     }
 }
 
