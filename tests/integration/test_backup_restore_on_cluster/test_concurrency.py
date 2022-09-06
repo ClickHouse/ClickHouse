@@ -175,7 +175,11 @@ def test_concurrent_backups_on_different_nodes():
 
 @pytest.mark.parametrize(
     "db_engine, table_engine",
-    [("Replicated", "ReplicatedMergeTree"), ("Ordinary", "MergeTree")],
+    [
+        ("Ordinary", "MergeTree"),
+        ("Atomic", "MergeTree"),
+        ("Replicated", "ReplicatedMergeTree"),
+    ],
 )
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     if db_engine == "Replicated":
