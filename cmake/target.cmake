@@ -45,6 +45,7 @@ if (CMAKE_CROSSCOMPILING)
     endif ()
 
     if (USE_MUSL)
+        # use of undeclared identifier 'PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP'
         set (ENABLE_SENTRY OFF CACHE INTERNAL "")
         set (ENABLE_ODBC OFF CACHE INTERNAL "")
         set (ENABLE_GRPC OFF CACHE INTERNAL "")
