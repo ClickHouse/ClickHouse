@@ -90,7 +90,6 @@ namespace ErrorCodes
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
-    extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int TYPE_MISMATCH;
     extern const int AMBIGUOUS_IDENTIFIER;
     extern const int INVALID_WITH_FILL_EXPRESSION;
@@ -103,6 +102,8 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_FINAL;
     extern const int SAMPLING_NOT_SUPPORTED;
+    extern const int NO_COMMON_TYPE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -193,6 +194,7 @@ namespace ErrorCodes
   * TODO: JOIN support SELF JOIN with MergeTree. JOIN support matchers.
   * TODO: WINDOW functions
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
+  * TODO: Support group_by_use_nulls
   */
 
 namespace
@@ -2736,7 +2738,11 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
     if (is_special_function_in)
     {
-        auto & in_second_argument = function_node.getArguments().getNodes().at(1);
+        auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
+        if (function_in_arguments_nodes.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects 2 arguments", function_name);
+
+        auto & in_second_argument = function_in_arguments_nodes[1];
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
         auto * query_node = in_second_argument->as<QueryNode>();
@@ -3381,16 +3387,17 @@ void QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, Iden
 
     for (auto & node : node_list_typed.getNodes())
     {
-        resolveExpressionNode(node, scope, allow_lambda_expression, allow_table_expression);
+        auto node_to_resolve = node;
+        resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
 
-        if (auto * expression_list = node->as<ListNode>())
+        if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
             for (auto & expression_list_node : expression_list->getNodes())
                 result_nodes.push_back(std::move(expression_list_node));
         }
         else
         {
-            result_nodes.push_back(std::move(node));
+            result_nodes.push_back(std::move(node_to_resolve));
         }
     }
 
@@ -3737,16 +3744,18 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
         auto & node = initial_node_list_nodes_copy[i];
 
         String display_name = calculateProjectionNodeDisplayName(node, scope);
-        resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        if (auto * expression_list = node->as<ListNode>())
+        auto node_to_resolve = node;
+        resolveExpressionNode(node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
             for (auto & expression_list_node : expression_list->getNodes())
                 projection_nodes_with_display_name.emplace_back(expression_list_node, calculateProjectionNodeDisplayName(expression_list_node, scope));
         }
         else
         {
-            projection_nodes_with_display_name.emplace_back(node, display_name);
+            projection_nodes_with_display_name.emplace_back(node_to_resolve, std::move(display_name));
         }
     }
 
@@ -4222,19 +4231,14 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                             identifier_full_name,
                             scope.scope_node->formatASTForErrorMessage());
 
-                    DataTypePtr common_type;
+                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()});
 
-                    try
-                    {
-                        common_type = getLeastSupertype(DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()});
-                    }
-                    catch (Exception & ex)
-                    {
-                        ex.addMessage("JOIN {} cannot infer common type in USING for identifier {}. In scope {}",
+                    if (!common_type)
+                        throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                            "JOIN {} cannot infer common type in USING for identifier {}. In scope {}",
                             join_node.formatASTForErrorMessage(),
                             identifier_full_name,
                             scope.scope_node->formatASTForErrorMessage());
-                    }
 
                     NameAndTypePair join_using_columns_common_name_and_type(identifier_full_name, common_type);
                     ListNodePtr join_using_expression = std::make_shared<ListNode>(QueryTreeNodes{result_left_table_expression, result_right_table_expression});
@@ -4256,7 +4260,9 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             else if (join_node.getJoinExpression())
             {
                 expressions_visitor.visit(join_node.getJoinExpression());
-                resolveExpressionNode(join_node.getJoinExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                auto join_expression = join_node.getJoinExpression();
+                resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                join_node.getJoinExpression() = std::move(join_expression);
             }
 
             break;
@@ -4767,6 +4773,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         validate_group_by_visitor.visit(query_node_typed.getProjectionNode());
     }
+
+    if (context->getSettingsRef().group_by_use_nulls)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GROUP BY use nulls is not supported");
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
     if (!has_aggregation && (query_node_typed.isGroupByWithGroupingSets() || is_rollup_or_cube))

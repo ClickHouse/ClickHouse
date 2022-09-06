@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /// Subquery node for set
 struct SubqueryNodeForSet
 {

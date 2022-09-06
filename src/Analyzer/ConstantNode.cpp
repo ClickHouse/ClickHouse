@@ -11,6 +11,8 @@
 
 #include <Parsers/ASTLiteral.h>
 
+#include <Interpreters/convertFieldToType.h>
+
 namespace DB
 {
 
@@ -21,11 +23,11 @@ ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
 }
 
 ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
-    : ConstantNode(std::make_shared<ConstantValue>(std::move(value_), std::move(value_data_type_)))
+    : ConstantNode(std::make_shared<ConstantValue>(convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_))
 {}
 
 ConstantNode::ConstantNode(Field value_)
-    : ConstantNode(std::make_shared<ConstantValue>(value_, applyVisitor(FieldToDataType(), value_)))
+    : ConstantNode(value_, applyVisitor(FieldToDataType(), value_))
 {}
 
 void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
