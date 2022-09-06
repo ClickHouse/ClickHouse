@@ -93,7 +93,6 @@ namespace ErrorCodes
   * TODO: Support projections
   * TODO: Support read in order optimization
   * TODO: UNION storage limits
-  * TODO: Interpreter resources
   * TODO: Support max streams
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
@@ -581,7 +580,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQ
     if (select_query_options.is_subquery)
         return;
 
-    SubqueriesForSets subqueries_for_sets;
+    PreparedSets::SubqueriesForSets subqueries_for_sets;
     const auto & subquery_node_to_sets = planner_context->getGlobalPlannerContext()->getSubqueryNodesForSets();
 
     for (auto [key, subquery_node_for_set] : subquery_node_to_sets)
@@ -602,9 +601,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQ
         subqueries_for_sets.emplace(key, std::move(subquery_for_set));
     }
 
-    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), limits, planner_context->getQueryContext());
+    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
 }
 
 }
@@ -649,7 +646,9 @@ void Planner::buildQueryPlanIfNeeded()
     if (auto * union_query_tree = query_tree->as<UnionNode>())
     {
         auto union_mode = union_query_tree->getUnionMode();
-        if (union_mode == SelectUnionMode::Unspecified)
+        if (union_mode == SelectUnionMode::UNION_DEFAULT ||
+            union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
+            union_mode == SelectUnionMode::INTERSECT_DEFAULT)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION mode must be initialized");
 
         size_t queries_size = union_query_tree->getQueries().getNodes().size();
@@ -695,35 +694,46 @@ void Planner::buildQueryPlanIfNeeded()
         const auto & settings = query_context->getSettingsRef();
         auto max_threads = settings.max_threads;
 
-        if (union_mode == SelectUnionMode::ALL || union_mode == SelectUnionMode::DISTINCT)
+        bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT ||
+            union_mode == SelectUnionMode::EXCEPT_DISTINCT;
+
+        if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
         {
             auto union_step = std::make_unique<UnionStep>(std::move(query_plans_streams), max_threads);
             query_plan.unitePlans(std::move(union_step), std::move(query_plans));
-
-            if (union_query_tree->getUnionMode() == SelectUnionMode::DISTINCT)
-            {
-                /// Add distinct transform
-                SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
-
-                auto distinct_step = std::make_unique<DistinctStep>(
-                    query_plan.getCurrentDataStream(),
-                    limits,
-                    0 /*limit hint*/,
-                    query_plan.getCurrentDataStream().header.getNames(),
-                    false /*pre distinct*/,
-                    settings.optimize_distinct_in_order);
-
-                query_plan.addStep(std::move(distinct_step));
-            }
         }
-        else if (union_mode == SelectUnionMode::INTERSECT || union_mode == SelectUnionMode::EXCEPT)
+        else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT ||
+            union_mode == SelectUnionMode::EXCEPT_ALL || union_mode == SelectUnionMode::EXCEPT_DISTINCT)
         {
-            IntersectOrExceptStep::Operator intersect_or_except_operator = IntersectOrExceptStep::Operator::INTERSECT;
-            if (union_mode == SelectUnionMode::EXCEPT)
-                intersect_or_except_operator = IntersectOrExceptStep::Operator::EXCEPT;
+            IntersectOrExceptStep::Operator intersect_or_except_operator = IntersectOrExceptStep::Operator::UNKNOWN;
+
+            if (union_mode == SelectUnionMode::INTERSECT_ALL)
+                intersect_or_except_operator = IntersectOrExceptStep::Operator::INTERSECT_ALL;
+            else if (union_mode == SelectUnionMode::INTERSECT_DISTINCT)
+                intersect_or_except_operator = IntersectOrExceptStep::Operator::INTERSECT_DISTINCT;
+            else if (union_mode == SelectUnionMode::EXCEPT_ALL)
+                intersect_or_except_operator = IntersectOrExceptStep::Operator::EXCEPT_ALL;
+            else if (union_mode == SelectUnionMode::EXCEPT_DISTINCT)
+                intersect_or_except_operator = IntersectOrExceptStep::Operator::EXCEPT_DISTINCT;
 
             auto union_step = std::make_unique<IntersectOrExceptStep>(std::move(query_plans_streams), intersect_or_except_operator, max_threads);
             query_plan.unitePlans(std::move(union_step), std::move(query_plans));
+        }
+
+        if (is_distinct)
+        {
+            /// Add distinct transform
+            SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
+            auto distinct_step = std::make_unique<DistinctStep>(
+                query_plan.getCurrentDataStream(),
+                limits,
+                0 /*limit hint*/,
+                query_plan.getCurrentDataStream().header.getNames(),
+                false /*pre distinct*/,
+                settings.optimize_distinct_in_order);
+
+            query_plan.addStep(std::move(distinct_step));
         }
 
         return;
@@ -1082,6 +1092,7 @@ void Planner::buildQueryPlanIfNeeded()
             settings.min_free_disk_space_for_temporary_data,
             settings.compile_aggregate_expressions,
             settings.min_count_to_compile_aggregate_expression,
+            settings.max_block_size,
             /* only_merge */ false,
             stats_collecting_params
         );
@@ -1237,7 +1248,8 @@ void Planner::buildQueryPlanIfNeeded()
             settings.remerge_sort_lowered_memory_bytes_ratio,
             settings.max_bytes_before_external_sort,
             planner_context->getQueryContext()->getTemporaryVolume(),
-            settings.min_free_disk_space_for_temporary_data);
+            settings.min_free_disk_space_for_temporary_data,
+            settings.optimize_sorting_by_input_stream_properties);
 
         sorting_step->setStepDescription("Sorting for ORDER BY");
         query_plan.addStep(std::move(sorting_step));
@@ -1411,6 +1423,22 @@ void Planner::buildQueryPlanIfNeeded()
     query_plan.addStep(std::move(projection_step));
 
     addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context);
+
+    /// Extend lifetime of context, table locks, storages
+    query_plan.addInterpreterContext(planner_context->getQueryContext());
+
+    for (auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
+    {
+        if (auto * table_node = table_expression->as<TableNode>())
+        {
+            query_plan.addStorageHolder(table_node->getStorage());
+            query_plan.addTableLock(table_node->getStorageLock());
+        }
+        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+        {
+            query_plan.addStorageHolder(table_function_node->getStorage());
+        }
+    }
 }
 
 }

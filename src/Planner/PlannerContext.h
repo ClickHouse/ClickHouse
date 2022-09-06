@@ -6,7 +6,6 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/Set.h>
 
 #include <Analyzer/IQueryTreeNode.h>
@@ -46,7 +45,7 @@ public:
     /// Get set for key, if no set is registered null is returned
     SetPtr getSetOrNull(const SetKey & key) const;
 
-    /// Get set for key, if no set is registered logical exception is throwed
+    /// Get set for key, if no set is registered logical exception is thrown
     SetPtr getSetOrThrow(const SetKey & key) const;
 
     /** Register subquery node for set

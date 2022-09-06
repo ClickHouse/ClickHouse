@@ -6,7 +6,6 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/SubqueryForSet.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
