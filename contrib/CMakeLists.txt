@@ -93,7 +93,9 @@ add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 
 if (ENABLE_RUST)
-    add_contrib (BLAKE3)
+    if (ENABLE_BLAKE3)
+        add_contrib (BLAKE3)
+    endif()
 endif()
 
 if (ENABLE_FUZZING)
