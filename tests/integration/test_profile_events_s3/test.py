@@ -33,9 +33,10 @@ def cluster():
 
 init_list = {
     "ReadBufferFromS3Bytes": 0,
-    "S3ReadMicroseconds": 0,
     "ReadBufferFromS3Microseconds": 0,
     "ReadBufferFromS3RequestsErrors": 0,
+    "WriteBufferFromS3Bytes": 0,
+    "S3ReadMicroseconds": 0,
     "S3ReadRequestsCount": 0,
     "S3ReadRequestsErrorsTotal": 0,
     "S3ReadRequestsErrors503": 0,
@@ -45,7 +46,16 @@ init_list = {
     "S3WriteRequestsErrorsTotal": 0,
     "S3WriteRequestsErrors503": 0,
     "S3WriteRequestsRedirects": 0,
-    "WriteBufferFromS3Bytes": 0,
+    "DiskS3ReadMicroseconds": 0,
+    "DiskS3ReadRequestsCount": 0,
+    "DiskS3ReadRequestsErrorsTotal": 0,
+    "DiskS3ReadRequestsErrors503": 0,
+    "DiskS3ReadRequestsRedirects": 0,
+    "DiskS3WriteMicroseconds": 0,
+    "DiskS3WriteRequestsCount": 0,
+    "DiskS3WriteRequestsErrorsTotal": 0,
+    "DiskS3WriteRequestsErrors503": 0,
+    "DiskS3WriteRequestsRedirects": 0,
 }
 
 
