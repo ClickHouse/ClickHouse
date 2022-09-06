@@ -49,8 +49,23 @@ Customers | summarize f_list = make_set(Education, 2) by Occupation;
 -- make_set_if()
 Customers | summarize f_list = make_set_if(Education, Age>30) by Occupation;
 Customers | summarize f_list = make_set_if(Education, Age>30, 1) by Occupation;
+-- stdev()
+Customers | project Age | summarize stdev(Age);
+-- stdevif()
+Customers | project Age | summarize stdevif(Age, Age%2==0);
+-- binary_all_and
+Customers | project Age | where Age > 40 | summarize binary_all_and(Age);
+-- binary_all_or
+Customers | project Age | where Age > 40 | summarize binary_all_or(Age);
+-- binary_all_xor
+Customers | project Age | where Age > 40 | summarize binary_all_xor(Age);
 
 -- TODO:
+-- Customers | project Age | summarize percentile(Age, 95); -- expect 46
+-- Customers | project Age | summarize percentiles(Age, 5, 50, 95); -- expect 25,28,46
+-- Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilew(AgeBucket, w, 75); -- expect 35
+-- Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilesw(AgeBucket, w, 50, 75, 99.9); -- expect 25,35,45
+
 -- arg_max()
 -- arg_min()
 -- make_list_with_nulls()
