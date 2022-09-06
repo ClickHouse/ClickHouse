@@ -120,7 +120,7 @@ public:
 
     void checkTableCanBeDropped() const override;
 
-    void dropInnerTableIfAny(bool no_delay, ContextPtr context) override;
+    void dropInnerTableIfAny(bool sync, ContextPtr context) override;
 
     void drop() override;
 

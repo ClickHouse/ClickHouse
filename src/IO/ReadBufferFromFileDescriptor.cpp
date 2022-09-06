@@ -10,6 +10,7 @@
 #include <IO/Progress.h>
 #include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
+#include <Interpreters/Context.h>
 
 
 #ifdef HAS_RESERVED_IDENTIFIER
@@ -56,7 +57,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
-        return false;
+         return false;
 
     size_t bytes_read = 0;
     while (!bytes_read)
@@ -80,8 +81,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrnoWithPath("Cannot read from file " + getFileName(), getFileName(),
-                                   ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throwFromErrnoWithPath("Cannot read from file: " + getFileName(), getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)

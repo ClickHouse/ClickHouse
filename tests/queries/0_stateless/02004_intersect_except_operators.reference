@@ -116,23 +116,23 @@ select 1 union all select 2  except (select 2 except select 1 union all select 1
 select 1 intersect select count() from (select 1 except select 2 intersect select 2 union all select 1);
 explain syntax select 1 intersect select 1;
 SELECT 1
-INTERSECT
+INTERSECT ALL
 SELECT 1
 explain syntax select 1 except select 1;
 SELECT 1
-EXCEPT
+EXCEPT ALL
 SELECT 1
 explain syntax select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
 SELECT 1
 UNION ALL
 SELECT 2
-EXCEPT
+EXCEPT ALL
 SELECT 2
-EXCEPT
+EXCEPT ALL
 SELECT 1
 UNION ALL
 SELECT 1
-EXCEPT
+EXCEPT ALL
 SELECT 4
 set limit=1;
 select 1 intersect select 1;

@@ -12,6 +12,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
-    extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
+    extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -138,7 +139,7 @@ public:
         type_indexes.insert(TypeToTypeIndex<NearestFieldType<T>>);
     }
 
-    DataTypePtr getScalarType() const { return getLeastSupertype(type_indexes, true); }
+    DataTypePtr getScalarType() const { return getLeastSupertypeOrString(type_indexes); }
     bool haveNulls() const { return have_nulls; }
     bool needConvertField() const { return field_types.size() > 1; }
 
@@ -154,19 +155,22 @@ FieldInfo getFieldInfo(const Field & field)
 {
     FieldVisitorToScalarType to_scalar_type_visitor;
     applyVisitor(to_scalar_type_visitor, field);
+    FieldVisitorToNumberOfDimensions to_number_dimension_visitor;
 
     return
     {
         to_scalar_type_visitor.getScalarType(),
         to_scalar_type_visitor.haveNulls(),
         to_scalar_type_visitor.needConvertField(),
-        applyVisitor(FieldVisitorToNumberOfDimensions(), field),
+        applyVisitor(to_number_dimension_visitor, field),
+        to_number_dimension_visitor.need_fold_dimension
     };
 }
 
 ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_, bool is_nullable_)
     : least_common_type(getDataTypeByColumn(*data_))
     , is_nullable(is_nullable_)
+    , num_rows(data_->size())
 {
     data.push_back(std::move(data_));
 }
@@ -176,15 +180,13 @@ ColumnObject::Subcolumn::Subcolumn(
     : least_common_type(std::make_shared<DataTypeNothing>())
     , is_nullable(is_nullable_)
     , num_of_defaults_in_prefix(size_)
+    , num_rows(size_)
 {
 }
 
 size_t ColumnObject::Subcolumn::size() const
 {
-    size_t res = num_of_defaults_in_prefix;
-    for (const auto & part : data)
-        res += part->size();
-    return res;
+    return num_rows;
 }
 
 size_t ColumnObject::Subcolumn::byteSize() const
@@ -299,7 +301,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         value_dim = column_dim;
 
     if (value_dim != column_dim)
-        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
+        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATCHED,
             "Dimension of types mismatched between inserted value and column. "
             "Dimension of value: {}. Dimension of column: {}",
              value_dim, column_dim);
@@ -321,7 +323,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     {
         if (isConversionRequiredBetweenIntegers(*base_type, *least_common_base_type))
         {
-            base_type = getLeastSupertype(DataTypes{std::move(base_type), least_common_base_type}, true);
+            base_type = getLeastSupertypeOrString(DataTypes{std::move(base_type), least_common_base_type});
             type_changed = true;
             if (!least_common_base_type->equals(*base_type))
                 addNewColumnPart(createArrayOfType(std::move(base_type), value_dim));
@@ -332,12 +334,14 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         field = convertFieldToTypeOrThrow(field, *least_common_type.get());
 
     data.back()->insert(field);
+    ++num_rows;
 }
 
 void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
 {
     assert(start + length <= src.size());
     size_t end = start + length;
+    num_rows += length;
 
     if (data.empty())
     {
@@ -345,7 +349,7 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
     }
     else if (!least_common_type.get()->equals(*src.getLeastCommonType()))
     {
-        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type.get(), src.getLeastCommonType()}, true);
+        auto new_least_common_type = getLeastSupertypeOrString(DataTypes{least_common_type.get(), src.getLeastCommonType()});
         if (!new_least_common_type->equals(*least_common_type.get()))
             addNewColumnPart(std::move(new_least_common_type));
     }
@@ -487,6 +491,8 @@ void ColumnObject::Subcolumn::insertDefault()
         ++num_of_defaults_in_prefix;
     else
         data.back()->insertDefault();
+
+    ++num_rows;
 }
 
 void ColumnObject::Subcolumn::insertManyDefaults(size_t length)
@@ -495,12 +501,15 @@ void ColumnObject::Subcolumn::insertManyDefaults(size_t length)
         num_of_defaults_in_prefix += length;
     else
         data.back()->insertManyDefaults(length);
+
+    num_rows += length;
 }
 
 void ColumnObject::Subcolumn::popBack(size_t n)
 {
     assert(n <= size());
 
+    num_rows -= n;
     size_t num_removed = 0;
     for (auto it = data.rbegin(); it != data.rend(); ++it)
     {
@@ -559,15 +568,11 @@ ColumnObject::Subcolumn ColumnObject::Subcolumn::recreateWithDefaultValues(const
     if (is_nullable)
         scalar_type = makeNullable(scalar_type);
 
-    Subcolumn new_subcolumn;
+    Subcolumn new_subcolumn(*this);
     new_subcolumn.least_common_type = LeastCommonType{createArrayOfType(scalar_type, field_info.num_dimensions)};
-    new_subcolumn.is_nullable = is_nullable;
-    new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix;
-    new_subcolumn.data.reserve(data.size());
 
-    for (const auto & part : data)
-        new_subcolumn.data.push_back(recreateColumnWithDefaultValues(
-            part, scalar_type, field_info.num_dimensions));
+    for (auto & part : new_subcolumn.data)
+        part = recreateColumnWithDefaultValues(part, scalar_type, field_info.num_dimensions);
 
     return new_subcolumn;
 }
@@ -817,6 +822,44 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
         return ColumnObject::create(is_nullable);
 
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.cloneResized(new_size); });
+}
+
+void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
+{
+    res.resize(num_rows);
+    std::iota(res.begin(), res.end(), 0);
+}
+
+void ColumnObject::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                 PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                 int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnObject>(assert_cast<const ColumnObject &>(rhs), rhs_row_num, row_indexes,
+                                        compare_results, direction, nan_direction_hint);
+}
+
+void ColumnObject::getExtremes(Field & min, Field & max) const
+{
+    if (num_rows == 0)
+    {
+        min = Object();
+        max = Object();
+    }
+    else
+    {
+        get(0, min);
+        get(0, max);
+    }
+}
+
+MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & selector) const
+{
+    return scatterImpl<ColumnObject>(num_columns, selector);
+}
+
+void ColumnObject::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
