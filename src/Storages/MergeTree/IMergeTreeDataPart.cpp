@@ -1409,7 +1409,10 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 {
     /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
+    {
+        LOG_DEBUG(storage.log, "Blobs for part {} cannot be removed because it's forced to be keeped", name);
         return std::make_pair(false, NameSet{});
+    }
 
     return storage.unlockSharedData(*this);
 }
@@ -1432,6 +1435,12 @@ void IMergeTreeDataPart::remove() const
     part_is_probably_removed_from_disk = true;
 
     auto [can_remove, files_not_to_remove] = canRemovePart();
+
+    if (!can_remove)
+        LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
+
+    if (!files_not_to_remove.empty())
+        LOG_TRACE(storage.log, "Some blobs ({}) of part {} cannot be removed", fmt::join(files_not_to_remove, ", "), name);
 
     if (!isStoredOnDisk())
         return;
