@@ -70,7 +70,7 @@ void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response,
     if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
     {
         const auto & err = response.GetError();
-        throw S3Exception(fmt::format("{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType())), err.GetErrorType());
+        throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
     }
 }
 
