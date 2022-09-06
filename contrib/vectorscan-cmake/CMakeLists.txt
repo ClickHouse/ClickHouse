@@ -242,6 +242,12 @@ list (APPEND SRCS
     "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/control_verbs.cpp"
 )
 
+set_source_files_properties(
+    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/Parser.cpp"
+    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/control_verbs.cpp"
+    COMPILE_FLAGS -Wno-c++11-narrowing
+)
+
 # Platform-dependent files
 if (ARCH_AMD64)
     list(APPEND SRCS
