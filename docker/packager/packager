@@ -339,17 +339,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-15",  # For TSAN builds, see #39450
-            "clang-14",
-            "clang-14-darwin",
-            "clang-14-darwin-aarch64",
-            "clang-14-aarch64",
-            "clang-14-ppc64le",
-            "clang-14-amd64sse2",
-            "clang-14-freebsd",
+            "clang-15",
+            "clang-15-darwin",
+            "clang-15-darwin-aarch64",
+            "clang-15-aarch64",
+            "clang-15-ppc64le",
+            "clang-15-amd64sse2",
+            "clang-15-freebsd",
             "gcc-11",
         ),
-        default="clang-14",
+        default="clang-15",
         help="a compiler to use",
     )
     parser.add_argument(

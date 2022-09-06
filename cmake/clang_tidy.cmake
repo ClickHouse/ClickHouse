@@ -3,7 +3,7 @@ option (ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
 
 if (ENABLE_CLANG_TIDY)
 
-    find_program (CLANG_TIDY_PATH NAMES "clang-tidy" "clang-tidy-14" "clang-tidy-13" "clang-tidy-12")
+    find_program (CLANG_TIDY_PATH NAMES "clang-tidy" "clang-tidy-15" "clang-tidy-14" "clang-tidy-13" "clang-tidy-12")
 
     if (CLANG_TIDY_PATH)
         message(STATUS
