@@ -10,7 +10,6 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/FileCache.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -251,6 +250,13 @@ void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
 {
     auto transaction = createObjectStorageTransaction();
     transaction->removeSharedFile(path, delete_metadata_only);
+    transaction->commit();
+}
+
+void DiskObjectStorage::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    auto transaction = createObjectStorageTransaction();
+    transaction->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
     transaction->commit();
 }
 
