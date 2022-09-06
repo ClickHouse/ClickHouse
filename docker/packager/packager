@@ -191,6 +191,7 @@ def parse_env_variables(
     elif is_amd64_sse2:
         cc = compiler[: -len(AMD64_SSE2_SUFFIX)]
         result.append("DEB_ARCH=amd64")
+        cmake_flags.append("-DNO_SSE3_OR_HIGHER=1")
     else:
         cc = compiler
         result.append("DEB_ARCH=amd64")
