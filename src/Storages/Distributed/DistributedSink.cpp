@@ -171,7 +171,6 @@ void DistributedSink::writeAsync(const Block & block)
     }
     else
     {
-
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
             return writeSplitAsync(block);
 
@@ -652,7 +651,6 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 void DistributedSink::writeToLocal(const Cluster::ShardInfo& shard_info, const Block & block, size_t repeats)
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
-    span.addAttribute("db.statement", this->query_string);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
     span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
     span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
