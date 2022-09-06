@@ -61,7 +61,7 @@ String ParserKQLBase :: getExprFromToken(Pos & pos)
         if (token == "=")
         {
             ++pos;
-            if (String(pos->begin,pos->end) != "~" )
+            if (String(pos->begin,pos->end) != "~")
             {
                 alias = tokens.back();
                 tokens.pop_back();
