@@ -33,7 +33,16 @@ using HeaderCollection = std::vector<HttpHeader>;
 class S3Exception : public Exception
 {
 public:
-    S3Exception(const std::string & msg, const Aws::S3::S3Errors code_)
+
+    // Format message with fmt::format, like the logging functions.
+    template <typename... Args>
+    S3Exception(Aws::S3::S3Errors code_, fmt::format_string<Args...> fmt, Args &&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), ErrorCodes::S3_ERROR)
+        , code(code_)
+    {
+    }
+
+    S3Exception(const std::string & msg, Aws::S3::S3Errors code_)
         : Exception(msg, ErrorCodes::S3_ERROR)
         , code(code_)
     {}
