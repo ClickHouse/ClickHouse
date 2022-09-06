@@ -251,7 +251,7 @@ bool Percentilew::convertImpl(String & out,IParser::Pos & pos)
     String value = getConvertedArgument(fn_name,pos);
     trim(value);
 
-    out = "quantileExactWeighted( " + value + "/100)(" + bucket_column + ","+frequency_column + ")";
+    out = "quantileExactWeighted( " + value + "/100)(" + bucket_column + "," + frequency_column + ")";
     return true;
 }
 
@@ -261,27 +261,18 @@ bool Percentiles::convertImpl(String & out,IParser::Pos & pos)
 
     if (fn_name.empty())
         return false;
-    
+
     ++pos;
     String column_name = getConvertedArgument(fn_name,pos);
     trim(column_name);
-    String expr;
+    String expr = "quantiles(";
     String value;
-    String value_in_column;
     while(pos->type != TokenType::ClosingRoundBracket)
     {
-        if(pos->type != TokenType::Comma){
+        if(pos->type != TokenType::Comma)
+        {
             value = String(pos->begin, pos->end);
-            value_in_column = "";
-
-            for(size_t i = 0; i < value.size(); i++)
-            {
-                if(value[i] == '.')
-                    value_in_column += '_';
-                else
-                    value_in_column += value[i];
-            }
-            expr = expr + "quantile( " + value + "/100)(" + column_name + ") AS percentile_" + column_name + "_" + value_in_column;
+            expr = expr + value + "/100";
             ++pos;
             if(pos->type != TokenType::ClosingRoundBracket)
                 expr += ", ";
@@ -289,7 +280,7 @@ bool Percentiles::convertImpl(String & out,IParser::Pos & pos)
         else
             ++pos;
     }
-    out = expr;
+    out = expr + " )(" + column_name + ")";
     return true;
 }
 
@@ -351,25 +342,15 @@ bool Percentilesw::convertImpl(String & out,IParser::Pos & pos)
     String frequency_column = getConvertedArgument(fn_name,pos);
     trim(frequency_column);
 
-    String expr;
+    String expr = "quantilesExactWeighted( ";
     String value;
-    String value_in_column;
 
     while(pos->type != TokenType::ClosingRoundBracket)
     {
-        if(pos->type != TokenType::Comma){
+        if(pos->type != TokenType::Comma)
+        {
             value = String(pos->begin, pos->end);
-            value_in_column = "";
-
-            for(size_t i = 0; i < value.size(); i++)
-            {
-                if(value[i] == '.')
-                    value_in_column += '_';
-                else
-                    value_in_column += value[i];
-            }
-
-            expr = expr + "quantileExactWeighted( " + value + "/100)(" + bucket_column + ","+frequency_column + ") AS percentile_" + bucket_column + "_" + value_in_column;
+            expr = expr + value + "/100";
             ++pos;
             if(pos->type != TokenType::ClosingRoundBracket)
                 expr += ", ";
@@ -377,6 +358,7 @@ bool Percentilesw::convertImpl(String & out,IParser::Pos & pos)
         else
             ++pos;
     }
+    expr = expr + ")(" + bucket_column + "," + frequency_column + ")";
     out = expr;
     return true;
 }
