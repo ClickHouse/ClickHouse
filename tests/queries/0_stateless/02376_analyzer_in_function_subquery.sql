@@ -9,14 +9,6 @@ CREATE TABLE test_table
 
 INSERT INTO test_table VALUES (0, 'Value_0'), (1, 'Value_1'), (2, 'Value_2');
 
--- { echoOn }
-
-SELECT id, value FROM test_table WHERE id IN (SELECT 1);
-
-SELECT '--';
-
-SELECT id, value FROM test_table WHERE id IN (SELECT 2);
-
 DROP TABLE IF EXISTS test_table_for_in;
 CREATE TABLE test_table_for_in
 (
@@ -24,6 +16,14 @@ CREATE TABLE test_table_for_in
 ) ENGINE=TinyLog;
 
 INSERT INTO test_table_for_in VALUES (0), (1);
+
+-- { echoOn }
+
+SELECT id, value FROM test_table WHERE id IN (SELECT 1);
+
+SELECT '--';
+
+SELECT id, value FROM test_table WHERE id IN (SELECT 2);
 
 SELECT '--';
 

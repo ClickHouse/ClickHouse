@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
 {
     std::vector<const IQueryTreeNode *> nodes_to_process;

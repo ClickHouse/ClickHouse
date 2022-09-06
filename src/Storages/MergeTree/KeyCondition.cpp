@@ -889,6 +889,12 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
@@ -969,11 +975,14 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
-    if (syntax_analyzer_result)
+    if (!syntax_analyzer_result)
     {
-        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-            array_joined_columns.insert(name);
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
     }
+
+    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+        array_joined_columns.insert(name);
 
     if (!dag_nodes.nodes.empty())
     {

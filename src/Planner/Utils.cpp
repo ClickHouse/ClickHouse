@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 String dumpQueryPlan(QueryPlan & query_plan)

@@ -63,10 +63,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
 namespace
