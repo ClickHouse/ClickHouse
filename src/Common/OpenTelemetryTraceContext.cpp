@@ -283,10 +283,6 @@ TracingContextHolder::TracingContextHolder(
     this->root_span.start_time_us
         = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    /// This object is created to initialize tracing context on a new thread,
-    /// it's helpful to record the thread_id so that we know the thread switching from the span log
-    this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
-
     /// set up trace context on current thread
     current_thread_trace_context = _parent_trace_context;
     current_thread_trace_context.span_id = this->root_span.span_id;
@@ -306,6 +302,18 @@ TracingContextHolder::~TracingContextHolder()
         auto shared_span_log = current_thread_trace_context.span_log.lock();
         if (shared_span_log)
         {
+            try
+            {
+                /// This object is created to initialize tracing context on a new thread,
+                /// it's helpful to record the thread_id so that we know the thread switching from the span log
+                this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
+            }
+            catch (...)
+            {
+                /// It's acceptable that the attribute is not recorded in case of any exception,
+                /// so the exception is ignored to try to log the span.
+            }
+            
             this->root_span.finish_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
