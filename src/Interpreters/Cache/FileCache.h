@@ -19,7 +19,8 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
-
+#include <Common/logger_useful.h>
+#include <Common/StatusFile.h>
 
 namespace DB
 {
@@ -152,6 +153,7 @@ private:
 
     bool is_initialized = false;
     std::exception_ptr initialization_exception;
+    std::unique_ptr<StatusFile> status_file;
 
     void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 
