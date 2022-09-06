@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Coordination/KeeperConstants.h>
 
 #include <IO/ReadBuffer.h>
@@ -27,6 +28,7 @@
 #include <cstdint>
 #include <optional>
 #include <functional>
+#include <random>
 
 
 /** ZooKeeper C++ library, a replacement for libzookeeper.
@@ -111,12 +113,7 @@ public:
       */
     ZooKeeper(
         const Nodes & nodes,
-        const String & root_path,
-        const String & auth_scheme,
-        const String & auth_data,
-        Poco::Timespan session_timeout_,
-        Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_,
+        const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
@@ -201,11 +198,12 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
 private:
-    String root_path;
     ACLs default_acls;
 
-    Poco::Timespan session_timeout;
-    Poco::Timespan operation_timeout;
+    zkutil::ZooKeeperArgs args;
+
+    std::optional<std::bernoulli_distribution> send_inject_fault;
+    std::optional<std::bernoulli_distribution> recv_inject_fault;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
