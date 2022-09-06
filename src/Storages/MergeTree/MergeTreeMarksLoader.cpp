@@ -61,12 +61,9 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
     size_t expected_uncompressed_size = mark_size * marks_count;
 
-    std::string file_extension = fs::path(mrk_path).extension();
-    bool compressed_marks = MarkType(file_extension).compressed;
-
     auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
 
-    if (!compressed_marks && expected_uncompressed_size != file_size)
+    if (!index_granularity_info.mark_type.compressed && expected_uncompressed_size != file_size)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Bad size of marks file '{}': {}, must be: {}",
@@ -75,7 +72,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
     auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
     std::unique_ptr<ReadBuffer> reader;
-    if (!compressed_marks)
+    if (!index_granularity_info.mark_type.compressed)
         reader = std::move(buffer);
     else
         reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));

@@ -35,7 +35,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     marks_file_hashing = std::make_unique<HashingWriteBuffer>(*marks_file);
 
-    if (MarkType(marks_file_extension).compressed)
+    if (data_part_->index_granularity_info.mark_type.compressed)
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,

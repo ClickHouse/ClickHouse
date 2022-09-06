@@ -339,6 +339,12 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part(parent_part_)
     , use_metadata_cache(storage.use_metadata_cache)
 {
+    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(data_part_storage_);
+    if (mrk_ext)
+        index_granularity_info = MergeTreeIndexGranularityInfo(storage_, MarkType{*mrk_ext});
+    else
+        index_granularity_info = MergeTreeIndexGranularityInfo(storage_, part_type_);
+
     if (parent_part)
         state = MergeTreeDataPartState::Active;
     incrementStateMetric(state);

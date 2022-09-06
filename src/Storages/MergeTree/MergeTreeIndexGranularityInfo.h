@@ -44,18 +44,13 @@ public:
 
     MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_);
 
+    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_);
+
     void changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage);
 
     String getMarksFilePath(const String & path_prefix) const
     {
         return path_prefix + mark_type.getFileExtension();
-    }
-
-    /// TODO: This is non-passable (method overload), remove before merge.
-    String getMarksFilePath(const DataPartStoragePtr & data_part_storage, const String & path_prefix) const
-    {
-        auto mrk_ext = getMarksExtensionFromFilesystem(data_part_storage);
-        return path_prefix + mrk_ext.value_or(mark_type.getFileExtension());
     }
 
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;

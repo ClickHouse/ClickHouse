@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_PART_TYPE;
     extern const int INCORRECT_FILE_NAME;
 }
@@ -101,7 +100,12 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromF
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
-    : mark_type(storage.canUseAdaptiveGranularity(), storage.getSettings()->compress_marks, type_.getValue())
+    : MergeTreeIndexGranularityInfo(storage, {storage.canUseAdaptiveGranularity(), storage.getSettings()->compress_marks, type_.getValue()})
+{
+}
+
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_)
+    : mark_type(mark_type_)
 {
     fixed_index_granularity = storage.getSettings()->index_granularity;
 }

@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int LOGICAL_ERROR;
@@ -102,7 +101,6 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 
     return size;
 }
-
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
