@@ -232,6 +232,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
+    ProfileEvents::increment(ProfileEvents::HeadS3Object);
     auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
     file_size = object_size;
     return *file_size;

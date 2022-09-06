@@ -395,7 +395,6 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely") \
     M(DeleteS3Keys, "Number of s3 API Delete Keys be called") \
     M(CopyS3Object, "Number of s3 API CopyObject be called") \
     M(ListS3Objects, "Number of s3 API ListObjects be called") \
