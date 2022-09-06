@@ -16,7 +16,7 @@ enum class SettingConstraintType
 
     // Setting cannot be changed at all.
     // Either READONLY or CONST keyword in SQL syntax can be used (<readonly/> or <const/> in config.xml) to enable this.
-    // NOTE: name `CONST` is choosen to avoid confusion with `readonly` setting.
+    // NOTE: name `CONST` is chosen to avoid confusion with `readonly` setting.
     CONST,
 
     // Setting can be changed within specified range, regardless of `readonly` setting value.
