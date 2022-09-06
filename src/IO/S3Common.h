@@ -7,23 +7,53 @@
 #include <base/types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
+#include <aws/s3/S3Errors.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
+
+#include <Common/Exception.h>
 
 namespace Aws::S3
 {
     class S3Client;
 }
 
+
 namespace DB
 {
-    class RemoteHostFilter;
-    struct HttpHeader;
-    using HeaderCollection = std::vector<HttpHeader>;
+namespace ErrorCodes
+{
+    extern const int S3_ERROR;
 }
+
+class RemoteHostFilter;
+struct HttpHeader;
+using HeaderCollection = std::vector<HttpHeader>;
+
+class S3Exception : public Exception
+{
+public:
+    S3Exception(const std::string & msg, const Aws::S3::S3Errors code_)
+        : Exception(msg, ErrorCodes::S3_ERROR)
+        , code(code_)
+    {}
+
+    Aws::S3::S3Errors getS3ErrorCode() const
+    {
+        return code;
+    }
+
+    bool isRetryableError() const;
+
+private:
+    const Aws::S3::S3Errors code;
+};
+}
+
 
 namespace DB::S3
 {
+
 class ClientFactory
 {
 public:

@@ -130,11 +130,18 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             break;
         }
-        catch (const Exception & e)
+        catch (const S3Exception & e)
         {
             watch.stop();
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
+
+            /// It doesn't make sense to retry Access Denied or No Such Key
+            if (!e.isRetryableError())
+            {
+                tryLogCurrentException(log);
+                throw;
+            }
 
             LOG_DEBUG(
                 log,
@@ -306,7 +313,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
     else
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+    {
+        const auto & error = outcome.GetError();
+        throw S3Exception(error.GetMessage(), error.GetErrorType());
+    }
 }
 
 SeekableReadBufferPtr ReadBufferS3Factory::getReader()
