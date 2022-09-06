@@ -93,6 +93,8 @@ protected:
     using ColumnPosition = std::optional<size_t>;
     ColumnPosition findColumnForOffsets(const NameAndTypePair & column) const;
 
+    NameSet partially_read_columns;
+
 private:
     /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;

@@ -188,49 +188,13 @@ ActionsDAGPtr evaluateMissingDefaults(
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
-static bool arrayHasNoElementsRead(const IColumn & column)
+static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
+    const NamesAndTypesList & available_columns, const Columns & res_columns)
 {
-    const auto * column_array = typeid_cast<const ColumnArray *>(&column);
+    std::unordered_map<String, ColumnPtr> offsets_columns;
 
-    if (!column_array)
-        return false;
-
-    size_t size = column_array->size();
-    if (!size)
-        return false;
-
-    const auto & array_data = column_array->getData();
-    if (const auto * nested_array = typeid_cast<const ColumnArray *>(&array_data))
-        return arrayHasNoElementsRead(*nested_array);
-
-    if (!array_data.empty())
-        return false;
-
-    size_t last_offset = column_array->getOffsets()[size - 1];
-    return last_offset != 0;
-}
-
-void fillMissingColumns(
-    Columns & res_columns,
-    size_t num_rows,
-    const NamesAndTypesList & requested_columns,
-    const NamesAndTypesList & available_columns,
-    StorageMetadataPtr metadata_snapshot)
-{
-    size_t num_columns = requested_columns.size();
-    if (num_columns != res_columns.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid number of columns passed to fillMissingColumns. Expected {}, got {}",
-            num_columns, res_columns.size());
-
-    /// For a missing column of a nested data structure we must create not a column of empty
-    /// arrays, but a column of arrays of correct length.
-
-    /// First, collect offset columns for all arrays in the block.
-
-    std::unordered_map<String, ColumnPtr> offset_columns;
     auto available_column = available_columns.begin();
-    for (size_t i = 0; i < num_columns; ++i, ++available_column)
+    for (size_t i = 0; i < available_columns.size(); ++i, ++available_column)
     {
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
@@ -243,16 +207,55 @@ void fillMissingColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto subname = ISerialization::getSubcolumnNameForStream(subpath);
-            auto & offsets_column = offset_columns[Nested::concatenateName(name_in_storage, subname)];
+            const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
             /// for the same nested data structure, choose the one that is not empty.
-            if (!offsets_column || offsets_column->empty())
-                offsets_column = subpath.back().data.column;
+            if (current_offsets_column && !current_offsets_column->empty())
+            {
+                auto subname = ISerialization::getSubcolumnNameForStream(subpath);
+                auto full_name = Nested::concatenateName(name_in_storage, subname);
+                auto & offsets_column = offsets_columns[full_name];
 
+                if (!offsets_column)
+                    offsets_column = current_offsets_column;
+
+            #ifndef NDEBUG
+                const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
+                const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
+
+                if (offsets_data != current_offsets_data)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
+                        offsets_data.size(), current_offsets_data.size(), full_name);
+            #endif
+            }
         }, available_column->type, res_columns[i]);
     }
+
+    return offsets_columns;
+}
+
+void fillMissingColumns(
+    Columns & res_columns,
+    size_t num_rows,
+    const NamesAndTypesList & requested_columns,
+    const NamesAndTypesList & available_columns,
+    const NameSet & partially_read_columns,
+    StorageMetadataPtr metadata_snapshot)
+{
+    size_t num_columns = requested_columns.size();
+    if (num_columns != res_columns.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid number of columns passed to fillMissingColumns. Expected {}, got {}",
+            num_columns, res_columns.size());
+
+    /// For a missing column of a nested data structure
+    /// we must create not a column of empty arrays,
+    /// but a column of arrays of correct length.
+
+    /// First, collect offset columns for all arrays in the block.
+    auto offset_columns = collectOffsetsColumns(available_columns, res_columns);
 
     /// Insert default values only for columns without default expressions.
     auto requested_column = requested_columns.begin();
@@ -260,58 +263,66 @@ void fillMissingColumns(
     {
         const auto & [name, type] = *requested_column;
 
-        if (res_columns[i] && arrayHasNoElementsRead(*res_columns[i]))
+        if (res_columns[i] && partially_read_columns.contains(name))
             res_columns[i] = nullptr;
 
-        if (res_columns[i] == nullptr)
+        if (res_columns[i])
+            continue;
+
+        if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(name))
+            continue;
+
+        std::vector<ColumnPtr> current_offsets;
+        size_t num_dimensions = 0;
+
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
-            if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(name))
-                continue;
+            num_dimensions = getNumberOfDimensions(*array_type);
+            current_offsets.resize(num_dimensions);
 
-            std::vector<ColumnPtr> current_offsets;
-            bool has_all_offsets = true;
+            auto serialization = IDataType::getSerialization(*requested_column);
+            auto name_in_storage = Nested::extractTableName(requested_column->name);
 
-            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-            if (array_type)
+            serialization->enumerateStreams([&](const auto & subpath)
             {
-                auto serialization = IDataType::getSerialization(*requested_column);
-                auto name_in_storage = Nested::extractTableName(requested_column->name);
+                if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
+                    return;
 
-                serialization->enumerateStreams([&](const auto & subpath)
+                size_t level = ISerialization::getArrayLevel(subpath);
+                assert(level < num_dimensions);
+
+                auto subname = ISerialization::getSubcolumnNameForStream(subpath);
+                auto it = offset_columns.find(Nested::concatenateName(name_in_storage, subname));
+                if (it != offset_columns.end())
+                    current_offsets[level] = it->second;
+            });
+
+            for (size_t j = 0; j < num_dimensions; ++j)
+            {
+                if (!current_offsets[j])
                 {
-                    if (!has_all_offsets)
-                        return;
-
-                    if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
-                        return;
-
-                    auto subname = ISerialization::getSubcolumnNameForStream(subpath);
-                    auto it = offset_columns.find(Nested::concatenateName(name_in_storage, subname));
-                    if (it != offset_columns.end())
-                        current_offsets.emplace_back(it->second);
-                    else
-                        has_all_offsets = false;
-
-                }, type);
+                    current_offsets.resize(j);
+                    break;
+                }
             }
+        }
 
-            if (array_type && has_all_offsets)
-            {
-                assert(!current_offsets.empty());
-                auto scalar_type = getBaseTypeOfArray(type);
+        if (!current_offsets.empty())
+        {
+            size_t num_empty_dimensions = num_dimensions - current_offsets.size();
+            auto scalar_type = createArrayOfType(getBaseTypeOfArray(type), num_empty_dimensions);
 
-                size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
-                res_columns[i] = scalar_type->createColumnConstWithDefaultValue(data_size)->convertToFullColumnIfConst();
+            size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
+            res_columns[i] = scalar_type->createColumnConstWithDefaultValue(data_size)->convertToFullColumnIfConst();
 
-                for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
-                    res_columns[i] = ColumnArray::create(res_columns[i], *it);
-            }
-            else
-            {
-                /// We must turn a constant column into a full column because the interpreter could infer
-                /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-                res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
-            }
+            for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
+                res_columns[i] = ColumnArray::create(res_columns[i], *it);
+        }
+        else
+        {
+            /// We must turn a constant column into a full column because the interpreter could infer
+            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+            res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
         }
     }
 }
