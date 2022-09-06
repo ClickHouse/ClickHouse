@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-/// For possible values for template parameters, see 'AggregateFunctionMinMaxAny.h'.
+/// For possible values for template parameters, see 'AggregateFunctionMinMax.h'.
 template <typename ResultData, typename ValueData>
 struct AggregateFunctionArgMinMaxData
 {

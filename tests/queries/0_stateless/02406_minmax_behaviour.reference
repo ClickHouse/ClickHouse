@@ -6,6 +6,7 @@ minIf_FP	0
 maxIf_FP	0
 minIf_String	
 maxIf_String	
+98	99	1	100
 minIf_NullableString	\N
 maxIf_NullableString	\N
 min_NullableString	22
@@ -22,6 +23,12 @@ argmax_numeric_block9	10009
 argmax_numeric_block10	10009
 argmax_numeric_block11	0
 argmax_numeric_block12	0
+argmax_numeric_block13	2028
+argmax_numeric_block14	0
+argmax_numeric_block15	2031
+argmax_numeric_block16	0
+argmax_numeric_block17	0
+argmax_numeric_block18	2031
 argmin_numeric_block1	10
 argmin_numeric_block2	10
 argmin_numeric_block3	10
@@ -34,6 +41,18 @@ argmin_numeric_block9	10
 argmin_numeric_block10	10
 argmin_numeric_block11	0
 argmin_numeric_block12	0
+argmin_numeric_block13	0
+argmin_numeric_block14	0
+argmin_numeric_block15	2031
+argmin_numeric_block16	2028
+argmin_numeric_block17	0
+argmin_numeric_block18	2031
+argmax_tuple_1	(NULL,NULL)	Tuple(Nullable(UInt64), Nullable(UInt64))
+argmax_tuple_2	(4,4)	Tuple(Nullable(UInt64), Nullable(UInt64))
+argmax_tuple_3	(8,8)	Tuple(Nullable(UInt64), Nullable(UInt64))
+argmin_tuple_1	(NULL,NULL)	Tuple(Nullable(UInt64), Nullable(UInt64))
+argmin_tuple_2	(1,1)	Tuple(Nullable(UInt64), Nullable(UInt64))
+argmin_tuple_3	(7,7)	Tuple(Nullable(UInt64), Nullable(UInt64))
 -- { echoOn }
 SET compile_aggregate_expressions=1;
 SET min_count_to_compile_aggregate_expression=0;
@@ -45,6 +64,7 @@ minIf_FP	0
 maxIf_FP	0
 minIf_String	
 maxIf_String	
+98	99	1	100
 minIf_NullableString	\N
 maxIf_NullableString	\N
 min_NullableString	22

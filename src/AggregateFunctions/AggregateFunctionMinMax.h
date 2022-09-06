@@ -100,6 +100,7 @@ struct AggregateFunctionsMinMaxDataNumeric
     using ComparatorType = Comparator;
     using T = typename Comparator::Type;
     using ColVecType = ColumnVectorOrDecimal<T>;
+    /// We want to use multitarget code and dynamic dispatch only when it makes things faster, which is basically with native types
     static constexpr bool supported_multitarget_type = std::is_integral_v<T> || std::is_floating_point_v<T>;
     static constexpr bool allocates_memory_in_arena = false;
 
@@ -110,14 +111,13 @@ struct AggregateFunctionsMinMaxDataNumeric
 
     bool ALWAYS_INLINE inline add(const T & new_value)
     {
-        bool changed = false;
         if (!has_value || Comparator::cmp(new_value, value))
         {
             value = new_value;
-            changed = true;
+            has_value = true;
+            return true;
         }
-        has_value = true;
-        return changed;
+        return false;
     }
 
     bool ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
@@ -240,11 +240,10 @@ struct AggregateFunctionsMinMaxDataNumeric
 
         if constexpr (add_all_elements && supported_multitarget_type)
         {
-            /// This is implemented based on findNumericExtreme and not the other way around because, for example, getting the min of
+            /// This is implemented based on findNumericExtreme and not the other way around because getting the min of
             /// an array is easily done with SIMD, while getting the index where that min value is a much harder problem
-
             /// What we do here is to divide the array in chunks of 1024 elements and calculate the min (or max) of each chunk
-            /// Once we know in which chunk the absolute min is, we look for the index in only that chunk
+            /// Once we know in which chunk the absolute min is we look for the index in only that chunk
             constexpr size_t BLOCK_SIZE = 1024;
             size_t full_blocks = count / BLOCK_SIZE;
 
@@ -614,7 +613,7 @@ struct AggregateFunctionsMinMaxDataString
     }
 
     template <bool add_all_elements, bool add_if_cond_zero>
-    std::optional<size_t> NO_INLINE
+    std::optional<size_t>
     addManyImpl(const IColumn & column, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end, Arena * arena)
     {
         const auto & col = assert_cast<const ColumnString &>(column);
@@ -760,12 +759,22 @@ private:
         return false;
     }
 
+    bool ALWAYS_INLINE inline add(Field && new_value)
+    {
+        if (!has() || Comparator::cmp(new_value, value))
+        {
+            value = std::move(new_value);
+            return true;
+        }
+        return false;
+    }
+
 public:
     bool ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena *)
     {
         Field new_value;
         column.get(row_num, new_value);
-        return add(new_value);
+        return add(std::move(new_value));
     }
 
     void ALWAYS_INLINE inline set(const IColumn & column, size_t row_num, Arena *) { column.get(row_num, value); }
