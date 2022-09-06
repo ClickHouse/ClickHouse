@@ -33,15 +33,11 @@ SET insert_distributed_sync=0;
 INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1 VALUES(1),(2);
 "
 
-# Wait complete of ASYNC INSERT on distributed table
-wait
+# Wait 10s to complete of ASYNC INSERT on distributed table and flush of system.opentelemetry_span_log
+sleep 10
 
 # Check log
 ${CLICKHOUSE_CLIENT} -nq "
--- Flush opentelemetry span log on all nodes
-SET distributed_ddl_output_mode = 'none';
-SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
-
 -- Above INSERT will insert data to two shards respectively, so there will be two spans generated
 SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%writeToLocal%';
 SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%processFile%';
@@ -64,12 +60,11 @@ SET insert_distributed_sync=1;
 INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1 VALUES(1),(2);
 "
 
+# Wait 10s to flush system.opentelemetry_span_log
+sleep 10
+
 # Check log
 ${CLICKHOUSE_CLIENT} -nq "
--- Flush opentelemetry span log on all nodes
-SET distributed_ddl_output_mode = 'none';
-SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
-
 -- Above INSERT will insert data to two shards in the same flow, so there should be two spans generated with the same operation name
 SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%runWritingJob%';
 "
