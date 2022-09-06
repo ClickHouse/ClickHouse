@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/UUID.h>
+#include <Common/SettingConstraintType.h>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -25,10 +26,9 @@ struct SettingsProfileElement
     Field value;
     Field min_value;
     Field max_value;
-    std::optional<bool> is_const;
-    bool changeable_in_readonly;
+    SettingConstraintType type = SettingConstraintType::NONE;
 
-    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, is_const, changeable_in_readonly); }
+    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, type); }
     friend bool operator==(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() == rhs.toTuple(); }
     friend bool operator!=(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return !(lhs == rhs); }
     friend bool operator <(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() < rhs.toTuple(); }

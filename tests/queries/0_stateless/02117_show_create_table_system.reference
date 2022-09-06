@@ -969,7 +969,7 @@ CREATE TABLE system.settings_profile_elements
     `min` Nullable(String),
     `max` Nullable(String),
     `readonly` Nullable(UInt8),
-    `allowance` Nullable(UInt8),
+    `changeable_in_readonly` Nullable(UInt8),
     `inherit_profile` Nullable(String)
 )
 ENGINE = SystemSettingsProfileElements

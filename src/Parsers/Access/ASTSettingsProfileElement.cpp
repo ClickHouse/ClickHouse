@@ -54,17 +54,17 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
 
     switch (type)
     {
-        case ConstraintType::NONE:
+        case SettingConstraintType::NONE:
             break;
-        case ConstraintType::WRITABLE:
+        case SettingConstraintType::WRITABLE:
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
                           << (settings.hilite ? IAST::hilite_none : "");
             break;
-        case ConstraintType::CONST:
+        case SettingConstraintType::CONST:
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " READONLY"
                           << (settings.hilite ? IAST::hilite_none : "");
             break;
-        case ConstraintType::CHANGEABLE_IN_READONLY:
+        case SettingConstraintType::CHANGEABLE_IN_READONLY:
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
                           << (settings.hilite ? IAST::hilite_none : "");
             break;
