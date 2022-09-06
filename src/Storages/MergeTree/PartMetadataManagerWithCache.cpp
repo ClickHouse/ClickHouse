@@ -5,7 +5,7 @@
 #include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace ProfileEvents
@@ -48,16 +48,14 @@ std::unique_ptr<ReadBuffer> PartMetadataManagerWithCache::read(const String & fi
     if (!status.ok())
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
+        auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
+        std::unique_ptr<ReadBuffer> reader;
         if (!isCompressedFromFileName(file_name))
-        {
-            auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
-            readStringUntilEOF(value, *in);
-        }
+            reader = std::move(in);
         else
-        {
-            auto in = CompressedReadBuffer(*part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt));
-            readStringUntilEOF(value, in);
-        }
+            reader = std::make_unique<CompressedReadBufferFromFile>(std::move(in));
+
+        readStringUntilEOF(value, *reader);
         cache->put(key, value);
     }
     else
