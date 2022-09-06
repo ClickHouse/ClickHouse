@@ -22,7 +22,8 @@ namespace DB
 {
 
 // class to parse json deltalake metadata and find files needed for query in table
-class DeltaLakeMetadata {
+class DeltaLakeMetadata
+{
 public:
     DeltaLakeMetadata() = default;
 
@@ -38,13 +39,10 @@ private:
 };
 
 // class to get deltalake log json files and read json from them
-class JsonMetadataGetter 
+class JsonMetadataGetter
 {
 public:
-    JsonMetadataGetter(StorageS3::S3Configuration & configuration_,
-                        const String & table_path_,
-                        Poco::Logger * log_
-                        );
+    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, Poco::Logger * log_);
 
 private:
     void Init();
@@ -91,7 +89,7 @@ public:
 private:
     void Init();
     static void updateS3Configuration(ContextPtr, StorageS3::S3Configuration &);
-    
+
 
 private:
     String generateQueryFromKeys(std::vector<String> && keys);
