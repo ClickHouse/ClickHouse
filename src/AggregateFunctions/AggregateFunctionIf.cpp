@@ -278,6 +278,71 @@ public:
         }
     }
 
+    void addBatchSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena, ssize_t) const final
+    {
+        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique<UInt8[]>(row_end);
+        const size_t filter_column_num = number_of_arguments - 1;
+
+        if (is_nullable[filter_column_num])
+        {
+            const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(columns[filter_column_num]);
+            const IColumn & filter_column = nullable_column->getNestedColumn();
+            const UInt8 * filter_null_map = nullable_column->getNullMapColumn().getData().data();
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(filter_column).getData().data();
+
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                final_null_flags[i] = (null_is_skipped && filter_null_map[i]) || !filter_values[i];
+            }
+        }
+        else
+        {
+            const IColumn * filter_column = columns[filter_column_num];
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
+            for (size_t i = row_begin; i < row_end; i++)
+                final_null_flags[i] = !filter_values[i];
+        }
+
+        const IColumn * nested_columns[number_of_arguments];
+        for (size_t arg = 0; arg < number_of_arguments; arg++)
+        {
+            if (is_nullable[arg])
+            {
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
+                if (null_is_skipped && (arg != filter_column_num))
+                {
+                    const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
+                    const UInt8 * col_null_map = nullmap_column.getData().data();
+                    for (size_t r = row_begin; r < row_end; r++)
+                    {
+                        final_null_flags[r] |= col_null_map[r];
+                    }
+                }
+                nested_columns[arg] = &nullable_col.getNestedColumn();
+            }
+            else
+                nested_columns[arg] = columns[arg];
+        }
+
+        bool at_least_one = false;
+        for (size_t i = row_begin; i < row_end; i++)
+        {
+            if (!final_null_flags[i])
+            {
+                at_least_one = true;
+                break;
+            }
+        }
+
+        if (at_least_one)
+        {
+            this->setFlag(place);
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), nested_columns, final_null_flags.get(), arena, -1);
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override

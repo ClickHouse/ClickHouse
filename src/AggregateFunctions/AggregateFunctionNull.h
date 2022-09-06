@@ -414,6 +414,89 @@ public:
         this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
     }
 
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const final
+    {
+        /// We are going to merge all the flags into a single one to be able to call the nested batching functions
+        std::vector<const UInt8 *> nullable_filters;
+        const IColumn * nested_columns[number_of_arguments];
+        std::unique_ptr<UInt8[]> converted_if_flags = nullptr;
+
+        if (if_argument_pos >= 0)
+        {
+            converted_if_flags = std::make_unique<UInt8[]>(row_end);
+
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                converted_if_flags[i] = !flags.data()[i];
+            }
+            nullable_filters.push_back(converted_if_flags.get());
+        }
+
+        for (size_t i = 0; i < number_of_arguments; ++i)
+        {
+            if (is_nullable[i])
+            {
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
+                nested_columns[i] = &nullable_col.getNestedColumn();
+                if constexpr (null_is_skipped)
+                {
+                    const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
+                    nullable_filters.push_back(nullmap_column.getData().data());
+                }
+            }
+            else
+            {
+                nested_columns[i] = columns[i];
+            }
+        }
+
+        std::unique_ptr<UInt8[]> final_flags;
+        const UInt8 * final_flags_ptr = nullptr;
+        bool found_one = false;
+
+        chassert(nullable_filters.size() > 0); /// We work under the assumption that we reach this because one argument was NULL
+        if (nullable_filters.size() == 1)
+        {
+            /// We can avoid making copies of the only filter but we still need to check that there is data to be added
+            final_flags_ptr = nullable_filters[0];
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (!final_flags_ptr[i])
+                {
+                    found_one = true;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            final_flags = std::make_unique<UInt8[]>(row_end);
+            final_flags_ptr = final_flags.get();
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                for (size_t f = 0; f < nullable_filters.size(); f++)
+                {
+                    final_flags[i] |= nullable_filters[f][i];
+                }
+                found_one |= !final_flags[i];
+            }
+        }
+
+        if (!found_one)
+            return; // Nothing to do and nothing to mark
+
+        this->setFlag(place);
+        this->nested_function->addBatchSinglePlaceNotNull(
+            row_begin, row_end, this->nestedPlace(place), nested_columns, final_flags_ptr, arena, -1);
+    }
+
 
 #if USE_EMBEDDED_COMPILER
 
