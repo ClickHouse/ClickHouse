@@ -27,7 +27,7 @@ namespace DB
   *     1. regexp variant: SELECT matcher EXCEPT ('regexp').
   *     2. column names list variant: SELECT matcher EXCEPT (column_name_1, ...).
   *
-  * 3. REPLACE transfomer:
+  * 3. REPLACE transformer:
   * REPLACE transformer applies similar transformation as APPLY transformer, but only for expressions
   * that match replacement expression name.
   *
@@ -243,7 +243,7 @@ using ReplaceColumnTransformerNodePtr = std::shared_ptr<ReplaceColumnTransformer
   * Strict replace column transformer must use all replacements during matched nodes transformation.
   *
   * Example:
-  * REATE TABLE test_table (id UInt64, value String) ENGINE=TinyLog;
+  * CREATE TABLE test_table (id UInt64, value String) ENGINE=TinyLog;
   * SELECT * REPLACE STRICT (1 AS id, 2 AS value_1) FROM test_table;
   * Such query will throw exception because column name with value1 was not matched by strict REPLACE transformer.
   */

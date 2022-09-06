@@ -42,7 +42,7 @@ namespace DB
   * Example: SELECT test_table.* FROM test_table.
   * Example: SELECT a.* FROM test_table AS a.
   *
-  * Additionaly each matcher can contain transformers, check ColumnTransformers.h.
+  * Additionally each matcher can contain transformers, check ColumnTransformers.h.
   * In query tree matchers column transformers are represended as ListNode.
   */
 enum class MatcherNodeType

@@ -142,7 +142,7 @@ namespace ErrorCodes
   * 1. Try to resolve identifier in expression context.
   * 2. Try to resolve identifier in function context, if it is allowed. Example: SELECT func(arguments); Here func identifier cannot be resolved in function context
   * because query projection does not support that.
-  * 3. Try to resolve identifier in talbe context, if it is allowed. Example: SELECT table; Here table identifier cannot be resolved in function context
+  * 3. Try to resolve identifier in table context, if it is allowed. Example: SELECT table; Here table identifier cannot be resolved in function context
   * because query projection does not support that.
   *
   * TODO: This does not supported properly before, because matchers could not be resolved from aliases.
@@ -167,13 +167,13 @@ namespace ErrorCodes
   *
   * Additional rules about identifier binding.
   * Bind for identifier to entity means that identifier first part match some node during analysis.
-  * If other parts of identifier cannot be resolved in that node, exception must be throwed.
+  * If other parts of identifier cannot be resolved in that node, exception must be thrown.
   *
   * Example:
   * CREATE TABLE test_table (id UInt64, compound_value Tuple(value UInt64)) ENGINE=TinyLog;
   * SELECT compound_value.value, 1 AS compound_value FROM test_table;
   * Identifier first part compound_value bound to entity with alias compound_value, but nested identifier part cannot be resolved from entity,
-  * lookup should not be continued, and exception must be throwed because if lookup continues that way identifier can be resolved from join tree.
+  * lookup should not be continued, and exception must be thrown because if lookup continues that way identifier can be resolved from join tree.
   *
   * TODO: This was not supported properly before analyzer because nested identifier could not be resolved from alias.
   *
@@ -181,7 +181,7 @@ namespace ErrorCodes
   * CREATE TABLE test_table (id UInt64, value UInt64) ENGINE=TinyLog;
   * WITH cast(('Value'), 'Tuple (value UInt64') AS value SELECT (SELECT value FROM test_table);
   * Identifier first part value bound to test_table column value, but nested identifier part cannot be resolved from it,
-  * lookup should not be continued, and exception must be throwed because if lookup continues identifier can be resolved from parent scope.
+  * lookup should not be continued, and exception must be thrown because if lookup continues identifier can be resolved from parent scope.
   *
   * TODO: Add expression name into query tree node. Example: SELECT plus(1, 1). Result: SELECT 2. Expression name of constant node should be 2.
   * TODO: Update exception messages
@@ -366,7 +366,7 @@ struct IdentifierResolveSettings
     /// Allow to check join tree during identifier resolution
     bool allow_to_check_join_tree = true;
 
-    /// Allow to check CTEs during table identifer resolution
+    /// Allow to check CTEs during table identifier resolution
     bool allow_to_check_cte = true;
 
     /// Allow to check database catalog during table identifier resolution
@@ -1125,7 +1125,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(QueryTreeNodePtr & table_ex
             }
 
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Table expresion modifiers {} are not supported for subquery {}. In scope {}",
+                "Table expression modifiers {} are not supported for subquery {}. In scope {}",
                 table_expression_modifiers_error_message,
                 table_expression_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
@@ -1679,7 +1679,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     {
         if (left_resolved_identifier && right_resolved_identifier)
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambigious identifier {}. In scope {}",
+                "JOIN {} ambiguous identifier {}. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
                 identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
@@ -1737,7 +1737,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         else
         {
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambigious identifier {}. In scope {}",
+                "JOIN {} ambiguous identifier {}. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
                 identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
@@ -1878,7 +1878,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const Ident
   * 2. Try to resolve identifier from table columns.
   * 3. If there is no FROM section return nullptr.
   * 4. If identifier is in table lookup context, check if it has 1 or 2 parts, otherwise throw exception.
-  * If identifer has 2 parts try to match it with database_name and table_name.
+  * If identifier has 2 parts try to match it with database_name and table_name.
   * If identifier has 1 part try to match it with table_name, then try to match it with table alias.
   * 5. If identifier is in expression lookup context, we first need to bind identifier to some table column using identifier first part.
   * Start with identifier first part, if it match some column name in table try to get column with full identifier name.
@@ -2005,7 +2005,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
   * in database catalog.
   *
   * Same is not done for functions because function resolution is more complex, and in case of aggregate functions requires not only name
-  * but also argument types, it is responsiblity of resolve function method to handle resolution of function name.
+  * but also argument types, it is responsibility of resolve function method to handle resolution of function name.
   *
   * 9. If identifier was not resolved remove it from identifier_lookup_to_resolve_status table.
   *
@@ -2596,7 +2596,7 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
   * scope - lambda scope. It is client responsibility to create it.
   *
   * Resolve steps:
-  * 1. Valide arguments.
+  * 1. Validate arguments.
   * 2. Register lambda in lambdas in resolve process. This is necessary to prevent recursive lambda resolving.
   * 3. Initialize scope with lambda aliases.
   * 4. Validate lambda argument names, and scope expressions.
@@ -2966,7 +2966,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
-      * Then each lambda arguments are initalized with columns, where column source is lambda.
+      * Then each lambda arguments are initialized with columns, where column source is lambda.
       * This information is important for later steps of query processing.
       * Example: SELECT arrayMap(x -> x + 1, [1, 2, 3]).
       * lambda node x -> x + 1 identifier x is resolved as column where source is lambda node.
@@ -3122,7 +3122,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
   * 2. Call specific resolve method depending on node type.
   *
   * If allow_table_expression = true and node is query node, then it is not evaluated as scalar subquery.
-  * Althought if node is identifier that is resolved into query node that query is evaluated as scalar subquery.
+  * Although if node is identifier that is resolved into query node that query is evaluated as scalar subquery.
   * SELECT id, (SELECT 1) AS c FROM test_table WHERE a IN c;
   * SELECT id, FROM test_table WHERE a IN (SELECT 1);
   *

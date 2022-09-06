@@ -361,7 +361,7 @@ ASTPtr QueryNode::toASTImpl() const
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST());
 
     auto result_select_query = std::make_shared<ASTSelectWithUnionQuery>();
-    result_select_query->union_mode = SelectUnionMode::Unspecified;
+    result_select_query->union_mode = SelectUnionMode::UNION_DEFAULT;
 
     auto list_of_selects = std::make_shared<ASTExpressionList>();
     list_of_selects->children.push_back(std::move(select_query));

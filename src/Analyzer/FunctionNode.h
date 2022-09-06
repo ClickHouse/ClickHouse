@@ -15,7 +15,7 @@ using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 /** Function node represents function in query tree.
   * Function syntax: function_name(parameter_1, ...)(argument_1, ...).
-  * If funciton does not have parameters its syntax is function_name(argument_1, ...).
+  * If function does not have parameters its syntax is function_name(argument_1, ...).
   * If function does not have arguments its syntax is function_name().
   *
   * In query tree function parameters and arguments are represented by ListNode.
@@ -130,7 +130,7 @@ public:
 
     /** Resolve function node as non aggregate function.
       * It is important that function name is update with resolved function name.
-      * Main motiviation for this is query tree optimizations.
+      * Main motivation for this is query tree optimizations.
       * Assume we have `multiIf` function with single argument, it can be converted to `if` function.
       * Function name must be updated accordingly.
       */
@@ -138,7 +138,7 @@ public:
 
     /** Resolve function node as aggregate function.
       * It is important that function name is update with resolved function name.
-      * Main motiviation for this is query tree optimizations.
+      * Main motivation for this is query tree optimizations.
       */
     void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, DataTypePtr result_type_value);
 

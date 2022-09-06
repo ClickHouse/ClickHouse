@@ -27,7 +27,7 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
     getTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSSIONS\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSIONS\n";
     getJoinExpressionsNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 

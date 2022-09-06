@@ -70,12 +70,12 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     buffer << '\n' << std::string(indent + 2, ' ') << "LEFT TABLE EXPRESSION\n";
     getLeftTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "RIGHT TABLE EXPRESSSION\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "RIGHT TABLE EXPRESSION\n";
     getRightTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (getJoinExpression())
     {
-        buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSSION\n";
+        buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSION\n";
         getJoinExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }

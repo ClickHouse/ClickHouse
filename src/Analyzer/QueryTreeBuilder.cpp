@@ -166,10 +166,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
     union_node->setIsSubquery(is_subquery);
     union_node->setCTEName(cte_name);
 
-    if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT)
-        union_node->setUnionMode(SelectUnionMode::INTERSECT);
-    else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT)
-        union_node->setUnionMode(SelectUnionMode::EXCEPT);
+    if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
+        union_node->setUnionMode(SelectUnionMode::INTERSECT_ALL);
+    else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT)
+        union_node->setUnionMode(SelectUnionMode::INTERSECT_DISTINCT);
+    else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL)
+        union_node->setUnionMode(SelectUnionMode::EXCEPT_ALL);
+    else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
+        union_node->setUnionMode(SelectUnionMode::EXCEPT_DISTINCT);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION type is not initialized");
 
@@ -523,7 +527,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 {
     if (!tables_in_select_query)
     {
-        /** If no table is specified in SELECT query we substitude system.one table.
+        /** If no table is specified in SELECT query we substitute system.one table.
           * SELECT * FROM system.one;
           */
         Identifier storage_identifier("system.one");
