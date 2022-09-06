@@ -10,41 +10,32 @@ namespace DB
 
 bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (op_pos.empty())
-        return true;
-
-    auto begin = pos;
     bool has_dir = false;
     std::vector <bool> has_directions;
     ParserOrderByExpressionList order_list;
     ASTPtr order_expression_list;
 
-    ParserKeyword by("by");
+    auto expr = getExprFromToken(pos);
 
-    pos = op_pos.back();  // sort only affected by last one
+    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
+    IParser::Pos new_pos(tokens, pos.max_depth);
 
-    if (!by.ignore(pos, expected))
+    auto pos_backup = new_pos;
+    if (!order_list.parse(pos_backup, order_expression_list, expected))
         return false;
 
-    if (!order_list.parse(pos,order_expression_list,expected))
-        return false;
-    if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
-        return false;
-
-    pos = op_pos.back();
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark)
+    while (!new_pos->isEnd() && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
     {
-        String tmp(pos->begin,pos->end);
+        String tmp(new_pos->begin, new_pos->end);
         if (tmp == "desc" or tmp == "asc")
             has_dir = true;
 
-        if (pos->type == TokenType::Comma)
+        if (new_pos->type == TokenType::Comma)
         {
             has_directions.push_back(has_dir);
             has_dir = false;
         }
-
-        ++pos;
+        ++new_pos;
     }
     has_directions.push_back(has_dir);
 
@@ -58,13 +49,11 @@ bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 order_expr->nulls_direction = -1;
             else
                 order_expr->nulls_direction = order_expr->nulls_direction == 1 ? -1 : 1;
-
         }
     }
 
-    node = order_expression_list;
+    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
 
-    pos =begin;
     return true;
 }
 
