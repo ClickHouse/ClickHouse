@@ -32,7 +32,7 @@ function execute_group_by()
     # max_memory_usage_for_user is installed to 0 once there are no more
     # queries for user.
     local opts=(
-        "--max_memory_usage_for_user="$((150<<20))
+        "--max_memory_usage_for_user="$((200<<20))
         "--max_threads=2"
     )
     execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5'
