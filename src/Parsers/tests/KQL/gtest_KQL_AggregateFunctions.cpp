@@ -28,7 +28,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | summarize percentiles(Age, 30, 40, 50, 60, 70) by FirstName",
-            "SELECT\n    FirstName,\n    quantile(30 / 100)(Age) AS percentile_Age_30,\n    quantile(40 / 100)(Age) AS percentile_Age_40,\n    quantile(50 / 100)(Age) AS percentile_Age_50,\n    quantile(60 / 100)(Age) AS percentile_Age_60,\n    quantile(70 / 100)(Age) AS percentile_Age_70\nFROM Customers\nGROUP BY FirstName"
+            "SELECT\n    FirstName,\n    quantiles(30 / 100, 40 / 100, 50 / 100, 60 / 100, 70 / 100)(Age)\nFROM Customers\nGROUP BY FirstName"
         },
         {
             "Customers | summarize t = percentiles_array(Age, 10, 20, 30, 50) by FirstName",
@@ -40,7 +40,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "DataTable | summarize t = percentilesw(Bucket, Frequency, 50, 75, 99.9)",
-            "SELECT\n    quantileExactWeighted(50 / 100)(Bucket, Frequency) AS percentile_Bucket_50,\n    quantileExactWeighted(75 / 100)(Bucket, Frequency) AS percentile_Bucket_75,\n    quantileExactWeighted(99.9 / 100)(Bucket, Frequency) AS percentile_Bucket_99_9\nFROM DataTable"
+            "SELECT quantilesExactWeighted(50 / 100, 75 / 100, 99.9 / 100)(Bucket, Frequency) AS t\nFROM DataTable"
         },
         {
             "DataTable| summarize t = percentilesw_array(Bucket, Frequency, dynamic([10, 50, 30]))",
