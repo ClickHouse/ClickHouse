@@ -3,6 +3,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -4110,26 +4111,43 @@ void MergeTreeData::backupData(BackupEntriesCollector & backup_entries_collector
     backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup));
 }
 
-BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup)
+BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup) const
 {
     BackupEntries backup_entries;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
 
+    /// Tables in atomic databases have UUID. When using atomic database we don't have to create hard links to make a backup, we can just
+    /// keep smart pointers to data parts instead. That's because the files of a data part are removed only by the destructor of the data part
+    /// and so keeping a smart pointer to a data part is enough to protect those files from deleting.
+    bool use_hard_links = !getStorageID().hasUUID();
+
     for (const auto & part : data_parts)
     {
+        BackupEntries new_backup_entries;
+
         part->data_part_storage->backup(
-            temp_dirs, part->checksums, part->getFileNamesWithoutChecksums(), data_path_in_backup, backup_entries);
+            part->checksums, part->getFileNamesWithoutChecksums(), data_path_in_backup, new_backup_entries, use_hard_links, &temp_dirs);
 
         auto projection_parts = part->getProjectionParts();
         for (const auto & [projection_name, projection_part] : projection_parts)
         {
             projection_part->data_part_storage->backup(
-                temp_dirs,
                 projection_part->checksums,
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
-                backup_entries);
+                new_backup_entries,
+                use_hard_links,
+                &temp_dirs);
         }
+
+        if (!use_hard_links)
+        {
+            /// Wrap backup entries with data parts in order to keep the data parts alive while the backup entries in use.
+            for (auto & [_, backup_entry] : new_backup_entries)
+                backup_entry = std::make_shared<BackupEntryWrappedWith<DataPartPtr>>(std::move(backup_entry), part);
+        }
+
+        insertAtEnd(backup_entries, std::move(new_backup_entries));
     }
 
     return backup_entries;
