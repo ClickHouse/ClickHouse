@@ -168,7 +168,7 @@ def prepare_for_hung_check(drop_databases):
                 for db in databases:
                     if db == "system":
                         continue
-                    command = make_query_command(f"DROP DATABASE {db}")
+                    command = make_query_command(f'DETACH DATABASE {db}')
                     # we don't wait for drop
                     Popen(command, shell=True)
                 break

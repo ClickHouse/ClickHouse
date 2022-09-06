@@ -3,6 +3,9 @@
 # shellcheck disable=SC2086
 # shellcheck disable=SC2024
 
+# Avoid overlaps with previous runs
+dmesg --clear
+
 set -x
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
@@ -38,6 +41,7 @@ function install_packages()
 
 function configure()
 {
+    export ZOOKEEPER_FAULT_INJECTION=1
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
