@@ -742,7 +742,7 @@ template <typename Comparator>
 struct AggregateFunctionsMinMaxDataGeneric
 {
     using ComparatorType = Comparator;
-    static constexpr bool allocates_memory_in_arena = true;
+    static constexpr bool allocates_memory_in_arena = false;
 
 private:
     Field value;
