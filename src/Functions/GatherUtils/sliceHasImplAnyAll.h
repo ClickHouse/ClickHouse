@@ -419,7 +419,7 @@ DECLARE_SSE42_SPECIFIC_CODE (
 // SSE4.2 Int64, UInt64 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int64> || std::is_same_v<IntType, UInt64>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt64(
+inline bool sliceHasImplAnyAllImplInt64(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -495,7 +495,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt64(
 // SSE4.2 Int32, UInt32 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt32(
+inline bool sliceHasImplAnyAllImplInt32(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -580,7 +580,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt32(
 // SSE4.2 Int16, UInt16 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int16> || std::is_same_v<IntType, UInt16>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
+inline bool sliceHasImplAnyAllImplInt16(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -682,7 +682,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
 // SSE2 Int8, UInt8 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int8> || std::is_same_v<IntType, UInt8>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt8(
+inline bool sliceHasImplAnyAllImplInt8(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
