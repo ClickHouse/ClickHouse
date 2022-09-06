@@ -47,9 +47,10 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
-    /// Sometimes, like when verifying constraints, we don't care about the alias of the function to compare the aliases
-    /// But on the general case, for example in a subquery, we do care about the alias since it might be used later by other columns
-    /// So we have this specific function to help dealing with constrains
+    /// In some cases, for example when verifying and applying constraints, we don't care about the alias of the function and we want
+    /// to use the hash of the function and its arguments. In the general case though, like when generating the hash of a subquery,
+    /// we do care about the alias given to a function since it might be used by other columns
+    /// This function is here to help working with the first case (constraints)
     IAST::Hash getTreeHashWithoutAlias() const;
 
     ASTSelectWithUnionQuery * tryGetQueryArgument() const;
