@@ -40,6 +40,7 @@ public:
         InputOrderInfoPtr group_by_info_,
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_);
+    void addConvertingToNullableTransform(QueryPipelineBuilder& pipeline, const BuildQueryPipelineSettings& settings);
 
     String getName() const override { return "Aggregating"; }
 

@@ -232,6 +232,8 @@ struct ExpressionAnalysisResult
 
     bool use_grouping_set_key = false;
 
+    GroupByKind group_by_kind;
+
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ActionsDAGPtr before_join;
