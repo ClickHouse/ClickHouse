@@ -3831,9 +3831,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     LOG_DEBUG(log, "Fetching part {} from {}", part_name, source_replica_path);
 
+    auto settings_ptr = getSettings();
     TableLockHolder table_lock_holder;
     if (!to_detached)
-        table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+        table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, settings_ptr->lock_acquire_timeout_for_background_operations);
 
     /// Logging
     Stopwatch stopwatch;
@@ -3857,7 +3858,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         covered_part_info.mutation = 0;
         auto source_part = getActiveContainingPart(covered_part_info);
 
-        if (source_part)
+        /// Fetch for zero-copy replication is cheap and straightforward, so we don't use local clone here
+        if (source_part && (!settings_ptr->allow_remote_fs_zero_copy_replication || !source_part->data_part_storage->supportZeroCopyReplication()))
         {
             auto source_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
                 source_part->getColumns(), source_part->checksums);
@@ -3897,7 +3899,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 part_to_clone = source_part;
             }
         }
-
     }
 
     ReplicatedMergeTreeAddress address;
