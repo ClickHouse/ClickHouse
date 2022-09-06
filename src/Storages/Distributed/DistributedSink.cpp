@@ -290,6 +290,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block, num_shards]()
     {
+        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
@@ -330,18 +332,18 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
         const Settings & settings = context->getSettingsRef();
 
-        /// Do not initiate INSERT for empty block.
         size_t rows = shard_block.rows();
-        if (rows == 0)
-            return;
 
-        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
         span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
         span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
         span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
         span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
-        span.addAttribute("clickhouse.rows", [rows]() { return std::to_string(rows); });
-        span.addAttribute("clickhouse.bytes", [&shard_block]() { return std::to_string(shard_block.bytes()); });
+        span.addAttribute("clickhouse.rows", rows);
+        span.addAttribute("clickhouse.bytes", [&shard_block]() { return toString(shard_block.bytes()); });
+
+        /// Do not initiate INSERT for empty block.
+        if (rows == 0)
+            return;
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -648,15 +650,15 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 }
 
 
-void DistributedSink::writeToLocal(const Cluster::ShardInfo& shard_info, const Block & block, size_t repeats)
+void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const Block & block, size_t repeats)
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
     span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
     span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
     span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
-    span.addAttribute("clickhouse.rows", [&block]() { return std::to_string(block.rows()); });
-    span.addAttribute("clickhouse.bytes", [&block]() { return std::to_string(block.bytes()); });
+    span.addAttribute("clickhouse.rows", [&block]() { return toString(block.rows()); });
+    span.addAttribute("clickhouse.bytes", [&block]() { return toString(block.bytes()); });
 
     try
     {
@@ -677,7 +679,7 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo& shard_info, const B
 }
 
 
-void DistributedSink::writeToShard(const Cluster::ShardInfo& shard_info, const Block & block, const std::vector<std::string> & dir_names)
+void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names)
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
