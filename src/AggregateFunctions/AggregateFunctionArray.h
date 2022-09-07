@@ -99,6 +99,11 @@ public:
         return nested_func->isState();
     }
 
+    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
+    {
+        return nested_func->extractStateColumnFromResultColumn(column);
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const IColumn * nested[num_arguments];

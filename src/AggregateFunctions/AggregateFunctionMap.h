@@ -89,6 +89,11 @@ public:
         return nested_func->isState();
     }
 
+    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
+    {
+        return nested_func->extractStateColumnFromResultColumn(&assert_cast<ColumnMap *>(column)->getNestedData().getColumn(1));
+    }
+
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
     {
         if (types.empty())

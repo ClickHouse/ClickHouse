@@ -67,6 +67,11 @@ public:
         return nested_function->isState();
     }
 
+    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
+    {
+        return nested_function->extractStateColumnFromResultColumn(column);
+    }
+
     bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();

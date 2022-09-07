@@ -189,6 +189,11 @@ public:
         return nested_function->isState();
     }
 
+    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
+    {
+        return nested_function->extractStateColumnFromResultColumn(column);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
 #if USE_EMBEDDED_COMPILER
