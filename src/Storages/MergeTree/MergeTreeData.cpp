@@ -1902,7 +1902,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 {
     const auto settings = getSettings();
     if (parts_to_remove.size() > 1
-        && !settings->allow_remote_fs_zero_copy_replication
         && settings->max_part_removal_threads > 1
         && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
     {
