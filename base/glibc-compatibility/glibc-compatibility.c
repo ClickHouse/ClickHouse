@@ -175,6 +175,7 @@ void __explicit_bzero_chk(void * buf, size_t len, size_t unused)
     return explicit_bzero(buf, len);
 }
 
+
 #include <unistd.h>
 #include "syscall.h"
 
@@ -184,11 +185,15 @@ ssize_t copy_file_range(int fd_in, off_t *off_in, int fd_out, off_t *off_out, si
 }
 
 
+long splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, unsigned flags)
+{
+	return syscall(SYS_splice, fd_in, off_in, fd_out, off_out, len, flags);
+}
+
+
 #define _BSD_SOURCE
 #include <sys/stat.h>
 #include <stdint.h>
-#include "syscall.h"
-
 
 #if !defined(__aarch64__)
 struct statx {
@@ -225,7 +230,6 @@ int statx(int fd, const char *restrict path, int flag,
 
 
 #include <syscall.h>
-#include "syscall.h"
 
 ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
 {
@@ -234,10 +238,6 @@ ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
 }
 
 
-
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <errno.h>
 #include <limits.h>
 
@@ -310,6 +310,7 @@ int __execvpe(const char *file, char *const argv[], char *const envp[])
 	return -1;
 }
 
+
 #include "spawn.h"
 
 int posix_spawnp(pid_t *restrict res, const char *restrict file,
@@ -329,15 +330,15 @@ int posix_spawnp(pid_t *restrict res, const char *restrict file,
 #define FDOP_CHDIR 4
 #define FDOP_FCHDIR 5
 
+#define ENOMEM 12
+#define EBADF 9
+
 struct fdop {
 	struct fdop *next, *prev;
 	int cmd, fd, srcfd, oflag;
 	mode_t mode;
 	char path[];
 };
-
-#define ENOMEM 12
-#define EBADF 9
 
 int posix_spawn_file_actions_init(posix_spawn_file_actions_t *fa) {
 	fa->__actions = 0;
