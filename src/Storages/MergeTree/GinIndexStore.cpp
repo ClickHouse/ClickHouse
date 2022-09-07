@@ -259,7 +259,7 @@ void GinIndexStore::writeSegment()
     ///write item dictionary
     std::vector<UInt8> buffer;
     WriteBufferFromVector<std::vector<UInt8>> write_buf(buffer);
-    FSTBuilder builder(write_buf);
+    FST::FSTBuilder builder(write_buf);
 
     UInt64 offset{0};
     current_index = 0;

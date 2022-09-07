@@ -89,7 +89,7 @@ struct TermDictionary
     UInt64 item_dict_start_offset;
 
     /// Finite State Transducer, which can be viewed as a map of <term, offset>
-    FST offsets;
+    FST::FiniteStateTransducer offsets;
 };
 
 using TermDictionaryPtr = std::shared_ptr<TermDictionary>;

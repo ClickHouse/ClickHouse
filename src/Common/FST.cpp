@@ -1,14 +1,14 @@
+#include "FST.h"
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <memory>
 #include <vector>
-#include <algorithm>
 #include <../contrib/consistent-hashing/popcount.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Common/HashTable/Hash.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
-#include "FST.h"
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -16,6 +16,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 };
+
+namespace FST
+{
 
 UInt16 Arc::serialize(WriteBuffer& write_buffer) const
 {
@@ -150,7 +153,7 @@ UInt64 State::serialize(WriteBuffer& write_buffer)
     {
         /// Serialize all labels
         std::vector<char> labels;
-        labels.reserve(MAX_ARCS_IN_SEQUENTIAL_METHID);
+        labels.reserve(MAX_ARCS_IN_SEQUENTIAL_METHOD);
 
         for (auto& label_state : arcs)
         {
@@ -335,16 +338,16 @@ UInt64 FSTBuilder::build()
     return previous_state_index + previous_written_bytes + length + 1;
 }
 
-FST::FST(std::vector<UInt8>&& data_) : data(data_)
+FiniteStateTransducer::FiniteStateTransducer(std::vector<UInt8>&& data_) : data(data_)
 {
 }
 
-void FST::clear()
+void FiniteStateTransducer::clear()
 {
     data.clear();
 }
 
-std::pair<bool, UInt64> FST::getOutput(const String& term)
+std::pair<bool, UInt64> FiniteStateTransducer::getOutput(const String& term)
 {
     std::pair<bool, UInt64> result_output{ false, 0 };
     /// Read index of initial state
@@ -441,5 +444,6 @@ std::pair<bool, UInt64> FST::getOutput(const String& term)
         result_output.second += arc_output;
     }
     return result_output;
+}
 }
 }
