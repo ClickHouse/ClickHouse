@@ -1,5 +1,8 @@
-#include <Storages/StorageDelta.h>
 #include <Common/config.h>
+
+#if USE_AWS_S3
+
+#include <Storages/StorageDelta.h>
 #include <Common/logger_useful.h>
 
 #include <IO/ReadBufferFromS3.h>
@@ -346,3 +349,5 @@ void registerStorageDelta(StorageFactory & factory)
 }
 
 }
+
+#endif
