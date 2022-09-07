@@ -237,6 +237,8 @@ set (SRCS
 #
 # Please regenerate these files if you update vectorscan. They must be regenerated for each platform separately because ragel produces for
 # weird reasons different constants in the output.
+#
+# Also, please use upstream versions of colm and ragel, the packages in Ubuntu 22.04 seem to produce wrong output on ARM.
 if (ARCH_AMD64)
     list (APPEND SRCS
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"
