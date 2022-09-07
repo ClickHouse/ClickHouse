@@ -35,7 +35,7 @@ INSTANTIATE_TEST_SUITE_P(
         {
             "print tostring(A)",
             "SELECT ifNull(toString(A), '')"
-        }
+        },
         {
             "print decimal(123.345)",
             "SELECT toDecimal128(CAST('123.345', 'String'), 32)"
