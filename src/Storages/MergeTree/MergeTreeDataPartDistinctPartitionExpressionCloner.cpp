@@ -6,7 +6,7 @@ namespace DB
 {
 
     MergeTreeDataPartDistinctPartitionExpressionCloner::MergeTreeDataPartDistinctPartitionExpressionCloner(
-        const MergeTreeData & merge_tree_data_,
+        MergeTreeData * merge_tree_data_,
         const DataPartPtr & src_part_,
         const MergeTreePartInfo & dst_part_info_,
         const String & tmp_part_prefix_,
@@ -14,7 +14,7 @@ namespace DB
         const MergeTreePartition & new_partition_,
         const IMergeTreeDataPart::MinMaxIndex & new_min_max_index_
     )
-    : MergeTreeDataPartCloner(merge_tree_data_, src_part_,merge_tree_data_.getInMemoryMetadataPtr(),
+    : MergeTreeDataPartCloner(merge_tree_data_, src_part_, merge_tree_data_->getInMemoryMetadataPtr(),
                               dst_part_info_, tmp_part_prefix_, txn_, false, {}, false),
         new_partition(new_partition_), new_min_max_index(new_min_max_index_)
     {}
@@ -37,7 +37,7 @@ namespace DB
     {
         delete_min_max_files(storage_builder);
 
-        [[maybe_unused]] auto written_files = dst_part->minmax_idx->store(merge_tree_data, storage_builder, dst_part->checksums);
+        [[maybe_unused]] auto written_files = dst_part->minmax_idx->store(*merge_tree_data, storage_builder, dst_part->checksums);
     }
 
     void MergeTreeDataPartDistinctPartitionExpressionCloner::update_partition_file(
@@ -50,7 +50,7 @@ namespace DB
 
         // Leverage already implemented MergeTreePartition::store to create & store partition.dat.
         // Checksum is re-calculated later.
-        auto partition_store_write_buffer = partition.store(merge_tree_data, storage_builder, dst_part->checksums);
+        auto partition_store_write_buffer = partition.store(*merge_tree_data, storage_builder, dst_part->checksums);
 
         partition_store_write_buffer->finalize();
     }

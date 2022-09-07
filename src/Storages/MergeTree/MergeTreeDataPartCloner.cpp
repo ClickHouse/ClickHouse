@@ -9,7 +9,7 @@ namespace ErrorCodes
 }
 
     MergeTreeDataPartCloner::MergeTreeDataPartCloner(
-        const MergeTreeData & merge_tree_data_,
+        MergeTreeData * merge_tree_data_,
         const DataPartPtr & src_part_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreePartInfo & dst_part_info_,
@@ -25,7 +25,7 @@ namespace ErrorCodes
         hardlinked_files(hardlinked_files_), copy_instead_of_hardlink(copy_instead_of_hardlink_)
     {}
 
-    MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartCloner::clone()
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone()
     {
         if (!does_storage_policy_allow_same_disk())
             throw Exception(
@@ -35,7 +35,7 @@ namespace ErrorCodes
 
         assert(!tmp_part_prefix.empty());
 
-        const auto destination_part = clone_source_part();
+        auto [destination_part, temporary_directory_lock] = clone_source_part();
 
         if (!copy_instead_of_hardlink && hardlinked_files)
         {
@@ -43,7 +43,7 @@ namespace ErrorCodes
             handle_hard_linked_parameter_files();
         }
 
-        return finalize_part(destination_part);
+        return std::make_pair(finalize_part(destination_part), std::move(temporary_directory_lock));
     }
 
     DataPartStoragePtr MergeTreeDataPartCloner::flush_part_storage_to_disk_if_in_memory() const
@@ -59,7 +59,7 @@ namespace ErrorCodes
 
     bool MergeTreeDataPartCloner::does_storage_policy_allow_same_disk() const
     {
-        for (const DiskPtr & disk : merge_tree_data.getStoragePolicy()->getDisks())
+        for (const DiskPtr & disk : merge_tree_data->getStoragePolicy()->getDisks())
         {
             if (disk->getName() == src_part->data_part_storage->getDiskName())
             {
@@ -80,7 +80,7 @@ namespace ErrorCodes
     ) const
     {
         return storage->freeze(
-                merge_tree_data.getRelativeDataPath(),
+                merge_tree_data->getRelativeDataPath(),
                 path,
                 false /* make_source_readonly */,
                 {},
@@ -88,11 +88,13 @@ namespace ErrorCodes
         );
     }
 
-    MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartCloner::clone_source_part() const
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone_source_part() const
     {
         const String dst_part_name = src_part->getNewName(dst_part_info);
 
         const String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
+
+        auto temporary_directory_lock = merge_tree_data->getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
         reserve_space_on_disk();
 
@@ -100,7 +102,7 @@ namespace ErrorCodes
 
         auto dst_part_storage = hardlink_all_files(src_part_storage, tmp_dst_part_name);
 
-        return merge_tree_data.createPart(dst_part_name, dst_part_info, dst_part_storage);
+        return std::make_pair(merge_tree_data->createPart(dst_part_name, dst_part_info, dst_part_storage), std::move(temporary_directory_lock));
     }
 
     void MergeTreeDataPartCloner::handle_hard_linked_parameter_files() const

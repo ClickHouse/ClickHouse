@@ -798,7 +798,7 @@ public:
         const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
         bool copy_instead_of_hardlink);
 
-    MergeTreeData::MutableDataPartPtr cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,

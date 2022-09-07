@@ -6068,7 +6068,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     bool copy_instead_of_hardlink)
 {
     MergeTreeDataPartCloner part_cloner {
-        *this,
+        this,
         src_part,
         metadata_snapshot,
         dst_part_info,
@@ -6089,7 +6089,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         const MergeTreeTransactionPtr & txn, HardlinkedFiles *)
 {
     MergeTreeDataPartDistinctPartitionExpressionCloner part_cloner {
-        *this,
+        this,
         src_part,
         dst_part_info,
         tmp_part_prefix,

@@ -17,7 +17,7 @@ namespace DB
         using DataPartPtr = std::shared_ptr<const DataPart>;
 
         MergeTreeDataPartCloner(
-            const MergeTreeData & merge_tree_data,
+            MergeTreeData * merge_tree_data,
             const DataPartPtr & src_part,
             const StorageMetadataPtr & metadata_snapshot,
             const MergeTreePartInfo & dst_part_info,
@@ -30,13 +30,13 @@ namespace DB
 
         virtual ~MergeTreeDataPartCloner() = default;
 
-        MutableDataPartPtr clone();
+        std::pair<MutableDataPartPtr, scope_guard> clone();
 
     protected:
-        const MergeTreeData & merge_tree_data;
+        MergeTreeData * merge_tree_data;
         const DataPartPtr & src_part;
 
-        virtual MutableDataPartPtr finalize_part(const MutableDataPartPtr & dst_part) const;
+        virtual MergeTreeData::MutableDataPartPtr finalize_part(const MutableDataPartPtr & dst_part) const;
 
     private:
         const StorageMetadataPtr & metadata_snapshot;
@@ -57,7 +57,7 @@ namespace DB
         /// If source part is in memory, flush it to disk and clone it already in on-disk format
         DataPartStoragePtr flush_part_storage_to_disk_if_in_memory() const;
 
-        MutableDataPartPtr clone_source_part() const;
+        std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> clone_source_part() const;
 
         void handle_hard_linked_parameter_files() const;
 

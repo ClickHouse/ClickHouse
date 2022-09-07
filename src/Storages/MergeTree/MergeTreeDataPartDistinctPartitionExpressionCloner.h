@@ -17,7 +17,7 @@ namespace DB
 
     public:
         MergeTreeDataPartDistinctPartitionExpressionCloner(
-            const MergeTreeData & merge_tree_data,
+            MergeTreeData * merge_tree_data,
             const DataPartPtr & src_part,
             const MergeTreePartInfo & dst_part_info,
             const String & tmp_part_prefix,
@@ -46,7 +46,7 @@ namespace DB
         /// Re-writes partition.dat and minmax_<fields>.idx. Also deletes checksums.txt
         void update_new_part_files(const MutableDataPartPtr & dst_part) const;
 
-        MutableDataPartPtr finalize_part(const MutableDataPartPtr & dst_part) const override;
+        MergeTreeDataPartCloner::MutableDataPartPtr finalize_part(const MutableDataPartPtr & dst_part) const override;
 
     };
 }
