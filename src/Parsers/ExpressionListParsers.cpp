@@ -2105,7 +2105,7 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
-template<class Type, int MinPriority>
+template<class Type>
 struct ParserExpressionImpl
 {
     static std::vector<std::pair<const char *, Operator>> operators_table;
@@ -2149,30 +2149,17 @@ struct ParserExpressionImpl
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserExpressionImpl<SingleElementLayer, 0>().parse(pos, node, expected);
-}
-
-bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    return ParserExpressionImpl<SingleElementLayer, 2>().parse(pos, node, expected);
-}
-
-bool ParserLogicalOrExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// Parses everything with lower than "OR" operator priority
-    /// TODO: make ":" and "OR" different priority and check if everything is ok
-    return ParserExpressionImpl<SingleElementLayer, 3>().parse(pos, node, expected);
+    return ParserExpressionImpl<SingleElementLayer>().parse(pos, node, expected);
 }
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Parses everything with lower than "INTERVAL" operator priority in previous parser
     return ParserKeyword("INTERVAL").parse(pos, node, expected)
-        && ParserExpressionImpl<IntervalLayer, 12>().parse(pos, node, expected);
+        && ParserExpressionImpl<IntervalLayer>().parse(pos, node, expected);
 }
 
-template<class Type, int MinPriority>
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type, MinPriority>::operators_table({
+template<class Type>
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type>::operators_table({
         {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
         {"?",             Operator("",                2,  0, OperatorType::StartIf)},
         {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
@@ -2211,24 +2198,24 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type, MinPri
         {"::",            Operator("CAST",            14, 2, OperatorType::Cast)},
     });
 
-template<class Type, int MinPriority>
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type, MinPriority>::unary_operators_table({
+template<class Type>
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type>::unary_operators_table({
         {"NOT",           Operator("not",             5,  1)},
         {"-",             Operator("negate",          13, 1)}
     });
 
-template<class Type, int MinPriority>
-Operator ParserExpressionImpl<Type, MinPriority>::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
+template<class Type>
+Operator ParserExpressionImpl<Type>::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
 
-template<class Type, int MinPriority>
-const char * ParserExpressionImpl<Type, MinPriority>::overlapping_operators_to_skip[] =
+template<class Type>
+const char * ParserExpressionImpl<Type>::overlapping_operators_to_skip[] =
 {
     "IN PARTITION",
     nullptr
 };
 
-template<class Type, int MinPriority>
-bool ParserExpressionImpl<Type, MinPriority>::parse(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+template<class Type>
+bool ParserExpressionImpl<Type>::parse(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     Action next = Action::OPERAND;
 
@@ -2299,8 +2286,8 @@ bool ParserExpressionImpl<Type, MinPriority>::parse(IParser::Pos & pos, ASTPtr &
     }
 }
 
-template<class Type, int MinPriority>
-typename ParserExpressionImpl<Type, MinPriority>::ParseResult ParserExpressionImpl<Type, MinPriority>::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
+template<class Type>
+typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2464,8 +2451,8 @@ typename ParserExpressionImpl<Type, MinPriority>::ParseResult ParserExpressionIm
     return ParseResult::OPERATOR;
 }
 
-template<class Type, int MinPriority>
-typename ParserExpressionImpl<Type, MinPriority>::ParseResult ParserExpressionImpl<Type, MinPriority>::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
+template<class Type>
+typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2482,7 +2469,7 @@ typename ParserExpressionImpl<Type, MinPriority>::ParseResult ParserExpressionIm
     auto cur_op = operators_table.begin();
     for (; cur_op != operators_table.end(); ++cur_op)
     {
-        if (cur_op->second.priority >= MinPriority && parseOperator(pos, cur_op->first, expected))
+        if (parseOperator(pos, cur_op->first, expected))
             break;
     }
 
