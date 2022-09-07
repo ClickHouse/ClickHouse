@@ -17,6 +17,8 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 
 class ReplicatedMergeTreeSink : public SinkToStorage
@@ -96,6 +98,8 @@ private:
     Poco::Logger * log;
 
     ContextPtr context;
+    StorageSnapshotPtr storage_snapshot;
+
     UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 
     /// We can delay processing for previous chunk and start writing a new one.
