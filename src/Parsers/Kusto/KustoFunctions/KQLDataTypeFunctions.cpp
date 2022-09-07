@@ -54,8 +54,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
 
 bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
 {
-    static const std::unordered_set<std::string_view> ALLOWED_KEYWORDS{
-        "date", "datetime", "dynamic", "false", "null", "time", "timespan", "true"};
+    static const std::unordered_set<std::string_view> ALLOWED_FUNCTIONS{"date", "datetime", "dynamic", "time", "timespan"};
 
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -70,8 +69,15 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
         if (const auto token_type = pos->type; token_type == TokenType::BareWord || token_type == TokenType::Number
             || token_type == TokenType::QuotedIdentifier || token_type == TokenType::StringLiteral)
         {
-            if (const std::string_view token(pos->begin, pos->end); token_type == TokenType::BareWord && !ALLOWED_KEYWORDS.contains(token))
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Expression {} is not supported inside {}", token, function_name);
+            if (const std::string_view token(pos->begin, pos->end); token_type == TokenType::BareWord && !ALLOWED_FUNCTIONS.contains(token))
+            {
+                ++pos;
+                if (pos->type != TokenType::ClosingRoundBracket && pos->type != TokenType::ClosingSquareBracket
+                    && pos->type != TokenType::Comma)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Expression {} is not supported inside {}", token, function_name);
+
+                --pos;
+            }
 
             out.append(getConvertedArgument(function_name, pos));
         }
@@ -145,15 +151,15 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
     if (fn_name.empty())
         return false;
     ++pos;
-    if(pos->type == TokenType::Minus)
+    if (pos->type == TokenType::Minus)
     {
         sign = true;
         ++pos;
     }
     if (time_span.parse(pos, node, expected))
-    {   
-        if(sign)
-            out = std::format("-{}" , std::to_string(time_span.toSeconds()));
+    {
+        if (sign)
+            out = std::format("-{}", std::to_string(time_span.toSeconds()));
         else
             out = std::to_string(time_span.toSeconds());
         ++pos;
@@ -163,7 +169,7 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeDecimal::convertImpl(String &out,IParser::Pos &pos)
+bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -171,10 +177,10 @@ bool DatatypeDecimal::convertImpl(String &out,IParser::Pos &pos)
 
     ++pos;
     String arg;
-    int scale =0 ,length =0;
+    int scale = 0, length = 0;
     int precision = 34;
 
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral )
+    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
         throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
 
     --pos;
@@ -182,16 +188,16 @@ bool DatatypeDecimal::convertImpl(String &out,IParser::Pos &pos)
 
     //NULL expr returns NULL not execption
     bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL";
-    if(is_string)
+    if (is_string)
         throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
 
     auto dot_pos = arg.find(".");
-    if(dot_pos != String::npos)
+    if (dot_pos != String::npos)
     {
-        length = arg.substr(0,dot_pos-1).length();
+        length = arg.substr(0, dot_pos - 1).length();
         scale = (precision - length) > 0 ? precision - length : 0;
     }
-    if(is_string)
+    if (is_string)
         throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
 
     if (scale < 0 || Poco::toUpper(arg) == "NULL")
