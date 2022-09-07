@@ -1013,6 +1013,8 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
 
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
+    const auto & settings = context->getSettings();
+
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
@@ -1039,7 +1041,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
         if (analyzed_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, right_sample_block);
+            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
@@ -1047,6 +1049,12 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     {
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
+    }
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
+    {
+        if (GraceHashJoin::isSupported(analyzed_join))
+            return std::make_shared<GraceHashJoin>(context, analyzed_join, right_sample_block);
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
@@ -1061,14 +1069,14 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
             return std::make_shared<GraceHashJoin>(context, analyzed_join, right_sample_block);
         };
 
-
-        if (analyzed_join->allowGraceHashJoin())
+        if (settings.allow_grace_hash_join && GraceHashJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, make_grace_hash_join);
-        if (analyzed_join->allowMergeJoin())
+
+        if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, make_merge_join);
     }
 
-    throw Exception("Can't execute any of specified algorithms for specified strictness/kind and right storage type",
+    throw Exception("Can't execute any of specified algorithms for this strictness/kind and right storage type",
                      ErrorCodes::NOT_IMPLEMENTED);
 }
 
