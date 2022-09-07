@@ -30,7 +30,13 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs+lse")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs")
+
+    # The LSE extension for atomic operations is mandatory in ARM >= v8.1. As we target v8.0,
+    # use a runtime-dispatch that falls back to non-atomic operations hardware w/o LSE.
+    # -moutline-atomic is supported from gcc >=10.1 and clang >=12.0
+    # The ClickHouse defines minimal compiler requirement in cmake/tools.cmake
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -moutline-atomics")
 
 elseif (ARCH_PPC64LE)
     # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
