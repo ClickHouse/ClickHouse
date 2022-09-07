@@ -8,7 +8,7 @@ from collections import namedtuple
 from typing import Dict, List, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
-from build_download_helper import dowload_build_with_progress
+from build_download_helper import download_build_with_progress
 from env_helper import S3_ARTIFACT_DOWNLOAD_TEMPLATE, RUNNER_TEMP
 from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
@@ -126,14 +126,14 @@ class S3:
             {**self._common, "build_name": build_name, "artifact": artifact}
         )
         try:
-            dowload_build_with_progress(url, path)
+            download_build_with_progress(url, path)
         except Exception as e:
             if "Cannot download dataset from" in e.args[0]:
                 new_url = Packages.fallback_to_all(url)
                 logging.warning(
                     "Fallback downloading %s for old release", fallback_path
                 )
-                dowload_build_with_progress(new_url, fallback_path)
+                download_build_with_progress(new_url, fallback_path)
                 self.packages.replace_with_fallback(package_file)
 
     def download_deb(self):
