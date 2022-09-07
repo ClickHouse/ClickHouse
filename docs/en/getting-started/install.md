@@ -59,7 +59,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](../faq/operations/production.md) based on your needs.
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/stable).
 
@@ -106,7 +106,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
+You can replace `stable` with `lts` to use different [release kinds](../faq/operations/production.md) based on your needs.
 
 Then run these commands to install packages:
 
