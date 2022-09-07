@@ -116,7 +116,7 @@ Example of disk configuration:
 
 It is possible to configure cache over disks in storage configuration starting from version 22.3. For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc. Cache uses `LRU` cache policy.
 
-Example of configuration for versions later or equal to 21.8:
+Example of configuration for versions later or equal to 22.8:
 
 ``` xml
 <clickhouse>
@@ -137,7 +137,7 @@ Example of configuration for versions later or equal to 21.8:
     </storage_configuration>
 ```
 
-Example of configuration for versions earlier than 21.8:
+Example of configuration for versions earlier than 22.8:
 
 ``` xml
 <clickhouse>
@@ -156,11 +156,11 @@ Example of configuration for versions earlier than 21.8:
 
 Cache **configuration settings**:
 
-- `path` - path to cache Default: None, this settings is obligatory.
+- `path` - path to cache. Default: None, this setting is obligatory.
 
-- `max_size` - size of cache in bytes Default: None, this settings is obligatory.
+- `max_size` - size of the cache in bytes. Default: None, this setting is obligatory.
 
-- `cache_on_write_operations` - turn on `write-through` cache. Default: `false`. The `write-through` cache is enabled if `cache_on_write_operations` is `true` and user setting `filesystem`.
+- `cache_on_write_operations` - turn on `write-through` cache. Default: `false`. The `write-through` cache is enabled if `cache_on_write_operations` is `true` and user setting `enable_filesystem_cache_on_write_operations`.
 
 - `enable_filesystem_query_cache_limit` - allow to limit the size of cache which is downloaded within each query (depends on user setting `max_query_cache_size`). Default: `false`.
 
@@ -168,9 +168,9 @@ Cache **configuration settings**:
 
 - `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `true`.
 
-- `max_file_segment_size` - a max size for a single cache file. Default: `100 Mb`.
+- `max_file_segment_size` - a max size for a single cache file. Default: `104857600` (100 Mb).
 
-- `max_elements` a limit for a number of cache files.
+- `max_elements` a limit for a number of cache files. Default: `1048576`.
 
 Cache **query settings**:
 
