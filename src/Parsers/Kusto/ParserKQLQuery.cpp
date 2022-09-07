@@ -247,7 +247,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
-        if (operation_pos.size() > 0)
+        if (!operation_pos.empty())
         {
             for (auto i = 0; i< kql_parser[last_op].backspace_steps; ++i)
                 --last_pos;
