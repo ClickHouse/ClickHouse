@@ -84,6 +84,11 @@ private:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType>>;
 
 public:
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
+
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
     {
         if (types.empty())
