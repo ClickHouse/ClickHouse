@@ -10,7 +10,7 @@
 	url = https://github.com/lz4/lz4.git
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
-	url = https://github.com/ClickHouse/librdkafka.git
+	url = https://github.com/azat-archive/librdkafka.git
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse/cctz.git
