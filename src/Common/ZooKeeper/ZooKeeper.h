@@ -4,6 +4,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -84,10 +85,9 @@ using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 class ZooKeeper
 {
 public:
-
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    ZooKeeper(const ZooKeeperArgs & args_, Coordination::IKeeper::SessionExpiredCallback callback, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
 
     /** Config of the form:
@@ -112,7 +112,7 @@ public:
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, Coordination::IKeeper::SessionExpiredCallback callback, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
@@ -364,6 +364,8 @@ private:
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
 
     AtomicStopwatch session_uptime;
+
+    Coordination::IKeeper::SessionExpiredCallback session_expired_callback;
 };
 
 

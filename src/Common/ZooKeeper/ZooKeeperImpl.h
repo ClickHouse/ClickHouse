@@ -114,10 +114,10 @@ public:
     ZooKeeper(
         const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
+        IKeeper::SessionExpiredCallback callback,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
-
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
@@ -248,6 +248,8 @@ private:
     ThreadFromGlobalPool receive_thread;
 
     Poco::Logger * log;
+
+    IKeeper::SessionExpiredCallback session_expired_callback;
 
     void connect(
         const Nodes & node,

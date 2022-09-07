@@ -4185,6 +4185,11 @@ void StorageReplicatedMergeTree::startupImpl()
 
         /// In this thread replica will be activated.
         restarting_thread.start();
+        /// And this is just a callback
+        session_expired_callback_handler = getContext()->connect(EventNotifier::EventType::ZOOKEEPER_SESSION_EXPIRED, [this]()
+        {
+            restarting_thread.start();
+        });
 
         /// Wait while restarting_thread finishing initialization.
         /// NOTE It does not mean that replication is actually started after receiving this event.

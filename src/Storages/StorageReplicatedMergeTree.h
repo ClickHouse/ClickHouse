@@ -453,6 +453,7 @@ private:
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
+    EventNotifier::HandlerPtr session_expired_callback_handler;
 
     /// A thread that attaches the table using ZooKeeper
     std::optional<ReplicatedMergeTreeAttachThread> attach_thread;

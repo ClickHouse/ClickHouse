@@ -309,8 +309,10 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
+    IKeeper::SessionExpiredCallback session_expired_callback_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
+    , session_expired_callback(session_expired_callback_)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -874,7 +876,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         /// No new requests will appear in queue after finish()
         bool was_already_finished = requests_queue.finish();
         if (!was_already_finished)
+        {
             active_session_metric_increment.destroy();
+            session_expired_callback();
+        }
     };
 
     try
