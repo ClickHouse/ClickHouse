@@ -163,9 +163,6 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
-{
-   
 bool DatatypeDecimal::convertImpl(String &out,IParser::Pos &pos)
 {
     const String fn_name = getKQLFunctionName(pos);
@@ -203,7 +200,6 @@ bool DatatypeDecimal::convertImpl(String &out,IParser::Pos &pos)
         out = std::format("toDecimal128({}::String,{})", arg, scale);
 
     return true;
-}
 }
 
 }
