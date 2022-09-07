@@ -992,14 +992,15 @@ public:
 
         for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
         {
-            auto column_from_block = match_result.right_block->getByPosition(right_indexes[j]);
-            if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+            const auto & column_from_block = match_result.right_block->getByPosition(right_indexes[j]);
+            if (auto * lowcard_col = typeid_cast<ColumnLowCardinality *>(columns[j].get());
+                lowcard_col && !typeid_cast<const ColumnLowCardinality *>(column_from_block.column.get()))
             {
-                JoinCommon::changeLowCardinalityInplace(column_from_block);
+                for (const auto & row_num : match_result.row_nums)
+                    lowcard_col->insertFromFullColumn(*column_from_block.column, row_num);
             }
-            const IColumn & prepared_column = *column_from_block.column;
-            /// insert all match row_nums in one time.
-            columns[j]->insertIndicesFrom(prepared_column, match_result.row_nums);
+            else
+                columns[j]->insertIndicesFrom(*column_from_block.column, match_result.row_nums);
         }
     }
 
@@ -1280,7 +1281,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
 {
     constexpr JoinFeatures<KIND, STRICTNESS> jf;
 
-    const auto fast_inner_join = (KIND == JoinKind::Inner) && !jf.add_missing && jf.is_all_join && just_one_right_block;
+    const auto fast_inner_join = isInner(KIND) && !jf.add_missing && jf.is_all_join && just_one_right_block;
 
     size_t rows = added_columns.rows_to_add;
 

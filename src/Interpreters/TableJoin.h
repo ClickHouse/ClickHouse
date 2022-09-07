@@ -216,7 +216,7 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-    bool preferMergeRightTable() const { return join_algorithm.isSet(JoinAlgorithm::HASH) && isInner(table_join.kind); }
+    bool preferMergeRightTable() const { return !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH) && isInner(table_join.kind); }
 
     bool joinUseNulls() const { return join_use_nulls; }
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
