@@ -57,6 +57,17 @@ namespace DB
 class QueryAnalysisPass final : public IQueryTreePass
 {
 public:
+    /** Construct query analysis pass for query or union analysis.
+      * Available columns are extracted from query node join tree.
+      */
+    QueryAnalysisPass() = default;
+
+    /** Construct query analysis pass for expression or list of expressions analysis.
+      * Available expression columns are extracted from table expression.
+      * Table expression node must have query, union, table, table function type.
+      */
+    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_);
+
     String getName() override
     {
         return "QueryAnalysis";
@@ -69,6 +80,8 @@ public:
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 
+private:
+    QueryTreeNodePtr table_expression;
 };
 
 }

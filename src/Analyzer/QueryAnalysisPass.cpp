@@ -510,6 +510,7 @@ struct IdentifierResolveScope
     QueryTreeNodePtr scope_node;
     IdentifierResolveScope * parent_scope = nullptr;
 
+    /// Identifier lookup to result
     std::unordered_map<IdentifierLookup, IdentifierResolveResult, IdentifierLookupHash> identifier_lookup_to_result;
 
     /// Lambda argument can be expression like constant, column, or it can be function
@@ -559,6 +560,12 @@ struct IdentifierResolveScope
 
     /// Subquery depth
     size_t subquery_depth = 0;
+
+    /** Scope join tree node for expression.
+      * Valid only during analysis construction for single expression.
+      */
+    QueryTreeNodePtr expression_join_tree_node;
+
 
     TableExpressionData & getTableExpressionDataOrThrow(QueryTreeNodePtr table_expression_node)
     {
@@ -797,36 +804,43 @@ public:
         : context(std::move(context_))
     {}
 
-    void resolve(QueryTreeNodePtr node)
+    void resolve(QueryTreeNodePtr node, const QueryTreeNodePtr & table_expression)
     {
         IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
 
         auto node_type = node->getNodeType();
 
-        if (node_type == QueryTreeNodeType::UNION)
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
         {
-            resolveUnion(node, scope);
+            if (table_expression)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "For query or union analysis table expression must be empty");
+
+            if (node_type == QueryTreeNodeType::QUERY)
+                resolveQuery(node, scope);
+            else
+                resolveUnion(node, scope);
         }
-        else if (node_type == QueryTreeNodeType::QUERY)
+        else if (node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::IDENTIFIER || node_type == QueryTreeNodeType::COLUMN ||
+            node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::LIST)
         {
-            resolveQuery(node, scope);
-        }
-        else if (node_type == QueryTreeNodeType::LIST)
-        {
-            resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        }
-        else if (node_type == QueryTreeNodeType::FUNCTION)
-        {
-            resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        }
-        else if (node_type == QueryTreeNodeType::LAMBDA)
-        {
-            resolveLambda(node, {}, scope);
+            if (!table_expression)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "For expression analysis table expression must not be empty");
+
+            scope.expression_join_tree_node = table_expression;
+            validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
+            initializeTableExpressionColumns(scope.expression_join_tree_node, scope);
+
+            if (node_type == QueryTreeNodeType::LIST)
+                resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            else
+                resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         }
         else
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Node {} with type {} is not supported by query analyzer. Supported nodes are query, list, function, lambda.",
+                "Node {} with type {} is not supported by query analyzer. Supported nodes are union, query, constant, identifier, column, function, list.",
                 node->formatASTForErrorMessage(),
                 node->getNodeTypeName());
         }
@@ -843,7 +857,7 @@ private:
 
     static void validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
-    static void validateTableExpressionModifiers(QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     /// Resolve identifier functions
 
@@ -901,7 +915,7 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
-    void initializeTableExpressionColumns(QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void initializeTableExpressionColumns(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
@@ -950,7 +964,7 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunction(const std
         return {};
 
     const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
-    auto result_node = buildQueryTree(create_function_query->function_core, context);
+    auto result_node = buildQueryTree(create_function_query->function_core);
     if (result_node->getNodeType() != QueryTreeNodeType::LAMBDA)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "SQL user defined function {} must represent lambda expression. Actual {}",
@@ -1091,7 +1105,7 @@ void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_
             expression_description);
 }
 
-void QueryAnalyzer::validateTableExpressionModifiers(QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     auto * table_node = table_expression_node->as<TableNode>();
     auto * table_function_node = table_expression_node->as<TableFunctionNode>();
@@ -1175,21 +1189,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
         table_name = table_identifier[0];
     }
 
-    if (database_name.empty())
-        database_name = context->getCurrentDatabase();
-
-    /// TODO: Context resolve storage
-
-    auto & database_catalog = DatabaseCatalog::instance();
-    auto database = database_catalog.tryGetDatabase(database_name);
-    if (!database)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exists", database_name);
-
-    auto storage = database->tryGetTable(table_name, context);
-
-    if (!storage)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exists", table_name);
-
+    StorageID storage_id(database_name, table_name);
+    storage_id = context->resolveStorageID(storage_id);
+    auto storage = DatabaseCatalog::instance().getTable(storage_id, context);
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     return std::make_shared<TableNode>(std::move(storage), storage_lock, storage_snapshot);
@@ -1893,6 +1895,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const Identifie
     if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
         return resolved_identifier;
 
+    if (scope.expression_join_tree_node)
+        return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, scope.expression_join_tree_node, scope);
+
     auto * query_scope_node = scope.scope_node->as<QueryNode>();
     if (!query_scope_node || !query_scope_node->getJoinTree())
         return {};
@@ -2375,7 +2380,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unqualified matcher {} resolve unexpected table expression. In scope {}",
                 matcher_node_typed.formatASTForErrorMessage(),
-                scope_query_node->formatASTForErrorMessage());
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         for (auto & table_expression_column : table_expression_columns)
@@ -3917,7 +3922,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 }
 
 /// Initialize table expression columns for table expression node
-void QueryAnalyzer::initializeTableExpressionColumns(QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     auto * table_node = table_expression_node->as<TableNode>();
     auto * query_node = table_expression_node->as<QueryNode>();
@@ -3982,7 +3987,7 @@ void QueryAnalyzer::initializeTableExpressionColumns(QueryTreeNodePtr & table_ex
 
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
-                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, buildQueryTree(column_default->expression, context), table_expression_node);
+                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, buildQueryTree(column_default->expression), table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
                 alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
             }
@@ -4829,10 +4834,14 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
 }
 
+QueryAnalysisPass::QueryAnalysisPass(QueryTreeNodePtr table_expression_)
+    : table_expression(std::move(table_expression_))
+{}
+
 void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     QueryAnalyzer analyzer(std::move(context));
-    analyzer.resolve(query_tree_node);
+    analyzer.resolve(query_tree_node, table_expression);
 }
 
 }
