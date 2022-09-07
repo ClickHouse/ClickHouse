@@ -97,7 +97,9 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
-        print(f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team")
+        print(
+            f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
+        )
         return False, "Needs 'can be tested' label", "failure"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
