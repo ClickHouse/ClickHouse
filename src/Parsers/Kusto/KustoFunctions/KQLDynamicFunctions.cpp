@@ -14,7 +14,7 @@
 namespace DB
 {
 
-bool ArrayConcat::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayConcat::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "arrayConcat");
 }
@@ -39,7 +39,7 @@ bool ArrayIif::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArrayIndexOf::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayIndexOf::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -52,47 +52,91 @@ bool ArrayIndexOf::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool ArrayLength::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayLength::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "length");
 }
 
-bool ArrayReverse::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto array = getArgument(function_name, pos);
+    out = std::format("if(throwIf(not startsWith(toTypeName({0}), 'Array'), 'Only arrays are supported'), [], reverse({0}))", array);
+
+    return true;
 }
 
-bool ArrayRotateLeft::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayRotateLeft::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto array = getArgument(function_name, pos);
+    const auto count = getArgument(function_name, pos);
+    out = std::format(
+        "arrayMap(x -> {0}[(x + length({0}) + {1} % toInt64(length({0}))) % length({0}) + 1], range(0, length({0})))", array, count);
+
+    return true;
 }
 
-bool ArrayRotateRight::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayRotateRight::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto array = getArgument(function_name, pos);
+    const auto count = getArgument(function_name, pos);
+    out = kqlCallToExpression("array_rotate_left", {"dynamic(" + array + ")", "-1 * " + count}, pos.max_depth);
+
+    return true;
 }
 
-bool ArrayShiftLeft::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayShiftLeft::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto array = getArgument(function_name, pos);
+    const auto count = getArgument(function_name, pos);
+    const auto fill = getOptionalArgument(function_name, pos);
+    out = std::format(
+        "arrayResize(multiIf({1} > 0, arraySlice({0}, {1} + 1), {1} < 0, arrayConcat(arrayWithConstant(abs({1}), fill_value_{3}), {0}), {0}), "
+        "length({0}), ifNull({2}, if(toTypeName({0}) = 'Array(String)', defaultValueOfArgumentType({0}[1]), null)) as fill_value_{3})",
+        array,
+        count,
+        fill ? *fill : "null",
+        generateUniqueIdentifier());
+
+    return true;
 }
 
-bool ArrayShiftRight::convertImpl(String & out,IParser::Pos & pos)
+bool ArrayShiftRight::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto array = getArgument(function_name, pos);
+    const auto count = getArgument(function_name, pos);
+    const auto fill = getOptionalArgument(function_name, pos);
+
+    const auto arg1 = "dynamic(" + array + ")";
+    const auto arg2 = "-1 * " + count;
+    out = kqlCallToExpression(
+        "array_shift_left",
+        fill ? std::initializer_list<std::string_view>{arg1, arg2, *fill} : std::initializer_list<std::string_view>{arg1, arg2},
+        pos.max_depth);
+
+    return true;
 }
 
-bool ArraySlice::convertImpl(String & out,IParser::Pos & pos)
+bool ArraySlice::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -113,27 +157,27 @@ bool ArraySlice::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool ArraySortAsc::convertImpl(String & out,IParser::Pos & pos)
+bool ArraySortAsc::convertImpl(String & out, IParser::Pos & pos)
 {
     out = ArraySortHelper(out, pos, true);
-    if(out == "false")
+    if (out == "false")
         return false;
     return true;
 }
 
-bool ArraySortDesc::convertImpl(String & out,IParser::Pos & pos)
+bool ArraySortDesc::convertImpl(String & out, IParser::Pos & pos)
 {
     out = ArraySortHelper(out, pos, false);
-    if(out == "false")
+    if (out == "false")
         return false;
     return true;
 }
 
-bool ArraySplit::convertImpl(String & out,IParser::Pos & pos)
+bool ArraySplit::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
-    return false;
+        return false;
 
     const auto array = getArgument(function_name, pos);
     const auto indices = getArgument(function_name, pos);
@@ -150,106 +194,113 @@ bool ArraySplit::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool ArraySum::convertImpl(String & out,IParser::Pos & pos)
+bool ArraySum::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "arraySum");
 }
 
-bool BagKeys::convertImpl(String & out,IParser::Pos & pos)
+bool BagKeys::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool BagMerge::convertImpl(String & out,IParser::Pos & pos)
+bool BagMerge::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool BagRemoveKeys::convertImpl(String & out,IParser::Pos & pos)
+bool BagRemoveKeys::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool JaccardIndex::convertImpl(String & out,IParser::Pos & pos)
+bool JaccardIndex::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool Pack::convertImpl(String & out,IParser::Pos & pos)
+bool Pack::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool PackAll::convertImpl(String & out,IParser::Pos & pos)
+bool PackAll::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool PackArray::convertImpl(String & out,IParser::Pos & pos)
+bool PackArray::convertImpl(String & out, IParser::Pos & pos)
+{
+    return directMapping(out, pos, "array");
+}
+
+bool Repeat::convertImpl(String & out, IParser::Pos & pos)
+{
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto value = getArgument(function_name, pos);
+    const auto count = getArgument(function_name, pos);
+    out = std::format("arrayWithConstant({1}, {0})", value, count);
+
+    return true;
+}
+
+bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool Repeat::convertImpl(String & out,IParser::Pos & pos)
+bool SetHasElement::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool SetDifference::convertImpl(String & out,IParser::Pos & pos)
+bool SetIntersect::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool SetHasElement::convertImpl(String & out,IParser::Pos & pos)
+bool SetUnion::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool SetIntersect::convertImpl(String & out,IParser::Pos & pos)
+bool TreePath::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool SetUnion::convertImpl(String & out,IParser::Pos & pos)
+bool Zip::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
-}
+    if (!directMapping(out, pos, "arrayZip"))
+        return false;
 
-bool TreePath::convertImpl(String & out,IParser::Pos & pos)
-{
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
-}
+    out = std::format("arrayMap(t -> [untuple(t)], {0})", out);
 
-bool Zip::convertImpl(String & out,IParser::Pos & pos)
-{
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    return true;
 }
 }

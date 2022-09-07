@@ -1,5 +1,61 @@
 ## KQL implemented features
 
+# September XX, 2022
+
+## Array functions
+- [array_reverse](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/array-reverse-function)
+   `print array_reverse(dynamic(["this", "is", "an", "example"])) == dynamic(["example","an","is","this"])`
+
+- [array_rotate_left](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/array_rotate_leftfunction)
+   `print array_rotate_left(dynamic([1,2,3,4,5]), 2) == dynamic([3,4,5,1,2])`
+   `print array_rotate_left(dynamic([1,2,3,4,5]), -2) == dynamic([4,5,1,2,3])`
+
+- [array_rotate_right](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/array_rotate_rightfunction)
+   `print array_rotate_right(dynamic([1,2,3,4,5]), -2) == dynamic([3,4,5,1,2])`
+   `print array_rotate_right(dynamic([1,2,3,4,5]), 2) == dynamic([4,5,1,2,3])`
+
+- [array_shift_left](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/array_shift_leftfunction)
+   `print array_shift_left(dynamic([1,2,3,4,5]), 2) == dynamic([3,4,5,null,null])`
+   `print array_shift_left(dynamic([1,2,3,4,5]), -2) == dynamic([null,null,1,2,3])`
+   `print array_shift_left(dynamic([1,2,3,4,5]), 2, -1) == dynamic([3,4,5,-1,-1])`
+   `print array_shift_left(dynamic(['a', 'b', 'c']), 2) == dynamic(['c','',''])`
+
+- [array_shift_right](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/array_shift_rightfunction)
+   `print array_shift_right(dynamic([1,2,3,4,5]), -2) == dynamic([3,4,5,null,null])`
+   `print array_shift_right(dynamic([1,2,3,4,5]), 2) == dynamic([null,null,1,2,3])`
+   `print array_shift_right(dynamic([1,2,3,4,5]), -2, -1) == dynamic([3,4,5,-1,-1])`
+   `print array_shift_right(dynamic(['a', 'b', 'c']), -2) == dynamic(['c','',''])`
+
+- [pack_array](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/packarrayfunction)
+   `print x = 1, y = x * 2, z = y * 2, pack_array(x,y,z)`
+
+   Please note that only arrays of elements of the same type may be created at this time. The underlying reasons are explained under the release note section of the `dynamic` data type.
+
+- [repeat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/repeatfunction)
+   `print repeat(1, 0) == dynamic([])`
+   `print repeat(1, 3) == dynamic([1, 1, 1])`
+   `print repeat("asd", 3) == dynamic(['asd', 'asd', 'asd'])`
+   `print repeat(timespan(1d), 3) == dynamic([86400, 86400, 86400])`
+   `print repeat(true, 3) == dynamic([true, true, true])`
+
+- [zip](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/zipfunction)
+   `print zip(dynamic([1,3,5]), dynamic([2,4,6]))`
+
+   Please note that only arrays of the same type are supported in our current implementation. The underlying reasons are explained under the release note section of the `dynamic` data type.
+
+## Data types
+ - [dynamic](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/dynamic)
+   `print isnull(dynamic(null))`
+   `print dynamic(1) == 1`
+   `print dynamic(timespan(1d)) == 86400`
+   `print dynamic([1, 2, 3])`
+   `print dynamic([[1], [2], [3]])`
+   `print dynamic(['a', "b", 'c'])`
+
+   According to the KQL specifications `dynamic` is a literal, which means that no function calls are permitted. Expressions producing literals such as `datetime` and `timespan` and their aliases (ie. `date` and `time`, respectively) along with nested `dynamic` literals are allowed.
+
+   Please note that our current implementation supports only scalars and arrays made up of elements of the same type. Support for mixed types and property bags is deferred for now, based on our understanding of the required effort and discussion with representatives of the QRadar team.
+
 # August 29, 2022
 
 ## **mv-expand operator**

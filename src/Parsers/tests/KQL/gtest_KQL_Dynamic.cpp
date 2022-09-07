@@ -44,12 +44,40 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserTest,
             "SELECT length(['John', 'Denver', 'Bob', 'Marley']) AS output"
         },
         {
+            "print array_reverse(A)",
+            "SELECT if(throwIf(NOT startsWith(toTypeName(A), 'Array'), 'Only arrays are supported'), [], reverse(A))"
+        },
+        {
+            "print array_rotate_left(A, B)",
+            "SELECT arrayMap(x -> (A[(((x + length(A)) + (B % toInt64(length(A)))) % length(A)) + 1]), range(0, length(A)))"
+        },
+        {
+            "print array_rotate_right(A, B)",
+            "SELECT arrayMap(x -> (A[(((x + length(A)) + ((-1 * B) % toInt64(length(A)))) % length(A)) + 1]), range(0, length(A)))"
+        },
+        {
             "print output = array_sum(dynamic([2, 5, 3]))",
             "SELECT arraySum([2, 5, 3]) AS output"
         },
         {
             "print output = array_sum(dynamic([2.5, 5.5, 3]))",
             "SELECT arraySum([2.5, 5.5, 3]) AS output"
+        },
+        {
+            "print pack_array(A, B, C, D)",
+            "SELECT [A, B, C, D]"
+        },
+        {
+            "print repeat(A, B)",
+            "SELECT arrayWithConstant(B, A)"
+        },
+        {
+            "print zip(A, B)",
+            "SELECT arrayMap(t -> [untuple(t)], arrayZip(A, B))"
+        },
+        {
+            "print zip(A, B, C)",
+            "SELECT arrayMap(t -> [untuple(t)], arrayZip(A, B, C))"
         }
 })));
 
@@ -57,6 +85,22 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicRegex, ParserRegexTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<DB::ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "print array_shift_left(A, B)",
+            "SELECT arrayResize\\(multiIf\\(B > 0, arraySlice\\(A, B \\+ 1\\), B < 0, arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+        },
+        {
+            "print array_shift_left(A, B, C)",
+            "SELECT arrayResize\\(multiIf\\(B > 0, arraySlice\\(A, B \\+ 1\\), B < 0, arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+        },
+        {
+            "print array_shift_right(A, B)",
+            "SELECT arrayResize\\(multiIf\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), \\(-1 \\* B\\) < 0, arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+        },
+        {
+            "print array_shift_right(A, B, C)",
+            "SELECT arrayResize\\(multiIf\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), \\(-1 \\* B\\) < 0, arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+        },
         {
             "print array_slice(A, B, C)",
             "SELECT arraySlice\\(A, 1 \\+ if\\(B >= 0, B, toInt64\\(max2\\(-length\\(A\\), B\\)\\) \\+ length\\(A\\)\\) AS offset_\\d+, \\(\\(1 \\+ if\\(C >= 0, C, toInt64\\(max2\\(-length\\(A\\), C\\)\\) \\+ length\\(A\\)\\)\\) - offset_\\d+\\) \\+ 1\\)"
