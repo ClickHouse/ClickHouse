@@ -72,24 +72,12 @@ void ActionsChainStep::initialize()
     if (available_output_columns_strategy == AvailableOutputColumnsStrategy::ALL_NODES)
     {
         for (const auto & node : actions->getNodes())
-        {
-            if (node.type == ActionsDAG::ActionType::INPUT ||
-                node.type == ActionsDAG::ActionType::FUNCTION ||
-                node.type == ActionsDAG::ActionType::ALIAS ||
-                node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-                available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
-        }
+            available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
     }
     else if (available_output_columns_strategy == AvailableOutputColumnsStrategy::OUTPUT_NODES)
     {
         for (const auto & node : actions->getOutputs())
-        {
-            if (node->type == ActionsDAG::ActionType::INPUT ||
-                node->type == ActionsDAG::ActionType::FUNCTION ||
-                node->type == ActionsDAG::ActionType::ALIAS ||
-                node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                available_output_columns.emplace_back(node->column, node->result_type, node->result_name);
-        }
+            available_output_columns.emplace_back(node->column, node->result_type, node->result_name);
     }
 
     available_output_columns.insert(available_output_columns.end(), additional_output_columns.begin(), additional_output_columns.end());

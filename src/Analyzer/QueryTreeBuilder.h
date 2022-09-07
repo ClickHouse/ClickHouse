@@ -14,6 +14,6 @@ namespace DB
   * AST that represent a list of expressions ASTExpressionList.
   * AST that represent expression ASTIdentifier, ASTAsterisk, ASTLiteral, ASTFunction.
   */
-QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context);
+QueryTreeNodePtr buildQueryTree(ASTPtr query);
 
 }

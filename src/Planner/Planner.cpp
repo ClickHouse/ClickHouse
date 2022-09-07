@@ -134,6 +134,8 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
         auto table_expression_query_info = select_query_info;
+        table_expression_query_info.table_expression = table_expression;
+
         if (table_node)
             table_expression_query_info.table_expression_modifiers = table_node->getTableExpressionModifiers();
         else
@@ -761,6 +763,7 @@ void Planner::buildQueryPlanIfNeeded()
     SelectQueryInfo select_query_info;
     select_query_info.original_query = queryNodeToSelectQuery(query_tree);
     select_query_info.query = select_query_info.original_query;
+    select_query_info.planner_context = planner_context;
 
     StorageLimitsList storage_limits;
     storage_limits.push_back(buildStorageLimits(*query_context, select_query_options));
@@ -938,17 +941,51 @@ void Planner::buildQueryPlanIfNeeded()
         having_action_step_index = actions_chain.getLastStepIndex();
     }
 
+    chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+    const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+    auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), projection_input, planner_context);
+
+    auto projection_columns = query_node.getProjectionColumns();
+    size_t projection_columns_size = projection_columns.size();
+
+    Names projection_action_names;
+    NamesWithAliases projection_action_names_with_display_aliases;
+    projection_action_names_with_display_aliases.reserve(projection_columns_size);
+
+    auto & projection_actions_outputs = projection_actions->getOutputs();
+    size_t projection_outputs_size = projection_actions_outputs.size();
+
+    if (projection_columns_size != projection_outputs_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "QueryTree projection nodes size mismatch. Expected {}. Actual {}",
+            projection_outputs_size,
+            projection_columns_size);
+
+    for (size_t i = 0; i < projection_outputs_size; ++i)
+    {
+        auto & projection_column = projection_columns[i];
+        const auto * projection_node = projection_actions_outputs[i];
+        const auto & projection_node_name = projection_node->result_name;
+
+        projection_action_names.push_back(projection_node_name);
+        projection_action_names_with_display_aliases.push_back({projection_node_name, projection_column.name});
+    }
+
+    auto projection_actions_step = std::make_unique<ActionsChainStep>(std::move(projection_actions));
+    actions_chain.addStep(std::move(projection_actions_step));
+    size_t projection_step_index = actions_chain.getLastStepIndex();
+
     std::optional<size_t> before_order_by_step_index;
     if (query_node.hasOrderBy())
     {
         chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
         const auto & order_by_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
-        ActionsDAGPtr actions_dag = std::make_shared<ActionsDAG>(order_by_input);
-        auto & actions_dag_outputs = actions_dag->getOutputs();
-        actions_dag_outputs.clear();
+        ActionsDAGPtr before_order_by_actions_dag = std::make_shared<ActionsDAG>(order_by_input);
+        auto & before_order_by_actions_dag_outputs = before_order_by_actions_dag->getOutputs();
+        before_order_by_actions_dag_outputs.clear();
 
-        std::unordered_set<std::string_view> order_by_actions_dag_outputs_node_names;
+        std::unordered_set<std::string_view> before_order_by_actions_dag_outputs_node_names;
 
         /** We add only sort column sort expression in before ORDER BY actions DAG.
           * WITH fill expressions must be constant nodes.
@@ -957,18 +994,19 @@ void Planner::buildQueryPlanIfNeeded()
         for (auto & sort_column_node : order_by_node_list.getNodes())
         {
             auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
-            auto expression_dag_nodes = actions_visitor.visit(actions_dag, sort_column_node_typed.getExpression());
+            auto expression_dag_nodes = actions_visitor.visit(before_order_by_actions_dag, sort_column_node_typed.getExpression());
+
             for (auto & action_dag_node : expression_dag_nodes)
             {
-                if (order_by_actions_dag_outputs_node_names.contains(action_dag_node->result_name))
+                if (before_order_by_actions_dag_outputs_node_names.contains(action_dag_node->result_name))
                     continue;
 
-                actions_dag_outputs.push_back(action_dag_node);
-                order_by_actions_dag_outputs_node_names.insert(action_dag_node->result_name);
+                before_order_by_actions_dag_outputs.push_back(action_dag_node);
+                before_order_by_actions_dag_outputs_node_names.insert(action_dag_node->result_name);
             }
         }
 
-        auto actions_step_before_order_by = std::make_unique<ActionsChainStep>(std::move(actions_dag));
+        auto actions_step_before_order_by = std::make_unique<ActionsChainStep>(std::move(before_order_by_actions_dag));
         actions_chain.addStep(std::move(actions_step_before_order_by));
         before_order_by_step_index = actions_chain.getLastStepIndex();
     }
@@ -992,41 +1030,12 @@ void Planner::buildQueryPlanIfNeeded()
     }
 
     chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-    auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), projection_input, planner_context);
+    const auto & project_names_input = chain_available_output_columns ? *chain_available_output_columns : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+    auto project_names_actions = std::make_shared<ActionsDAG>(project_names_input);
 
-    const auto & projection_action_dag_nodes = projection_actions->getOutputs();
-    size_t projection_action_dag_nodes_size = projection_action_dag_nodes.size();
-
-    auto projection_columns = query_node.getProjectionColumns();
-    size_t projection_columns_size = projection_columns.size();
-
-    if (projection_columns_size != projection_action_dag_nodes_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "QueryTree projection nodes size mismatch. Expected {}. Actual {}",
-            projection_action_dag_nodes_size,
-            projection_columns_size);
-
-    Names projection_action_names;
-    projection_action_names.reserve(projection_columns_size);
-
-    NamesWithAliases projection_action_names_with_display_aliases;
-    projection_action_names_with_display_aliases.reserve(projection_columns_size);
-
-    for (size_t i = 0; i < projection_columns_size; ++i)
-    {
-        auto & projection_column = projection_columns[i];
-        const auto * action_dag_node = projection_action_dag_nodes[i];
-        const auto & actions_dag_node_name = action_dag_node->result_name;
-
-        projection_action_names.push_back(actions_dag_node_name);
-        projection_action_names_with_display_aliases.push_back({actions_dag_node_name, projection_column.name});
-    }
-
-    projection_actions->project(projection_action_names_with_display_aliases);
-
-    actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(projection_actions)));
-    size_t projection_action_step_index = actions_chain.getLastStepIndex();
+    project_names_actions->project(projection_action_names_with_display_aliases);
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(project_names_actions)));
+    size_t project_names_action_step_index = actions_chain.getLastStepIndex();
 
     // std::cout << "Chain dump before finalize" << std::endl;
     // std::cout << actions_chain.dump() << std::endl;
@@ -1191,6 +1200,12 @@ void Planner::buildQueryPlanIfNeeded()
         having_step->setStepDescription("HAVING");
         query_plan.addStep(std::move(having_step));
     }
+
+    auto & projection_actions_chain_node = actions_chain.at(projection_step_index);
+    auto expression_step_projection = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(),
+        projection_actions_chain_node->getActions());
+    expression_step_projection->setStepDescription("Projection");
+    query_plan.addStep(std::move(expression_step_projection));
 
     if (query_node.isDistinct())
     {
@@ -1418,8 +1433,8 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(offsets_step));
     }
 
-    auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_chain[projection_action_step_index]->getActions());
-    projection_step->setStepDescription("Projection");
+    auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_chain[project_names_action_step_index]->getActions());
+    projection_step->setStepDescription("Project names");
     query_plan.addStep(std::move(projection_step));
 
     addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context);

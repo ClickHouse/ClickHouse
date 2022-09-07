@@ -64,7 +64,7 @@ namespace
 class QueryTreeBuilder : public WithContext
 {
 public:
-    QueryTreeBuilder(ASTPtr query_, ContextPtr context_);
+    explicit QueryTreeBuilder(ASTPtr query_);
 
     QueryTreeNodePtr getQueryTreeNode()
     {
@@ -97,9 +97,8 @@ private:
 
 };
 
-QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_, ContextPtr context_)
-    : WithContext(context_)
-    , query(query_->clone())
+QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_)
+    : query(query_->clone())
 {
     if (query->as<ASTSelectWithUnionQuery>() ||
         query->as<ASTSelectIntersectExceptQuery>() ||
@@ -763,9 +762,9 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
 
 }
 
-QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context)
+QueryTreeNodePtr buildQueryTree(ASTPtr query)
 {
-    QueryTreeBuilder builder(query, context);
+    QueryTreeBuilder builder(std::move(query));
     return builder.getQueryTreeNode();
 }
 

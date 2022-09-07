@@ -88,7 +88,7 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
 
 QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const ContextPtr & context)
 {
-    auto query_tree = buildQueryTree(query, context);
+    auto query_tree = buildQueryTree(query);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);

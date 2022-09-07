@@ -53,10 +53,8 @@ public:
     /** Initialize actions step with actions dag.
       * Input column names initialized using actions dag nodes with INPUT type.
       *
-      * If available output columns strategy is ALL_NODES, then available output columns initialized using actions dag nodes
-      * with INPUT, FUNCTION, ALIAS, ARRAY_JOIN types.
-      * If available output columns strategy is OUTPUT_NODES, then available output columns initialized using actions dag output nodes
-      * with INPUT, FUNCTION, ALIAS, ARRAY_JOIN types.
+      * If available output columns strategy is ALL_NODES, then available output columns initialized using actions dag nodes.
+      * If available output columns strategy is OUTPUT_NODES, then available output columns initialized using actions dag output nodes.
       */
     explicit ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_ = AvailableOutputColumnsStrategy::ALL_NODES)
         : actions(std::move(actions_))
