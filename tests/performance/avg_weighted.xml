@@ -42,10 +42,10 @@
     <query>SELECT avgWeightedIf(num_f,                toNullable(num_f), num % 10) FROM perf_avg FORMAT Null</query>
     <query>SELECT avgWeightedIf(toNullable(num_f),    toNullable(num_f), num % 10) FROM perf_avg FORMAT Null</query>
 
-    <query>SELECT avgWeightedIf(num_f,                num_f,             toNullable(number) % 10) FROM perf_avg FORMAT Null</query>
-    <query>SELECT avgWeightedIf(toNullable(num_f),    num_f,             toNullable(number) % 10) FROM perf_avg FORMAT Null</query>
-    <query>SELECT avgWeightedIf(num_f,                toNullable(num_f), toNullable(number) % 10) FROM perf_avg FORMAT Null</query>
-    <query>SELECT avgWeightedIf(toNullable(num_f),    toNullable(num_f), toNullable(number) % 10) FROM perf_avg FORMAT Null</query>
+    <query>SELECT avgWeightedIf(num_f,                num_f,             toNullable(num) % 10) FROM perf_avg FORMAT Null</query>
+    <query>SELECT avgWeightedIf(toNullable(num_f),    num_f,             toNullable(num) % 10) FROM perf_avg FORMAT Null</query>
+    <query>SELECT avgWeightedIf(num_f,                toNullable(num_f), toNullable(num) % 10) FROM perf_avg FORMAT Null</query>
+    <query>SELECT avgWeightedIf(toNullable(num_f),    toNullable(num_f), toNullable(num) % 10) FROM perf_avg FORMAT Null</query>
 
 
     <drop_query>DROP TABLE IF EXISTS perf_avg</drop_query>
