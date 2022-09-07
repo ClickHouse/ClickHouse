@@ -247,6 +247,11 @@ elseif (ARCH_AARCH64)
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/Parser.cpp"
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp"
     )
+    set_source_files_properties(
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/Parser.cpp"
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp"
+        COMPILE_FLAGS -Wno-c++11-narrowing
+    )
 endif()
 
 # Platform-dependent files
