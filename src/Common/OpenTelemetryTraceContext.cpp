@@ -88,7 +88,13 @@ void Span::addAttribute(std::exception_ptr e) noexcept
 
 SpanHolder::SpanHolder(std::string_view _operation_name)
 {
-    if (current_thread_trace_context.isTraceEnabled())
+    if (!current_thread_trace_context.isTraceEnabled())
+    {
+        return;
+    }
+
+    /// Use try-catch to make sure the ctor is exception safe.
+    try
     {
         this->trace_id = current_thread_trace_context.trace_id;
         this->parent_span_id = current_thread_trace_context.span_id;
@@ -97,9 +103,19 @@ SpanHolder::SpanHolder(std::string_view _operation_name)
         this->start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        // set current span id to this
-        current_thread_trace_context.span_id = this->span_id;
+        /// Add new intialization here
     }
+    catch (...)
+    {
+        tryLogCurrentException(__FUNCTION__);
+
+        /// Clear related fields to make sure the span won't be recorded.
+        this->trace_id = UUID();
+        return;
+    }
+
+    /// Set current span as parent of other spans created later on this thread.
+    current_thread_trace_context.span_id = this->span_id;
 }
 
 void SpanHolder::finish() noexcept
@@ -216,7 +232,7 @@ const TracingContextOnThread & CurrentContext()
     return current_thread_trace_context;
 }
 
-void TracingContextOnThread::reset()
+void TracingContextOnThread::reset() noexcept
 {
     this->trace_id = UUID();
     this->span_id = 0;
@@ -231,59 +247,75 @@ TracingContextHolder::TracingContextHolder(
     const Settings * settings_ptr,
     const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
 {
-    if (current_thread_trace_context.isTraceEnabled())
+    /// Use try-catch to make sure the ctor is exception safe.
+    /// If any exception is raised during the construction, the tracing is not enabled on current thread.
+    try
     {
-        ///
-        /// This is not the normal case,
-        /// it means that construction of current object is not at the start of current thread.
-        /// Usually this is due to:
-        ///    1. bad design
-        ///    2. right design but code changes so that original point where this object is constructing is not the new start execution of current thread
-        ///
-        /// In such case, we should use current context as parent of this new constructing object,
-        /// So this branch ensures this class can be instantiated multiple times on one same thread safely.
-        ///
-        this->is_context_owner = false;
-        this->root_span.trace_id = current_thread_trace_context.trace_id;
-        this->root_span.parent_span_id = current_thread_trace_context.span_id;
+        if (current_thread_trace_context.isTraceEnabled())
+        {
+            ///
+            /// This is not the normal case,
+            /// it means that construction of current object is not at the start of current thread.
+            /// Usually this is due to:
+            ///    1. bad design
+            ///    2. right design but code changes so that original point where this object is constructing is not the new start execution of current thread
+            ///
+            /// In such case, we should use current context as parent of this new constructing object,
+            /// So this branch ensures this class can be instantiated multiple times on one same thread safely.
+            ///
+            this->is_context_owner = false;
+            this->root_span.trace_id = current_thread_trace_context.trace_id;
+            this->root_span.parent_span_id = current_thread_trace_context.span_id;
+            this->root_span.span_id = thread_local_rng();
+            this->root_span.operation_name = _operation_name;
+            this->root_span.start_time_us
+                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+            /// Set the root span as parent of other spans created on current thread
+            current_thread_trace_context.span_id = this->root_span.span_id;
+            return;
+        }
+
+        if (!_parent_trace_context.isTraceEnabled())
+        {
+            if (settings_ptr == nullptr)
+                /// Skip tracing context initialization on current thread
+                return;
+
+            // Start the trace with some configurable probability.
+            std::bernoulli_distribution should_start_trace{settings_ptr->opentelemetry_start_trace_probability};
+            if (!should_start_trace(thread_local_rng))
+                /// skip tracing context initialization on current thread
+                return;
+
+            while (_parent_trace_context.trace_id == UUID())
+            {
+                // Make sure the random generated trace_id is not 0 which is an invalid id.
+                _parent_trace_context.trace_id.toUnderType().items[0] = thread_local_rng(); //-V656
+                _parent_trace_context.trace_id.toUnderType().items[1] = thread_local_rng(); //-V656
+            }
+            _parent_trace_context.span_id = 0;
+        }
+
+        this->root_span.trace_id = _parent_trace_context.trace_id;
+        this->root_span.parent_span_id = _parent_trace_context.span_id;
         this->root_span.span_id = thread_local_rng();
         this->root_span.operation_name = _operation_name;
         this->root_span.start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        current_thread_trace_context.span_id = this->root_span.span_id;
+        /// Add new initialization here
+    }
+    catch(...)
+    {
+        tryLogCurrentException(__FUNCTION__);
+
+        /// Clear related fields to make sure the tracing is not enabled.
+        this->root_span.trace_id = UUID();
         return;
     }
 
-    if (!_parent_trace_context.isTraceEnabled())
-    {
-        if (settings_ptr == nullptr)
-            /// skip tracing context initialization on current thread
-            return;
-
-        // start the trace ourselves, with some configurable probability.
-        std::bernoulli_distribution should_start_trace{settings_ptr->opentelemetry_start_trace_probability};
-        if (!should_start_trace(thread_local_rng))
-            /// skip tracing context initialization on current thread
-            return;
-
-        while (_parent_trace_context.trace_id == UUID())
-        {
-            // make sure the random generated trace_id is not 0 which is an invalid id
-            _parent_trace_context.trace_id.toUnderType().items[0] = thread_local_rng(); //-V656
-            _parent_trace_context.trace_id.toUnderType().items[1] = thread_local_rng(); //-V656
-        }
-        _parent_trace_context.span_id = 0;
-    }
-
-    this->root_span.trace_id = _parent_trace_context.trace_id;
-    this->root_span.parent_span_id = _parent_trace_context.span_id;
-    this->root_span.span_id = thread_local_rng();
-    this->root_span.operation_name = _operation_name;
-    this->root_span.start_time_us
-        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-    /// set up trace context on current thread
+    /// Set up trace context on current thread only when the root span is successfully intialized.
     current_thread_trace_context = _parent_trace_context;
     current_thread_trace_context.span_id = this->root_span.span_id;
     current_thread_trace_context.trace_flags = TRACE_FLAG_SAMPLED;
@@ -313,7 +345,7 @@ TracingContextHolder::~TracingContextHolder()
                 /// It's acceptable that the attribute is not recorded in case of any exception,
                 /// so the exception is ignored to try to log the span.
             }
-            
+
             this->root_span.finish_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
