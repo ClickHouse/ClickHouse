@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
@@ -135,6 +136,23 @@ bool ReadBufferFromS3::nextImpl()
             watch.stop();
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
+
+            if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+            {
+                /// It doesn't make sense to retry Access Denied or No Such Key
+                if (!s3_exception->isRetryableError())
+                {
+                    tryLogCurrentException(log);
+                    throw;
+                }
+            }
+
+            /// It doesn't make sense to retry allocator errors
+            if (e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+            {
+                tryLogCurrentException(log);
+                throw;
+            }
 
             LOG_DEBUG(
                 log,
@@ -306,7 +324,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
     else
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+    {
+        const auto & error = outcome.GetError();
+        throw S3Exception(error.GetMessage(), error.GetErrorType());
+    }
 }
 
 SeekableReadBufferPtr ReadBufferS3Factory::getReader()
