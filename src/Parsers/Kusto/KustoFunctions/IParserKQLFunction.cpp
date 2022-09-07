@@ -280,11 +280,12 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
     int nullCount = getNullCounts(first_arg);
     if(pos->type == TokenType::Comma)
         ++pos;
-
+    out = "array( ";
     if(pos->type != TokenType::ClosingRoundBracket  && String(pos->begin, pos->end) != "dynamic")
     {
         second_arg = getConvertedArgument(fn_name, pos);
-        out =  "if (" + second_arg + ", array" + reverse + "Sort(" + first_arg + "), concat( arraySlice(array" + reverse + "Sort(" + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1)))";
+        out +=  "if (" + second_arg + ", array" + reverse + "Sort(" + first_arg + "), concat( arraySlice(array" + reverse + "Sort(" + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1)))";
+        out += " )";
         return out;
     }
     --pos;
@@ -306,7 +307,7 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
     else
     {
         ++pos;
-        out = "array"+ reverse +"Sort(" + first_arg + ")";
+        out += "array"+ reverse +"Sort(" + first_arg + ")";
     }
 
     if(argument_list.size() > 0)
@@ -321,20 +322,21 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
         else
             first_arg = "array" + reverse + "Sort(" + first_arg + ")";
 
-        out = first_arg + " AS array0_sorted";
+        out += first_arg;
         
         for(size_t i = 0; i < argument_list.size(); i++)
         {
             out += " , ";
             if(first_arg_length != getArrayLength(argument_list[i]))
-                out += "NULL AS array" + std::to_string(i + 1)+ "_sorted";
+                out += "array(NULL)";
             else if(nullCount > 0)
-                out +=  "If ( " + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + "), arrayConcat( arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , 1, length( " + temp_first_arg + ") - " + std::to_string(nullCount) + ") ) )" + "AS array" + std::to_string(i + 1)+ "_sorted";
+                out +=  "If ( " + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + "), arrayConcat( arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , 1, length( " + temp_first_arg + ") - " + std::to_string(nullCount) + ") ) )"; // + "AS array" + std::to_string(i + 1)+ "_sorted";
             else
-                out += "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ")" + "AS array" + std::to_string(i + 1)+ "_sorted";
+                out += "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ")";
         }
-        out += " )";
     }
+    out += " )";
     return out;
 }
+
 }
