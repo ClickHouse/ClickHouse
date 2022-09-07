@@ -103,7 +103,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name)
         this->start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        /// Add new intialization here
+        /// Add new initialization here
     }
     catch (...)
     {
@@ -306,7 +306,7 @@ TracingContextHolder::TracingContextHolder(
 
         /// Add new initialization here
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(__FUNCTION__);
 
@@ -315,7 +315,7 @@ TracingContextHolder::TracingContextHolder(
         return;
     }
 
-    /// Set up trace context on current thread only when the root span is successfully intialized.
+    /// Set up trace context on current thread only when the root span is successfully initialized.
     current_thread_trace_context = _parent_trace_context;
     current_thread_trace_context.span_id = this->root_span.span_id;
     current_thread_trace_context.trace_flags = TRACE_FLAG_SAMPLED;
