@@ -2,6 +2,8 @@
 
 #include "config_core.h"
 
+#if USE_AWS_S3
+
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3.h>
 
@@ -102,3 +104,5 @@ private:
 };
 
 }
+
+#endif

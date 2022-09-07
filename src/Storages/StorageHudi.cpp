@@ -1,5 +1,8 @@
-#include <Storages/StorageHudi.h>
 #include <Common/config.h>
+
+#if USE_AWS_S3
+
+#include <Storages/StorageHudi.h>
 #include <Common/logger_useful.h>
 
 #include <IO/S3Common.h>
@@ -280,3 +283,5 @@ void registerStorageHudi(StorageFactory & factory)
 }
 
 }
+
+#endif
