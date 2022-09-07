@@ -232,25 +232,6 @@ protected:
 };
 
 
-class ParserLogicalOrExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "logical-OR expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** An expression with ternary operator.
-  * For example, a = 1 ? b + 1 : c * 2.
-  */
-class ParserTernaryOperatorExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "expression with ternary operator"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
 class ParserExpression : public IParserBase
 {
 protected:
