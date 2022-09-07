@@ -442,9 +442,9 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_machine->shutdownStorage();
     state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_machine->shutdownStorage();
 }
 
 namespace
