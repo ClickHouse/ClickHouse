@@ -1,17 +1,16 @@
-#include "Common/EventNotifier.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
+#include <Common/EventNotifier.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/logger_useful.h>
-#include <Common/EventNotifier.h>
 #include <base/getThreadId.h>
 
 #include <Common/config.h>

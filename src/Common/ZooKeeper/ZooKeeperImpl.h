@@ -118,6 +118,7 @@ public:
 
     ~ZooKeeper() override;
 
+
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 

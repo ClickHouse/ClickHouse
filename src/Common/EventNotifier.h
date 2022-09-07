@@ -4,24 +4,22 @@
 #include <mutex>
 #include <functional>
 #include <set>
-#include <unordered_map>
+#include <map>
 #include <memory>
+#include <utility>
+#include <iostream>
 
 #include <base/types.h>
-
+#include <boost/container_hash/hash_fwd.hpp>
+#include <boost/functional/hash.hpp>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-  extern const int LOGICAL_ERROR;
-}
-
 class EventNotifier
 {
-  public:
-
+public:
     struct Handler
     {
       Handler(
@@ -50,17 +48,22 @@ class EventNotifier
 
     using HandlerPtr = std::shared_ptr<Handler>;
 
+    static EventNotifier & init();
     static EventNotifier & instance();
+    static void shutdown();
 
     template <typename EventType, typename Callback>
-    HandlerPtr connect(EventType event, Callback && callback)
+    [[ nodiscard ]] HandlerPtr subscribe(EventType event, Callback && callback)
     {
       std::lock_guard lock(mutex);
-      auto event_id = std::hash<EventType>{}(event);
-      auto callback_id = calculateIdentifier(event_id, callback_table[event_id].size());
+
+      auto event_id = DefaultHash64(event);
+      UInt64 callback_id = 0;
+      boost::hash_combine(callback_id, event_id);
+      boost::hash_combine(callback_id, ++counter);
 
       callback_table[event_id].insert(callback_id);
-      storage[callback_id] = std::move(callback);
+      storage[callback_id] = std::forward<Callback>(callback);
 
       return std::make_shared<Handler>(*this, event_id, callback_id);
     }
@@ -69,19 +72,20 @@ class EventNotifier
     void notify(EventType event)
     {
       std::lock_guard lock(mutex);
-      for (const auto & identifier : callback_table[std::hash<EventType>{}(event)])
+
+      for (const auto & identifier : callback_table[DefaultHash64(event)])
         storage[identifier]();
     }
 
-  private:
+private:
 
     using CallbackType = std::function<void()>;
-    using CallbackStorage = std::unordered_map<UInt64, CallbackType>;
-    using EventToCallbacks = std::vector<std::set<UInt64>>;
+    using CallbackStorage = std::map<UInt64, CallbackType>;
+    using EventToCallbacks = std::map<UInt64, std::set<UInt64>>;
 
     /// Pairing function f: N x N -> N (bijection)
     /// Will return unique numbers given a pair of integers
-    UInt64 calculateIdentifier(UInt64 a, UInt64 b)
+    static UInt64 calculateIdentifier(UInt64 a, UInt64 b)
     {
       return 0.5 * (a + b) * (a + b + 1) + b;
     }
@@ -90,6 +94,7 @@ class EventNotifier
 
     EventToCallbacks callback_table;
     CallbackStorage storage;
+    UInt64 counter{0};
 
     static std::unique_ptr<EventNotifier> event_notifier;
 };

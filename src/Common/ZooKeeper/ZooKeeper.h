@@ -4,7 +4,6 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -85,6 +84,7 @@ using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 class ZooKeeper
 {
 public:
+
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);

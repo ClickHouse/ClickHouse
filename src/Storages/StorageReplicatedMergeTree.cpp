@@ -4186,7 +4186,7 @@ void StorageReplicatedMergeTree::startupImpl()
         /// In this thread replica will be activated.
         restarting_thread.start();
         /// And this is just a callback
-        session_expired_callback_handler = EventNotifier::instance().connect(Coordination::Error::ZSESSIONEXPIRED, [this]()
+        session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
         {
             restarting_thread.start();
         });
@@ -4232,6 +4232,8 @@ void StorageReplicatedMergeTree::shutdown()
 {
     if (shutdown_called.exchange(true))
         return;
+
+    session_expired_callback_handler.reset();
 
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
