@@ -43,7 +43,7 @@ struct ParallelReadBuffer::ReadWorker
 };
 
 ParallelReadBuffer::ParallelReadBuffer(
-    std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers_)
+    std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_)
     : SeekableReadBuffer(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
@@ -71,7 +71,7 @@ bool ParallelReadBuffer::addReaderToPool()
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
 
     ++active_working_reader;
-    schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); });
+    schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); }, 0);
 
     return true;
 }

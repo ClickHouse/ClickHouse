@@ -1014,6 +1014,9 @@ public:
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
+    IAsynchronousReader & getThreadPoolReader() const;
+    ThreadPool & getThreadPoolWriter() const;
+
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 

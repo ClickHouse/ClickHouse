@@ -24,7 +24,7 @@ class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBu
 {
 public:
     AsynchronousReadBufferFromHDFS(
-        AsynchronousReaderPtr reader_,
+        IAsynchronousReader & reader_,
         const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromHDFS> impl_);
 
@@ -51,7 +51,7 @@ private:
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    AsynchronousReaderPtr reader;
+    IAsynchronousReader & reader;
     Int32 priority;
     std::shared_ptr<ReadBufferFromHDFS> impl;
     std::future<IAsynchronousReader::Result> prefetch_future;

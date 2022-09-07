@@ -13,20 +13,22 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
+IAsynchronousReader & IObjectStorage::getThreadPoolReader()
 {
-    constexpr size_t pool_size = 50;
-    constexpr size_t queue_size = 1000000;
-    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
-    return reader;
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initalized");
+
+    return context->getThreadPoolReader();
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
-    constexpr size_t pool_size = 100;
-    constexpr size_t queue_size = 1000000;
-    static ThreadPool writer(pool_size, pool_size, queue_size);
-    return writer;
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initalized");
+
+    return context->getThreadPoolWriter();
 }
 
 void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
