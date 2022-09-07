@@ -276,7 +276,8 @@ void StorageDelta::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configurat
         settings.auth_settings.region,
         ctx->getRemoteHostFilter(),
         ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
-        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
+        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+         /* for_disk_s3 = */ false);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.rw_settings.max_connections;
