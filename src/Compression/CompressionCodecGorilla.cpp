@@ -208,7 +208,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     const UInt32 items_count = source_size / sizeof(T);
 
-    unalignedStore<UInt32>(dest, items_count);
+    unalignedStoreLE<UInt32>(dest, items_count);
     dest += sizeof(items_count);
 
     T prev_value{};
@@ -217,8 +217,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     if (source < source_end)
     {
-        prev_value = unalignedLoad<T>(source);
-        unalignedStore<T>(dest, prev_value);
+        prev_value = unalignedLoadLE<T>(source);
+        unalignedStoreLE<T>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -228,7 +228,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     while (source < source_end)
     {
-        const T curr_value = unalignedLoad<T>(source);
+        const T curr_value = unalignedLoadLE<T>(source);
         source += sizeof(curr_value);
 
         const auto xored_data = curr_value ^ prev_value;
@@ -274,7 +274,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source + sizeof(UInt32) > source_end)
         return;
 
-    const UInt32 items_count = unalignedLoad<UInt32>(source);
+    const UInt32 items_count = unalignedLoadLE<UInt32>(source);
     source += sizeof(items_count);
 
     T prev_value{};
@@ -283,8 +283,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source + sizeof(T) > source_end || items_count < 1)
         return;
 
-    prev_value = unalignedLoad<T>(source);
-    unalignedStore<T>(dest, prev_value);
+    prev_value = unalignedLoadLE<T>(source);
+    unalignedStoreLE<T>(dest, prev_value);
 
     source += sizeof(prev_value);
     dest += sizeof(prev_value);
@@ -326,7 +326,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         }
         // else: 0b0 prefix - use prev_value
 
-        unalignedStore<T>(dest, curr_value);
+        unalignedStoreLE<T>(dest, curr_value);
         dest += sizeof(curr_value);
 
         prev_xored_info = curr_xored_info;

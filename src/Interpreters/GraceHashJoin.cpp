@@ -1,6 +1,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/Context.h>
 
 #include <Formats/NativeWriter.h>
 #include <Formats/TemporaryFileStream.h>
@@ -133,7 +134,7 @@ namespace
     public:
         explicit FileBlockWriter(ContextPtr context, TableJoin & join, JoinTableSide side, size_t index)
             : disk{join.getTemporaryVolume()->getDisk()}
-            , file{disk, buildTemporaryFilePrefix(context, side, index), true}
+            , file{disk, buildTemporaryFilePrefix(context, side, index)}
             , file_writer{disk->writeFile(file.getPath(), context->getSettingsRef().grace_hash_join_buffer_size)}
             , compressed_writer{*file_writer, getCompressionCodec(join), context->getSettingsRef().grace_hash_join_buffer_size}
         {
@@ -338,10 +339,10 @@ void GraceHashJoin::checkJoinKind()
 {
     switch (table_join->kind())
     {
-        case ASTTableJoin::Kind::Inner:
-        case ASTTableJoin::Kind::Left:
-        case ASTTableJoin::Kind::Right:
-        case ASTTableJoin::Kind::Full:
+        case JoinKind::Inner:
+        case JoinKind::Left:
+        case JoinKind::Right:
+        case JoinKind::Full:
             break;
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only INNER/LEFT/RIGHT/FULL join variants");
@@ -349,11 +350,11 @@ void GraceHashJoin::checkJoinKind()
 
     switch (table_join->strictness())
     {
-        case ASTTableJoin::Strictness::RightAny:
-        case ASTTableJoin::Strictness::All:
-        case ASTTableJoin::Strictness::Any:
-        case ASTTableJoin::Strictness::Semi:
-        case ASTTableJoin::Strictness::Anti:
+        case JoinStrictness::RightAny:
+        case JoinStrictness::All:
+        case JoinStrictness::Any:
+        case JoinStrictness::Semi:
+        case JoinStrictness::Anti:
             break;
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only ALL/ANY/SEMI/ANTI join strictness");

@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
+#include <Backups/BackupEntryFromMemory.h>
 
 #include <utility>
 
@@ -165,6 +166,18 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
+{
+    WriteBufferFromOwnString out;
+    out << "block number: " << block_number << "\n";
+
+    out << "commands: ";
+    commands.writeText(out);
+    out << "\n";
+
+    return std::make_shared<BackupEntryFromMemory>(out.str());
 }
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 #include <cstddef>
 #include <cassert>
 #include <algorithm>
@@ -703,10 +703,9 @@ public:
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         if (bytes_to_copy)
-        {
             memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-            this->c_end = this->c_start + bytes_to_copy;
-        }
+
+        this->c_end = this->c_start + bytes_to_copy;
     }
 
     // ISO C++ has strict ambiguity rules, thus we cannot apply TAllocatorParams here.

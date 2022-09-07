@@ -49,6 +49,7 @@ FORMAT PrettyCompactNoEscapes;
 DROP TABLE IF EXISTS check_system_tables;
 
 -- Check MergeTree declaration in old format
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE check_system_tables
   (
     Event Date,

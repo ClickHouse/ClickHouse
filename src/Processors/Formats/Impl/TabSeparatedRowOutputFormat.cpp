@@ -77,7 +77,6 @@ void TabSeparatedRowOutputFormat::writeBeforeExtremes()
     writeChar('\n', out);
 }
 
-
 void registerOutputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})

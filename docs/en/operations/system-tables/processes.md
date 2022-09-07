@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/processes
+---
 # processes
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.

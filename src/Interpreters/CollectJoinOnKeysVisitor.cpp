@@ -48,7 +48,7 @@ void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const 
 }
 
 void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast,
-                                                     JoinIdentifierPosPair table_pos, const ASOF::Inequality & inequality)
+                                                     JoinIdentifierPosPair table_pos, const ASOFJoinInequality & inequality)
 {
     if (isLeftIdentifier(table_pos.first) && isRightIdentifier(table_pos.second))
     {
@@ -60,7 +60,7 @@ void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, co
     {
         asof_left_key = right_ast->clone();
         asof_right_key = left_ast->clone();
-        analyzed_join.setAsofInequality(ASOF::reverseInequality(inequality));
+        analyzed_join.setAsofInequality(reverseASOFJoinInequality(inequality));
     }
     else
     {
@@ -91,8 +91,9 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     if (func.name == "and")
         return; /// go into children
 
-    ASOF::Inequality inequality = ASOF::getInequality(func.name);
-    if (func.name == "equals" || inequality != ASOF::Inequality::None)
+    ASOFJoinInequality inequality = getASOFJoinInequality(func.name);
+
+    if (func.name == "equals" || inequality != ASOFJoinInequality::None)
     {
         if (func.arguments->children.size() != 2)
             throw Exception("Function " + func.name + " takes two arguments, got '" + func.formatForErrorMessage() + "' instead",
@@ -126,7 +127,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         return;
     }
 
-    if (data.is_asof && inequality != ASOF::Inequality::None)
+    if (data.is_asof && inequality != ASOFJoinInequality::None)
     {
         if (data.asof_left_key || data.asof_right_key)
             throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",

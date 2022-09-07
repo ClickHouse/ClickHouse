@@ -514,8 +514,6 @@ private:
             return allocateFromFreeRegion(*free_region, size);
         }
 
-//        std::cerr << "Requested size: " << size << "\n";
-
         /// Evict something from cache and continue.
         while (true)
         {

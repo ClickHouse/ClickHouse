@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Throttler_fwd.h>
+
 #include <mutex>
 #include <memory>
 #include <base/sleep.h>
@@ -56,8 +58,5 @@ private:
     /// Used to implement a hierarchy of throttlers
     std::shared_ptr<Throttler> parent;
 };
-
-
-using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 }

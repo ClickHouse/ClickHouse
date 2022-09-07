@@ -25,6 +25,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
@@ -785,7 +786,8 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
+        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
+            column_name == LightweightDeleteDescription::FILTER_COLUMN.name;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -1149,7 +1151,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
+            if (all_columns.has(command.column_name) ||
+                all_columns.hasNested(command.column_name) ||
+                (command.clear && column_name == LightweightDeleteDescription::FILTER_COLUMN.name))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -1270,7 +1274,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
-        /// Collect default expressions for MODIFY and ADD comands
+        /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
             if (command.default_expression)

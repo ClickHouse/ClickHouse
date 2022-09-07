@@ -50,7 +50,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitWrapperFunc>
     }
 };
 
-void registerFunctionBitWrapperFunc(FunctionFactory & factory)
+REGISTER_FUNCTION(BitWrapperFunc)
 {
     factory.registerFunction<FunctionBitWrapperFunc>();
 }

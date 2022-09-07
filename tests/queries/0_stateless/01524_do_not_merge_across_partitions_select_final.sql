@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS select_final;
 
 SET do_not_merge_across_partitions_select_final = 1;
-SET max_threads = 0;
+SET max_threads = 16;
 
 CREATE TABLE select_final (t DateTime, x Int32, string String) ENGINE = ReplacingMergeTree() PARTITION BY toYYYYMM(t) ORDER BY (x, t);
 
@@ -32,6 +32,7 @@ INSERT INTO select_final SELECT toDate('2000-01-01'), number, '' FROM numbers(50
 OPTIMIZE TABLE select_final FINAL;
 
 SET remote_filesystem_read_method = 'read';
+SET local_filesystem_read_method = 'pread';
 
 SELECT max(x) FROM select_final FINAL;
 

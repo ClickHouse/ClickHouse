@@ -2,9 +2,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Common/IFileCache.h>
-#include <Common/FileSegment.h>
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 
@@ -24,6 +24,7 @@ NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
         {"cache_hits", std::make_shared<DataTypeUInt64>()},
         {"references", std::make_shared<DataTypeUInt64>()},
         {"downloaded_size", std::make_shared<DataTypeUInt64>()},
+        {"persistent", std::make_shared<DataTypeNumber<UInt8>>()}
     };
 }
 
@@ -38,7 +39,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
 
     for (const auto & [cache_base_path, cache_data] : caches)
     {
-        const auto & cache = cache_data.cache;
+        const auto & cache = cache_data->cache;
         auto file_segments = cache->getSnapshot();
 
         for (const auto & file_segment : file_segments)
@@ -55,6 +56,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[6]->insert(file_segment->getHitsCount());
             res_columns[7]->insert(file_segment->getRefCount());
             res_columns[8]->insert(file_segment->getDownloadedSize());
+            res_columns[9]->insert(file_segment->isPersistent());
         }
     }
 }
