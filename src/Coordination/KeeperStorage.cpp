@@ -830,7 +830,9 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
 void KeeperStorage::unregisterEphemeralPath(int64_t session_id, const std::string & path)
 {
     auto ephemerals_it = ephemerals.find(session_id);
-    assert(ephemerals_it != ephemerals.end());
+    if (ephemerals_it == ephemerals.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path");
+
     ephemerals_it->second.erase(path);
     if (ephemerals_it->second.empty())
         ephemerals.erase(ephemerals_it);
