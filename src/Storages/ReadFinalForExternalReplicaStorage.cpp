@@ -21,6 +21,9 @@ namespace DB
 
 bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage)
 {
+    if (storage->needRewriteQueryWithFinal(column_names)) {
+        return true;
+    }
     const StorageMetadataPtr & metadata = storage->getInMemoryMetadataPtr();
     Block header = metadata->getSampleBlock();
     ColumnWithTypeAndName & version_column = header.getByPosition(header.columns() - 1);

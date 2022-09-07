@@ -27,8 +27,7 @@ StorageMaterializedMySQL::StorageMaterializedMySQL(const StoragePtr & nested_sto
     setInMemoryMetadata(in_memory_metadata);
 }
 
-bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_names) const
-{
+bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_names) const {
     return needRewriteQueryWithFinalForStorage(column_names, nested_storage);
 }
 
