@@ -1,5 +1,4 @@
 #include <Interpreters/AggregationUtils.h>
-#include <Columns/ColumnMap.h>
 
 namespace DB
 {

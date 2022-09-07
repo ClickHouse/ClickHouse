@@ -114,7 +114,7 @@ public:
 
     IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
     {
-        return assert_cast<ColumnAggregateFunction *>(column);
+        return column;
     }
 
     bool allocatesMemoryInArena() const override
