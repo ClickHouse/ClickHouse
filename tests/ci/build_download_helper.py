@@ -45,7 +45,7 @@ def get_build_name_for_check(check_name):
     return CI_CONFIG["tests_config"][check_name]["required_build"]
 
 
-def get_build_urls(build_name, reports_path):
+def read_build_urls(build_name, reports_path):
     for root, _, files in os.walk(reports_path):
         for f in files:
             if build_name in f:
@@ -111,7 +111,7 @@ def download_builds_filter(
     check_name, reports_path, result_path, filter_fn=lambda _: True
 ):
     build_name = get_build_name_for_check(check_name)
-    urls = get_build_urls(build_name, reports_path)
+    urls = read_build_urls(build_name, reports_path)
     print(urls)
 
     if not urls:
