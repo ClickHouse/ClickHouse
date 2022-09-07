@@ -83,13 +83,6 @@ private:
     using CallbackStorage = std::map<UInt64, CallbackType>;
     using EventToCallbacks = std::map<UInt64, std::set<UInt64>>;
 
-    /// Pairing function f: N x N -> N (bijection)
-    /// Will return unique numbers given a pair of integers
-    static UInt64 calculateIdentifier(UInt64 a, UInt64 b)
-    {
-      return 0.5 * (a + b) * (a + b + 1) + b;
-    }
-
     std::mutex mutex;
 
     EventToCallbacks callback_table;
