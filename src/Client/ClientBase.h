@@ -176,9 +176,6 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    ServerConnectionPtr connection;
-    ConnectionParameters connection_parameters;
-
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
@@ -198,6 +195,12 @@ protected:
 
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+
+    /// thread status should be destructed before shared context because it relies on process list.
+    std::optional<ThreadStatus> thread_status;
+
+    ServerConnectionPtr connection;
+    ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
