@@ -9,12 +9,12 @@ CREATE TABLE t2 (a Int16, b Nullable(Int64)) ENGINE = TinyLog;
 INSERT INTO t1 SELECT number as a, 100 + number as b FROM system.numbers LIMIT 1, 10;
 INSERT INTO t2 SELECT number - 5 as a, 200 + number - 5 as b FROM system.numbers LIMIT 1, 10;
 
-{% for join_type in ['hash', 'partial_merge', 'auto', 'full_sorting_merge', 'grace_hash'] -%}
+{% for join_algorithm in ['hash', 'partial_merge', 'auto', 'full_sorting_merge', 'grace_hash'] -%}
 
-SELECT '=== {{ join_type }} ===';
-SET join_algorithm = '{{ join_type }}';
+SELECT '=== {{ join_algorithm }} ===';
+SET join_algorithm = '{{ join_algorithm }}';
 
-{% if join_type == 'auto' -%}
+{% if join_algorithm == 'auto' -%}
 SET max_bytes_in_join = 100;
 {% else %}
 SET max_bytes_in_join = '100M';
@@ -91,11 +91,11 @@ SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM 
 SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 INNER JOIN t2 ON (t1.a == t2.a);
 SELECT toTypeName(any(a)) == 'UInt16' AND toTypeName(any(t2.a)) == 'Int16' FROM t1 FULL JOIN t2 ON (t1.a == t2.a);
 
-{% if join_type == 'auto_merge' -%}
+{% if join_algorithm == 'auto' -%}
 SET max_bytes_in_join = 0;
 {% endif -%}
 
-{% endfor -%}
+{% if join_algorithm not in ['full_sorting_merge'] -%}
 
 SELECT '=== join use nulls ===';
 
@@ -173,6 +173,9 @@ SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM 
 SELECT toTypeName(any(a)) == 'Nullable(UInt16)' AND toTypeName(any(t2.a)) == 'Nullable(Int16)' FROM t1 FULL JOIN t2 ON (t1.a == t2.a);
 
 SET join_use_nulls = 0;
+{% endif -%}
+
+{% endfor -%}
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

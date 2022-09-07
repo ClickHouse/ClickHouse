@@ -1017,8 +1017,11 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
 
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
 
+    std::vector<String> tried_algorithms;
+
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::DIRECT));
         JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
         if (direct_join)
         {
@@ -1031,6 +1034,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE) ||
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::PARTIAL_MERGE));
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
@@ -1040,6 +1044,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
@@ -1047,18 +1052,21 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::FULL_SORTING_MERGE));
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
         if (GraceHashJoin::isSupported(analyzed_join))
             return std::make_shared<GraceHashJoin>(context, analyzed_join, right_sample_block);
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::AUTO));
         auto make_merge_join = [analyzed_join, right_sample_block]
         {
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
@@ -1069,15 +1077,16 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
             return std::make_shared<GraceHashJoin>(context, analyzed_join, right_sample_block);
         };
 
-        if (settings.allow_grace_hash_join && GraceHashJoin::isSupported(analyzed_join))
+        if (settings.allow_grace_hash_join && GraceHashJoin::isSupported(analyzed_join, true))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, make_grace_hash_join);
 
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, make_merge_join);
     }
 
-    throw Exception("Can't execute any of specified algorithms for this strictness/kind and right storage type",
-                     ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Can't execute {} join algorithm for this strictness/kind and right storage type",
+        fmt::join(tried_algorithms, " or "));
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(

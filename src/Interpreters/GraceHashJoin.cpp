@@ -323,7 +323,8 @@ GraceHashJoin::GraceHashJoin(
     , max_block_size{context->getSettingsRef().max_block_size}
     , first_bucket{makeInMemoryJoin()}
 {
-    checkJoinKind();
+    if (!GraceHashJoin::isSupported(table_join, false))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
 
     initial_num_buckets = roundUpToPowerOfTwoOrZero(initial_num_buckets);
     auto tmp = std::make_unique<Buckets>();
@@ -335,18 +336,11 @@ GraceHashJoin::GraceHashJoin(
     LOG_TRACE(log, "Initialize {} buckets", initial_num_buckets);
 }
 
-
-bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
+bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join, bool for_auto)
 {
-    const auto & kind = table_join->kind();
-    bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
-    bool is_right_or_full = isRight(kind) || isFull(kind);
+    if (!table_join->oneDisjunct())
+        return false;
 
-    return !is_right_or_full && !is_asof && !isCrossOrComma(kind) && table_join->oneDisjunct();
-}
-
-void GraceHashJoin::checkJoinKind()
-{
     switch (table_join->kind())
     {
         case JoinKind::Inner:
@@ -355,7 +349,7 @@ void GraceHashJoin::checkJoinKind()
         case JoinKind::Full:
             break;
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only INNER/LEFT/RIGHT/FULL join variants");
+            return false;
     }
 
     switch (table_join->strictness())
@@ -367,8 +361,19 @@ void GraceHashJoin::checkJoinKind()
         case JoinStrictness::Anti:
             break;
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only ALL/ANY/SEMI/ANTI join strictness");
+            return false;
     }
+
+    if (for_auto)
+    {
+        const auto & kind = table_join->kind();
+        bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
+        bool is_right_or_full = isRight(kind) || isFull(kind);
+
+        return !is_right_or_full && !is_asof && !isCrossOrComma(kind) && table_join->oneDisjunct();
+    }
+
+    return true;
 }
 
 GraceHashJoin::~GraceHashJoin() = default;
