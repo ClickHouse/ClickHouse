@@ -7,23 +7,62 @@
 #include <base/types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
+#include <aws/s3/S3Errors.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
+
+#include <Common/Exception.h>
 
 namespace Aws::S3
 {
     class S3Client;
 }
 
+
 namespace DB
 {
-    class RemoteHostFilter;
-    struct HttpHeader;
-    using HeaderCollection = std::vector<HttpHeader>;
+namespace ErrorCodes
+{
+    extern const int S3_ERROR;
 }
+
+class RemoteHostFilter;
+struct HttpHeader;
+using HeaderCollection = std::vector<HttpHeader>;
+
+class S3Exception : public Exception
+{
+public:
+
+    // Format message with fmt::format, like the logging functions.
+    template <typename... Args>
+    S3Exception(Aws::S3::S3Errors code_, fmt::format_string<Args...> fmt, Args &&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), ErrorCodes::S3_ERROR)
+        , code(code_)
+    {
+    }
+
+    S3Exception(const std::string & msg, Aws::S3::S3Errors code_)
+        : Exception(msg, ErrorCodes::S3_ERROR)
+        , code(code_)
+    {}
+
+    Aws::S3::S3Errors getS3ErrorCode() const
+    {
+        return code;
+    }
+
+    bool isRetryableError() const;
+
+private:
+    const Aws::S3::S3Errors code;
+};
+}
+
 
 namespace DB::S3
 {
+
 class ClientFactory
 {
 public:
