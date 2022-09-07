@@ -1,8 +1,11 @@
--- Tags: long, zookeeper
+-- Tags: long, zookeeper, no-replicated-database
 
-SET send_logs_level = 'fatal';
+-- no-replicated-database:
+--   The number of replicas is doubled, so `SYSTEM STOP FETCHES` stop not enough replicas.
+
 SET insert_quorum_parallel = false;
-SET select_sequential_consistency=1;
+
+SET select_sequential_consistency = 1;
 
 DROP TABLE IF EXISTS quorum1;
 DROP TABLE IF EXISTS quorum2;
