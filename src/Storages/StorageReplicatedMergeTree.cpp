@@ -3831,9 +3831,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     LOG_DEBUG(log, "Fetching part {} from {}", part_name, source_replica_path);
 
+    auto settings_ptr = getSettings();
     TableLockHolder table_lock_holder;
     if (!to_detached)
-        table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+        table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, settings_ptr->lock_acquire_timeout_for_background_operations);
 
     /// Logging
     Stopwatch stopwatch;
@@ -3857,7 +3858,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         covered_part_info.mutation = 0;
         auto source_part = getActiveContainingPart(covered_part_info);
 
-        if (source_part)
+        /// Fetch for zero-copy replication is cheap and straightforward, so we don't use local clone here
+        if (source_part && (!settings_ptr->allow_remote_fs_zero_copy_replication || !source_part->data_part_storage->supportZeroCopyReplication()))
         {
             auto source_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
                 source_part->getColumns(), source_part->checksums);
@@ -3897,7 +3899,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 part_to_clone = source_part;
             }
         }
-
     }
 
     ReplicatedMergeTreeAddress address;
@@ -7538,21 +7539,39 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
 
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
 {
-    if (!part.data_part_storage || !part.isStoredOnDisk())
+    auto settings = getSettings();
+    if (!settings->allow_remote_fs_zero_copy_replication)
         return std::make_pair(true, NameSet{});
 
-    if (!part.data_part_storage || !part.data_part_storage->supportZeroCopyReplication())
+    if (!part.data_part_storage || !part.isStoredOnDisk())
+    {
+        LOG_TRACE(log, "Part {} is not stored on disk, blobs can be removed", part.name);
         return std::make_pair(true, NameSet{});
+    }
+
+    if (!part.data_part_storage || !part.data_part_storage->supportZeroCopyReplication())
+    {
+        LOG_TRACE(log, "Part {} is not stored on zero-copy replicaed disk, blobs can be removed", part.name);
+        return std::make_pair(true, NameSet{});
+    }
 
     /// If part is temporary refcount file may be absent
     if (part.data_part_storage->exists(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK))
     {
         auto ref_count = part.data_part_storage->getRefCount(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
         if (ref_count > 0) /// Keep part shard info for frozen backups
+        {
+            LOG_TRACE(log, "Part {} has more than zero local references ({}), blobs cannot be removed", part.name, ref_count);
             return std::make_pair(false, NameSet{});
+        }
+        else
+        {
+            LOG_TRACE(log, "Part {} local references is zero, will check blobs can be removed in zookeeper", part.name);
+        }
     }
     else
     {
+        LOG_TRACE(log, "Part {} looks temporary, because checksums file doesn't exists, blobs can be removed", part.name);
         /// Temporary part with some absent file cannot be locked in shared mode
         return std::make_pair(true, NameSet{});
     }
@@ -7600,9 +7619,13 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
         if (!children.empty())
         {
-            LOG_TRACE(logger, "Found {} ({}) zookeeper locks for {}", zookeeper_part_uniq_node, children.size(), fmt::join(children, ", "));
+            LOG_TRACE(logger, "Found {} ({}) zookeper locks for {}", children.size(), fmt::join(children, ", "), zookeeper_part_uniq_node);
             part_has_no_more_locks = false;
             continue;
+        }
+        else
+        {
+            LOG_TRACE(logger, "No more children left for for {}, will try to remove the whole node", zookeeper_part_uniq_node);
         }
 
         auto error_code = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
@@ -7654,7 +7677,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) were concurrently created",
+            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
                       zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
         }
     }
