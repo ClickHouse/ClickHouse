@@ -154,7 +154,7 @@ Example of configuration for versions earlier than 21.8:
     </storage_configuration>
 ```
 
-Cache configuration settings (the list corresponds to latest ClickHouse version, for earlier versions something might be unsupported):
+Cache **configuration settings**:
 
 - `path` - path to cache Default: None, this settings is obligatory.
 
@@ -172,7 +172,7 @@ Cache configuration settings (the list corresponds to latest ClickHouse version,
 
 - `max_elements` a limit for a number of cache files.
 
-Cache user settings (can be changes per query):
+Cache **query settings**:
 
 - `enable_filesystem_cache` - allows to disable cache even if storage policy was configured with `cache` disk type. Default: `true`.
 
@@ -186,15 +186,17 @@ Cache user settings (can be changes per query):
 
 - `skip_download_if_exceeds_query_cache` - allows to change the behaviour of setting `max_query_cache_size`. Default: `true`. If this setting is turned on and cache download limit during query was reached, no more cache will be downloaded to cache storage. If this setting is turned off and cache download limit during query was reached, cache will still be written by evicting previously written within current query cache data. E.g. second behaviour allows to preserve `last recentltly used` behaviour.
 
-Cache system tables:
+* Cache configuration settings and cache query settings correspond to the latest ClickHouse version, for earlier versions something might not be supported.
+
+Cache **system tables**:
 
 - `system.filesystem_cache` - system tables which shows current state of cache.
 
 - `system.filesystem_cache_log` - system table which shows detailed cache usage per query. Requires `enable_filesystem_cache_log` setting to be `true`.
 
-Cache commands:
+Cache **commands**:
 
-- `SYSTEM DROP FILESYSTEM CACHE (ON CLUSTER)`
+- `SYSTEM DROP FILESYSTEM CACHE (<path>) (ON CLUSTER)`
 
 - `SHOW CACHES` -- show list of caches which were configured on the server.
 
