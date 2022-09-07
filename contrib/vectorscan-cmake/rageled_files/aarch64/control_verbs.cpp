@@ -1,4 +1,4 @@
-#line 1 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 1 "control_verbs.rl"
 /*
 * Copyright (c) 2017, Intel Corporation
 *
@@ -54,7 +54,7 @@ namespace ue2 {
 		UNUSED int act;
 		
 
-#line 56 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 56 "control_verbs.cpp"
 static const signed char _ControlVerbs_actions[] = {
 			0, 1, 0, 1, 1, 1, 2, 1,
 			3, 1, 4, 1, 5, 1, 6, 1,
@@ -269,19 +269,19 @@ static const signed char _ControlVerbs_actions[] = {
 		static const int ControlVerbs_en_main = 75;
 		
 
-#line 269 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 269 "control_verbs.cpp"
 	{
 			cs = (int)ControlVerbs_start;
 			ts = 0;
 			te = 0;
 		}
 		
-#line 105 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 105 "control_verbs.rl"
 
 		
 		try {
 
-#line 278 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 278 "control_verbs.cpp"
 	{
 				int _klen;
 				unsigned int _trans = 0;
@@ -301,7 +301,7 @@ static const signed char _ControlVerbs_actions[] = {
 #line 1 "NONE"
 								{ts = p;}}
 							
-#line 297 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 297 "control_verbs.cpp"
 
 							break; 
 						}
@@ -383,43 +383,43 @@ static const signed char _ControlVerbs_actions[] = {
 #line 1 "NONE"
 									{te = p+1;}}
 								
-#line 378 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 378 "control_verbs.cpp"
 
 								break; 
 							}
 							case 3:  {
 									{
-#line 76 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 76 "control_verbs.rl"
 									{te = p+1;{
-#line 76 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 76 "control_verbs.rl"
 											
 											mode.utf8 = true;
 										}
 									}}
 								
-#line 391 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 391 "control_verbs.cpp"
 
 								break; 
 							}
 							case 4:  {
 									{
-#line 80 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 80 "control_verbs.rl"
 									{te = p+1;{
-#line 80 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 80 "control_verbs.rl"
 											
 											mode.ucp = true;
 										}
 									}}
 								
-#line 404 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 404 "control_verbs.cpp"
 
 								break; 
 							}
 							case 5:  {
 									{
-#line 84 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 84 "control_verbs.rl"
 									{te = p+1;{
-#line 84 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 84 "control_verbs.rl"
 											
 											ostringstream str;
 											str << "Unsupported control verb " << string(ts, te - ts);
@@ -427,15 +427,15 @@ static const signed char _ControlVerbs_actions[] = {
 										}
 									}}
 								
-#line 419 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 419 "control_verbs.cpp"
 
 								break; 
 							}
 							case 6:  {
 									{
-#line 90 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 90 "control_verbs.rl"
 									{te = p+1;{
-#line 90 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 90 "control_verbs.rl"
 											
 											ostringstream str;
 											str << "Unknown control verb " << string(ts, te - ts);
@@ -443,53 +443,53 @@ static const signed char _ControlVerbs_actions[] = {
 										}
 									}}
 								
-#line 434 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 434 "control_verbs.cpp"
 
 								break; 
 							}
 							case 7:  {
 									{
-#line 97 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 97 "control_verbs.rl"
 									{te = p+1;{
-#line 97 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 97 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
 										}
 									}}
 								
-#line 448 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 448 "control_verbs.cpp"
 
 								break; 
 							}
 							case 8:  {
 									{
-#line 97 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 97 "control_verbs.rl"
 									{te = p;p = p - 1;{
-#line 97 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 97 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
 										}
 									}}
 								
-#line 462 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 462 "control_verbs.cpp"
 
 								break; 
 							}
 							case 9:  {
 									{
-#line 97 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 97 "control_verbs.rl"
 									{p = ((te))-1;
 										{
-#line 97 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 97 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
 										}
 									}}
 								
-#line 477 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 477 "control_verbs.cpp"
 
 								break; 
 							}
@@ -515,7 +515,7 @@ static const signed char _ControlVerbs_actions[] = {
 #line 1 "NONE"
 									{ts = 0;}}
 								
-#line 502 "../../repo/ClickHouse1/contrib/vectorscan-cmake/rageled_files/control_verbs.cpp"
+#line 502 "control_verbs.cpp"
 
 								break; 
 							}
@@ -530,7 +530,7 @@ static const signed char _ControlVerbs_actions[] = {
 				_out: {}
 			}
 			
-#line 108 "../../repo/ClickHouse1/contrib/vectorscan/src/parser/control_verbs.rl"
+#line 108 "control_verbs.rl"
 
 		} catch (LocatedParseError &error) {
 			if (ts >= ptr && ts <= pe) {

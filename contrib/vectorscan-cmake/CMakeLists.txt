@@ -4,8 +4,6 @@ if (ARCH_AMD64 OR ARCH_AARCH64)
     option (ENABLE_VECTORSCAN "Enable vectorscan library" ${ENABLE_LIBRARIES})
 endif()
 
-# TODO: vectorscan supports ARM yet some tests involving cyrillic letters fail (PR #38171) ... needs further investigation
-
 # TODO PPC should generally work but needs manual generation of ppc/config.h file on a PPC machine
 
 if (NOT ENABLE_VECTORSCAN)
@@ -236,17 +234,20 @@ set (SRCS
 
 # The original build system invokes ragel on src/parser/{Parser|control_verbs}.rl (+ a few more .rl files which are unneeded). To avoid a
 # build-time dependency on ragel (via contrib/ or find_program()), add the manually generated output of ragel to the sources.
-# Please regenerate these files if you update vectorscan.
-list (APPEND SRCS
-    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/Parser.cpp"
-    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/control_verbs.cpp"
-)
-
-set_source_files_properties(
-    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/Parser.cpp"
-    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/control_verbs.cpp"
-    COMPILE_FLAGS -Wno-c++11-narrowing
-)
+#
+# Please regenerate these files if you update vectorscan. They must be regenerated for each platform separately because ragel produces for
+# weird reasons different constants in the output.
+if (ARCH_AMD64)
+    list (APPEND SRCS
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/control_verbs.cpp"
+    )
+elseif (ARCH_AARCH64)
+    list (APPEND SRCS
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/Parser.cpp"
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp"
+    )
+endif()
 
 # Platform-dependent files
 if (ARCH_AMD64)
