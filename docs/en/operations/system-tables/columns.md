@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/columns
+---
 # columns
 
 Contains information about columns in all the tables.

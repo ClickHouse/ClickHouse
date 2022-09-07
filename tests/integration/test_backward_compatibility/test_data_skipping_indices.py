@@ -5,7 +5,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, name="skipping_indices")
+cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     image="yandex/clickhouse-server",

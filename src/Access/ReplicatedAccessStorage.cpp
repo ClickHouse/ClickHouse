@@ -2,8 +2,14 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Access/AccessBackup.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Backups/RestoreSettings.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/IRestoreCoordination.h>
 #include <IO/ReadHelpers.h>
-#include <boost/container/flat_set.hpp>
+#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -11,6 +17,7 @@
 #include <Common/setThreadName.h>
 #include <base/range.h>
 #include <base/sleep.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -33,12 +40,14 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     const String & storage_name_,
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
-    AccessChangesNotifier & changes_notifier_)
+    AccessChangesNotifier & changes_notifier_,
+    bool allow_backup_)
     : IAccessStorage(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
     , changes_notifier(changes_notifier_)
+    , backup_allowed(allow_backup_)
 {
     if (zookeeper_path.empty())
         throw Exception("ZooKeeper path must be non-empty", ErrorCodes::BAD_ARGUMENTS);
@@ -99,6 +108,15 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
 std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     const UUID id = generateRandomID();
+    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
+        return id;
+
+    return std::nullopt;
+}
+
+
+bool ReplicatedAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+{
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
     LOG_DEBUG(getLogger(), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
@@ -108,11 +126,11 @@ std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & 
     retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists); });
 
     if (!ok)
-        return std::nullopt;
+        return false;
 
     std::lock_guard lock{mutex};
     refreshEntityNoLock(zookeeper, id);
-    return id;
+    return true;
 }
 
 
@@ -598,6 +616,66 @@ AccessEntityPtr ReplicatedAccessStorage::readImpl(const UUID & id, bool throw_if
     }
     const Entry & entry = it->second;
     return entry.entity;
+}
+
+
+void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const
+{
+    if (!isBackupAllowed())
+        throwBackupNotAllowed();
+
+    auto entities = readAllWithIDs(type);
+    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+
+    if (entities.empty())
+        return;
+
+    auto backup_entry_with_path = makeBackupEntryForAccess(
+        entities,
+        data_path_in_backup,
+        backup_entries_collector.getAccessCounter(type),
+        backup_entries_collector.getContext()->getAccessControl());
+
+    auto backup_coordination = backup_entries_collector.getBackupCoordination();
+    String current_host_id = backup_entries_collector.getBackupSettings().host_id;
+    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, current_host_id, backup_entry_with_path.first);
+
+    backup_entries_collector.addPostTask(
+        [backup_entry = backup_entry_with_path.second,
+         zookeeper_path = zookeeper_path,
+         type,
+         current_host_id,
+         &backup_entries_collector,
+         backup_coordination]
+        {
+            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type, current_host_id))
+                backup_entries_collector.addBackupEntry(path, backup_entry);
+        });
+}
+
+
+void ReplicatedAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+{
+    if (!isRestoreAllowed())
+        throwRestoreNotAllowed();
+
+    auto restore_coordination = restorer.getRestoreCoordination();
+    if (!restore_coordination->acquireReplicatedAccessStorage(zookeeper_path))
+        return;
+
+    auto entities = restorer.getAccessEntitiesToRestore();
+    if (entities.empty())
+        return;
+
+    auto create_access = restorer.getRestoreSettings().create_access;
+    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+
+    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    {
+        for (const auto & [id, entity] : entities)
+            insertWithID(id, entity, replace_if_exists, throw_if_exists);
+    });
 }
 
 }

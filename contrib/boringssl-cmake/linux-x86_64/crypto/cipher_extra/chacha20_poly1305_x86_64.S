@@ -3935,7 +3935,7 @@ do_length_block:
 	popq	%rbp
 .cfi_adjust_cfa_offset	-8
 	.byte	0xf3,0xc3
-.cfi_adjust_cfa_offset	(8 * 6) + 288 + 32
+.cfi_adjust_cfa_offset	(8 * 7) + 288 + 32
 
 seal_sse_128:
 	movdqu	.chacha20_consts(%rip),%xmm0
@@ -8984,3 +8984,4 @@ seal_avx2_short_tail:
 	jmp	seal_sse_tail_16
 .cfi_endproc	
 #endif
+.section	.note.GNU-stack,"",@progbits

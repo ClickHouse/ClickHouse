@@ -15,13 +15,10 @@
   */
 
 template <size_t initial_size_degree = 8>
-struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
+struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
 {
     /// Increase the size of the hash table.
-    void increaseSize()
-    {
-        this->size_degree += this->size_degree >= 15 ? 1 : 2;
-    }
+    void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
 };
 
 template

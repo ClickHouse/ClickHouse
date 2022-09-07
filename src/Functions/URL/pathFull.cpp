@@ -10,7 +10,7 @@ namespace DB
 struct NamePathFull { static constexpr auto name = "pathFull"; };
 using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPath<true>>, NamePathFull>;
 
-void registerFunctionPathFull(FunctionFactory & factory)
+REGISTER_FUNCTION(PathFull)
 {
     factory.registerFunction<FunctionPathFull>();
 }

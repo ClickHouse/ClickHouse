@@ -22,6 +22,7 @@
 .type	gcm_init_v8,%function
 .align	4
 gcm_init_v8:
+	AARCH64_VALID_CALL_TARGET
 	ld1	{v17.2d},[x1]		//load input H
 	movi	v19.16b,#0xe1
 	shl	v19.2d,v19.2d,#57		//0xc2.0
@@ -73,6 +74,7 @@ gcm_init_v8:
 .type	gcm_gmult_v8,%function
 .align	4
 gcm_gmult_v8:
+	AARCH64_VALID_CALL_TARGET
 	ld1	{v17.2d},[x0]		//load Xi
 	movi	v19.16b,#0xe1
 	ld1	{v20.2d,v21.2d},[x1]	//load twisted H, ...
@@ -115,6 +117,7 @@ gcm_gmult_v8:
 .type	gcm_ghash_v8,%function
 .align	4
 gcm_ghash_v8:
+	AARCH64_VALID_CALL_TARGET
 	ld1	{v0.2d},[x0]		//load [rotated] Xi
 						//"[rotated]" means that
 						//loaded value would have
@@ -246,3 +249,4 @@ gcm_ghash_v8:
 .align	2
 #endif
 #endif  // !OPENSSL_NO_ASM
+.section	.note.GNU-stack,"",%progbits
