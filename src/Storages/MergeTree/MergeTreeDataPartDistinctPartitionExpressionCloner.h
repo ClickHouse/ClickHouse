@@ -30,23 +30,23 @@ namespace DB
         const MergeTreePartition & new_partition;
         const IMergeTreeDataPart::MinMaxIndex & new_min_max_index;
 
-        void delete_min_max_files(const DataPartStorageBuilderPtr & storage_builder) const;
+        void deleteMinMaxFiles(const DataPartStorageBuilderPtr & storage_builder) const;
 
-        void update_min_max_files(
+        void updateMinMaxFiles(
             const MutableDataPartPtr & dst_part,
             const DataPartStorageBuilderPtr & storage_builder
         ) const;
 
-        void update_partition_file(
+        void updatePartitionFile(
             const MergeTreePartition & new_partition,
             const MutableDataPartPtr & dst_part,
             const DataPartStorageBuilderPtr & storage_builder
         ) const;
 
         /// Re-writes partition.dat and minmax_<fields>.idx. Also deletes checksums.txt
-        void update_new_part_files(const MutableDataPartPtr & dst_part) const;
+        void updateNewPartFiles(const MutableDataPartPtr & dst_part) const;
 
-        MergeTreeDataPartCloner::MutableDataPartPtr finalize_part(const MutableDataPartPtr & dst_part) const override;
+        MergeTreeDataPartCloner::MutableDataPartPtr finalizePart(const MutableDataPartPtr & dst_part) const override;
 
     };
 }

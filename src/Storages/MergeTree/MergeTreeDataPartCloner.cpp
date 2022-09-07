@@ -27,7 +27,7 @@ namespace ErrorCodes
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone()
     {
-        if (!does_storage_policy_allow_same_disk())
+        if (!doesStoragePolicyAllowSameDisk())
             throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Could not clone and load part {} because disk does not belong to storage policy",
@@ -35,18 +35,18 @@ namespace ErrorCodes
 
         assert(!tmp_part_prefix.empty());
 
-        auto [destination_part, temporary_directory_lock] = clone_source_part();
+        auto [destination_part, temporary_directory_lock] = cloneSourcePart();
 
         if (!copy_instead_of_hardlink && hardlinked_files)
         {
             // think of a name for this method
-            handle_hard_linked_parameter_files();
+            handleHardLinkedParameterFiles();
         }
 
-        return std::make_pair(finalize_part(destination_part), std::move(temporary_directory_lock));
+        return std::make_pair(finalizePart(destination_part), std::move(temporary_directory_lock));
     }
 
-    DataPartStoragePtr MergeTreeDataPartCloner::flush_part_storage_to_disk_if_in_memory() const
+    DataPartStoragePtr MergeTreeDataPartCloner::flushPartStorageToDiskIfInMemory() const
     {
         if (auto src_part_in_memory = asInMemoryPart(src_part))
         {
@@ -57,7 +57,7 @@ namespace ErrorCodes
         return src_part->data_part_storage;
     }
 
-    bool MergeTreeDataPartCloner::does_storage_policy_allow_same_disk() const
+    bool MergeTreeDataPartCloner::doesStoragePolicyAllowSameDisk() const
     {
         for (const DiskPtr & disk : merge_tree_data->getStoragePolicy()->getDisks())
         {
@@ -69,12 +69,12 @@ namespace ErrorCodes
         return false;
     }
 
-    void MergeTreeDataPartCloner::reserve_space_on_disk() const
+    void MergeTreeDataPartCloner::reserveSpaceOnDisk() const
     {
         src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
     }
 
-    std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlink_all_files(
+    std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlinkAllFiles(
             const DataPartStoragePtr & storage,
             const String & path
     ) const
@@ -88,7 +88,7 @@ namespace ErrorCodes
         );
     }
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone_source_part() const
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::cloneSourcePart() const
     {
         const String dst_part_name = src_part->getNewName(dst_part_info);
 
@@ -96,16 +96,16 @@ namespace ErrorCodes
 
         auto temporary_directory_lock = merge_tree_data->getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
-        reserve_space_on_disk();
+        reserveSpaceOnDisk();
 
-        auto src_part_storage = flush_part_storage_to_disk_if_in_memory();
+        auto src_part_storage = flushPartStorageToDiskIfInMemory();
 
-        auto dst_part_storage = hardlink_all_files(src_part_storage, tmp_dst_part_name);
+        auto dst_part_storage = hardlinkAllFiles(src_part_storage, tmp_dst_part_name);
 
         return std::make_pair(merge_tree_data->createPart(dst_part_name, dst_part_info, dst_part_storage), std::move(temporary_directory_lock));
     }
 
-    void MergeTreeDataPartCloner::handle_hard_linked_parameter_files() const
+    void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
     {
         hardlinked_files->source_part_name = src_part->name;
         hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
@@ -117,7 +117,7 @@ namespace ErrorCodes
         }
     }
 
-    MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartCloner::finalize_part(const MutableDataPartPtr & dst_part) const
+    MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartCloner::finalizePart(const MutableDataPartPtr & dst_part) const
     {
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;

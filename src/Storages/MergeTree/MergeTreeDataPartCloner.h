@@ -36,7 +36,7 @@ namespace DB
         MergeTreeData * merge_tree_data;
         const DataPartPtr & src_part;
 
-        virtual MergeTreeData::MutableDataPartPtr finalize_part(const MutableDataPartPtr & dst_part) const;
+        virtual MergeTreeData::MutableDataPartPtr finalizePart(const MutableDataPartPtr & dst_part) const;
 
     private:
         const StorageMetadataPtr & metadata_snapshot;
@@ -48,18 +48,18 @@ namespace DB
         bool copy_instead_of_hardlink;
 
         /// Check that the storage policy contains the disk where the src_part is located.
-        bool does_storage_policy_allow_same_disk() const;
+        bool doesStoragePolicyAllowSameDisk() const;
 
-        void reserve_space_on_disk() const;
+        void reserveSpaceOnDisk() const;
 
-        std::shared_ptr<IDataPartStorage> hardlink_all_files(const DataPartStoragePtr & storage, const String & path) const;
+        std::shared_ptr<IDataPartStorage> hardlinkAllFiles(const DataPartStoragePtr & storage, const String & path) const;
 
         /// If source part is in memory, flush it to disk and clone it already in on-disk format
-        DataPartStoragePtr flush_part_storage_to_disk_if_in_memory() const;
+        DataPartStoragePtr flushPartStorageToDiskIfInMemory() const;
 
-        std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> clone_source_part() const;
+        std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart() const;
 
-        void handle_hard_linked_parameter_files() const;
+        void handleHardLinkedParameterFiles() const;
 
     };
 }

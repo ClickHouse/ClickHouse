@@ -19,7 +19,7 @@ namespace DB
         new_partition(new_partition_), new_min_max_index(new_min_max_index_)
     {}
 
-    void MergeTreeDataPartDistinctPartitionExpressionCloner::delete_min_max_files(
+    void MergeTreeDataPartDistinctPartitionExpressionCloner::deleteMinMaxFiles(
         const DataPartStorageBuilderPtr & storage_builder
     ) const
     {
@@ -30,17 +30,17 @@ namespace DB
         }
     }
 
-    void MergeTreeDataPartDistinctPartitionExpressionCloner::update_min_max_files(
+    void MergeTreeDataPartDistinctPartitionExpressionCloner::updateMinMaxFiles(
         const MutableDataPartPtr & dst_part,
         const DataPartStorageBuilderPtr & storage_builder
     ) const
     {
-        delete_min_max_files(storage_builder);
+        deleteMinMaxFiles(storage_builder);
 
         [[maybe_unused]] auto written_files = dst_part->minmax_idx->store(*merge_tree_data, storage_builder, dst_part->checksums);
     }
 
-    void MergeTreeDataPartDistinctPartitionExpressionCloner::update_partition_file(
+    void MergeTreeDataPartDistinctPartitionExpressionCloner::updatePartitionFile(
         const MergeTreePartition & partition,
         const MutableDataPartPtr & dst_part,
         const DataPartStorageBuilderPtr & storage_builder
@@ -55,15 +55,15 @@ namespace DB
         partition_store_write_buffer->finalize();
     }
 
-    void MergeTreeDataPartDistinctPartitionExpressionCloner::update_new_part_files(const MutableDataPartPtr & dst_part) const
+    void MergeTreeDataPartDistinctPartitionExpressionCloner::updateNewPartFiles(const MutableDataPartPtr & dst_part) const
     {
         auto data_part_storage_builder = dst_part->data_part_storage->getBuilder();
 
         dst_part->minmax_idx->replace(new_min_max_index);
 
-        update_partition_file(new_partition, dst_part, data_part_storage_builder);
+        updatePartitionFile(new_partition, dst_part, data_part_storage_builder);
 
-        update_min_max_files(dst_part, data_part_storage_builder);
+        updateMinMaxFiles(dst_part, data_part_storage_builder);
 
         // MergeTreeDataPartCloner::finalize_part calls IMergeTreeDataPart::loadColumnsChecksumsIndexes, which will re-create
         // the checksum file if it doesn't exist. Relying on that is cumbersome, but this refactoring is simply a code extraction
@@ -71,11 +71,11 @@ namespace DB
         data_part_storage_builder->removeFile("checksums.txt");
     }
 
-    MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartDistinctPartitionExpressionCloner::finalize_part(const MutableDataPartPtr & dst_part) const
+    MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartDistinctPartitionExpressionCloner::finalizePart(const MutableDataPartPtr & dst_part) const
     {
-        update_new_part_files(dst_part);
+        updateNewPartFiles(dst_part);
 
-        return MergeTreeDataPartCloner::finalize_part(dst_part);
+        return MergeTreeDataPartCloner::finalizePart(dst_part);
     }
 
 }
