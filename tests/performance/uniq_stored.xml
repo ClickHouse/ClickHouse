@@ -1,0 +1,39 @@
+<test>
+    <create_query>
+        create table landing (
+            t DateTime,
+            a String,
+            b String
+        ) Engine=MergeTree partition by tuple() order by a settings index_granularity = 1024;
+    </create_query>
+    <create_query>
+        create table matview (
+            a String,
+            b_count AggregateFunction(uniq, String)
+        ) Engine=AggregatingMergeTree partition by tuple() order by a settings index_granularity = 1024;
+    </create_query>
+    <create_query>
+        CREATE MATERIALIZED VIEW mv TO matview AS (
+            SELECT a, uniqState(b) b_count
+            FROM landing
+            GROUP BY a
+        );
+    </create_query>
+
+    <drop_query>DROP TABLE IF EXISTS mv</drop_query>
+    <drop_query>DROP TABLE IF EXISTS matview</drop_query>
+    <drop_query>DROP TABLE IF EXISTS landing</drop_query>
+
+    <fill_query>
+        insert into landing	select today()-1, toString(rand()%1000),	concat('usr',toString(number%500)) from numbers(10000000);
+    </fill_query>
+    <fill_query>
+        insert into landing select today()-2, toString(rand()%1000), concat('usr',toString(number%400)) from numbers(10000000);
+    </fill_query>
+    <fill_query>
+        insert into landing select today()-3, toString(rand()%1000), concat('usr',toString(number%200)) from numbers(10000000);
+    </fill_query>
+
+    <query>select a, uniqMerge(b_count) as b_count from matview prewhere a='555' group by a FORMAT Null SETTINGS max_threads=1;</query>
+    <query>select uniqMerge(b_count) as b_count from matview FORMAT Null SETTINGS max_threads=1;</query>
+</test>
