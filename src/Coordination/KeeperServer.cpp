@@ -106,7 +106,8 @@ KeeperServer::KeeperServer(
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    KeeperStateMachine::CommitCallback commit_callback)
+    KeeperStateMachine::CommitCallback commit_callback,
+    KeeperStateMachine::ApplySnapshotCallback apply_snapshot_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
@@ -127,7 +128,8 @@ KeeperServer::KeeperServer(
         coordination_settings,
         keeper_context,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest),
-        std::move(commit_callback));
+        std::move(commit_callback),
+        std::move(apply_snapshot_callback));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,

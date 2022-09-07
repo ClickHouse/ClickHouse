@@ -45,7 +45,8 @@ KeeperStateMachine::KeeperStateMachine(
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     const std::string & superdigest_,
-    CommitCallback commit_callback_)
+    CommitCallback commit_callback_,
+    ApplySnapshotCallback apply_snapshot_callback_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
@@ -60,6 +61,7 @@ KeeperStateMachine::KeeperStateMachine(
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
     , commit_callback(std::move(commit_callback_))
+    , apply_snapshot_callback(std::move(apply_snapshot_callback_))
     , keeper_context(keeper_context_)
 {
 }
@@ -303,6 +305,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
     last_committed_idx = s.get_last_log_idx();
+    apply_snapshot_callback(s.get_last_log_term(), s.get_last_log_idx());
     return true;
 }
 

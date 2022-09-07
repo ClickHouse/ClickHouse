@@ -86,7 +86,7 @@ private:
     /// at the time the request was being made.
     /// If the node is stale, we need to wait to commit that log before doing local read requests to achieve
     /// linearizability.
-    std::unordered_map<KeeperServer::NodeInfo, std::vector<KeeperStorage::RequestForSession>> leader_waiters;
+    std::unordered_map<KeeperServer::NodeInfo, KeeperStorage::RequestsForSessions> leader_waiters;
     std::mutex leader_waiter_mutex;
 
     /// We can be actively processing one type of requests (either read or write) from a single session.
@@ -155,6 +155,9 @@ public:
 
     /// Called when a single log with request is committed.
     void onRequestCommit(const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx);
+
+    /// Called when a snapshot is applied
+    void onApplySnapshot(uint64_t term, uint64_t last_idx);
 
     /// Is server accepting requests, i.e. connected to the cluster
     /// and achieved quorum

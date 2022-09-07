@@ -7,6 +7,7 @@
 #include <Poco/Path.h>
 #include <Common/hex.h>
 #include <filesystem>
+#include <iterator>
 #include <limits>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
@@ -470,7 +471,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     read_request_thread = ThreadFromGlobalPool([this] { readRequestThread(); });
     finalize_requests_thread = ThreadFromGlobalPool([this] { finalizeRequestsThread(); });
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, [this](const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx) { onRequestCommit(request_for_session, log_term, log_idx); });
+    server = std::make_unique<KeeperServer>(
+        configuration_and_settings,
+        config,
+        responses_queue,
+        snapshots_queue,
+        [this](const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx)
+        { onRequestCommit(request_for_session, log_term, log_idx); },
+        [this](uint64_t term, uint64_t last_idx)
+        { onApplySnapshot(term, last_idx); });
 
     try
     {
@@ -868,6 +877,40 @@ void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & 
         {
             requests = std::move(request_queue_it->second);
             leader_waiters.erase(request_queue_it);
+        }
+    }
+
+    if (requests.empty())
+        return;
+
+    if (!read_requests_queue.push(std::move(requests)))
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+}
+
+/// Process all read request that are waiting for lower or currently last processed log index
+void KeeperDispatcher::onApplySnapshot(uint64_t term, uint64_t last_idx)
+{
+    KeeperServer::NodeInfo current_node_info{term, last_idx};
+    KeeperStorage::RequestsForSessions requests;
+    {
+        std::lock_guard lock(leader_waiter_mutex);
+        for (auto leader_waiter_it = leader_waiters.begin(); leader_waiter_it != leader_waiters.end();)
+        {
+            auto waiting_node_info = leader_waiter_it->first;
+            if (waiting_node_info.term <= current_node_info.term
+                && waiting_node_info.last_committed_index <= current_node_info.last_committed_index)
+            {
+                for (auto & request : leader_waiter_it->second)
+                {
+                    requests.push_back(std::move(request));
+                }
+
+                leader_waiter_it = leader_waiters.erase(leader_waiter_it);
+            }
+            else
+            {
+                ++leader_waiter_it;
+            }
         }
     }
 

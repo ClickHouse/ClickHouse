@@ -21,6 +21,7 @@ class KeeperStateMachine : public nuraft::state_machine
 {
 public:
     using CommitCallback = std::function<void(const KeeperStorage::RequestForSession &, uint64_t, uint64_t)>;
+    using ApplySnapshotCallback = std::function<void(uint64_t, uint64_t)>;
 
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
@@ -29,7 +30,8 @@ public:
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         const std::string & superdigest_ = "",
-        CommitCallback commit_callback_ = [](const KeeperStorage::RequestForSession &, uint64_t, uint64_t){});
+        CommitCallback commit_callback_ = [](const KeeperStorage::RequestForSession &, uint64_t, uint64_t){},
+        ApplySnapshotCallback apply_snapshot_callback_ = [](uint64_t, uint64_t){});
 
     /// Read state from the latest snapshot
     void init();
@@ -148,8 +150,10 @@ private:
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
-    // call when a request is committed
+    /// call when a request is committed
     const CommitCallback commit_callback;
+    /// call when snapshot is applied
+    const ApplySnapshotCallback apply_snapshot_callback;
 
     KeeperContextPtr keeper_context;
 };
