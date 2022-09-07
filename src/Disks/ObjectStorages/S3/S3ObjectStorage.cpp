@@ -31,6 +31,7 @@
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 
+
 namespace DB
 {
 
@@ -90,7 +91,19 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
 
 std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString(32);
+    /// Path to store the new S3 object.
+
+    /// Total length is 32 a-z characters for enough randomness.
+    /// First 3 characters are used as a prefix for
+    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+
+    constexpr size_t key_name_total_size = 32;
+    constexpr size_t key_name_prefix_size = 3;
+
+    /// Path to store new S3 object.
+    return fmt::format("{}/{}",
+        getRandomASCIIString(key_name_prefix_size),
+        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
@@ -157,7 +170,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl), disk_read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
     }
 }
@@ -245,6 +258,8 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
     auto outcome = client_ptr->DeleteObject(request);
 
     throwIfUnexpectedError(outcome, if_exists);
+
+    LOG_TRACE(log, "Object with path {} was removed from S3", object.absolute_path);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
@@ -288,6 +303,8 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
             auto outcome = client_ptr->DeleteObjects(request);
 
             throwIfUnexpectedError(outcome, if_exists);
+
+            LOG_TRACE(log, "Objects with paths [{}] were removed from S3", keys);
         }
     }
 }
