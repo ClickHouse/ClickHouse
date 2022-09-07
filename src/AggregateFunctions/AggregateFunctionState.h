@@ -112,6 +112,11 @@ public:
     /// Aggregate function or aggregate function state.
     bool isState() const override { return true; }
 
+    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
+    {
+        return assert_cast<ColumnAggregateFunction *>(column);
+    }
+
     bool allocatesMemoryInArena() const override
     {
         return nested_func->allocatesMemoryInArena();

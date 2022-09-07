@@ -172,6 +172,14 @@ public:
       */
     virtual bool isState() const { return false; }
 
+    virtual IColumn * extractStateColumnFromResultColumn(IColumn *) const
+    {
+        if (isState())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method extractStateColumnFromResultColumn is not implemented");
+
+        throw Exception("Method extractStateColumnFromResultColumn is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.

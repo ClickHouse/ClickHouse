@@ -264,6 +264,11 @@ public:
         return nested_func->isState();
     }
 
+    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
+    {
+        return nested_func->extractStateColumnFromResultColumn(&assert_cast<ColumnArray *>(column)->getData());
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 

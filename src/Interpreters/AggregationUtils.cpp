@@ -52,27 +52,10 @@ OutputBlockColumns prepareOutputBlockColumns(
 
             if (aggregate_functions[i]->isState())
             {
-                IColumn * column_to_check = final_aggregate_columns[i].get();
-                /// Aggregate state can be wrapped into array/map if aggregate function ends with -Resample/Map combinator
-                if (auto * column_map = typeid_cast<ColumnMap *>(final_aggregate_columns[i].get()))
-                    column_to_check = &column_map->getNestedData().getColumn(1);
-                else if (auto * column_array = typeid_cast<ColumnArray *>(final_aggregate_columns[i].get()))
-                    column_to_check = &column_array->getData();
-
-                /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(column_to_check))
-                {
-                    for (auto & pool : aggregates_pools)
-                        column_aggregate_func->addArena(pool);
-                }
-                else
-                {
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Aggregate function {} was marked as State, but result column {} doesn't contain AggregateFunction column",
-                        aggregate_functions[i]->getName(),
-                        final_aggregate_columns[i]->getName());
-                }
+                auto * column_aggregate_func = assert_cast<ColumnAggregateFunction *>(
+                    aggregate_functions[i]->extractStateColumnFromResultColumn(final_aggregate_columns[i].get()));
+                for (auto & pool : aggregates_pools)
+                    column_aggregate_func->addArena(pool);
             }
         }
     }
