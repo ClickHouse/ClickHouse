@@ -66,7 +66,7 @@ target_include_directories (_libpq SYSTEM PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
 # NOTE: this is a dirty hack to avoid and instead pg_config.h should be shipped
 # for different OS'es like for jemalloc, not one generic for all OS'es like
 # now.
-if (OS_DARWIN OR USE_MUSL)
+if (OS_DARWIN OR OS_FREEBSD OR USE_MUSL)
     target_compile_definitions(_libpq PRIVATE -DSTRERROR_R_INT=1)
 endif()
 
