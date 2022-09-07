@@ -929,8 +929,8 @@ public:
     bool allow_alias = true;
     bool allow_alias_without_as_keyword = true;
 
-    std::optional<IParser::Pos> checkpoint_pos;
-    Checkpoint checkpoint_type;
+    std::optional<std::pair<IParser::Pos, Checkpoint>> saved_checkpoint;
+    Checkpoint current_checkpoint;
 
 protected:
     std::vector<Operator> operators;
@@ -1881,7 +1881,7 @@ private:
 class IntervalLayer : public Layer
 {
 public:
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// INTERVAL 1 HOUR or INTERVAL expr HOUR
         ///
@@ -1938,7 +1938,7 @@ public:
 
         if (state == 1)
         {
-            if (parseIntervalKind(pos, expected, interval_kind))
+            if (action == Action::OPERATOR && parseIntervalKind(pos, expected, interval_kind))
             {
                 if (!mergeElement())
                     return false;
@@ -2281,8 +2281,8 @@ bool ParserExpressionImpl<Type, MinPriority>::parse(IParser::Pos & pos, ASTPtr &
 
         layers.pop_back();
 
-        /// We try to check whether there were some checkpoint
-        while (!layers.empty() && !layers.back()->checkpoint_pos)
+        /// We try to check whether there was a checkpoint
+        while (!layers.empty() && !layers.back()->saved_checkpoint)
             layers.pop_back();
 
         if (layers.empty())
@@ -2290,7 +2290,12 @@ bool ParserExpressionImpl<Type, MinPriority>::parse(IParser::Pos & pos, ASTPtr &
 
         /// Currently all checkpoints are located in operand section
         next = Action::OPERAND;
-        pos = layers.back()->checkpoint_pos.value();
+
+        auto saved_checkpoint = layers.back()->saved_checkpoint.value();
+        layers.back()->saved_checkpoint.reset();
+
+        pos = saved_checkpoint.first;
+        layers.back()->current_checkpoint = saved_checkpoint.second;
     }
 }
 
@@ -2351,30 +2356,26 @@ typename ParserExpressionImpl<Type, MinPriority>::ParseResult ParserExpressionIm
     }
 
     auto old_pos = pos;
-    if (layers.back()->checkpoint_type != Checkpoint::Interval && parseOperator(pos, "INTERVAL", expected))
+    auto current_checkpoint = layers.back()->current_checkpoint;
+    layers.back()->current_checkpoint = Checkpoint::None;
+
+    if (current_checkpoint != Checkpoint::Interval && parseOperator(pos, "INTERVAL", expected))
     {
-        layers.back()->checkpoint_pos = old_pos;
-        layers.back()->checkpoint_type = Checkpoint::Interval;
+        layers.back()->saved_checkpoint = {old_pos, Checkpoint::Interval};
         layers.push_back(std::make_unique<IntervalLayer>());
         return ParseResult::OPERAND;
     }
-    else if (layers.back()->checkpoint_type != Checkpoint::Case && parseOperator(pos, "CASE", expected))
+    else if (current_checkpoint != Checkpoint::Case && parseOperator(pos, "CASE", expected))
     {
-        layers.back()->checkpoint_pos = old_pos;
-        layers.back()->checkpoint_type = Checkpoint::Case;
+        layers.back()->saved_checkpoint = {old_pos, Checkpoint::Case};
         layers.push_back(std::make_unique<CaseLayer>());
         return ParseResult::OPERAND;
-    }
-    else if (layers.back()->checkpoint_pos)
-    {
-        layers.back()->checkpoint_pos.reset();
-        layers.back()->checkpoint_type = Checkpoint::None;
     }
 
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
         ParseTimestampOperatorExpression(pos, tmp, expected) ||
         tuple_literal_parser.parse(pos, tmp, expected) ||
-        // array_literal_parser.parse(pos, tmp, expected) ||
+        (layers.size() == 1 && array_literal_parser.parse(pos, tmp, expected)) ||
         number_parser.parse(pos, tmp, expected) ||
         literal_parser.parse(pos, tmp, expected) ||
         asterisk_parser.parse(pos, tmp, expected) ||
