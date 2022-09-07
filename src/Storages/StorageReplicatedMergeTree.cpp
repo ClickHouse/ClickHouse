@@ -7594,8 +7594,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String files_not_to_remove_str;
-        zookeeper_ptr->tryGet(zc_zookeeper_path, files_not_to_remove_str);
+        String files_not_to_remove_str = zookeeper_ptr->get(zc_zookeeper_path);
 
         files_not_to_remove.clear();
         if (!files_not_to_remove_str.empty())
@@ -7612,10 +7611,13 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         {
             throw zkutil::KeeperException(ec, zookeeper_part_replica_node);
         }
+        else
+        {
+            LOG_TRACE(logger, "Lock {} for part {} was removed for zookeeper", zookeeper_part_replica_node, part_name);
+        }
 
         /// Check, maybe we were the last replica and can remove part forever
-        Strings children;
-        zookeeper_ptr->tryGetChildren(zookeeper_part_uniq_node, children);
+        Strings children = zookeeper_ptr->getChildren(zookeeper_part_uniq_node);
 
         if (!children.empty())
         {
@@ -7647,38 +7649,47 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
         }
 
-
         /// Even when we have lock with same part name, but with different uniq, we can remove files on S3
-        children.clear();
         String zookeeper_part_node = fs::path(zookeeper_part_uniq_node).parent_path();
-        zookeeper_ptr->tryGetChildren(zookeeper_part_node, children);
 
-        if (children.empty())
+        try
         {
-            /// Cleanup after last uniq removing
-            error_code = zookeeper_ptr->tryRemove(zookeeper_part_node);
+            children = zookeeper_ptr->getChildren(zookeeper_part_node);
 
-            if (error_code == Coordination::Error::ZOK)
+            if (children.empty())
             {
-                LOG_TRACE(logger, "Removed last parent zookeeper lock {} for part {} (part is finally unlocked)", zookeeper_part_uniq_node, part_name);
-            }
-            else if (error_code == Coordination::Error::ZNOTEMPTY)
-            {
-                LOG_TRACE(logger, "Cannot remove last parent zookeeper lock {} for part {}, another replica locked part concurrently", zookeeper_part_uniq_node, part_name);
-            }
-            else if (error_code == Coordination::Error::ZNONODE)
-            {
-                LOG_TRACE(logger, "Node with parent zookeeper lock {} for part {} doesn't exist (part was unlocked before)", zookeeper_part_uniq_node, part_name);
+                /// Cleanup after last uniq removing
+                error_code = zookeeper_ptr->tryRemove(zookeeper_part_node);
+
+                if (error_code == Coordination::Error::ZOK)
+                {
+                    LOG_TRACE(logger, "Removed last parent zookeeper lock {} for part {} (part is finally unlocked)", zookeeper_part_uniq_node, part_name);
+                }
+                else if (error_code == Coordination::Error::ZNOTEMPTY)
+                {
+                    LOG_TRACE(logger, "Cannot remove last parent zookeeper lock {} for part {}, another replica locked part concurrently", zookeeper_part_uniq_node, part_name);
+                }
+                else if (error_code == Coordination::Error::ZNONODE)
+                {
+                    LOG_TRACE(logger, "Node with parent zookeeper lock {} for part {} doesn't exist (part was unlocked before)", zookeeper_part_uniq_node, part_name);
+                }
+                else
+                {
+                    throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
+                }
             }
             else
             {
-                throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
+                LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
+                          zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
             }
         }
-        else
+        catch (...)
         {
-            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
-                      zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
+            /// It's not so bad to fail here in case of connection loss. Just leave some garbage in ZK is much better
+            /// than leave it in S3.
+            LOG_ERROR(logger, "Failed to remove parent dir for zookeeper lock {}", zookeeper_part_node);
+            tryLogCurrentException(logger);
         }
     }
 

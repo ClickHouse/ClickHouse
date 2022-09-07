@@ -1434,7 +1434,17 @@ void IMergeTreeDataPart::remove() const
     assert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
-    auto [can_remove, files_not_to_remove] = canRemovePart();
+    bool can_remove;
+    NameSet files_not_to_remove;
+    try
+    {
+        std::tie(can_remove, files_not_to_remove) = canRemovePart();
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage("while trying to remove part " + name);
+        throw ex;
+    }
 
     if (!can_remove)
         LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
