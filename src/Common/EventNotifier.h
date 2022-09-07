@@ -9,8 +9,14 @@
 
 #include <base/types.h>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+  extern const int LOGICAL_ERROR;
+}
 
 class EventNotifier
 {
@@ -44,16 +50,13 @@ class EventNotifier
 
     using HandlerPtr = std::shared_ptr<Handler>;
 
-    enum class EventType : UInt64
-    {
-      ZOOKEEPER_SESSION_EXPIRED = 0,
-    };
+    static EventNotifier & instance();
 
-    template <typename Callback>
+    template <typename EventType, typename Callback>
     HandlerPtr connect(EventType event, Callback && callback)
     {
       std::lock_guard lock(mutex);
-      auto event_id = static_cast<UInt64>(event);
+      auto event_id = std::hash<EventType>{}(event);
       auto callback_id = calculateIdentifier(event_id, callback_table[event_id].size());
 
       callback_table[event_id].insert(callback_id);
@@ -62,10 +65,11 @@ class EventNotifier
       return std::make_shared<Handler>(*this, event_id, callback_id);
     }
 
+    template <typename EventType>
     void notify(EventType event)
     {
       std::lock_guard lock(mutex);
-      for (const auto & identifier : callback_table[static_cast<UInt64>(event)])
+      for (const auto & identifier : callback_table[std::hash<EventType>{}(event)])
         storage[identifier]();
     }
 
@@ -87,8 +91,7 @@ class EventNotifier
     EventToCallbacks callback_table;
     CallbackStorage storage;
 
+    static std::unique_ptr<EventNotifier> event_notifier;
 };
-
-using EventNotifierPtr = std::shared_ptr<EventNotifier>;
 
 }

@@ -4186,7 +4186,7 @@ void StorageReplicatedMergeTree::startupImpl()
         /// In this thread replica will be activated.
         restarting_thread.start();
         /// And this is just a callback
-        session_expired_callback_handler = getContext()->connect(EventNotifier::EventType::ZOOKEEPER_SESSION_EXPIRED, [this]()
+        session_expired_callback_handler = EventNotifier::instance().connect(Coordination::Error::ZSESSIONEXPIRED, [this]()
         {
             restarting_thread.start();
         });

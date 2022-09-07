@@ -29,6 +29,7 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
+#include <Common/EventNotifier.h>
 #include <base/defines.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/Pipe.h>

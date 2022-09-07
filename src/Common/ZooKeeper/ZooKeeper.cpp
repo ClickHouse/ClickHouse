@@ -100,7 +100,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
         }
 
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, session_expired_callback, zk_log);
+        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
@@ -140,17 +140,15 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 }
 
 
-ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, Coordination::IKeeper::SessionExpiredCallback callback, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))
-    , session_expired_callback(std::move(callback))
 {
     init(args_);
 }
 
 
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, Coordination::IKeeper::SessionExpiredCallback callback, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))
-    , session_expired_callback(std::move(callback))
 {
     init(ZooKeeperArgs(config, config_name));
 }
@@ -794,7 +792,7 @@ void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(args, session_expired_callback, zk_log);
+    return std::make_shared<ZooKeeper>(args, zk_log);
 }
 
 

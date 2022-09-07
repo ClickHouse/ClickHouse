@@ -114,7 +114,6 @@ public:
     ZooKeeper(
         const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        IKeeper::SessionExpiredCallback callback,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
@@ -248,8 +247,6 @@ private:
     ThreadFromGlobalPool receive_thread;
 
     Poco::Logger * log;
-
-    IKeeper::SessionExpiredCallback session_expired_callback;
 
     void connect(
         const Nodes & node,

@@ -63,7 +63,6 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/SessionExpiredNotifier.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
@@ -287,8 +286,6 @@ struct ContextSharedPart : boost::noncopyable
     Context::ConfigReloadCallback config_reload_callback;
 
     bool is_server_completely_started = false;
-
-    EventNotifierPtr notifier;
 
 #if USE_ROCKSDB
     /// Global merge tree metadata cache, stored in rocksdb.
@@ -1942,24 +1939,13 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>
-        (
-            config,
-            "zookeeper",
-            [this](){ shared->notifier->notify(EventNotifier::EventType::ZOOKEEPER_SESSION_EXPIRED); },
-            getZooKeeperLog()
-        );
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper", getZooKeeperLog());
     else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
 }
 
-
-EventNotifier::HandlerPtr Context::connect(EventNotifier::EventType event_type, std::function<void()> callback)
-{
-    return shared->notifier->connect(event_type, std::move(callback));
-}
 
 namespace
 {
@@ -2141,7 +2127,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                 name);
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name, [](){}, getZooKeeperLog())).first;
+                        std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
@@ -2180,7 +2166,7 @@ static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const 
         if (zk)
             zk->finalize("Config changed");
 
-        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, /*FIXME*/ [](){}, std::move(zk_log));
+        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
     }
 }
 

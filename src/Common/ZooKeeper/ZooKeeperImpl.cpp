@@ -1,3 +1,4 @@
+#include "Common/EventNotifier.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
@@ -10,6 +11,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
+#include <Common/EventNotifier.h>
 #include <base/getThreadId.h>
 
 #include <Common/config.h>
@@ -309,10 +311,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    IKeeper::SessionExpiredCallback session_expired_callback_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
-    , session_expired_callback(session_expired_callback_)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -878,7 +878,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         if (!was_already_finished)
         {
             active_session_metric_increment.destroy();
-            session_expired_callback();
+            /// Notify all subscribers (ReplicatedMergeTree tables) about expired session
+            EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
         }
     };
 

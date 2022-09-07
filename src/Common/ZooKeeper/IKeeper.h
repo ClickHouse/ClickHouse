@@ -455,8 +455,6 @@ public:
 class IKeeper
 {
 public:
-    using SessionExpiredCallback = std::function<void()>;
-
     virtual ~IKeeper() = default;
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
