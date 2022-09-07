@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import os
 import json
 import logging
+import os
 import sys
 import time
-from typing import Optional
+from typing import List, Optional
 
 import requests  # type: ignore
 
@@ -41,11 +41,11 @@ def get_with_retries(
     return response
 
 
-def get_build_name_for_check(check_name):
+def get_build_name_for_check(check_name) -> str:
     return CI_CONFIG["tests_config"][check_name]["required_build"]
 
 
-def read_build_urls(build_name, reports_path):
+def read_build_urls(build_name, reports_path) -> List[str]:
     for root, _, files in os.walk(reports_path):
         for f in files:
             if build_name in f:
