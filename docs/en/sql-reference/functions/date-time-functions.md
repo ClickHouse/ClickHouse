@@ -641,7 +641,7 @@ Result:
 ## date\_diff
 
 Returns the difference between two dates or dates with time values. 
-The difference is calculated using relative units, e.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for day unit (see (toRelativeDayNum)[#toRelativeDayNum]), 1 month for month unit (see (toRelativeMonthNum)[#toRelativeMonthNum]), 1 year for year unit (see (toRelativeYearNum)[#toRelativeYearNum]).
+The difference is calculated using relative units, e.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for day unit (see [toRelativeDayNum](#toRelativeDayNum)), 1 month for month unit (see [toRelativeMonthNum](#toRelativeMonthNum)), 1 year for year unit (see [toRelativeYearNum](#toRelativeYearNum)).
 
 **Syntax**
 
