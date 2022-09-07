@@ -7,7 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-  extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 std::unique_ptr<EventNotifier> EventNotifier::event_notifier;
