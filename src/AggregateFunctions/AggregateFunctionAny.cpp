@@ -14,6 +14,11 @@ AggregateFunctionPtr createAggregateFunctionAny(const std::string & name, const 
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types, parameters, settings));
 }
 
+AggregateFunctionPtr createAggregateFunctionAnyRespectNulls(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+{
+    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyDataRespectNulls>(name, argument_types, parameters, settings));
+}
+
 AggregateFunctionPtr createAggregateFunctionAnyLast(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types, parameters, settings));
@@ -40,6 +45,12 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
         AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("last_value",
         { createAggregateFunctionAnyLast, properties },
+        AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("first_value_respect_nulls",
+        { createAggregateFunctionAnyRespectNulls, properties },
+        AggregateFunctionFactory::CaseInsensitive);
+        factory.registerFunction("first_value_ignore_nulls",
+        { createAggregateFunctionAny, properties },
         AggregateFunctionFactory::CaseInsensitive);
 }
 

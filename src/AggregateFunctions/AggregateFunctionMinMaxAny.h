@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdio>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -15,6 +16,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Common/config.h>
+#include "AggregateFunctionNull.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -50,6 +52,7 @@ private:
 public:
     static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
+    static constexpr bool is_respect_nulls = false;
 
     bool has() const
     {
@@ -473,6 +476,7 @@ private:
 public:
     static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
+    static constexpr bool is_respect_nulls = false;
 
     bool has() const
     {
@@ -699,6 +703,7 @@ private:
 public:
     static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
+    static constexpr bool is_respect_nulls = false;
 
     bool has() const
     {
@@ -936,6 +941,7 @@ struct AggregateFunctionAnyData : Data
 {
     using Self = AggregateFunctionAnyData;
     static constexpr bool is_any = true;
+    static constexpr bool is_respect_nulls = false;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeFirstTime(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeFirstTime(to, arena); }
@@ -958,6 +964,16 @@ struct AggregateFunctionAnyData : Data
     }
 
 #endif
+};
+
+template <typename Data>
+struct AggregateFunctionAnyDataRespectNulls : AggregateFunctionAnyData<Data>
+{
+    using Self = AggregateFunctionAnyDataRespectNulls;
+    static constexpr bool is_any = true;
+    static constexpr bool is_respect_nulls = true;
+
+    static const char * name() { return "any_respect_nulls"; }
 };
 
 template <typename Data>
@@ -1137,6 +1153,7 @@ template <typename Data>
 class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
     static constexpr bool is_any = Data::is_any;
+    static constexpr bool is_respect_nulls = Data::is_respect_nulls;
 
 private:
     SerializationPtr serialization;
@@ -1277,6 +1294,48 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).insertResultInto(to);
+    }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
+        const Array & params, const AggregateFunctionProperties & properties) const override
+    {
+        if (!is_respect_nulls)
+        {
+          return nullptr;
+        }
+
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
+        bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+
+        if (arguments.size() == 1)
+        {
+            if (return_type_is_nullable)
+            {
+                return std::make_shared<AggregateFunctionNullUnary<true, true, false>>(nested_function, arguments, params);
+            }
+            else
+            {
+                if (serialize_flag)
+                    return std::make_shared<AggregateFunctionNullUnary<false, true, false>>(nested_function, arguments, params);
+                else
+                    return std::make_shared<AggregateFunctionNullUnary<false, false, false>>(nested_function, arguments, params);
+            }
+        }
+        else
+        {
+            if (return_type_is_nullable)
+            {
+                return std::make_shared<AggregateFunctionNullVariadic<true, true, false>>(nested_function, arguments, params);
+            }
+            else
+            {
+                if (serialize_flag)
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
+                else
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
+            }
+        }
     }
 
 #if USE_EMBEDDED_COMPILER

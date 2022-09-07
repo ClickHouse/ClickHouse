@@ -283,7 +283,7 @@ public:
 /** There are two cases: for single argument and variadic.
   * Code for single argument is much more efficient.
   */
-template <bool result_is_nullable, bool serialize_flag>
+template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped = true>
 class AggregateFunctionNullUnary final
     : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionNullUnary<result_is_nullable, serialize_flag>>
@@ -299,7 +299,7 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        if (!column->isNullAt(row_num))
+        if (!null_is_skipped || !column->isNullAt(row_num))
         {
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
