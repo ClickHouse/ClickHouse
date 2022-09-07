@@ -35,7 +35,7 @@ GinFilter::GinFilter(const GinFilterParameters & params)
 
 void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store)
 {
-    if (len > MAX_TERM_LENGTH)
+    if (len > FST::MAX_TERM_LENGTH)
         return;
 
     string token(data, len);
@@ -192,7 +192,7 @@ bool GinFilter::needsFilter() const
 
     for (const auto & term: getTerms())
     {
-        if (term.size() > MAX_TERM_LENGTH)
+        if (term.size() > FST::MAX_TERM_LENGTH)
             return false;
     }
 

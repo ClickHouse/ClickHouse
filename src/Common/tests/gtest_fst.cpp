@@ -31,7 +31,7 @@ TEST(FST, SimpleTest)
 
     std::vector<UInt8> buffer;
     DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
-    DB::FSTBuilder builder(wbuf);
+    DB::FST::FSTBuilder builder(wbuf);
 
     for (auto& term_output : data)
     {
@@ -40,7 +40,7 @@ TEST(FST, SimpleTest)
     builder.build();
     wbuf.finalize();
 
-    DB::FST fst(std::move(buffer));
+    DB::FST::FiniteStateTransducer fst(std::move(buffer));
     for (auto& item : data)
     {
         auto output = fst.getOutput(item.first);
