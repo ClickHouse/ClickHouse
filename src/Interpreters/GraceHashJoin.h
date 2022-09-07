@@ -77,6 +77,8 @@ public:
     /// Must be called after all @joinBlock calls.
     std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor) override;
 
+    static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+
 private:
     /// Check that the current join kind is supported.
     /// Throw exception if it is not.

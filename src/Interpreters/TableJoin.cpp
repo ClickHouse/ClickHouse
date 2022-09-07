@@ -106,7 +106,6 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
-    , grace_hash_join_allowed(settings.allow_grace_hash_join)
     , tmp_volume(tmp_volume_)
 {
 }
@@ -407,27 +406,6 @@ bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_
 bool TableJoin::oneDisjunct() const
 {
     return clauses.size() == 1;
-}
-
-bool TableJoin::allowMergeJoin() const
-{
-    bool is_any = (strictness() == JoinStrictness::Any);
-    bool is_all = (strictness() == JoinStrictness::All);
-    bool is_semi = (strictness() == JoinStrictness::Semi);
-
-    bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
-    bool special_left = isLeft(kind()) && (is_any || is_semi);
-
-    return (all_join || special_left) && oneDisjunct();
-}
-
-bool TableJoin::allowGraceHashJoin() const
-{
-    bool enabled_in_config = grace_hash_join_allowed;
-    bool is_asof = (strictness() == JoinStrictness::Asof);
-    bool is_right_or_full = isRight(kind()) || isFull(kind());
-
-    return enabled_in_config && !is_right_or_full && !is_asof && !isCrossOrComma(kind()) && oneDisjunct();
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const

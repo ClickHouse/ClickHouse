@@ -335,6 +335,16 @@ GraceHashJoin::GraceHashJoin(
     LOG_TRACE(log, "Initialize {} buckets", initial_num_buckets);
 }
 
+
+bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
+{
+    const auto & kind = table_join->kind();
+    bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
+    bool is_right_or_full = isRight(kind) || isFull(kind);
+
+    return !is_right_or_full && !is_asof && !isCrossOrComma(kind) && table_join->oneDisjunct();
+}
+
 void GraceHashJoin::checkJoinKind()
 {
     switch (table_join->kind())
