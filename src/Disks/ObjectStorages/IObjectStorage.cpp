@@ -11,13 +11,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 IAsynchronousReader & IObjectStorage::getThreadPoolReader()
 {
     auto context = Context::getGlobalContextInstance();
     if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initalized");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 
     return context->getThreadPoolReader();
 }
@@ -26,7 +27,7 @@ ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
     auto context = Context::getGlobalContextInstance();
     if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initalized");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 
     return context->getThreadPoolWriter();
 }
