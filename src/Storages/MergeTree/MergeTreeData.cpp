@@ -1075,7 +1075,7 @@ void MergeTreeData::loadDataPartsFromDisk(
 
             LOG_ERROR(log,
                 "Detaching broken part {}{} (size: {}). "
-                "If it happened after update, it is likely because of backward incompability. "
+                "If it happened after update, it is likely because of backward incompatibility. "
                 "You need to resolve this manually",
                 getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
             std::lock_guard loading_lock(mutex);
@@ -1444,7 +1444,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             continue;
         }
 
-        /// Check if CSNs were witten after committing transaction, update and write if needed.
+        /// Check if CSNs were written after committing transaction, update and write if needed.
         bool version_updated = false;
         chassert(!version.creation_tid.isEmpty());
         if (!part->version.creation_csn)
@@ -1867,18 +1867,18 @@ size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
 
 void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete)
 {
-    NameSet part_names_successeded;
+    NameSet part_names_succeed;
 
-    auto get_failed_parts = [&part_names_successeded, &parts_failed_to_delete, &parts] ()
+    auto get_failed_parts = [&part_names_succeed, &parts_failed_to_delete, &parts] ()
     {
-        if (part_names_successeded.size() == parts.size())
+        if (part_names_succeed.size() == parts.size())
             return;
 
         if (parts_failed_to_delete)
         {
             for (const auto & part : parts)
             {
-                if (!part_names_successeded.contains(part->name))
+                if (!part_names_succeed.contains(part->name))
                     parts_failed_to_delete->insert(part->name);
             }
         }
@@ -1886,7 +1886,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
 
     try
     {
-        clearPartsFromFilesystemImpl(parts, &part_names_successeded);
+        clearPartsFromFilesystemImpl(parts, &part_names_succeed);
         get_failed_parts();
     }
     catch (...)
@@ -1898,10 +1898,12 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
     }
 }
 
-void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_successed)
+void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
 {
     const auto settings = getSettings();
-    if (parts_to_remove.size() > 1 && settings->max_part_removal_threads > 1 && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
+    if (parts_to_remove.size() > 1
+        && settings->max_part_removal_threads > 1
+        && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
     {
         /// Parallel parts removal.
         size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
@@ -1916,12 +1918,12 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
-                LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
+                LOG_DEBUG(log, "Removing part from filesystem {} (concurrently)", part->name);
                 part->remove();
-                if (part_names_successed)
+                if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
-                    part_names_successed->insert(part->name);
+                    part_names_succeed->insert(part->name);
                 }
             });
         }
@@ -1934,13 +1936,13 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         {
             LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
             part->remove();
-            if (part_names_successed)
-                part_names_successed->insert(part->name);
+            if (part_names_succeed)
+                part_names_succeed->insert(part->name);
         }
     }
 }
 
-size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
+size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
 {
     /**
      * Remove old (configured by setting) broken detached parts.
@@ -2093,7 +2095,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 
     {
         /// Relies on storage path, so we drop it during rename
-        /// it will be recreated automatiaclly.
+        /// it will be recreated automatically.
         std::lock_guard wal_lock(write_ahead_log_mutex);
         if (write_ahead_log)
         {
@@ -3928,7 +3930,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Volume " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     if (parts.empty())
-        throw Exception("Nothing to move (сheck that the partition exists).", ErrorCodes::NO_SUCH_DATA_PART);
+        throw Exception("Nothing to move (check that the partition exists).", ErrorCodes::NO_SUCH_DATA_PART);
 
     std::erase_if(parts, [&](auto part_ptr)
         {
@@ -6286,7 +6288,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         {
 
             // Store metadata for replicated table.
-            // Do nothing for non-replocated.
+            // Do nothing for non-replicated.
             createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->data_part_storage->getPartDirectory());
         };
 
@@ -6599,7 +6601,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
             auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
             {
-                /// If we acuqired lock than let's try to move. After one
+                /// If we acquired lock than let's try to move. After one
                 /// replica will actually move the part from disk to some
                 /// zero-copy storage other replicas will just fetch
                 /// metainformation.
