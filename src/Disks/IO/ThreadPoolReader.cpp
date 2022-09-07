@@ -86,6 +86,7 @@ static bool hasBugInPreadV2()
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
     : pool(pool_size, pool_size, queue_size_)
+    , schedule(threadPoolCallbackRunner<Result>(pool, "ThreadPoolRead"))
 {
 }
 
@@ -200,22 +201,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    ThreadGroupStatusPtr thread_group;
-    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
-        thread_group = CurrentThread::get().getThreadGroup();
-
-    auto task = std::make_shared<std::packaged_task<Result()>>([request, fd, thread_group]
+    return schedule([request, fd]() -> Result
     {
-        if (thread_group)
-             CurrentThread::attachTo(thread_group);
-
-        SCOPE_EXIT({
-            if (thread_group)
-                CurrentThread::detachQuery();
-        });
-
-        setThreadName("ThreadPoolRead");
-
         Stopwatch watch(CLOCK_MONOTONIC);
 
         size_t bytes_read = 0;
@@ -249,14 +236,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
         return Result{ .size = bytes_read, .offset = request.ignore };
-    });
-
-    auto future = task->get_future();
-
-    /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
-    pool.scheduleOrThrow([task]{ (*task)(); }, -request.priority);
-
-    return future;
+    }, request.priority);
 }
 
 }

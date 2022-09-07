@@ -2,6 +2,7 @@
 
 #include <IO/AsynchronousReader.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 
 namespace DB
@@ -29,9 +30,14 @@ class ThreadPoolReader final : public IAsynchronousReader
 private:
     ThreadPool pool;
 
+    ThreadPoolCallbackRunner<IAsynchronousReader::Result> schedule;
+
 public:
     ThreadPoolReader(size_t pool_size, size_t queue_size_);
+
     std::future<Result> submit(Request request) override;
+
+    void wait() override { pool.wait(); }
 
     /// pool automatically waits for all tasks in destructor.
 };

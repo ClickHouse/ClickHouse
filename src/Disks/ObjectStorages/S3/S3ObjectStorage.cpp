@@ -152,7 +152,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = getThreadPoolReader();
+        auto & reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
     }
     else
@@ -199,7 +199,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         settings_ptr->s3_settings,
         attributes,
         buf_size,
-        threadPoolCallbackRunner(getThreadPoolWriter()),
+        threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite"),
         disk_write_settings);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(

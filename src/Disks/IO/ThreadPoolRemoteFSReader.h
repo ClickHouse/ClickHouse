@@ -3,6 +3,7 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBuffer.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 namespace DB
 {
@@ -14,8 +15,11 @@ public:
 
     std::future<IAsynchronousReader::Result> submit(Request request) override;
 
+    void wait() override { pool.wait(); }
+
 private:
     ThreadPool pool;
+    ThreadPoolCallbackRunner<IAsynchronousReader::Result> schedule;
 };
 
 class RemoteFSFileDescriptor : public IAsynchronousReader::IFileDescriptor
