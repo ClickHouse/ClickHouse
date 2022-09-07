@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 struct L1Distance
 {
-    static inline String name = "L1";
+    static constexpr auto name = "L1";
 
     struct ConstParams {};
 
@@ -53,7 +53,7 @@ struct L1Distance
 
 struct L2Distance
 {
-    static inline String name = "L2";
+    static constexpr auto name = "L2";
 
     struct ConstParams {};
 
@@ -84,7 +84,7 @@ struct L2Distance
 
 struct L2SquaredDistance : L2Distance
 {
-    static inline String name = "L2Squared";
+    static constexpr auto name = "L2Squared";
 
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
@@ -95,7 +95,7 @@ struct L2SquaredDistance : L2Distance
 
 struct LpDistance
 {
-    static inline String name = "Lp";
+    static constexpr auto name = "Lp";
 
     struct ConstParams
     {
@@ -130,7 +130,7 @@ struct LpDistance
 
 struct LinfDistance
 {
-    static inline String name = "Linf";
+    static constexpr auto name = "Linf";
 
     struct ConstParams {};
 
@@ -161,7 +161,7 @@ struct LinfDistance
 
 struct CosineDistance
 {
-    static inline String name = "Cosine";
+    static constexpr auto name = "Cosine";
 
     struct ConstParams {};
 
@@ -200,8 +200,7 @@ template <class Kernel>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    static inline auto name = "array" + Kernel::name + "Distance";
-    String getName() const override { return name; }
+    String getName() const override { static auto name = String("array") + Kernel::name + "Distance"; return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }

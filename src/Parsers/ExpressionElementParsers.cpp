@@ -1198,15 +1198,15 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     node->frame_is_default = false;
     if (keyword_rows.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::Rows;
+        node->frame_type = WindowFrame::FrameType::ROWS;
     }
     else if (keyword_groups.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::Groups;
+        node->frame_type = WindowFrame::FrameType::GROUPS;
     }
     else if (keyword_range.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::Range;
+        node->frame_type = WindowFrame::FrameType::RANGE;
     }
     else
     {

@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <memory>
 #include <Common/logger_useful.h>
+#include "Coordination/KeeperContext.h"
+#include <Coordination/KeeperConstants.h>
 
 namespace DB
 {
@@ -144,8 +146,34 @@ namespace
     }
 }
 
+namespace
+{
 
-void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out)
+enum class PathMatchResult
+{
+    NOT_MATCH,
+    EXACT,
+    IS_CHILD
+};
+
+PathMatchResult matchPath(const std::string_view path, const std::string_view match_to)
+{
+    using enum PathMatchResult;
+
+    auto [first_it, second_it] = std::mismatch(path.begin(), path.end(), match_to.begin(), match_to.end());
+
+    if (second_it != match_to.end())
+        return NOT_MATCH;
+
+    if (first_it == path.end())
+        return EXACT;
+
+    return *first_it == '/' ? IS_CHILD : NOT_MATCH;
+}
+
+}
+
+void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
@@ -153,7 +181,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     if (snapshot.version >= SnapshotVersion::V5)
     {
         writeBinary(snapshot.zxid, out);
-        if (snapshot.storage->digest_enabled)
+        if (keeper_context->digest_enabled)
         {
             writeBinary(static_cast<uint8_t>(KeeperStorage::CURRENT_DIGEST_VERSION), out);
             writeBinary(snapshot.nodes_digest, out);
@@ -182,12 +210,21 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.snapshot_container_size, out);
+    writeBinary(snapshot.snapshot_container_size - child_system_paths_with_data.size(), out);
     size_t counter = 0;
     for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
     {
         const auto & path = it->key;
+
+        // write only the root system path because of digest
+        if (matchPath(path.toView(), keeper_system_path) == PathMatchResult::IS_CHILD)
+        {
+            ++it;
+            continue;
+        }
+
         const auto & node = it->value;
+
         /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
         /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
         /// slightly bigger than required.
@@ -241,7 +278,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 }
 
-void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in)
+void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context)
 {
     uint8_t version;
     readBinary(version, in);
@@ -252,7 +289,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
     KeeperStorage & storage = *deserialization_result.storage;
 
-    bool recalculate_digest = storage.digest_enabled;
+    bool recalculate_digest = keeper_context->digest_enabled;
     if (version >= SnapshotVersion::V5)
     {
         readBinary(storage.zxid, in);
@@ -316,18 +353,54 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
-    size_t current_size = 0;
-    while (current_size < snapshot_container_size)
+    const auto is_node_empty = [](const auto & node)
+    {
+        return node.getData().empty() && node.stat == Coordination::Stat{};
+    };
+
+    for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
         std::string path;
         readBinary(path, in);
         KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
+
+        using enum PathMatchResult;
+        auto match_result = matchPath(path, keeper_system_path);
+
+        const std::string error_msg = fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        if (match_result == IS_CHILD)
+        {
+            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+            {
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                continue;
+            }
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                    error_msg);
+        }
+        else if (match_result == EXACT && !is_node_empty(node))
+        {
+            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+            {
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                node = KeeperStorage::Node{};
+            }
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                    error_msg);
+        }
+
         storage.container.insertOrReplace(path, node);
         if (node.stat.ephemeralOwner != 0)
             storage.ephemerals[node.stat.ephemeralOwner].insert(path);
-
-        current_size++;
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
@@ -451,16 +524,16 @@ KeeperStorageSnapshot::~KeeperStorageSnapshot()
 KeeperSnapshotManager::KeeperSnapshotManager(
     const std::string & snapshots_path_,
     size_t snapshots_to_keep_,
+    const KeeperContextPtr & keeper_context_,
     bool compress_snapshots_zstd_,
     const std::string & superdigest_,
-    size_t storage_tick_time_,
-    const bool digest_enabled_)
+    size_t storage_tick_time_)
     : snapshots_path(snapshots_path_)
     , snapshots_to_keep(snapshots_to_keep_)
     , compress_snapshots_zstd(compress_snapshots_zstd_)
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
-    , digest_enabled(digest_enabled_)
+    , keeper_context(keeper_context_)
 {
     namespace fs = std::filesystem;
 
@@ -554,7 +627,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer);
+    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     return buffer_raw_ptr->getBuffer();
 }
@@ -562,12 +635,13 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
 
 bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
 {
-    static constexpr uint32_t ZSTD_COMPRESSED_MAGIC = 0xFD2FB528;
+    static constexpr unsigned char ZSTD_COMPRESSED_MAGIC[4] = {0x28, 0xB5, 0x2F, 0xFD};
+
     ReadBufferFromNuraftBuffer reader(buffer);
-    uint32_t magic_from_buffer;
+    unsigned char magic_from_buffer[4]{};
     reader.readStrict(reinterpret_cast<char *>(&magic_from_buffer), sizeof(magic_from_buffer));
     buffer->pos(0);
-    return magic_from_buffer == ZSTD_COMPRESSED_MAGIC;
+    return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
 SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
@@ -583,8 +657,9 @@ SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuff
         compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
 
     SnapshotDeserializationResult result;
-    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, digest_enabled);
-    KeeperStorageSnapshot::deserialize(result, *compressed_reader);
+    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
+    KeeperStorageSnapshot::deserialize(result, *compressed_reader, keeper_context);
+    result.storage->initializeSystemNodes();
     return result;
 }
 
@@ -629,7 +704,7 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer);
+    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     compressed_writer->sync();
 

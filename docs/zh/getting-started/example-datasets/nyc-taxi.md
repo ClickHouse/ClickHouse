@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/example-datasets/nyc-taxi
 sidebar_position: 20
 sidebar_label: New York Taxi Data
 ---

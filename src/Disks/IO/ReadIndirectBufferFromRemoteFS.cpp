@@ -1,6 +1,7 @@
 #include "ReadIndirectBufferFromRemoteFS.h"
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <IO/ReadSettings.h>
 
 
 namespace DB
@@ -13,8 +14,8 @@ namespace ErrorCodes
 
 
 ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
-    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_)
-    : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_, const ReadSettings & settings)
+    : ReadBufferFromFileBase(settings.remote_fs_buffer_size, nullptr, 0)
     , impl(impl_)
 {
 }

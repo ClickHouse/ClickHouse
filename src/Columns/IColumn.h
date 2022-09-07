@@ -35,9 +35,6 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
-class SerializationInfo;
-using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
-
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
  * Used in sorting by tuples.
@@ -445,8 +442,6 @@ public:
     /// Used to create full column from sparse.
     [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
 
-    [[nodiscard]] virtual SerializationInfoPtr getSerializationInfo() const;
-
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
     [[nodiscard]] virtual Ptr compress() const
@@ -512,7 +507,7 @@ public:
     [[nodiscard]] virtual bool isFixedAndContiguous() const { return false; }
 
     /// If isFixedAndContiguous, returns the underlying data array, otherwise throws an exception.
-    [[nodiscard]] virtual StringRef getRawData() const { throw Exception("Column " + getName() + " is not a contiguous block of memory", ErrorCodes::NOT_IMPLEMENTED); }
+    [[nodiscard]] virtual std::string_view getRawData() const { throw Exception("Column " + getName() + " is not a contiguous block of memory", ErrorCodes::NOT_IMPLEMENTED); }
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
     [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }

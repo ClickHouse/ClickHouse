@@ -259,7 +259,7 @@ private:
 
 }
 
-void registerFunctionTupleElement(FunctionFactory & factory)
+REGISTER_FUNCTION(TupleElement)
 {
     factory.registerFunction<FunctionTupleElement>();
 }

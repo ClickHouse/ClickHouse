@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Parsers/DumpASTNode.h>
@@ -33,7 +32,7 @@ static UInt32 toPowerOfTwo(UInt32 x)
 {
     if (x <= 1)
         return 1;
-    return static_cast<UInt32>(1) << (32 - __builtin_clz(x - 1));
+    return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
 }
 
 ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
@@ -165,8 +164,8 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
 {
-    if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
-        table_join->strictness() == ASTTableJoin::Strictness::Semi ||
+    if (table_join->strictness() == JoinStrictness::Asof ||
+        table_join->strictness() == JoinStrictness::Semi ||
         !isRightOrFull(table_join->kind()))
     {
         return {};

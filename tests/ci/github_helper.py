@@ -5,11 +5,12 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from os import path as p
 from time import sleep
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import github
 from github.GithubException import RateLimitExceededException
 from github.Issue import Issue
+from github.NamedUser import NamedUser
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
@@ -120,21 +121,15 @@ class GitHub(github.Github):
                 return
 
     def get_pull_cached(
-        self, repo: Repository, number: int, updated_at: Optional[datetime] = None
+        self, repo: Repository, number: int, obj_updated_at: Optional[datetime] = None
     ) -> PullRequest:
-        pr_cache_file = self.cache_path / f"{number}.pickle"
-        if updated_at is None:
-            updated_at = datetime.now() - timedelta(hours=-1)
+        cache_file = self.cache_path / f"pr-{number}.pickle"
 
-        def _get_pr(path: Path) -> PullRequest:
-            with open(path, "rb") as prfd:
-                return self.load(prfd)  # type: ignore
-
-        if pr_cache_file.is_file():
-            cached_pr = _get_pr(pr_cache_file)
-            if updated_at <= cached_pr.updated_at:
+        if cache_file.is_file():
+            is_updated, cached_pr = self._is_cache_updated(cache_file, obj_updated_at)
+            if is_updated:
                 logger.debug("Getting PR #%s from cache", number)
-                return cached_pr
+                return cached_pr  # type: ignore
         logger.debug("Getting PR #%s from API", number)
         for i in range(self.retries):
             try:
@@ -144,10 +139,55 @@ class GitHub(github.Github):
                 if i == self.retries - 1:
                     raise
                 self.sleep_on_rate_limit()
-        logger.debug("Caching PR #%s from API in %s", number, pr_cache_file)
-        with open(pr_cache_file, "wb") as prfd:
+        logger.debug("Caching PR #%s from API in %s", number, cache_file)
+        with open(cache_file, "wb") as prfd:
             self.dump(pr, prfd)  # type: ignore
         return pr
+
+    def get_user_cached(
+        self, login: str, obj_updated_at: Optional[datetime] = None
+    ) -> NamedUser:
+        cache_file = self.cache_path / f"user-{login}.pickle"
+
+        if cache_file.is_file():
+            is_updated, cached_user = self._is_cache_updated(cache_file, obj_updated_at)
+            if is_updated:
+                logger.debug("Getting user %s from cache", login)
+                return cached_user  # type: ignore
+        logger.debug("Getting PR #%s from API", login)
+        for i in range(self.retries):
+            try:
+                user = self.get_user(login)
+                break
+            except RateLimitExceededException:
+                if i == self.retries - 1:
+                    raise
+                self.sleep_on_rate_limit()
+        logger.debug("Caching user %s from API in %s", login, cache_file)
+        with open(cache_file, "wb") as prfd:
+            self.dump(user, prfd)  # type: ignore
+        return user
+
+    def _get_cached(self, path: Path):
+        with open(path, "rb") as ob_fd:
+            return self.load(ob_fd)  # type: ignore
+
+    def _is_cache_updated(
+        self, cache_file: Path, obj_updated_at: Optional[datetime]
+    ) -> Tuple[bool, object]:
+        cached_obj = self._get_cached(cache_file)
+        # We don't want the cache_updated being always old,
+        # for example in cases when the user is not updated for ages
+        cache_updated = max(
+            datetime.fromtimestamp(cache_file.stat().st_mtime), cached_obj.updated_at
+        )
+        if obj_updated_at is None:
+            # When we don't know about the object is updated or not,
+            # we update it once per hour
+            obj_updated_at = datetime.now() - timedelta(hours=1)
+        if obj_updated_at <= cache_updated:
+            return True, cached_obj
+        return False, cached_obj
 
     @property
     def cache_path(self):

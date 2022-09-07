@@ -222,7 +222,7 @@ public:
 
 }
 
-void registerFunctionFormatReadableTimeDelta(FunctionFactory & factory)
+REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
     factory.registerFunction<FunctionFormatReadableTimeDelta>();
 }

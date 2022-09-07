@@ -41,6 +41,9 @@ using RestoreUDFCreationMode = RestoreAccessCreationMode;
 /// Settings specified in the "SETTINGS" clause of a RESTORE query.
 struct RestoreSettings
 {
+    /// ID of the restore operation, to identify it in the system.backups table. Auto-generated if not set.
+    String id;
+
     /// Base backup, with this setting we can override the location of the base backup while restoring.
     /// Any incremental backup keeps inside the information about its base backup, so using this setting is optional.
     std::optional<BackupInfo> base_backup_info;

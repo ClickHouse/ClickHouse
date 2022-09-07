@@ -26,12 +26,13 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
     {{"",    JoinStrictness::Unspecified},
-     {"ALL", JoinStrictness::ALL},
-     {"ANY", JoinStrictness::ANY}})
+     {"ALL", JoinStrictness::All},
+     {"ANY", JoinStrictness::Any}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
-    {{"auto",                 JoinAlgorithm::AUTO},
+    {{"default",              JoinAlgorithm::DEFAULT},
+     {"auto",                 JoinAlgorithm::AUTO},
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
      {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
@@ -113,10 +114,10 @@ IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DA
      {"date2Date32", MySQLDataTypesSupport::DATE2DATE32},
      {"date2String", MySQLDataTypesSupport::DATE2STRING}})
 
-IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
-    {{"",         UnionMode::Unspecified},
-     {"ALL",      UnionMode::ALL},
-     {"DISTINCT", UnionMode::DISTINCT}})
+IMPLEMENT_SETTING_ENUM(SetOperationMode, ErrorCodes::UNKNOWN_UNION,
+    {{"",         SetOperationMode::Unspecified},
+     {"ALL",      SetOperationMode::ALL},
+     {"DISTINCT", SetOperationMode::DISTINCT}})
 
 IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
     {{"none",         DistributedDDLOutputMode::NONE},

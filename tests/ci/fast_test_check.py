@@ -5,6 +5,7 @@ import subprocess
 import os
 import csv
 import sys
+import atexit
 
 from github import Github
 
@@ -16,7 +17,7 @@ from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import (
     post_commit_status,
-    fail_simple_check,
+    update_mergeable_check,
 )
 from clickhouse_helper import (
     ClickHouseHelper,
@@ -28,7 +29,10 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
-NAME = "Fast test (actions)"
+NAME = "Fast test"
+
+# Will help to avoid errors like _csv.Error: field larger than field limit (131072)
+csv.field_size_limit(sys.maxsize)
 
 
 def get_fasttest_cmd(
@@ -93,7 +97,9 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
+
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -102,7 +108,7 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     workspace = os.path.join(temp_path, "fasttest-workspace")
     if not os.path.exists(workspace):
@@ -222,5 +228,4 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
-            fail_simple_check(gh, pr_info, f"{NAME} failed")
             sys.exit(1)
