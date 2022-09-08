@@ -218,7 +218,19 @@ def test_settings_from_granted_role():
             "\\N",
             "\\N",
         ],
-        ["xyz", "\\N", "\\N", 1, "max_ast_depth", 2000, "\\N", "\\N", "\\N", "\\N", "\\N"],
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            1,
+            "max_ast_depth",
+            2000,
+            "\\N",
+            "\\N",
+            "\\N",
+            "\\N",
+            "\\N",
+        ],
     ]
     assert system_settings_profile_elements(role_name="worker") == [
         ["\\N", "\\N", "worker", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
@@ -317,7 +329,19 @@ def test_inheritance():
         ["xyz", "local directory", 1, 0, "[]", "[]"]
     ]
     assert system_settings_profile_elements(profile_name="xyz") == [
-        ["xyz", "\\N", "\\N", 0, "max_memory_usage", 100000002, "\\N", "\\N", 1, "\\N", "\\N"]
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            0,
+            "max_memory_usage",
+            100000002,
+            "\\N",
+            "\\N",
+            1,
+            "\\N",
+            "\\N",
+        ]
     ]
     assert system_settings_profile("alpha") == [
         ["alpha", "local directory", 1, 0, "['robin']", "[]"]
