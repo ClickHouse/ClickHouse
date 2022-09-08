@@ -65,7 +65,11 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     try
     {
         NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
-        DB::fillMissingColumns(res_columns, num_rows, requested_columns, available_columns, partially_read_columns, metadata_snapshot);
+        DB::fillMissingColumns(
+            res_columns, num_rows,
+            Nested::convertToSubcolumns(requested_columns),
+            Nested::convertToSubcolumns(available_columns),
+            partially_read_columns, metadata_snapshot);
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
