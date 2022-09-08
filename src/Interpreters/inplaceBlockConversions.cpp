@@ -200,23 +200,19 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             continue;
 
         auto serialization = IDataType::getSerialization(*available_column);
-        auto name_in_storage = Nested::extractTableName(available_column->name);
-
         serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
             /// for the same nested data structure, choose the one that is not empty.
             if (current_offsets_column && !current_offsets_column->empty())
             {
-                auto subname = ISerialization::getSubcolumnNameForStream(subpath);
-                auto full_name = Nested::concatenateName(name_in_storage, subname);
-                auto & offsets_column = offsets_columns[full_name];
-
+                auto & offsets_column = offsets_columns[stream_name];
                 if (!offsets_column)
                     offsets_column = current_offsets_column;
 
@@ -227,7 +223,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
                 if (offsets_data != current_offsets_data)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
-                        offsets_data.size(), current_offsets_data.size(), full_name);
+                        offsets_data.size(), current_offsets_data.size(), stream_name);
             #endif
             }
         }, available_column->type, res_columns[i]);
@@ -255,7 +251,7 @@ void fillMissingColumns(
     /// but a column of arrays of correct length.
 
     /// First, collect offset columns for all arrays in the block.
-    auto offset_columns = collectOffsetsColumns(available_columns, res_columns);
+    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns);
 
     /// Insert default values only for columns without default expressions.
     auto requested_column = requested_columns.begin();
@@ -275,14 +271,13 @@ void fillMissingColumns(
         std::vector<ColumnPtr> current_offsets;
         size_t num_dimensions = 0;
 
-        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+        if (array_type && !offsets_columns.empty())
         {
             num_dimensions = getNumberOfDimensions(*array_type);
             current_offsets.resize(num_dimensions);
 
             auto serialization = IDataType::getSerialization(*requested_column);
-            auto name_in_storage = Nested::extractTableName(requested_column->name);
-
             serialization->enumerateStreams([&](const auto & subpath)
             {
                 if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
@@ -291,9 +286,9 @@ void fillMissingColumns(
                 size_t level = ISerialization::getArrayLevel(subpath);
                 assert(level < num_dimensions);
 
-                auto subname = ISerialization::getSubcolumnNameForStream(subpath);
-                auto it = offset_columns.find(Nested::concatenateName(name_in_storage, subname));
-                if (it != offset_columns.end())
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
+                auto it = offsets_columns.find(stream_name);
+                if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
             });
 
