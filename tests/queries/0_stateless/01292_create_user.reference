@@ -109,9 +109,9 @@ u2_01292	local directory	no_password	{}	[]	[]	[]	['%.%.myhost.com']	0	[]	[]
 u3_01292	local directory	sha256_password	{}	['192.169.1.1','192.168.0.0/16']	['localhost']	[]	[]	0	['r1_01292']	[]
 u4_01292	local directory	double_sha1_password	{}	['::/0']	[]	[]	[]	1	[]	['r1_01292']
 -- system.settings_profile_elements
-\N	u1_01292	\N	0	readonly	1	\N	\N	\N	\N
-\N	u2_01292	\N	0	\N	\N	\N	\N	\N	default
-\N	u3_01292	\N	0	max_memory_usage	5000000	4000000	6000000	0	\N
-\N	u4_01292	\N	0	\N	\N	\N	\N	\N	default
-\N	u4_01292	\N	1	max_memory_usage	5000000	\N	\N	\N	\N
-\N	u4_01292	\N	2	readonly	1	\N	\N	\N	\N
+\N	u1_01292	\N	0	readonly	1	\N	\N	\N	\N	\N
+\N	u2_01292	\N	0	\N	\N	\N	\N	\N	\N	default
+\N	u3_01292	\N	0	max_memory_usage	5000000	4000000	6000000	0	\N	\N
+\N	u4_01292	\N	0	\N	\N	\N	\N	\N	\N	default
+\N	u4_01292	\N	1	max_memory_usage	5000000	\N	\N	\N	\N	\N
+\N	u4_01292	\N	2	readonly	1	\N	\N	\N	\N	\N

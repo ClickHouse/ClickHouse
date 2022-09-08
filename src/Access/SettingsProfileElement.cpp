@@ -50,20 +50,20 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     {
         setting_name = ast.setting_name;
 
-        /// Optionally check if a setting with that name is allowed.
         if (access_control)
         {
+            /// Check if a setting with that name is allowed.
             if (setting_name != ALLOW_BACKUP_SETTING_NAME)
                 access_control->checkSettingNameIsAllowed(setting_name);
+            /// Check if a CHANGEABLE_IN_READONLY is allowed.
+            if (ast.type == SettingConstraintType::CHANGEABLE_IN_READONLY && !access_control->doesSettingsConstraintsReplacePrevious())
+                throw Exception("CHANGEABLE_IN_READONLY for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
         }
 
         value = ast.value;
         min_value = ast.min_value;
         max_value = ast.max_value;
         type = ast.type;
-
-        if (type == SettingConstraintType::CHANGEABLE_IN_READONLY && !access_control->doesSettingsConstraintsReplacePrevious())
-            throw Exception("CHANGEABLE_IN_READONLY for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
 
         if (!value.isNull())
             value = Settings::castValueUtil(setting_name, value);
