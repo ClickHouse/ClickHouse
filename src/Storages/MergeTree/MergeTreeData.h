@@ -1243,7 +1243,7 @@ protected:
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
     /// Makes backup entries to backup the parts of this table.
-    BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup) const;
+    BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 

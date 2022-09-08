@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Backups/IBackupEntry.h>
+
 
 namespace DB
 {
@@ -24,5 +26,12 @@ private:
     BackupEntryPtr entry;
     T custom_value;
 };
+
+template <typename T>
+void wrapBackupEntriesWith(std::vector<std::pair<String, BackupEntryPtr>> & backup_entries, const T & custom_value)
+{
+    for (auto & [_, backup_entry] : backup_entries)
+        backup_entry = std::make_shared<BackupEntryWrappedWith<T>>(std::move(backup_entry), custom_value);
+}
 
 }
