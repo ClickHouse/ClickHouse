@@ -53,6 +53,7 @@ dependencies = [
  "blake3 1.2.0",
  "cbindgen",
  "cc",
+ "libc",
 ]
 
 [[package]]

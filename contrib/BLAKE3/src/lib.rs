@@ -1,6 +1,8 @@
 use blake3::{Hasher, OUT_LEN};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use libc;
+use std::mem;
 
 #[no_mangle]
 pub unsafe extern "C" fn blake3_apply_shim(
@@ -25,12 +27,13 @@ pub unsafe extern "C" fn blake3_apply_shim(
 pub unsafe extern "C" fn blake3_apply_shim_msan_compat(
     mut begin: *const c_char,
     size: u32,
-    out_char_data: *mut u8,
+    mut out_char_data: *mut u8,
 ) -> *mut c_char {
     if begin.is_null() {
         let err_str = CString::new("input was a null pointer").unwrap();
         return err_str.into_raw();
     }
+    libc::memset(out_char_data as *mut libc::c_void, 0, mem::size_of::<u8>());
     let mut hasher = Hasher::new();
     let mut vec = Vec::<u8>::new();
     for _ in 0..size {
