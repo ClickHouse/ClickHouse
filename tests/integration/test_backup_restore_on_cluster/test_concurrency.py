@@ -179,7 +179,7 @@ def test_concurrent_backups_on_different_nodes():
         ("Atomic", "MergeTree"),
         ("Replicated", "ReplicatedMergeTree"),
         ("Memory", "MergeTree"),
-        ("Lazy", "Log")
+        ("Lazy", "Log"),
     ],
 )
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
