@@ -8,6 +8,7 @@ build = "build.rs"
 
 [dependencies]
 blake3 = "1.2.*"
+libc = "0.2.*"
 
 [lib]
 crate-type = ["staticlib"]

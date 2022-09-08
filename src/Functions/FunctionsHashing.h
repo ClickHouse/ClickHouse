@@ -603,6 +603,7 @@ struct ImplBLAKE3
     {
         #if defined(MEMORY_SANITIZER)
             auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
+            __msan_unpoison(out_char_data, length);
         #else
             auto err_msg = blake3_apply_shim(begin, size, out_char_data);
         #endif
