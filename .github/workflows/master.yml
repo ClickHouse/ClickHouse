@@ -923,6 +923,53 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+  BuilderBinAmd64SSE2:
+    needs: [DockerHubPush]
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          BUILD_NAME=binary_amd64sse2
+          EOF
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -1011,6 +1058,7 @@ jobs:
       - BuilderBinFreeBSD
       # - BuilderBinGCC
       - BuilderBinPPC64
+      - BuilderBinAmd64SSE2
       - BuilderBinClangTidy
       - BuilderDebShared
     runs-on: [self-hosted, style-checker]
@@ -1287,7 +1335,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (address)
+          CHECK_NAME=Stateless tests (asan)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1326,7 +1374,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (address)
+          CHECK_NAME=Stateless tests (asan)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1365,7 +1413,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread)
+          CHECK_NAME=Stateless tests (tsan)
           REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1404,7 +1452,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread)
+          CHECK_NAME=Stateless tests (tsan)
           REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1443,7 +1491,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread)
+          CHECK_NAME=Stateless tests (tsan)
           REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
@@ -1519,7 +1567,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (memory)
+          CHECK_NAME=Stateless tests (msan)
           REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1558,7 +1606,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (memory)
+          CHECK_NAME=Stateless tests (msan)
           REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1597,7 +1645,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (memory)
+          CHECK_NAME=Stateless tests (msan)
           REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
@@ -1830,7 +1878,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (address)
+          CHECK_NAME=Stateful tests (asan)
           REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1867,7 +1915,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (thread)
+          CHECK_NAME=Stateful tests (tsan)
           REPO_COPY=${{runner.temp}}/stateful_tsan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1904,7 +1952,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (memory)
+          CHECK_NAME=Stateful tests (msan)
           REPO_COPY=${{runner.temp}}/stateful_msan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -2018,7 +2066,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_thread
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (address)
+          CHECK_NAME=Stress test (asan)
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
@@ -2058,7 +2106,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_thread
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (thread)
+          CHECK_NAME=Stress test (tsan)
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
@@ -2094,7 +2142,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (memory)
+          CHECK_NAME=Stress test (msan)
           REPO_COPY=${{runner.temp}}/stress_memory/ClickHouse
           EOF
       - name: Download json reports
@@ -2130,7 +2178,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_undefined
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (undefined)
+          CHECK_NAME=Stress test (ubsan)
           REPO_COPY=${{runner.temp}}/stress_undefined/ClickHouse
           EOF
       - name: Download json reports
@@ -2319,7 +2367,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread)
+          CHECK_NAME=Integration tests (tsan)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=4
@@ -2357,7 +2405,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread)
+          CHECK_NAME=Integration tests (tsan)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=4
@@ -2395,7 +2443,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread)
+          CHECK_NAME=Integration tests (tsan)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=4
@@ -2433,7 +2481,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread)
+          CHECK_NAME=Integration tests (tsan)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=3
           RUN_BY_HASH_TOTAL=4
@@ -2550,7 +2598,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (ASan)
+          CHECK_NAME=AST fuzzer (asan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -2586,7 +2634,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (TSan)
+          CHECK_NAME=AST fuzzer (tsan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_tsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2622,7 +2670,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (UBSan)
+          CHECK_NAME=AST fuzzer (ubsan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_ubsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2658,7 +2706,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (MSan)
+          CHECK_NAME=AST fuzzer (msan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_msan/ClickHouse
           EOF
       - name: Download json reports
