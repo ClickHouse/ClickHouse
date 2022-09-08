@@ -317,6 +317,7 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 
 
 void SerializationTuple::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -324,7 +325,7 @@ void SerializationTuple::serializeBinaryBulkStatePrefix(
     tuple_state->states.resize(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->serializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
+        elems[i]->serializeBinaryBulkStatePrefix(extractElementColumn(column, i), settings, tuple_state->states[i]);
 
     state = std::move(tuple_state);
 }

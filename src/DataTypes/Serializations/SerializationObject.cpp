@@ -139,7 +139,6 @@ void SerializationObject<Parser>::checkSerializationIsSupported(const TSettings 
 template <typename Parser>
 struct SerializationObject<Parser>::SerializeStateObject : public ISerialization::SerializeBinaryBulkState
 {
-    bool is_first = true;
     DataTypePtr nested_type;
     SerializationPtr nested_serialization;
     SerializeBinaryBulkStatePtr nested_state;
@@ -156,6 +155,7 @@ struct SerializationObject<Parser>::DeserializeStateObject : public ISerializati
 
 template <typename Parser>
 void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -166,13 +166,25 @@ void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
 
     settings.path.push_back(Substream::ObjectStructure);
     auto * stream = settings.getter(settings.path);
-    settings.path.pop_back();
 
     if (!stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for kind of binary serialization");
 
     writeIntBinary(static_cast<UInt8>(BinarySerializationKind::TUPLE), *stream);
-    state = std::make_shared<SerializeStateObject>();
+
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
+    writeStringBinary(tuple_type->getName(), *stream);
+
+    auto state_object = std::make_shared<SerializeStateObject>();
+    state_object->nested_type = tuple_type;
+    state_object->nested_serialization = tuple_type->getDefaultSerialization();
+
+    settings.path.back() = Substream::ObjectData;
+    state_object->nested_serialization->serializeBinaryBulkStatePrefix(*tuple_column, settings, state_object->nested_state);
+
+    state = std::move(state_object);
+    settings.path.pop_back();
 }
 
 template <typename Parser>
@@ -266,25 +278,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 
-    if (state_object->is_first)
-    {
-        /// Actually it's a part of serializeBinaryBulkStatePrefix,
-        /// but it cannot be done there, because we have to know the
-        /// structure of column.
-
-        settings.path.push_back(Substream::ObjectStructure);
-        if (auto * stream = settings.getter(settings.path))
-            writeStringBinary(tuple_type->getName(), *stream);
-
-        state_object->nested_type = tuple_type;
-        state_object->nested_serialization = tuple_type->getDefaultSerialization();
-        state_object->is_first = false;
-
-        settings.path.back() = Substream::ObjectData;
-        state_object->nested_serialization->serializeBinaryBulkStatePrefix(settings, state_object->nested_state);
-        settings.path.pop_back();
-    }
-    else if (!state_object->nested_type->equals(*tuple_type))
+    if (!state_object->nested_type->equals(*tuple_type))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Types of internal column of Object mismatched. Expected: {}, Got: {}",
@@ -452,8 +446,9 @@ void SerializationObject<Parser>::serializeTextFromSubcolumn(
     {
         if (ind < part->size())
         {
-            auto info = least_common_type->getSerializationInfo(*part);
-            auto serialization = least_common_type->getSerialization(*info);
+            auto part_type = getDataTypeByColumn(*part);
+            auto info = part_type->getSerializationInfo(*part);
+            auto serialization = part_type->getSerialization(*info);
             serialization->serializeTextJSON(*part, ind, ostr, settings);
             return;
         }

@@ -121,7 +121,7 @@ void writeColumnSingleGranule(
     serialize_settings.position_independent_encoding = true; //-V1048
     serialize_settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
-    serialization->serializeBinaryBulkStatePrefix(serialize_settings, state);
+    serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
     serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
