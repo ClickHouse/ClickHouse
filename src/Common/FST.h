@@ -14,7 +14,8 @@ namespace DB
 {
 /// Finite State Transducer is an efficient way to represent term dictionary.
 /// It can be viewed as a map of <term, offset>.
-/// Detailed explanation can be found in https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.24.3698&rep=rep1&type=pdf
+/// Detailed explanation can be found in the following paper
+/// [Direct Constrution of Minimal Acyclic Subsequential Transduers] by Stoyan Mihov and Denis Maurel, University of Tours, France
 namespace FST
 {
     using Output = UInt64;
