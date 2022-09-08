@@ -202,10 +202,10 @@ namespace
 
             if (header_buf.hasPendingData())
             {
-              readVarUInt(distributed_header.shard_num, header_buf);
-              readStringBinary(distributed_header.cluster, header_buf);
-              readStringBinary(distributed_header.distributed_table, header_buf);
-              readStringBinary(distributed_header.remote_table, header_buf);
+                readVarUInt(distributed_header.shard_num, header_buf);
+                readStringBinary(distributed_header.cluster, header_buf);
+                readStringBinary(distributed_header.distributed_table, header_buf);
+                readStringBinary(distributed_header.remote_table, header_buf);
             }
 
             /// Add handling new data here, for example:
