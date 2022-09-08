@@ -108,6 +108,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
+    if (s_from.ignore(pos, expected))
+    {
+        if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
+            return false;
+    }
+
     /// SELECT [ALL/DISTINCT [ON (expr_list)]] [TOP N [WITH TIES]] expr_list
     {
         bool has_all = false;
@@ -166,7 +173,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
-    if (s_from.ignore(pos, expected))
+    if (!tables && s_from.ignore(pos, expected))
     {
         if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
             return false;
