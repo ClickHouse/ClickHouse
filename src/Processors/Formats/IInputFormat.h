@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/ISource.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Formats/ColumnMapping.h>
 
@@ -11,65 +11,6 @@ namespace DB
 {
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
-
-class InputFormatErrorsLogger
-{
-public:
-    struct ErrorEntry
-    {
-        String time;
-        size_t offset;
-        String reason;
-        String raw_data;
-    };
-
-    InputFormatErrorsLogger(
-        Context::ApplicationType app_type,
-        const String & user_files_path,
-        String & path_in_setting,
-        bool is_changed,
-        FormatSettings::ErrorsOutputFormat output_format,
-        const String & database_,
-        const String & table_);
-
-    virtual ~InputFormatErrorsLogger() = default;
-
-    virtual void logError(ErrorEntry entry);
-    void logErrorImpl(ErrorEntry entry);
-
-private:
-    String errors_file_path;
-    std::shared_ptr<WriteBufferFromFile> write_buf;
-    OutputFormatPtr writer;
-
-    String database;
-    String table;
-};
-
-using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
-
-class ParallelInputFormatErrorsLogger : public InputFormatErrorsLogger
-{
-public:
-    ParallelInputFormatErrorsLogger(
-        Context::ApplicationType app_type,
-        const String & user_files_path,
-        String & path_in_setting,
-        bool is_changed,
-        FormatSettings::ErrorsOutputFormat output_format,
-        const String & database_,
-        const String & table_)
-        : InputFormatErrorsLogger(app_type, user_files_path, path_in_setting, is_changed, output_format, database_, table_)
-    {
-    }
-
-    ~ParallelInputFormatErrorsLogger() override;
-
-    void logError(ErrorEntry entry) override;
-
-private:
-    std::mutex write_mutex;
-};
 
 /** Input format is a source, that reads data from ReadBuffer.
   */

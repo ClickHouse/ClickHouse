@@ -54,6 +54,31 @@ IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
 {
 }
 
+void IRowInputFormat::logError()
+{
+    String diagnostic;
+    String raw_data;
+    try
+    {
+        std::tie(diagnostic, raw_data) = getDiagnosticAndRawData();
+    }
+    catch (const Exception & exception)
+    {
+        diagnostic = "Cannot get diagnostic: " + exception.message();
+        raw_data = "Cannot get raw data: " + exception.message();
+    }
+    catch (...)
+    {
+        /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+    }
+    trimLeft(diagnostic, '\n');
+    trimRight(diagnostic, '\n');
+
+    auto now_time = time(nullptr);
+
+    errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
+}
+
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
@@ -106,30 +131,6 @@ Chunk IRowInputFormat::generate()
             }
             catch (Exception & e)
             {
-                /// Record error info for this row
-                String diagnostic;
-                String raw_data;
-                try
-                {
-                    std::tie(diagnostic, raw_data) = getDiagnosticAndRawData();
-                }
-                catch (const Exception & exception)
-                {
-                    diagnostic = "Cannot get diagnostic: " + exception.message();
-                    raw_data = "Cannot get raw data: " + exception.message();
-                }
-                catch (...)
-                {
-                    /// Error while trying to obtain verbose diagnostic. Ok to ignore.
-                }
-                trimLeft(diagnostic, '\n');
-                trimRight(diagnostic, '\n');
-
-                auto now_time = time(nullptr);
-
-                if (errors_logger)
-                    errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{to_string(now_time), total_rows, diagnostic, raw_data});
-
                 /// Logic for possible skipping of errors.
 
                 if (!isParseError(e.code()))
@@ -137,6 +138,9 @@ Chunk IRowInputFormat::generate()
 
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
                     throw;
+
+                if (errors_logger)
+                    logError();
 
                 ++num_errors;
                 Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
