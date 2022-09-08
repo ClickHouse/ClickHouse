@@ -33,13 +33,14 @@ IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t
 
 ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
     : pool(pool_size, pool_size, queue_size_)
-    , schedule(threadPoolCallbackRunner<Result>(pool, "VFSRead"))
 {
 }
 
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
+    auto schedule = threadPoolCallbackRunner<Result>(pool, "VFSRead");
+
     return schedule([request]() -> Result
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};

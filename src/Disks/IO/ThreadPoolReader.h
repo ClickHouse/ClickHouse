@@ -30,8 +30,6 @@ class ThreadPoolReader final : public IAsynchronousReader
 private:
     ThreadPool pool;
 
-    ThreadPoolCallbackRunner<IAsynchronousReader::Result> schedule;
-
 public:
     ThreadPoolReader(size_t pool_size, size_t queue_size_);
 
