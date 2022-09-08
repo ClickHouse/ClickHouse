@@ -598,7 +598,7 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
             {
                 LOG_ERROR(
                     log,
-                    "Table definition does not match to the one stored in the path {}. Stored defintion: {}",
+                    "Table definition does not match to the one stored in the path {}. Stored definition: {}",
                     root_path,
                     stored_metadata_string);
                 table_is_valid = false;
