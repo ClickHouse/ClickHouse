@@ -902,17 +902,11 @@ PathMatchResult matchPath(std::string_view path, std::string_view match_to)
 {
     using enum PathMatchResult;
 
-    if (match_to == "/")
-        return path == "/" ? EXACT : IS_CHILD;
+    if (path.ends_with('/'))
+        path.remove_suffix(1);
 
-    const auto clean_path = [](auto & p)
-    {
-        if (p.ends_with('/'))
-            p.remove_suffix(1);
-    };
-
-    clean_path(path);
-    clean_path(match_to);
+    if (match_to.ends_with('/'))
+        match_to.remove_suffix(1);
 
     auto [first_it, second_it] = std::mismatch(path.begin(), path.end(), match_to.begin(), match_to.end());
 
