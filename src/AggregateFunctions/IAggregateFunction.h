@@ -172,6 +172,10 @@ public:
       */
     virtual bool isState() const { return false; }
 
+    /** Special method for aggregate functions with combinator -State, it takes resulting column and extracts
+      * column that has type ColumnAggregateFunction. This is needed because by using different combinators
+      * resulting column can have complex type like nested Arrays/Maps with ColumnAggregateFunction inside it.
+      */
     virtual IColumn * extractStateColumnFromResultColumn(IColumn *) const
     {
         if (isState())
