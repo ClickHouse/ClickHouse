@@ -84,6 +84,8 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
+    bool supportsSubcolumns() const override { return true; }
+
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
