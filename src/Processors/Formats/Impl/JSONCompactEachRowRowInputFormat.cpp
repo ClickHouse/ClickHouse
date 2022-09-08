@@ -241,11 +241,16 @@ void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<JSONCompactEachRowRowSchemaReader>(buf, with_names, with_types, json_strings, settings);
             });
-            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+            if (!with_types)
             {
-                auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
-                return result + fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
-            });
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
+                {
+                    auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+                    if (!with_names)
+                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                    return result;
+                });
+            }
         };
         registerWithNamesAndTypes(json_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
     }

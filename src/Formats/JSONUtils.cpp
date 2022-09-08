@@ -768,6 +768,31 @@ namespace JSONUtils
         return names_and_types;
     }
 
+    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header)
+    {
+        auto names_and_types = JSONUtils::readMetadata(in);
+        for (const auto & [name, type] : names_and_types)
+        {
+            auto header_type = header.getByName(name).type;
+            if (header.has(name) && !type->equals(*header_type))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Type {} of column '{}' from metadata is not the same as type in header {}", type->getName(), name, header_type->getName());
+        }
+        return names_and_types;
+    }
+
+    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name)
+    {
+        while (!checkAndSkipObjectEnd(in))
+        {
+            auto field_name = JSONUtils::readFieldName(in);
+            if (field_name == desired_field_name)
+                return true;
+        }
+
+        return false;
+    }
+
     void skipTheRestOfObject(ReadBuffer & in)
     {
         while (!checkAndSkipObjectEnd(in))

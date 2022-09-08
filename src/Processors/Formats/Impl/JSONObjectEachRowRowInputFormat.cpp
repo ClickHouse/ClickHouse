@@ -81,6 +81,10 @@ void registerJSONObjectEachRowSchemaReader(FormatFactory & factory)
     {
         return std::make_unique<JSONObjectEachRowSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("JSONObjectEachRow", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+    });
 }
 
 }

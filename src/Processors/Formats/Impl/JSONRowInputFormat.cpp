@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/JSONRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -20,32 +19,17 @@ void JSONRowInputFormat::readPrefix()
 {
     skipBOMIfExists(*in);
     JSONUtils::skipObjectStart(*in);
-    auto names_and_types = JSONUtils::readMetadata(*in);
     if (use_metadata)
-    {
-        auto header = getPort().getHeader();
-        for (const auto & [name, type] : names_and_types)
-        {
-            auto header_type = header.getByName(name).type;
-            if (header.has(name) && !type->equals(*header_type))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Type {} of column '{}' from metadata is not the same as type in header {}", type->getName(), name, header_type->getName());
-        }
-    }
-    JSONUtils::skipComma(*in);
-    while (!JSONUtils::checkAndSkipObjectEnd(*in))
-    {
-        auto field_name = JSONUtils::readFieldName(*in);
-        LOG_DEBUG(&Poco::Logger::get("JSONRowInputFormat"), "Field {}", field_name);
-        if (field_name == "data")
-        {
-            JSONUtils::skipArrayStart(*in);
-            data_in_square_brackets = true;
-            return;
-        }
-    }
+        JSONUtils::readMetadataAndValidateHeader(*in, getPort().getHeader());
+    else
+        JSONUtils::readMetadata(*in);
 
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"data\" with table content");
+    JSONUtils::skipComma(*in);
+    if (!JSONUtils::skipUntilFieldInObject(*in, "data"))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"data\" with table content");
+
+    JSONUtils::skipArrayStart(*in);
+    data_in_square_brackets = true;
 }
 
 void JSONRowInputFormat::readSuffix()
@@ -60,6 +44,7 @@ JSONRowSchemaReader::JSONRowSchemaReader(ReadBuffer & in_) : ISchemaReader(in_)
 
 NamesAndTypesList JSONRowSchemaReader::readSchema()
 {
+    skipBOMIfExists(in);
     JSONUtils::skipObjectStart(in);
     return JSONUtils::readMetadata(in);
 }
