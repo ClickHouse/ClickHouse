@@ -69,6 +69,28 @@ void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & 
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
+template <typename T>
+void SerializationDecimal<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.json.quote_decimals)
+        writeChar('"', ostr);
+
+    serializeText(column, row_num, ostr, settings);
+
+    if (settings.json.quote_decimals)
+        writeChar('"', ostr);
+}
+
+template <typename T>
+void SerializationDecimal<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    bool have_quotes = checkChar('"', istr);
+    deserializeText(column, istr, settings, false);
+    if (have_quotes)
+        assertChar('"', istr);
+}
+
+
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;
 template class SerializationDecimal<Decimal128>;

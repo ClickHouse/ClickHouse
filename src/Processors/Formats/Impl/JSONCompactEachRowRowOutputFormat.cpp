@@ -47,7 +47,7 @@ void JSONCompactEachRowRowOutputFormat::writeFieldDelimiter()
 
 void JSONCompactEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    writeChar('[', *ostr);
+    writeChar('[', out);
 }
 
 

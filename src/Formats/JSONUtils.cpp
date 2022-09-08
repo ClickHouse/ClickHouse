@@ -421,24 +421,33 @@ namespace JSONUtils
 
     void writeFieldCompactDelimiter(WriteBuffer & out) { writeCString(", ", out); }
 
-    template <bool with_space>
-    void writeTitle(const char * title, WriteBuffer & out, size_t indent)
+    void writeTitle(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
     {
         writeChar('\t', indent, out);
         writeChar('"', out);
         writeCString(title, out);
-        if constexpr (with_space)
-            writeCString("\": ", out);
-        else
-            writeCString("\":\n", out);
+        writeCString("\":", out);
+        writeCString(after_delimiter, out);
     }
 
     void writeObjectStart(WriteBuffer & out, size_t indent, const char * title)
     {
         if (title)
-            writeTitle<false>(title, out, indent);
+            writeTitle(title, out, indent, "\n");
         writeChar('\t', indent, out);
         writeCString("{\n", out);
+    }
+
+    void writeCompactObjectStart(WriteBuffer & out, size_t indent, const char * title)
+    {
+        if (title)
+            writeTitle(title, out, indent, " ");
+        writeCString("{", out);
+    }
+
+    void writeCompactObjectEnd(WriteBuffer & out)
+    {
+        writeChar('}', out);
     }
 
     void writeObjectEnd(WriteBuffer & out, size_t indent)
@@ -451,7 +460,7 @@ namespace JSONUtils
     void writeArrayStart(WriteBuffer & out, size_t indent, const char * title)
     {
         if (title)
-            writeTitle<false>(title, out, indent);
+            writeTitle(title, out, indent, "\n");
         writeChar('\t', indent, out);
         writeCString("[\n", out);
     }
@@ -459,7 +468,7 @@ namespace JSONUtils
     void writeCompactArrayStart(WriteBuffer & out, size_t indent, const char * title)
     {
         if (title)
-            writeTitle<true>(title, out, indent);
+            writeTitle(title, out, indent, " ");
         else
             writeChar('\t', indent, out);
         writeCString("[", out);
@@ -482,10 +491,11 @@ namespace JSONUtils
         const FormatSettings & settings,
         WriteBuffer & out,
         const std::optional<String> & name,
-        size_t indent)
+        size_t indent,
+        const char * title_after_delimiter)
     {
         if (name.has_value())
-            writeTitle<true>(name->data(), out, indent);
+            writeTitle(name->data(), out, indent, title_after_delimiter);
 
         if (yield_strings)
         {
@@ -540,7 +550,7 @@ namespace JSONUtils
         {
             writeObjectStart(out, 2);
 
-            writeTitle<true>("name", out, 3);
+            writeTitle("name", out, 3, " ");
 
             /// The field names are pre-escaped to be put into JSON string literal.
             writeChar('"', out);
@@ -548,7 +558,7 @@ namespace JSONUtils
             writeChar('"', out);
 
             writeFieldDelimiter(out);
-            writeTitle<true>("type", out, 3);
+            writeTitle("type", out, 3, " ");
             writeJSONString(types[i]->getName(), out, settings);
             writeObjectEnd(out, 2);
 
@@ -569,13 +579,13 @@ namespace JSONUtils
         WriteBuffer & out)
     {
         writeFieldDelimiter(out, 2);
-        writeTitle<true>("rows", out, 1);
+        writeTitle("rows", out, 1, " ");
         writeIntText(rows, out);
 
         if (applied_limit)
         {
             writeFieldDelimiter(out, 2);
-            writeTitle<true>("rows_before_limit_at_least", out, 1);
+            writeTitle("rows_before_limit_at_least", out, 1, " ");
             writeIntText(rows_before_limit, out);
         }
 
@@ -584,15 +594,15 @@ namespace JSONUtils
             writeFieldDelimiter(out, 2);
             writeObjectStart(out, 1, "statistics");
 
-            writeTitle<true>("elapsed", out, 2);
+            writeTitle("elapsed", out, 2, " ");
             writeText(watch.elapsedSeconds(), out);
             writeFieldDelimiter(out);
 
-            writeTitle<true>("rows_read", out, 2);
+            writeTitle("rows_read", out, 2, " ");
             writeText(progress.read_rows.load(), out);
             writeFieldDelimiter(out);
 
-            writeTitle<true>("bytes_read", out, 2);
+            writeTitle("bytes_read", out, 2, " ");
             writeText(progress.read_bytes.load(), out);
 
             writeObjectEnd(out, 1);

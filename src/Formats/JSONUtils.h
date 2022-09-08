@@ -54,7 +54,11 @@ namespace JSONUtils
 
     void writeObjectStart(WriteBuffer & out, size_t indent = 0, const char * title = nullptr);
 
+    void writeCompactObjectStart(WriteBuffer & out, size_t indent = 0, const char * title = nullptr);
+
     void writeObjectEnd(WriteBuffer & out, size_t indent = 0);
+
+    void writeCompactObjectEnd(WriteBuffer & out);
 
     void writeArrayStart(WriteBuffer & out, size_t indent = 0, const char * title = nullptr);
 
@@ -72,7 +76,8 @@ namespace JSONUtils
         const FormatSettings & settings,
         WriteBuffer & out,
         const std::optional<String> & name = std::nullopt,
-        size_t indent = 0);
+        size_t indent = 0,
+        const char * title_after_delimiter = " ");
 
     void writeColumns(
         const Columns & columns,

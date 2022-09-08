@@ -93,7 +93,4 @@ void registerInputFormatJSONCompact(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONCompact");
 }
 
-
-
-
 }

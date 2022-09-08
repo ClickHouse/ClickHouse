@@ -10,7 +10,6 @@ namespace DB
 {
 
 /** The stream for outputting data in JSON format, by object per line.
-  * Does not validate UTF-8.
   */
 class JSONCompactEachRowRowOutputFormat final : public IRowOutputFormatWithUTF8Validation
 {

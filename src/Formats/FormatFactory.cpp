@@ -93,7 +93,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
+    format_settings.json.quote_decimals = settings.output_format_json_quote_decimals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
+    format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
     format_settings.json.use_metadata = settings.input_format_json_use_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
