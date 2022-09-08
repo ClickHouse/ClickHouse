@@ -1062,6 +1062,12 @@ Result:
 └─────────────┴───────────┘
 ```
 
+## kafka_disable_num_consumers_limit {#kafka-disable-num-consumers-limit}
+
+Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
+
+Default value: false.
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
