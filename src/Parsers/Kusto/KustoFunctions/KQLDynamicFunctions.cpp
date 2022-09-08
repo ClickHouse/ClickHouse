@@ -11,6 +11,14 @@
 
 #include <format>
 
+namespace
+{
+String wrapInDynamic(const String & parameter)
+{
+    return "dynamic(" + parameter + ")";
+}
+}
+
 namespace DB
 {
 
@@ -91,7 +99,7 @@ bool ArrayRotateRight::convertImpl(String & out, IParser::Pos & pos)
 
     const auto array = getArgument(function_name, pos);
     const auto count = getArgument(function_name, pos);
-    out = kqlCallToExpression("array_rotate_left", {"dynamic(" + array + ")", "-1 * " + count}, pos.max_depth);
+    out = kqlCallToExpression("array_rotate_left", {wrapInDynamic(array), "-1 * " + count}, pos.max_depth);
 
     return true;
 }
@@ -106,7 +114,7 @@ bool ArrayShiftLeft::convertImpl(String & out, IParser::Pos & pos)
     const auto count = getArgument(function_name, pos);
     const auto fill = getOptionalArgument(function_name, pos);
     out = std::format(
-        "arrayResize(multiIf({1} > 0, arraySlice({0}, {1} + 1), {1} < 0, arrayConcat(arrayWithConstant(abs({1}), fill_value_{3}), {0}), {0}), "
+        "arrayResize(if({1} > 0, arraySlice({0}, {1} + 1), arrayConcat(arrayWithConstant(abs({1}), fill_value_{3}), {0})), "
         "length({0}), ifNull({2}, if(toTypeName({0}) = 'Array(String)', defaultValueOfArgumentType({0}[1]), null)) as fill_value_{3})",
         array,
         count,
@@ -126,7 +134,7 @@ bool ArrayShiftRight::convertImpl(String & out, IParser::Pos & pos)
     const auto count = getArgument(function_name, pos);
     const auto fill = getOptionalArgument(function_name, pos);
 
-    const auto arg1 = "dynamic(" + array + ")";
+    const auto arg1 = wrapInDynamic(array);
     const auto arg2 = "-1 * " + count;
     out = kqlCallToExpression(
         "array_shift_left",
@@ -222,9 +230,18 @@ bool BagRemoveKeys::convertImpl(String & out, IParser::Pos & pos)
 
 bool JaccardIndex::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto lhs = wrapInDynamic(getArgument(function_name, pos));
+    const auto rhs = wrapInDynamic(getArgument(function_name, pos));
+    out = std::format(
+        "divide(length({0}), length({1}))",
+        kqlCallToExpression("set_intersect", {lhs, rhs}, pos.max_depth),
+        kqlCallToExpression("set_union", {lhs, rhs}, pos.max_depth));
+
+    return true;
 }
 
 bool Pack::convertImpl(String & out, IParser::Pos & pos)
@@ -261,30 +278,44 @@ bool Repeat::convertImpl(String & out, IParser::Pos & pos)
 
 bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto lhs = getArgument(function_name, pos);
+    const auto rhs = std::invoke(
+        [&function_name, &pos]
+        {
+            std::vector<String> arrays{wrapInDynamic(getArgument(function_name, pos))};
+            while (auto next_array = getOptionalArgument(function_name, pos))
+                arrays.push_back(wrapInDynamic(*next_array));
+
+            return kqlCallToExpression("set_union", std::vector<std::string_view>(arrays.cbegin(), arrays.cend()), pos.max_depth);
+        });
+
+    out = std::format("arrayFilter(x -> not has({1}, x), arrayDistinct({0}))", lhs, rhs);
+
+    return true;
 }
 
 bool SetHasElement::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "has");
 }
 
 bool SetIntersect::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "arrayIntersect");
 }
 
 bool SetUnion::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    if (!directMapping(out, pos, "arrayConcat"))
+        return false;
+
+    out = std::format("arrayDistinct({0})", out);
+
+    return true;
 }
 
 bool TreePath::convertImpl(String & out, IParser::Pos & pos)

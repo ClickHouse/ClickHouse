@@ -3,6 +3,8 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 
+#include <span>
+
 namespace DB
 {
 class IParserKQLFunction
@@ -48,7 +50,8 @@ protected:
     static String getArgument(const String & function_name, DB::IParser::Pos & pos);
     static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
     static std::optional<String> getOptionalArgument(const String & function_name, DB::IParser::Pos & pos);
-    static String kqlCallToExpression(const String & function_name, std::initializer_list<std::string_view> params, uint32_t max_depth);
+    static String kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth);
+    static String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth);
     static void validateEndOfFunction(const String & fn_name, IParser::Pos & pos);
     static String getKQLFunctionName(IParser::Pos & pos);
     static String ArraySortHelper(String & out, IParser::Pos & pos, bool ascending);

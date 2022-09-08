@@ -64,12 +64,44 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserTest,
             "SELECT arraySum([2.5, 5.5, 3]) AS output"
         },
         {
+            "print jaccard_index(A, B)",
+            "SELECT length(arrayIntersect(A, B)) / length(arrayDistinct(arrayConcat(A, B)))"
+        },
+        {
             "print pack_array(A, B, C, D)",
             "SELECT [A, B, C, D]"
         },
         {
             "print repeat(A, B)",
             "SELECT arrayWithConstant(B, A)"
+        },
+        {
+            "print set_difference(A, B)",
+            "SELECT arrayFilter(x -> (NOT has(arrayDistinct(arrayConcat(B)), x)), arrayDistinct(A))"
+        },
+        {
+            "print set_difference(A, B, C)",
+            "SELECT arrayFilter(x -> (NOT has(arrayDistinct(arrayConcat(B, C)), x)), arrayDistinct(A))"
+        },
+        {
+            "print set_has_element(A, B)",
+            "SELECT has(A, B)"
+        },
+        {
+            "print set_intersect(A, B)",
+            "SELECT arrayIntersect(A, B)"
+        },
+        {
+            "print set_intersect(A, B, C)",
+            "SELECT arrayIntersect(A, B, C)"
+        },
+        {
+            "print set_union(A, B)",
+            "SELECT arrayDistinct(arrayConcat(A, B))"
+        },
+        {
+            "print set_union(A, B, C)",
+            "SELECT arrayDistinct(arrayConcat(A, B, C))"
         },
         {
             "print zip(A, B)",
@@ -87,19 +119,19 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicRegex, ParserRegexTest,
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "print array_shift_left(A, B)",
-            "SELECT arrayResize\\(multiIf\\(B > 0, arraySlice\\(A, B \\+ 1\\), B < 0, arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            "SELECT arrayResize\\(if\\(B > 0, arraySlice\\(A, B \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
         },
         {
             "print array_shift_left(A, B, C)",
-            "SELECT arrayResize\\(multiIf\\(B > 0, arraySlice\\(A, B \\+ 1\\), B < 0, arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            "SELECT arrayResize\\(if\\(B > 0, arraySlice\\(A, B \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
         },
         {
             "print array_shift_right(A, B)",
-            "SELECT arrayResize\\(multiIf\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), \\(-1 \\* B\\) < 0, arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            "SELECT arrayResize\\(if\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
         },
         {
             "print array_shift_right(A, B, C)",
-            "SELECT arrayResize\\(multiIf\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), \\(-1 \\* B\\) < 0, arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\), A\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            "SELECT arrayResize\\(if\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
         },
         {
             "print array_slice(A, B, C)",
