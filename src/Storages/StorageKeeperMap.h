@@ -30,7 +30,6 @@ public:
         bool attach,
         std::string_view primary_key_,
         const std::string & root_path_,
-        bool create_missing_root_path,
         UInt64 keys_limit_);
 
     Pipe read(
@@ -54,6 +53,9 @@ public:
     Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map) const;
 
     Block getSampleBlock(const Names &) const override;
+
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
@@ -117,6 +119,8 @@ private:
     std::string dropped_lock_path;
 
     std::string zookeeper_name;
+
+    std::string metadata_string;
 
     uint64_t keys_limit{0};
 

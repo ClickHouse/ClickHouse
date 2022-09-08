@@ -47,10 +47,6 @@ def remove_children(client, path):
 
 
 def test_create_keeper_map(started_cluster):
-    assert "Path '/test1' doesn't exist" in node.query_and_get_error(
-        "CREATE TABLE test_keeper_map (key UInt64, value UInt64) ENGINE = KeeperMap('/test1', 0) PRIMARY KEY(key);"
-    )
-
     node.query(
         "CREATE TABLE test_keeper_map (key UInt64, value UInt64) ENGINE = KeeperMap('/test1') PRIMARY KEY(key);"
     )
