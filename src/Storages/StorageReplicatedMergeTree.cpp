@@ -7543,6 +7543,9 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     if (!settings->allow_remote_fs_zero_copy_replication)
         return std::make_pair(true, NameSet{});
 
+    if (!part.data_part_storage)
+        LOG_WARNING(log, "Datapart storage for part {} (temp: {}) is not initialzied", part.name, part.is_temp);
+
     if (!part.data_part_storage || !part.isStoredOnDisk())
     {
         LOG_TRACE(log, "Part {} is not stored on disk, blobs can be removed", part.name);
