@@ -35,13 +35,13 @@ void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
     offset_of_current_row = in->offset();
 }
 
-std::tuple<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawDataImpl(bool is_errors_record)
+std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawDataImpl(bool is_errors_record)
 {
     WriteBufferFromOwnString out_diag;
     WriteBufferFromOwnString out_data;
 
     if (in->eof())
-        return std::make_tuple(
+        return std::make_pair(
             "Buffer has gone, cannot extract information about what has been parsed.",
             "Buffer has gone, cannot extract information about what has been parsed.");
 
@@ -54,7 +54,7 @@ std::tuple<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRaw
     {
         out_diag << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
         out_data << "Could not collect raw data because two last rows aren't in buffer (rare case)\n";
-        return std::make_tuple(out_diag.str(), out_data.str());
+        return std::make_pair(out_diag.str(), out_data.str());
     }
 
     max_length_of_column_name = 0;
@@ -75,7 +75,7 @@ std::tuple<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRaw
 
         out_diag << "\nRow " << (row_num - 1) << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(columns, out_diag))
-            return std::make_tuple(out_diag.str(), out_data.str());
+            return std::make_pair(out_diag.str(), out_data.str());
     }
     else
     {
@@ -83,14 +83,14 @@ std::tuple<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRaw
         {
             out_diag << "Could not print diagnostic info because parsing of data hasn't started.\n";
             out_data << "Could not collect raw data because parsing of data hasn't started.\n";
-            return std::make_tuple(out_diag.str(), out_data.str());
+            return std::make_pair(out_diag.str(), out_data.str());
         }
 
         in->position() = in->buffer().begin() + offset_of_current_row;
     }
 
     char * data = in->position();
-    while (*data != '\n' && *data != '\r' && *data != '\0' && data < in->buffer().end())
+    while (data < in->buffer().end() && *data != '\n' && *data != '\r' && *data != '\0')
     {
         out_data << *data;
         ++data;
@@ -100,7 +100,7 @@ std::tuple<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRaw
     parseRowAndPrintDiagnosticInfo(columns, out_diag);
     out_diag << "\n";
 
-    return std::make_tuple(out_diag.str(), out_data.str());
+    return std::make_pair(out_diag.str(), out_data.str());
 }
 
 String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
@@ -109,7 +109,7 @@ String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
     return std::get<0>(diagnostic_and_raw_data);
 }
 
-std::tuple<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawData()
+std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawData()
 {
     return getDiagnosticAndRawDataImpl(true);
 }

@@ -773,8 +773,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     \
     M(UInt64, input_format_allow_errors_num, 0, "Maximum absolute amount of errors while reading text formats (like CSV, TSV). In case of error, if at least absolute or relative amount of errors is lower than corresponding value, will skip until next line and continue.", 0) \
     M(Float, input_format_allow_errors_ratio, 0, "Maximum relative amount of errors while reading text formats (like CSV, TSV). In case of error, if at least absolute or relative amount of errors is lower than corresponding value, will skip until next line and continue.", 0) \
-    M(String, input_format_record_errors_file_path, "_input_format_error_rows_", "Path of the file used to record errors while reading text formats (CSV, TSV).", 0) \
-    M(ErrorsOutputFormat, errors_output_format, "CSV", "Method to write Errors to text output. Possible values: 'CSV'.", 0) \
+    M(String, input_format_record_errors_file_path, "", "Path of the file used to record errors while reading text formats (CSV, TSV).", 0) \
+    M(String, errors_output_format, "CSV", "Method to write Errors to text output.", 0) \
     \
     M(String, format_schema, "", "Schema identifier (used by schema-based formats)", 0) \
     M(String, format_template_resultset, "", "Path to file which contains format string for result set (for Template format)", 0) \
