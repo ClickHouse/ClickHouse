@@ -53,6 +53,7 @@ namespace DB
         has_any_index,
         indexof,
         isempty,
+        isnan,
         isnotempty,
         isnotnull,
         isnull,

@@ -16,6 +16,7 @@
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
+#include <Parsers/Kusto/KustoFunctions/KQLMathematicalFunctions.h>
 
 namespace DB
 {
@@ -65,6 +66,7 @@ namespace DB
         {"has_any_index", KQLFunctionValue::has_any_index},
         {"indexof", KQLFunctionValue::indexof},
         {"isempty", KQLFunctionValue::isempty},
+        {"isnan", KQLFunctionValue::isnan},
         {"isnotempty", KQLFunctionValue::isnotempty},
         {"notempty", KQLFunctionValue::isnotempty},
         {"isnotnull", KQLFunctionValue::isnotnull},
@@ -369,6 +371,9 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
 
         case KQLFunctionValue::isempty:
             return std::make_unique<IsEmpty>();
+
+        case KQLFunctionValue::isnan:
+            return std::make_unique<IsNan>();
 
         case KQLFunctionValue::isnotempty:
             return std::make_unique<IsNotEmpty>();

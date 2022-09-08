@@ -56,6 +56,58 @@
 
    Please note that our current implementation supports only scalars and arrays made up of elements of the same type. Support for mixed types and property bags is deferred for now, based on our understanding of the required effort and discussion with representatives of the QRadar team.
 
+## Mathematical functions
+ - [isnan](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/isnanfunction)
+   `print isnan(double(nan)) == true`
+   `print isnan(4.2) == false`
+   `print isnan(4) == false`
+   `print isnan(real(+inf)) == false`
+
+## Set functions
+Please note that functions returning arrays with set semantics may return them in any particular order, which may be subject to change in the future.
+
+ - [jaccard_index](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/jaccard-index-function)
+   `print jaccard_index(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3, 4, 4, 4])) == 0.75`
+   `print jaccard_index(dynamic([1, 2, 3]), dynamic([])) == 0`
+   `print jaccard_index(dynamic([]), dynamic([1, 2, 3, 4])) == 0`
+   `print isnan(jaccard_index(dynamic([]), dynamic([])))`
+   `print jaccard_index(dynamic([1, 2, 3]), dynamic([4, 5, 6, 7])) == 0`
+   `print jaccard_index(dynamic(['a', 's', 'd']), dynamic(['f', 'd', 's', 'a'])) == 0.75`
+   `print jaccard_index(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader'])) == 0.25`
+
+ - [set_difference](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/setdifferencefunction)
+   `print set_difference(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3])) == dynamic([])`
+   `print array_sort_asc(set_difference(dynamic([1, 4, 2, 3, 5, 4, 6]), dynamic([1, 2, 3])))[1] == dynamic([4, 5, 6])`
+   `print set_difference(dynamic([4]), dynamic([1, 2, 3])) == dynamic([4])`
+   `print array_sort_asc(set_difference(dynamic([1, 2, 3, 4, 5]), dynamic([5]), dynamic([2, 4])))[1] == dynamic([1, 3])`
+   `print array_sort_asc(set_difference(dynamic([1, 2, 3]), dynamic([])))[1] == dynamic([1, 2, 3])`
+   `print array_sort_asc(set_difference(dynamic(['a', 's', 'd']), dynamic(['a', 'f'])))[1] == dynamic(['d', 's'])`
+   `print array_sort_asc(set_difference(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader'])))[1] == dynamic(['Chewbacca', 'Han Solo'])`
+
+ - [set_has_element](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/sethaselementfunction)
+   `print set_has_element(dynamic(["this", "is", "an", "example"]), "example") == true`
+   `print set_has_element(dynamic(["this", "is", "an", "example"]), "examplee") == false`
+   `print set_has_element(dynamic([1, 2, 3]), 2) == true`
+   `print set_has_element(dynamic([1, 2, 3, 4.2]), 4) == false`
+
+ - [set_intersect](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/setintersectfunction)
+   `print array_sort_asc(set_intersect(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3])))[1] == dynamic([1, 2, 3])`
+   `print array_sort_asc(set_intersect(dynamic([1, 4, 2, 3, 5, 4, 6]), dynamic([1, 2, 3])))[1] == dynamic([1, 2, 3])`
+   `print set_intersect(dynamic([4]), dynamic([1, 2, 3])) == dynamic([])`
+   `print set_intersect(dynamic([1, 2, 3, 4, 5]), dynamic([1, 3, 5]), dynamic([2, 5])) == dynamic([5])`
+   `print set_intersect(dynamic([1, 2, 3]), dynamic([])) == dynamic([])`
+   `print set_intersect(dynamic(['a', 's', 'd']), dynamic(['a', 'f'])) == dynamic(['a'])`
+   `print set_intersect(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader'])) == dynamic(['Darth Vader'])`
+
+ - [set_union](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/setunionfunction)
+   `print array_sort_asc(set_union(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3])))[1] == dynamic([1, 2, 3])`
+   `print array_sort_asc(set_union(dynamic([1, 4, 2, 3, 5, 4, 6]), dynamic([1, 2, 3])))[1] == dynamic([1, 2, 3, 4, 5, 6])`
+   `print array_sort_asc(set_union(dynamic([4]), dynamic([1, 2, 3])))[1] == dynamic([1, 2, 3, 4])`
+   `print array_sort_asc(set_union(dynamic([1, 3, 4]), dynamic([5]), dynamic([2, 4])))[1] == dynamic([1, 2, 3, 4, 5])`
+   `print array_sort_asc(set_union(dynamic([1, 2, 3]), dynamic([])))[1] == dynamic([1, 2, 3])`
+   `print array_sort_asc(set_union(dynamic(['a', 's', 'd']), dynamic(['a', 'f'])))[1] == dynamic(['a', 'd', 'f', 's'])`
+   `print array_sort_asc(set_union(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader'])))[1] == dynamic(['Chewbacca', 'Darth Sidious', 'Darth Vader', 'Han Solo'])`
+
 # August 29, 2022
 
 ## **mv-expand operator**

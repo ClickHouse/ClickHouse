@@ -164,7 +164,13 @@ String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const String & function_name, std::initializer_list<std::string_view> params, const uint32_t max_depth)
+    const std::string_view function_name, const std::initializer_list<const std::string_view> params, const uint32_t max_depth)
+{
+    return kqlCallToExpression(function_name, std::span(params), max_depth);
+}
+
+String IParserKQLFunction::kqlCallToExpression(
+    const std::string_view function_name, const std::span<const std::string_view> params, const uint32_t max_depth)
 {
     const auto params_str = std::accumulate(
         std::cbegin(params),
