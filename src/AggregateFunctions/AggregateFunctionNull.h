@@ -302,7 +302,8 @@ public:
         if (!null_is_skipped || !column->isNullAt(row_num))
         {
             this->setFlag(place);
-            this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+            const IColumn * passed_column = null_is_skipped ? nested_column : column;
+            this->nested_function->add(this->nestedPlace(place), &passed_column, row_num, arena);
         }
     }
 

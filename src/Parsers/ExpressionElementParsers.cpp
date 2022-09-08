@@ -972,6 +972,17 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             , ErrorCodes::SYNTAX_ERROR);
     }
 
+    bool respect_nulls = false;
+    bool ignore_nulls = false;
+
+    if (function_name_lowercase == "first_value")
+    {
+        if (ParserKeyword("RESPECT NULLS").ignore(pos, expected))
+            respect_nulls = true;
+        else if (ParserKeyword("IGNORE NULLS").ignore(pos, expected))
+            ignore_nulls = true;
+    }
+
     /// The parametric aggregate function has two lists (parameters and arguments) in parentheses. Example: quantile(0.9)(x).
     if (allow_function_parameters && pos->type == TokenType::OpeningRoundBracket)
     {
@@ -1020,6 +1031,11 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = std::make_shared<ASTFunction>();
     tryGetIdentifierNameInto(identifier, function_node->name);
+
+    if (respect_nulls)
+        function_node->name += "_respect_nulls";
+    if (ignore_nulls)
+        function_node->name += "_ignore_nulls";
 
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
     if (has_distinct)

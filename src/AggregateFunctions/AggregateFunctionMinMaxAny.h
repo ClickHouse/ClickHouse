@@ -17,6 +17,7 @@
 
 #include <Common/config.h>
 #include "AggregateFunctionNull.h"
+#include "Core/Types.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -970,10 +971,51 @@ template <typename Data>
 struct AggregateFunctionAnyDataRespectNulls : AggregateFunctionAnyData<Data>
 {
     using Self = AggregateFunctionAnyDataRespectNulls;
+    static constexpr bool is_nullable = true;
     static constexpr bool is_any = true;
     static constexpr bool is_respect_nulls = true;
 
     static const char * name() { return "any_respect_nulls"; }
+
+    bool is_null = true;
+
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     
+    {
+        is_null &= Data::has() || column.isNullAt(row_num);
+        return this->changeFirstTime(column, row_num, arena); 
+    }
+
+    bool changeIfBetter(const Self & to, Arena * arena)                            
+    {
+        is_null &= Data::has() || to.is_null;
+        return this->changeFirstTime(to, arena); 
+    }
+
+    void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfBetter(column, 0, arena); }
+
+    void insertResultInto(IColumn & to) const
+    {
+        if (is_null)
+        {
+            to.insertDefault();
+        }
+        else
+        {
+            ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+            col.getNullMapColumn().insertDefault();
+            this->Data::insertResultInto(col.getNestedColumn());
+        }
+    }
+};
+
+template <typename Data>
+struct AggregateFunctionAnyDataIgnoreNulls : AggregateFunctionAnyData<Data>
+{
+    using Self = AggregateFunctionAnyDataIgnoreNulls;
+    static constexpr bool is_any = true;
+    static constexpr bool is_respect_nulls = false;
+
+    static const char * name() { return "any_ignore_nulls"; }
 };
 
 template <typename Data>
