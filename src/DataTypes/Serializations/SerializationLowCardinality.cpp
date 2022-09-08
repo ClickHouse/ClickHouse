@@ -225,6 +225,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
+    const IColumn & /*column*/,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {

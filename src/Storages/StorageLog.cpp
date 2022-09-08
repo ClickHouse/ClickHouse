@@ -462,7 +462,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
     settings.getter = createStreamGetter(name_and_type);
 
     if (!serialize_states.contains(name))
-         serialization->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+         serialization->serializeBinaryBulkStatePrefix(column, settings, serialize_states[name]);
 
     if (storage.use_marks_file)
     {

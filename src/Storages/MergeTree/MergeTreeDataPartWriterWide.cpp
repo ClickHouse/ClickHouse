@@ -349,7 +349,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     {
         ISerialization::SerializeBinaryBulkSettings serialize_settings;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
-        serialization->serializeBinaryBulkStatePrefix(serialize_settings, it->second);
+        serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
 
     const auto & global_settings = storage.getContext()->getSettingsRef();

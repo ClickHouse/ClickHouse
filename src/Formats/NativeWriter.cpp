@@ -59,7 +59,7 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
     ISerialization::SerializeBinaryBulkStatePtr state;
-    serialization.serializeBinaryBulkStatePrefix(settings, state);
+    serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
     serialization.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }

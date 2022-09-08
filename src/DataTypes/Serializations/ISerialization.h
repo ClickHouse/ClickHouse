@@ -219,7 +219,9 @@ public:
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    /// Column may be used only to retrieve the structure.
     virtual void serializeBinaryBulkStatePrefix(
+        const IColumn & /*column*/,
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
