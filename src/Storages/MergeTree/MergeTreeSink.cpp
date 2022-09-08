@@ -24,6 +24,7 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
+    , storage_snapshot(storage.getStorageSnapshot(metadata_snapshot, context))
 {
 }
 
@@ -55,7 +56,6 @@ struct MergeTreeSink::DelayedChunk
 void MergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
-    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
