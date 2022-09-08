@@ -987,7 +987,9 @@ struct AggregateFunctionAnyDataRespectNulls : AggregateFunctionAnyData<Data>
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
     {
         is_null &= Data::has() || column.isNullAt(row_num);
-        return this->changeFirstTime(column, row_num, arena);
+
+        const IColumn & nested_column = assert_cast<const ColumnNullable &>(column).getNestedColumn();
+        return this->changeFirstTime(nested_column, row_num, arena);
     }
 
     bool changeIfBetter(const Self & to, Arena * arena)
