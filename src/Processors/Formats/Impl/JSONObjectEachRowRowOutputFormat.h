@@ -22,8 +22,13 @@ public:
 
 private:
     void writeRowStartDelimiter() override;
+    void writeRowEndDelimiter() override;
+    void writeRowBetweenDelimiter() override;
+
     void writePrefix() override;
     void writeSuffix() override;
+
+    size_t row_num = 0;
 };
 
 }

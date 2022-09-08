@@ -23,20 +23,20 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
 
 void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, settings.json.serialize_as_strings, settings, *ostr, fields[field_number]);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, settings.json.serialize_as_strings, settings, *ostr, fields[field_number], 0, "");
     ++field_number;
 }
 
 
 void JSONEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    JSONUtils::writeFieldDelimiter(*ostr, 0);
+    writeChar(',', out);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    JSONUtils::writeObjectStart(*ostr);
+    writeChar('{', out);
 }
 
 
@@ -68,7 +68,7 @@ void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
     // output.
     if (settings.json.array_of_rows)
     {
-        writeCString("}", *ostr);
+        writeChar('}', *ostr);
     }
     else
     {
@@ -92,7 +92,7 @@ void JSONEachRowRowOutputFormat::writePrefix()
 {
     if (settings.json.array_of_rows)
     {
-        writeCString("[\n", *ostr);
+        writeCString("[\n", out);
     }
 }
 

@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Formats/JSONUtils.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -16,12 +17,26 @@ void JSONObjectEachRowRowOutputFormat::writePrefix()
 
 void JSONObjectEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    JSONUtils::writeObjectStart(*ostr, 1, "row");
+    ++row_num;
+    String title = "row_" + std::to_string(row_num);
+    JSONUtils::writeCompactObjectStart(*ostr, 1, title.c_str());
+}
+
+void JSONObjectEachRowRowOutputFormat::writeRowEndDelimiter()
+{
+    JSONUtils::writeCompactObjectEnd(*ostr);
+    field_number = 0;
+}
+
+void JSONObjectEachRowRowOutputFormat::writeRowBetweenDelimiter()
+{
+    JSONUtils::writeFieldDelimiter(*ostr, 1);
 }
 
 void JSONObjectEachRowRowOutputFormat::writeSuffix()
 {
     JSONUtils::writeObjectEnd(*ostr);
+    writeChar('\n', *ostr);
 }
 
 void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
@@ -34,7 +49,7 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
-        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<JSONObjectEachRowRowOutputFormat>(buf, sample, params, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
 }

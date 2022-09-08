@@ -21,9 +21,13 @@ void JSONObjectEachRowInputFormat::readRowStart()
     JSONUtils::readFieldName(*in);
 }
 
-bool JSONObjectEachRowInputFormat::checkEndOfData()
+bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
 {
-    return JSONUtils::checkAndSkipObjectEnd(*in);
+    if (in->eof() || JSONUtils::checkAndSkipObjectEnd(*in))
+        return true;
+    if (!is_first_row)
+        JSONUtils::skipComma(*in);
+    return false;
 }
 
 

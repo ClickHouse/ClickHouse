@@ -49,7 +49,7 @@ private:
     void readNestedData(const String & name, MutableColumns & columns);
 
     virtual void readRowStart() {}
-    virtual bool checkEndOfData();
+    virtual bool checkEndOfData(bool is_first_row);
 
     const FormatSettings format_settings;
 

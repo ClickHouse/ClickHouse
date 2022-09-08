@@ -28,7 +28,7 @@ private:
     void readPrefix() override;
     void readSuffix() override {}
     void readRowStart() override;
-    bool checkEndOfData() override;
+    bool checkEndOfData(bool is_first_row) override;
 
 //    size_t row = 0;
 };

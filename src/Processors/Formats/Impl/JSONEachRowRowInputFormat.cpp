@@ -204,29 +204,9 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    if (checkEndOfData())
-    {
-        allow_new_rows = false;
-        return false;
-    }
-
     bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
-    if (!in->eof())
-    {
-        /// There may be optional ',' (but not before the first row)
-        if (!is_first_row && *in->position() == ',')
-            ++in->position();
-        else if (!data_in_square_brackets && *in->position() == ';')
-        {
-            /// ';' means the end of query (but it cannot be before ']')
-            return allow_new_rows = false;
-        }
-        else if (data_in_square_brackets && *in->position() == ']')
-        {
-            /// ']' means the end of query
-            return allow_new_rows = false;
-        }
-    }
+    if (checkEndOfData(is_first_row))
+        return false;
 
     skipWhitespaceIfAny(*in);
     if (in->eof())
@@ -257,7 +237,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     return true;
 }
 
-bool JSONEachRowRowInputFormat::checkEndOfData()
+bool JSONEachRowRowInputFormat::checkEndOfData(bool is_first_row)
 {
     /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
@@ -265,7 +245,6 @@ bool JSONEachRowRowInputFormat::checkEndOfData()
     /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
-    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
     if (!in->eof())
     {
         /// There may be optional ',' (but not before the first row)
@@ -274,11 +253,13 @@ bool JSONEachRowRowInputFormat::checkEndOfData()
         else if (!data_in_square_brackets && *in->position() == ';')
         {
             /// ';' means the end of query (but it cannot be before ']')
+            allow_new_rows = false;
             return true;
         }
         else if (data_in_square_brackets && *in->position() == ']')
         {
             /// ']' means the end of query
+            allow_new_rows = false;
             return true;
         }
     }
