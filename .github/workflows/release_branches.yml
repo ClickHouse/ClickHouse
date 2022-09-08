@@ -1981,6 +1981,7 @@ jobs:
       - DockerHubPush
       - DockerServerImages
       - BuilderReport
+      - BuilderSpecialReport
       - FunctionalStatelessTestDebug0
       - FunctionalStatelessTestDebug1
       - FunctionalStatelessTestDebug2
