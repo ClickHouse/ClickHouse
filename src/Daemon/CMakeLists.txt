@@ -3,7 +3,6 @@ add_library (daemon
     GraphiteWriter.cpp
     SentryWriter.cpp
 )
-target_compile_definitions(daemon PUBLIC WITH_TEXT_LOG=1)
 
 if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
     target_link_libraries (daemon PUBLIC -Wl,-undefined,dynamic_lookup)
