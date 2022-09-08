@@ -937,6 +937,9 @@ struct AggregateFunctionMaxData : Data
 #endif
 };
 
+/** Implements aggregate function Any (first_value) with default behaviour,
+    result is not nullable.
+  */
 template <typename Data>
 struct AggregateFunctionAnyData : Data
 {
@@ -967,6 +970,8 @@ struct AggregateFunctionAnyData : Data
 #endif
 };
 
+/** Implements aggregate function Any (first_value) with Respect Nulls modifier and nullable result.
+  */
 template <typename Data>
 struct AggregateFunctionAnyDataRespectNulls : AggregateFunctionAnyData<Data>
 {
@@ -979,16 +984,16 @@ struct AggregateFunctionAnyDataRespectNulls : AggregateFunctionAnyData<Data>
 
     bool is_null = true;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
     {
         is_null &= Data::has() || column.isNullAt(row_num);
-        return this->changeFirstTime(column, row_num, arena); 
+        return this->changeFirstTime(column, row_num, arena);
     }
 
-    bool changeIfBetter(const Self & to, Arena * arena)                            
+    bool changeIfBetter(const Self & to, Arena * arena)
     {
         is_null &= Data::has() || to.is_null;
-        return this->changeFirstTime(to, arena); 
+        return this->changeFirstTime(to, arena);
     }
 
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfBetter(column, 0, arena); }
@@ -1008,6 +1013,9 @@ struct AggregateFunctionAnyDataRespectNulls : AggregateFunctionAnyData<Data>
     }
 };
 
+/** Implements aggregate function Any (first_value) with Ignore Nulls modifier,
+    result is not nullable.
+  */
 template <typename Data>
 struct AggregateFunctionAnyDataIgnoreNulls : AggregateFunctionAnyData<Data>
 {
