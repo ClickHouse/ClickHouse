@@ -277,8 +277,9 @@ public:
         DataParts precommitted_parts;
         std::vector<DataPartStorageBuilderPtr> part_builders;
         DataParts locked_parts;
+        bool has_in_memory_parts = false;
 
-        void clear() { precommitted_parts.clear(); }
+        void clear();
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
