@@ -158,6 +158,10 @@ void writeValue(
     {
         WRITE_VECTOR_COLUMN(UInt16, uint16_t, get64)
     }
+    else if (which.isDate32())
+    {
+        WRITE_VECTOR_COLUMN(UInt32, uint32_t, get64)
+    }
     else if (which.isString())
     {
         const auto * string_col = checkAndGetColumn<ColumnString>(*nested_col);

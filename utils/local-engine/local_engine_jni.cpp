@@ -7,6 +7,7 @@
 #include <Operator/BlockCoalesceOperator.h>
 #include <Parser/CHColumnToSparkRow.h>
 #include <Parser/SerializedPlanParser.h>
+#include <Parser/SparkRowToCHColumn.h>
 #include <Shuffle/NativeSplitter.h>
 #include <Shuffle/NativeWriterInMemory.h>
 #include <Shuffle/ShuffleReader.h>
@@ -15,7 +16,6 @@
 #include <Poco/StringTokenizer.h>
 #include <Common/ExceptionUtils.h>
 #include <Common/JNIUtils.h>
-#include <Builder/BroadCastJoinBuilder.h>
 #include "jni_common.h"
 
 bool inside_main = true;
@@ -78,6 +78,16 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
         = GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "hasNext", "()Z");
     local_engine::SourceFromJavaIter::serialized_record_batch_iterator_next
         = GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "next", "()[B");
+
+
+    local_engine::SparkRowToCHColumn::spark_row_interator_class
+        = CreateGlobalClassReference(env, "Lio/glutenproject/execution/SparkRowIterator;");
+    local_engine::SparkRowToCHColumn::spark_row_interator_hasNext
+        = GetMethodID(env, local_engine::SparkRowToCHColumn::spark_row_interator_class, "hasNext", "()Z");
+    local_engine::SparkRowToCHColumn::spark_row_interator_next
+        = GetMethodID(env, local_engine::SparkRowToCHColumn::spark_row_interator_class, "next", "()[B");
+
+
     local_engine::JNIUtils::vm = vm;
     return JNI_VERSION_1_8;
 }
@@ -94,6 +104,7 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
     env->DeleteGlobalRef(split_result_class);
     env->DeleteGlobalRef(local_engine::ShuffleReader::input_stream_class);
     env->DeleteGlobalRef(local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class);
+    env->DeleteGlobalRef(local_engine::SparkRowToCHColumn::spark_row_interator_class);
     env->DeleteGlobalRef(local_engine::NativeSplitter::iterator_class);
     env->DeleteGlobalRef(local_engine::WriteBufferFromJavaOutputStream::output_stream_class);
     if (local_engine::SerializedPlanParser::global_context)
@@ -435,9 +446,9 @@ jstring Java_io_glutenproject_vectorized_CHColumnVector_nativeGetString(
 // native block
 void Java_io_glutenproject_vectorized_CHNativeBlock_nativeClose(JNIEnv * env, jobject obj, jlong block_address)
 {
-//    Block * block = reinterpret_cast<Block *>(block_address);
-//    block->clear();
-//    delete block;
+    //    Block * block = reinterpret_cast<Block *>(block_address);
+    //    block->clear();
+    //    delete block;
 }
 
 jint Java_io_glutenproject_vectorized_CHNativeBlock_nativeNumRows(JNIEnv * env, jobject obj, jlong block_address)
@@ -527,7 +538,8 @@ jlong Java_io_glutenproject_vectorized_CHNativeBlock_nativeTotalBytes(JNIEnv * e
     return block->bytes();
 }
 
-jlong Java_io_glutenproject_vectorized_CHStreamReader_createNativeShuffleReader(JNIEnv * env, jclass clazz, jobject input_stream, jboolean compressed)
+jlong Java_io_glutenproject_vectorized_CHStreamReader_createNativeShuffleReader(
+    JNIEnv * env, jclass clazz, jobject input_stream, jboolean compressed)
 {
     try
     {
@@ -544,16 +556,16 @@ jlong Java_io_glutenproject_vectorized_CHStreamReader_createNativeShuffleReader(
 
 jlong Java_io_glutenproject_vectorized_CHStreamReader_nativeNext(JNIEnv * env, jobject obj, jlong shuffle_reader)
 {
-//    try
-//    {
-        local_engine::ShuffleReader * reader = reinterpret_cast<local_engine::ShuffleReader *>(shuffle_reader);
-        Block * block = reader->read();
-        return reinterpret_cast<jlong>(block);
-//    }
-//    catch (DB::Exception & e)
-//    {
-//        local_engine::ExceptionUtils::handleException(e);
-//    }
+    //    try
+    //    {
+    local_engine::ShuffleReader * reader = reinterpret_cast<local_engine::ShuffleReader *>(shuffle_reader);
+    Block * block = reader->read();
+    return reinterpret_cast<jlong>(block);
+    //    }
+    //    catch (DB::Exception & e)
+    //    {
+    //        local_engine::ExceptionUtils::handleException(e);
+    //    }
 }
 
 
@@ -778,7 +790,7 @@ void Java_io_glutenproject_vectorized_CHShuffleSplitterJniWrapper_close(JNIEnv *
 }
 
 // BlockNativeConverter
-jobject Java_io_glutenproject_vectorized_BlockNativeConverter_converColumarToRow(JNIEnv * env, jobject, jlong block_address)
+jobject Java_io_glutenproject_vectorized_BlockNativeConverter_convertColumnarToRow(JNIEnv * env, jobject, jlong block_address)
 {
     local_engine::CHColumnToSparkRow converter;
     Block * block = reinterpret_cast<Block *>(block_address);
@@ -804,6 +816,37 @@ void Java_io_glutenproject_vectorized_BlockNativeConverter_freeMemory(JNIEnv *, 
 {
     local_engine::CHColumnToSparkRow converter;
     converter.freeMem(reinterpret_cast<uint8_t *>(address), size);
+}
+
+jlong Java_io_glutenproject_vectorized_BlockNativeConverter_convertSparkRowsToCHColumn(
+    JNIEnv * env, jobject, jobject java_iter, jobjectArray names, jobjectArray types, jbooleanArray is_nullables)
+{
+    int column_size = env->GetArrayLength(names);
+
+    vector<string> c_names;
+    vector<string> c_types;
+    vector<bool> c_isnullables;
+    jboolean * p_booleans = env->GetBooleanArrayElements(is_nullables, nullptr);
+    for (int i = 0; i < column_size; i++)
+    {
+        jstring name = (jstring)(env->GetObjectArrayElement(names, i));
+        jstring type = (jstring)(env->GetObjectArrayElement(types, i));
+        c_names.push_back(jstring2string(env, name));
+        c_types.push_back(jstring2string(env, type));
+        c_isnullables.push_back(p_booleans[i] == JNI_TRUE);
+
+        env->DeleteLocalRef(name);
+        env->DeleteLocalRef(type);
+    }
+    env->ReleaseBooleanArrayElements(is_nullables, p_booleans, JNI_ABORT);
+    local_engine::SparkRowToCHColumn converter;
+    return reinterpret_cast<jlong>(converter.convertSparkRowItrToCHColumn(java_iter, c_names, c_types, c_isnullables));
+}
+
+void Java_io_glutenproject_vectorized_BlockNativeConverter_freeBlock(JNIEnv * env, jobject, jlong block_address)
+{
+    local_engine::SparkRowToCHColumn converter;
+    converter.freeBlock(reinterpret_cast<Block *>(block_address));
 }
 
 // BlockNativeWriter
@@ -926,7 +969,7 @@ void Java_io_glutenproject_vectorized_BlockOutputStream_nativeFlush(JNIEnv * /*e
 
 // SimpleExpressionEval
 
-jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_createNativeInstance(JNIEnv * env, jclass , jobject input, jbyteArray plan)
+jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_createNativeInstance(JNIEnv * env, jclass, jobject input, jbyteArray plan)
 {
     try
     {
@@ -950,19 +993,19 @@ jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_createNativeInstance
     }
 }
 
-void Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeClose(JNIEnv * env, jclass , jlong instance)
+void Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeClose(JNIEnv * env, jclass, jlong instance)
 {
     local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(instance);
     delete executor;
 }
 
-jboolean Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeHasNext(JNIEnv * env, jclass , jlong instance)
+jboolean Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeHasNext(JNIEnv * env, jclass, jlong instance)
 {
     local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(instance);
     return executor->hasNext();
 }
 
-jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeNext(JNIEnv * env, jclass , jlong instance)
+jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeNext(JNIEnv * env, jclass, jlong instance)
 {
     local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(instance);
     return reinterpret_cast<jlong>(executor->nextColumnar());

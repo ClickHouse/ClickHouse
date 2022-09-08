@@ -1,28 +1,28 @@
-#include <gtest/gtest.h>
-#include <Parser/SerializedPlanParser.h>
-#include <Builder/SerializedPlanBuilder.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include "Storages/CustomStorageMergeTree.h"
-#include <DataTypes/DataTypesNumber.h>
-#include <iostream>
-#include "testConfig.h"
 #include <fstream>
-#include <Parser/SparkColumnToCHColumn.h>
-#include <Parser/CHColumnToSparkRow.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <iostream>
+#include <Builder/SerializedPlanBuilder.h>
 #include <Columns/ColumnVector.h>
-#include <Parsers/ASTFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/TableJoin.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Formats/Impl/CSVRowOutputFormat.h>
-#include <Storages/CustomStorageMergeTree.h>
-#include <Storages/CustomMergeTreeSink.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Parser/CHColumnToSparkRow.h>
+#include <Parser/SerializedPlanParser.h>
+#include <Parser/SparkRowToCHColumn.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Formats/Impl/CSVRowOutputFormat.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/BatchParquetFileSource.h>
+#include <Storages/CustomMergeTreeSink.h>
+#include <Storages/CustomStorageMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/SelectQueryInfo.h>
+#include <gtest/gtest.h>
+#include "Storages/CustomStorageMergeTree.h"
+#include "testConfig.h"
 //#include <Poco/URI.h>
 
 using namespace dbms;
@@ -54,8 +54,8 @@ TEST(TestSelect, ReadRel)
         std::cout << "fetch batch" << std::endl;
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
         ASSERT_GT(spark_row_info->getNumRows(), 0);
-        local_engine::SparkColumnToCHColumn converter;
-        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        local_engine::SparkRowToCHColumn converter;
+        auto block = converter.convertSparkRowInfoToCHColumn(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
     }
 }
@@ -82,8 +82,8 @@ TEST(TestSelect, ReadDate)
         std::cout << "fetch batch" << std::endl;
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
         ASSERT_GT(spark_row_info->getNumRows(), 0);
-        local_engine::SparkColumnToCHColumn converter;
-        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        local_engine::SparkRowToCHColumn converter;
+        auto block = converter.convertSparkRowInfoToCHColumn(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
     }
 }
@@ -132,8 +132,8 @@ TEST(TestSelect, TestFilter)
         std::cout << "fetch batch" << std::endl;
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
         ASSERT_EQ(spark_row_info->getNumRows(), 1);
-        local_engine::SparkColumnToCHColumn converter;
-        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        local_engine::SparkRowToCHColumn converter;
+        auto block = converter.convertSparkRowInfoToCHColumn(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
     }
 }
@@ -180,8 +180,8 @@ TEST(TestSelect, TestAgg)
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
         ASSERT_EQ(spark_row_info->getNumRows(), 1);
         ASSERT_EQ(spark_row_info->getNumCols(), 1);
-        local_engine::SparkColumnToCHColumn converter;
-        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        local_engine::SparkRowToCHColumn converter;
+        auto block = converter.convertSparkRowInfoToCHColumn(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
         auto reader = SparkRowReader(spark_row_info->getNumCols());
         reader.pointTo(reinterpret_cast<int64_t>(spark_row_info->getBufferAddress() + spark_row_info->getOffsets()[1]), spark_row_info->getLengths()[0]);

@@ -73,7 +73,7 @@ void headBlock(const DB::Block & block, size_t count)
                 date_type->getSerialization(DB::ISerialization::Kind::DEFAULT)->serializeText(*nested_col, row, wb, {});
                 std::cerr << date_string.substr(0, 10) << "\t";
             }
-            else if (which.isDate())
+            else if (which.isDate32())
             {
                 const auto * date_type = DB::checkAndGetDataType<DB::DataTypeDate32>(nested_type.get());
                 String date_string;
