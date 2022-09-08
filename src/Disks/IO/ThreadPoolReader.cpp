@@ -86,7 +86,6 @@ static bool hasBugInPreadV2()
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
     : pool(pool_size, pool_size, queue_size_)
-    , schedule(threadPoolCallbackRunner<Result>(pool, "ThreadPoolRead"))
 {
 }
 
@@ -200,6 +199,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 #endif
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
+
+    auto schedule = threadPoolCallbackRunner<Result>(pool, "ThreadPoolRead");
 
     return schedule([request, fd]() -> Result
     {

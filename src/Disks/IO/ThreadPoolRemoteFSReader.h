@@ -19,7 +19,6 @@ public:
 
 private:
     ThreadPool pool;
-    ThreadPoolCallbackRunner<IAsynchronousReader::Result> schedule;
 };
 
 class RemoteFSFileDescriptor : public IAsynchronousReader::IFileDescriptor
