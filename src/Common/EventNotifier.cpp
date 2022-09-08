@@ -1,6 +1,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 
+#include <boost/functional/hash.hpp>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ EventNotifier & EventNotifier::init()
     if (event_notifier)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "EventNotifier is initialized twice. This is a bug.");
 
-    event_notifier.reset(new EventNotifier());
+    event_notifier = std::make_unique<EventNotifier>();
 
     return *event_notifier;
 }
@@ -34,6 +35,14 @@ void EventNotifier::shutdown()
 {
     if (event_notifier)
       event_notifier.reset();
+}
+
+UInt64 EventNotifier::calculateIdentifier(UInt64 a, UInt64 b)
+{
+    UInt64 result = 0;
+    boost::hash_combine(result, a);
+    boost::hash_combine(result, b);
+    return result;
 }
 
 }
