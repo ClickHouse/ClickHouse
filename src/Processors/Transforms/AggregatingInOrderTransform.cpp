@@ -170,7 +170,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             }
         }
 
-        current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
+        current_memory_usage = std::max<Int64>(getCurrentMemoryUsage() - initial_memory_usage, 0);
 
         /// We finalize last key aggregation state if a new key found.
         if (key_end != rows)
