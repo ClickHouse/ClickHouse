@@ -24,38 +24,25 @@ void JSONCompactRowInputFormat::readPrefix()
 {
     skipBOMIfExists(*in);
     JSONUtils::skipObjectStart(*in);
-    auto names_and_types = JSONUtils::readMetadata(*in);
     if (use_metadata)
     {
+        auto names_and_types = JSONUtils::readMetadataAndValidateHeader(*in, getPort().getHeader());
         Names column_names;
-        auto header = getPort().getHeader();
         for (const auto & [name, type] : names_and_types)
-        {
-            auto header_type = header.getByName(name).type;
-            if (header.has(name) && !type->equals(*header_type))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Type {} of column '{}' from metadata is not the same as type in header {}", type->getName(), name, header_type->getName());
             column_names.push_back(name);
-        }
         column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
     }
     else
     {
+        JSONUtils::readMetadata(*in);
         column_mapping->setupByHeader(getPort().getHeader());
     }
 
     JSONUtils::skipComma(*in);
-    while (!JSONUtils::checkAndSkipObjectEnd(*in))
-    {
-        auto field_name = JSONUtils::readFieldName(*in);
-        if (field_name == "data")
-        {
-            JSONUtils::skipArrayStart(*in);
-            return;
-        }
-    }
+    if (!JSONUtils::skipUntilFieldInObject(*in, "data"))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"data\" with table content");
 
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"data\" with table content");
+    JSONUtils::skipArrayStart(*in);
 }
 
 void JSONCompactRowInputFormat::readSuffix()
