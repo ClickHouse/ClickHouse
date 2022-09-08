@@ -5,6 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include "config.h"
+#include <Common/SSH/Wrappers.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -51,6 +52,7 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const ssh::SshKey & ssh_private_key_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
@@ -160,6 +162,7 @@ private:
     String default_database;
     String user;
     String password;
+    ssh::SshKey ssh_private_key;
     String quota_key;
 
     /// For inter-server authorization
@@ -245,6 +248,7 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+    String packStringForSshSign();
     void sendAddendum();
     void receiveHello();
 

@@ -211,6 +211,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
+    String prepareStringForSshSign(String user);
 
     bool receiveProxyHeader();
     void receiveHello();

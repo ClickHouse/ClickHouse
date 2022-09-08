@@ -1,5 +1,6 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/Quota.h>
+#include <Common/SSH/Wrappers.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
@@ -63,14 +64,17 @@ namespace
         const auto certificates_config = user_config + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates;
+        const auto ssh_keys_config = user_config + ".ssh_keys";
+        bool has_ssh_keys = config.has(ssh_keys_config);
+
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates + has_ssh_keys;
 
         if (num_password_fields > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates' are used to specify authentication info for user " + user_name + ". Must be only one of them.",
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys' are used to specify authentication info for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' or 'ssl_certificates' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' or 'ssl_certificates' or 'ssh_keys' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
@@ -126,6 +130,47 @@ namespace
                     throw Exception("Unknown certificate pattern type: " + key, ErrorCodes::BAD_ARGUMENTS);
             }
             user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
+        }
+        else if (has_ssh_keys)
+        {
+            user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
+
+            Poco::Util::AbstractConfiguration::Keys entries;
+            config.keys(ssh_keys_config, entries);
+            std::vector<ssh::SshKey> keys;
+            for (const String& entry : entries)
+            {
+                const auto conf_pref = ssh_keys_config + "." + entry + ".";
+                if (entry.starts_with("ssh_key"))
+                {
+                    String algorithm, base64_key;
+                    if (config.has(conf_pref + "algorithm"))
+                    {
+                        algorithm = config.getString(conf_pref + "algorithm");
+                    }
+                    else
+                        throw Exception("Expected algorithm field in " + entry + " entry", ErrorCodes::BAD_ARGUMENTS);
+                    if (config.has(conf_pref + "base64_key"))
+                    {
+                        base64_key = config.getString(conf_pref + "base64_key");
+                    }
+                    else
+                        throw Exception("Expected base64_key field in " + entry + " entry", ErrorCodes::BAD_ARGUMENTS);
+
+
+                    try
+                    {
+                        keys.emplace_back(base64_key, ssh::SshKey::typeFromName(algorithm));
+                    }
+                    catch (const std::invalid_argument&)
+                    {
+                        throw Exception("Bad ssh key in entry: " + entry, ErrorCodes::BAD_ARGUMENTS);
+                    }
+                }
+                else
+                    throw Exception("Unknown ssh_key entry pattern type: " + entry, ErrorCodes::BAD_ARGUMENTS);
+            }
+            user->auth_data.setSshKeys(std::move(keys));
         }
 
         auto auth_type = user->auth_data.getType();

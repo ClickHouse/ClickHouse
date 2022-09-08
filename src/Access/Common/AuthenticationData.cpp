@@ -64,6 +64,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info("SSL_CERTIFICATE");
             return info;
         }
+        case AuthenticationType::SSH_KEY:
+        {
+            static const auto info = make_info("SSH_KEY");
+            return info;
+        }
         case AuthenticationType::MAX:
             break;
     }
@@ -119,6 +124,7 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
+        case AuthenticationType::SSH_KEY:
             throw Exception("Cannot specify password for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
         case AuthenticationType::MAX:
@@ -202,6 +208,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
+        case AuthenticationType::SSH_KEY:
             throw Exception("Cannot specify password binary hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
         case AuthenticationType::MAX:

@@ -37,27 +37,48 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 
-    bool password_prompt = false;
-    if (config.getBool("ask-password", false))
+    if (!config.has("ssh-key-file"))
     {
-        if (config.has("password"))
-            throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
-        password_prompt = true;
+        bool password_prompt = false;
+        if (config.getBool("ask-password", false))
+        {
+            if (config.has("password"))
+                throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
+            password_prompt = true;
+        }
+        else
+        {
+            password = config.getString("password", "");
+            /// if the value of --password is omitted, the password will be set implicitly to "\n"
+            if (password == "\n")
+                password_prompt = true;
+        }
+        if (password_prompt)
+        {
+            std::string prompt{"Password for user (" + user + "): "};
+            char buf[1000] = {};
+            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+                password = result;
+        }
     }
     else
     {
-        password = config.getString("password", "");
-        /// if the value of --password is omitted, the password will be set implicitly to "\n"
-        if (password == "\n")
-            password_prompt = true;
-    }
-    if (password_prompt)
-    {
-        std::string prompt{"Password for user (" + user + "): "};
+        std::string filename = config.getString("ssh-key-file");
+        std::string passphrase;
+        std::string prompt{"Enter your private key passphrase (leave empty for no passphrase): "};
         char buf[1000] = {};
         if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
-            password = result;
+            passphrase = result;
+
+        ssh::SshKey key(filename, passphrase);
+        if (key.isPrivate())
+        {
+           ssh_private_key = std::move(key);
+        }
+        else
+            throw Exception("Found public key in file: " + filename + " but expected private", ErrorCodes::BAD_ARGUMENTS);
     }
+
     quota_key = config.getString("quota_key", "");
 
     /// By default compression is disabled if address looks like localhost.
