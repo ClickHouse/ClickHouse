@@ -111,7 +111,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
     if (s_from.ignore(pos, expected))
     {
-        if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
+        if (!ParserTablesInSelectQuery(false).parse(pos, tables, expected))
             return false;
     }
 
