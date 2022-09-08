@@ -127,7 +127,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, getStorageObjects(local_path));
+            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path));
         }
         catch (const Exception & e)
         {
@@ -250,6 +250,13 @@ void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
 {
     auto transaction = createObjectStorageTransaction();
     transaction->removeSharedFile(path, delete_metadata_only);
+    transaction->commit();
+}
+
+void DiskObjectStorage::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    auto transaction = createObjectStorageTransaction();
+    transaction->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
     transaction->commit();
 }
 

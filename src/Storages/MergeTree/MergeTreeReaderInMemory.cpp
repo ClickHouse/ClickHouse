@@ -16,13 +16,14 @@ namespace ErrorCodes
 
 
 MergeTreeReaderInMemory::MergeTreeReaderInMemory(
+    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     DataPartInMemoryPtr data_part_,
     NamesAndTypesList columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_)
     : IMergeTreeReader(
-        data_part_,
+        data_part_info_for_read_,
         columns_,
         metadata_snapshot_,
         nullptr,
@@ -54,7 +55,7 @@ size_t MergeTreeReaderInMemory::readRows(
     if (!continue_reading)
         total_rows_read = 0;
 
-    size_t total_marks = data_part->index_granularity.getMarksCount();
+    size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCount();
     if (from_mark >= total_marks)
         throw Exception("Mark " + toString(from_mark) + " is out of bound. Max mark: "
             + toString(total_marks), ErrorCodes::ARGUMENT_OUT_OF_BOUND);

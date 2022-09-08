@@ -108,7 +108,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 return;
             }
             /// final distinct for sorted stream (sorting inside and among chunks)
-            if (input_stream.sort_mode == DataStream::SortMode::Stream)
+            if (input_stream.sort_scope == DataStream::SortScope::Global)
             {
                 assert(input_stream.has_single_port);
 
