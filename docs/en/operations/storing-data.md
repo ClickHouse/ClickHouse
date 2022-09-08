@@ -114,7 +114,7 @@ Example of disk configuration:
 
 ## Using local cache {#using-local-cache}
 
-It is possible to configure cache over disks in storage configuration starting from version 22.3. For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc. Cache uses `LRU` cache policy.
+It is possible to configure local cache over disks in storage configuration starting from version 22.3. For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc. Cache uses `LRU` cache policy.
 
 Example of configuration for versions later or equal to 22.8:
 
@@ -156,37 +156,38 @@ Example of configuration for versions earlier than 22.8:
 
 Cache **configuration settings**:
 
-- `path` - path to cache. Default: None, this setting is obligatory.
+- `path` - path to the directory with cache. Default: None, this setting is obligatory.
 
-- `max_size` - size of the cache in bytes. Default: None, this setting is obligatory.
+- `max_size` - maximum size of the cache in bytes. When the limit is reached, cache files are evicted according to the cache eviction policy. Default: None, this setting is obligatory.
 
-- `cache_on_write_operations` - turn on `write-through` cache. Default: `false`. The `write-through` cache is enabled if `cache_on_write_operations` is `true` and user setting `enable_filesystem_cache_on_write_operations`.
+- `cache_on_write_operations` - allow to turn on `write-through` cache (caching data on any write operations: `INSERT` queries, background merges). Default: `false`. The `write-through` cache can be disabled per query using setting `enable_filesystem_cache_on_write_operations` (data is cached only if both cache config settings and corresponding query setting are enabled).
 
 - `enable_filesystem_query_cache_limit` - allow to limit the size of cache which is downloaded within each query (depends on user setting `max_query_cache_size`). Default: `false`.
 
-- `enable_cache_hits_threshold` - a number which defines the number of times some data needs to be read before it will be cached. Default: `0`, e.g. the data is cached at the first attempt to read it.
+- `enable_cache_hits_threshold` - a number, which defines how many times some data needs to be read before it will be cached. Default: `0`, e.g. the data is cached at the first attempt to read it.
 
 - `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `true`.
 
-- `max_file_segment_size` - a max size for a single cache file. Default: `104857600` (100 Mb).
+- `max_file_segment_size` - a maximum size of a single cache file. Default: `104857600` (100 Mb).
 
-- `max_elements` a limit for a number of cache files. Default: `1048576`.
+- `max_elements` - a limit for a number of cache files. Default: `1048576`.
 
 Cache **query settings**:
 
-- `enable_filesystem_cache` - allows to disable cache even if storage policy was configured with `cache` disk type. Default: `true`.
+- `enable_filesystem_cache` - allows to disable cache per query even if storage policy was configured with `cache` disk type. Default: `true`.
 
-- `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise cache will not be filled with the query data. Default: `false`.
+- `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise query data will not be written to local cache storage. Default: `false`.
 
-- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if settings `cache_on_write_operations` in cache configuration is turned on.
+- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on.
 
-- `enable_filesystem_cache_log` - turn on writing to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. Default: `false`.
+- `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. Default: `false`.
 
 - `max_query_cache_size` - a limit for the cache size, which can be written to local cache storage. Requires enabled `enable_filesystem_query_cache_limit` in cache configuration. Default: `false`.
 
 - `skip_download_if_exceeds_query_cache` - allows to change the behaviour of setting `max_query_cache_size`. Default: `true`. If this setting is turned on and cache download limit during query was reached, no more cache will be downloaded to cache storage. If this setting is turned off and cache download limit during query was reached, cache will still be written by cost of evicting previously downloaded (within current query) data, e.g. second behaviour allows to preserve `last recentltly used` behaviour while keeping query cache limit.
 
-* Cache configuration settings and cache query settings correspond to the latest ClickHouse version, for earlier versions something might not be supported.
+** Warning **
+Cache configuration settings and cache query settings correspond to the latest ClickHouse version, for earlier versions something might not be supported.
 
 Cache **system tables**:
 
