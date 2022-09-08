@@ -43,6 +43,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
+    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings))
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
     , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
@@ -72,7 +73,12 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
                 header_without_virtual_columns.erase(*it);
         }
     }
+}
 
+
+std::unique_ptr<PrewhereExprInfo> MergeTreeBaseSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings)
+{
+    std::unique_ptr<PrewhereExprInfo> prewhere_actions;
     if (prewhere_info)
     {
         prewhere_actions = std::make_unique<PrewhereExprInfo>();
@@ -100,6 +106,8 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
         prewhere_actions->steps.emplace_back(std::move(prewhere_step));
     }
+
+    return prewhere_actions;
 }
 
 
@@ -262,45 +270,62 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForPart(
 
 void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
-    MergeTreeRangeReader* prev_reader = nullptr;
+    return initializeRangeReadersImpl(
+        current_task.range_reader, current_task.pre_range_readers, prewhere_info, prewhere_actions.get(),
+        reader.get(), current_task.data_part->hasLightweightDelete(), reader_settings,
+        pre_reader_for_step, lightweight_delete_filter_step, non_const_virtual_column_names);
+}
+
+void MergeTreeBaseSelectProcessor::initializeRangeReadersImpl(
+    MergeTreeRangeReader & range_reader, std::deque<MergeTreeRangeReader> & pre_range_readers,
+    PrewhereInfoPtr prewhere_info, const PrewhereExprInfo * prewhere_actions,
+    IMergeTreeReader * reader, bool has_lightweight_delete, const MergeTreeReaderSettings & reader_settings,
+    const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
+    const PrewhereExprStep & lightweight_delete_filter_step, const Names & non_const_virtual_column_names)
+{
+    MergeTreeRangeReader * prev_reader = nullptr;
     bool last_reader = false;
     size_t pre_readers_shift = 0;
 
     /// Add filtering step with lightweight delete mask
-    if (reader_settings.apply_deleted_mask && current_task.data_part->hasLightweightDelete())
+    if (reader_settings.apply_deleted_mask && has_lightweight_delete)
     {
-        current_task.pre_range_readers.push_back(
-            MergeTreeRangeReader(pre_reader_for_step[0].get(), prev_reader, &lightweight_delete_filter_step, last_reader, non_const_virtual_column_names));
-        prev_reader = &current_task.pre_range_readers.back();
+        MergeTreeRangeReader pre_range_reader(pre_reader_for_step[0].get(), prev_reader, &lightweight_delete_filter_step, last_reader, non_const_virtual_column_names);
+        pre_range_readers.push_back(std::move(pre_range_reader));
+        prev_reader = &pre_range_readers.back();
         pre_readers_shift++;
     }
 
     if (prewhere_info)
     {
         if (prewhere_actions->steps.size() + pre_readers_shift != pre_reader_for_step.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "PREWHERE steps count mismatch, actions: {}, readers: {}",
-                            prewhere_actions->steps.size(), pre_reader_for_step.size());
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "PREWHERE steps count mismatch, actions: {}, readers: {}",
+                prewhere_actions->steps.size(), pre_reader_for_step.size());
+        }
 
         for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
         {
             last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
-            current_task.pre_range_readers.push_back(
-                MergeTreeRangeReader(pre_reader_for_step[i + pre_readers_shift].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names));
 
-            prev_reader = &current_task.pre_range_readers.back();
+            MergeTreeRangeReader current_reader(pre_reader_for_step[i + pre_readers_shift].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names);
+
+            pre_range_readers.push_back(std::move(current_reader));
+            prev_reader = &pre_range_readers.back();
         }
     }
 
     if (!last_reader)
     {
-        current_task.range_reader = MergeTreeRangeReader(reader.get(), prev_reader, nullptr, true, non_const_virtual_column_names);
+        range_reader = MergeTreeRangeReader(reader, prev_reader, nullptr, true, non_const_virtual_column_names);
     }
     else
     {
         /// If all columns are read by pre_range_readers than move last pre_range_reader into range_reader
-        current_task.range_reader = std::move(current_task.pre_range_readers.back());
-        current_task.pre_range_readers.pop_back();
+        range_reader = std::move(pre_range_readers.back());
+        pre_range_readers.pop_back();
     }
 }
 
