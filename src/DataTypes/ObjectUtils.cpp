@@ -939,6 +939,7 @@ size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x)
 {
     const size_t size = x.size();
     size_t dimensions = 0;
+
     for (size_t i = 0; i < size; ++i)
     {
         size_t element_dimensions = applyVisitor(*this, x[i]);
