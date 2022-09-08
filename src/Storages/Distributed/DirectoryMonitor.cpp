@@ -141,7 +141,7 @@ namespace
         size_t bytes = 0;
 
         UInt32 shard_num = 0;
-        std::string cluster_name;
+        std::string cluster;
         std::string distributed_table;
         std::string remote_table;
 
@@ -203,7 +203,7 @@ namespace
             if (header_buf.hasPendingData())
             {
               readVarUInt(distributed_header.shard_num, header_buf);
-              readStringBinary(distributed_header.cluster_name, header_buf);
+              readStringBinary(distributed_header.cluster, header_buf);
               readStringBinary(distributed_header.distributed_table, header_buf);
               readStringBinary(distributed_header.remote_table, header_buf);
             }
@@ -638,7 +638,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
             distributed_header.client_info.client_trace_context,
             this->storage.getContext()->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.addAttribute("clickhouse.shard_num", distributed_header.shard_num);
-        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster_name);
+        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster);
         thread_trace_context->root_span.addAttribute("clickhouse.distributed", distributed_header.distributed_table);
         thread_trace_context->root_span.addAttribute("clickhouse.remote", distributed_header.remote_table);
         thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);

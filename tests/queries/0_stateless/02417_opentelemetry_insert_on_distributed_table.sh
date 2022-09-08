@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: no-fasttest, distributed
 
 set -ue
 
@@ -10,9 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-${CLICKHOUSE_CLIENT} -nq "
-SET distributed_ddl_output_mode = 'none';
-
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
 SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
 TRUNCATE TABLE IF EXISTS system.opentelemetry_span_log ON CLUSTER test_cluster_two_shards;
 
@@ -28,16 +26,17 @@ CREATE TABLE default.local_opentelemetry ON CLUSTER test_cluster_two_shards (key
 # Do test with opentelemetry enabled
 #
 ${CLICKHOUSE_CLIENT} -nq "
--- Make sure it's async
-SET insert_distributed_sync=0;
-INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1 VALUES(1),(2);
+INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1, insert_distributed_sync=0 VALUES(1),(2);
 "
 
-# Wait 10s to complete of ASYNC INSERT on distributed table and flush of system.opentelemetry_span_log
-sleep 10
-
 # Check log
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
+-- Make sure INSERT on distributed finishes
+SYSTEM FLUSH DISTRIBUTED default.dist_opentelemetry ON CLUSTER test_cluster_two_shards;
+
+-- Make sure opentelemetry span log flushed
+SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
+
 -- Above INSERT will insert data to two shards respectively, so there will be two spans generated
 SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%writeToLocal%';
 SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%processFile%';
@@ -47,24 +46,17 @@ SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_s
 # INSERT SYNC test
 # Do test with opentelemetry enabled and in SYNC mode
 #
-${CLICKHOUSE_CLIENT} -nq "
-
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
 -- Clear log
-SET distributed_ddl_output_mode = 'none';
 TRUNCATE TABLE IF EXISTS system.opentelemetry_span_log ON CLUSTER test_cluster_two_shards;
 
--- Make sure it's SYNC
-SET insert_distributed_sync=1;
-
--- INSERT test
-INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1 VALUES(1),(2);
+INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1, insert_distributed_sync=1 VALUES(1),(2);
 "
 
-# Wait 10s to flush system.opentelemetry_span_log
-sleep 10
-
 # Check log
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
+SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
+
 -- Above INSERT will insert data to two shards in the same flow, so there should be two spans generated with the same operation name
 SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%runWritingJob%';
 "
@@ -72,8 +64,7 @@ SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_s
 #
 # Cleanup
 #
-${CLICKHOUSE_CLIENT} -nq "
-SET distributed_ddl_output_mode = 'none';
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
 DROP TABLE default.dist_opentelemetry  ON CLUSTER test_cluster_two_shards;
 DROP TABLE default.local_opentelemetry ON CLUSTER test_cluster_two_shards;
 "
