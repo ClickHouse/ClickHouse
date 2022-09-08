@@ -739,7 +739,10 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
     {
         compileCreateAggregateStatesFunctions(module, functions, create_aggregate_states_functions_name);
         compileAddIntoAggregateStatesFunctions(module, functions, add_aggregate_states_functions_name);
-        compileAddIntoAggregateStatesFunctionsSinglePlace(module, functions, add_aggregate_states_functions_name_single_place);
+        /// FIXME: this leads to use-of-uninitialized-value in llvm
+        /// But for now, it is safe, since it is not used by Aggregator anyway
+        (void)compileAddIntoAggregateStatesFunctionsSinglePlace;
+        /// compileAddIntoAggregateStatesFunctionsSinglePlace(module, functions, add_aggregate_states_functions_name_single_place);
         compileMergeAggregatesStates(module, functions, merge_aggregate_states_functions_name);
         compileInsertAggregatesIntoResultColumns(module, functions, insert_aggregate_states_functions_name);
     });
@@ -752,7 +755,7 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
 
     assert(create_aggregate_states_function);
     assert(add_into_aggregate_states_function);
-    assert(add_into_aggregate_states_function_single_place);
+    /// assert(add_into_aggregate_states_function_single_place); /// FIXME
     assert(merge_aggregate_states_function);
     assert(insert_aggregate_states_function);
 
