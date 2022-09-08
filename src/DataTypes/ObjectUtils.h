@@ -39,7 +39,7 @@ Array createEmptyArrayField(size_t num_dimensions);
 DataTypePtr getDataTypeByColumn(const IColumn & column);
 
 /// Converts Object types and columns to Tuples in @columns_list and @block
-/// and checks that types are consistent with types in @extended_storage_columns.
+/// and checks that types are consistent with types in @storage_snapshot.
 void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & storage_snapshot);
 
 /// Checks that each path is not the prefix of any other path.
