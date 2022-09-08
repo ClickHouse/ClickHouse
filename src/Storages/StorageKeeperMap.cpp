@@ -17,6 +17,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -61,6 +62,29 @@ std::string_view getBaseName(const std::string_view path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get basename of path '{}'", path);
 
     return path.substr(last_slash + 1);
+}
+
+std::string formattedAST(const ASTPtr & ast)
+{
+    if (!ast)
+        return "";
+    WriteBufferFromOwnString buf;
+    formatAST(*ast, buf, false, true);
+    return buf.str();
+}
+
+void verifyTableId(const StorageID & table_id)
+{
+    if (!table_id.hasUUID())
+    {
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "KeeperMap cannot be used with '{}' database because it uses {} engine. Please use Atomic or Replicated database",
+            table_id.getDatabaseName(),
+            database->getEngineName());
+    }
+
 }
 
 }
@@ -118,6 +142,8 @@ public:
         size_t current_keys_num = 0;
         size_t new_keys_num = 0;
 
+        // We use keys limit as a soft limit so we ignore some cases when it can be still exceeded
+        // (e.g if parallel insert queries are being run)
         if (keys_limit != 0)
         {
             Coordination::Stat root_stat;
@@ -226,7 +252,6 @@ StorageKeeperMap::StorageKeeperMap(
     bool attach,
     std::string_view primary_key_,
     const std::string & root_path_,
-    bool create_missing_root_path,
     UInt64 keys_limit_)
     : IStorage(table_id)
     , WithContext(context_->getGlobalContext())
@@ -234,17 +259,21 @@ StorageKeeperMap::StorageKeeperMap(
     , primary_key(primary_key_)
     , zookeeper_name(zkutil::extractZooKeeperName(root_path_))
     , keys_limit(keys_limit_)
-    , log(&Poco::Logger::get("StorageKeeperMap"))
+    , log(&Poco::Logger::get(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
 
-    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (!table_id.hasUUID())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap cannot be used with '{}' database because it uses {} engine. Please use Atomic or Replicated database", table_id.getDatabaseName(), database->getEngineName());
+    verifyTableId(table_id);
 
     setInMemoryMetadata(metadata);
+
+    WriteBufferFromOwnString out;
+    out << "KeeperMap metadata format version: 1\n"
+        << "columns: " << metadata.columns.toString()
+        << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
+    metadata_string = out.str();
 
     if (root_path.empty())
         throw Exception("root_path should not be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -252,26 +281,25 @@ StorageKeeperMap::StorageKeeperMap(
         throw Exception("root_path should start with '/'", ErrorCodes::BAD_ARGUMENTS);
 
     auto config_keys_limit = context_->getConfigRef().getUInt64("keeper_map_keys_limit", 0);
-    if (config_keys_limit != 0 && keys_limit > config_keys_limit)
+    if (config_keys_limit != 0 && (keys_limit == 0 || keys_limit > config_keys_limit))
     {
         LOG_WARNING(
             log,
-            "Keys limit for {} defined by argument ({}) is larger than the one defined by 'keeper_map_keys_limit' config ({}). Will use "
+            "Keys limit defined by argument ({}) is larger than the one defined by 'keeper_map_keys_limit' config ({}). Will use "
             "config defined value",
-            getStorageID().getFullTableName(),
             keys_limit,
             config_keys_limit);
         keys_limit = config_keys_limit;
     }
     else if (keys_limit > 0)
     {
-        LOG_INFO(log, "Keys limit for {} will be set to {}", getStorageID().getFullTableName(), keys_limit);
+        LOG_INFO(log, "Keys limit will be set to {}", keys_limit);
     }
 
     auto root_path_fs = fs::path(path_prefix) / std::string_view{root_path}.substr(1);
     root_path = root_path_fs.generic_string();
 
-    auto metadata_path_fs = root_path_fs / "ch_metadata";
+    auto metadata_path_fs = root_path_fs / "metadata";
     metadata_path = metadata_path_fs;
     tables_path = metadata_path_fs / "tables";
 
@@ -291,19 +319,9 @@ StorageKeeperMap::StorageKeeperMap(
 
     if (root_path != "/" && !client->exists(root_path))
     {
-        if (!create_missing_root_path)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Path '{}' doesn't exist. Please create it or set 'create_missing_root_path' to true'",
-                root_path_);
-        }
-        else
-        {
-            LOG_TRACE(log, "Creating root path {}", root_path);
-            client->createAncestors(root_path);
-            client->createIfNotExists(root_path, "");
-        }
+        LOG_TRACE(log, "Creating root path {}", root_path);
+        client->createAncestors(root_path);
+        client->createIfNotExists(root_path, "");
     }
 
     for (size_t i = 0; i < 1000; ++i)
@@ -313,9 +331,14 @@ StorageKeeperMap::StorageKeeperMap(
             LOG_INFO(log, "Removing leftover nodes");
             auto code = client->tryCreate(dropped_lock_path, "", zkutil::CreateMode::Ephemeral);
 
-            if (code == Coordination::Error::ZNONODE ||  code == Coordination::Error::ZNODEEXISTS)
+            if (code == Coordination::Error::ZNONODE)
             {
                 LOG_INFO(log, "Someone else removed leftover nodes");
+            }
+            else if (code == Coordination::Error::ZNODEEXISTS)
+            {
+                LOG_INFO(log, "Someone else is removing leftover nodes");
+                continue;
             }
             else if (code != Coordination::Error::ZOK)
             {
@@ -329,7 +352,29 @@ StorageKeeperMap::StorageKeeperMap(
             }
         }
 
-        client->createIfNotExists(metadata_path, "");
+        std::string stored_metadata_string;
+        auto exists = client->tryGet(metadata_path, stored_metadata_string);
+
+        if (exists)
+        {
+            // this requires same name for columns
+            // maybe we can do a smarter comparison for columns and primary key expression
+            if (stored_metadata_string != metadata_string)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Path {} is already used but the stored table definition doesn't match. Stored metadata: {}",
+                    root_path,
+                    stored_metadata_string);
+        }
+        else
+        {
+            auto code = client->tryCreate(metadata_path, metadata_string, zkutil::CreateMode::Persistent);
+            if (code == Coordination::Error::ZNODEEXISTS)
+                continue;
+            else if (code != Coordination::Error::ZOK)
+                throw Coordination::Exception(code, metadata_path);
+        }
+
         client->createIfNotExists(tables_path, "");
 
         auto code = client->tryCreate(table_path, "", zkutil::CreateMode::Persistent);
@@ -399,7 +444,15 @@ Pipe StorageKeeperMap::read(
 
     auto client = getClient();
     if (all_scan)
-        return process_keys(std::make_shared<std::vector<std::string>>(client->getChildren(root_path)));
+    {
+        auto children = std::make_shared<std::vector<std::string>>(client->getChildren(root_path));
+        std::erase_if(*children, [&](const std::string_view key)
+        {
+            return fullPathForKey(key) == metadata_path;
+        });
+
+        return process_keys(std::move(children));
+    }
 
     return process_keys(std::move(filtered_keys));
 }
@@ -525,29 +578,51 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
     if (table_is_valid.has_value())
         return *table_is_valid;
 
-    try
+    [&]
     {
-        // validate all metadata nodes are present
-        Coordination::Requests requests;
-        requests.push_back(zkutil::makeCheckRequest(table_path, -1));
+        try
+        {
+            auto client = getClient();
 
-        Coordination::Responses responses;
-        auto client = getClient();
-        auto res = client->tryMulti(requests, responses);
-        table_is_valid = res == Coordination::Error::ZOK;
-    }
-    catch (const Coordination::Exception & e)
-    {
-        tryLogCurrentException(log);
+            std::string stored_metadata_string;
+            Coordination::Stat metadata_stat;
+            client->tryGet(metadata_path, stored_metadata_string, &metadata_stat);
 
-        if (!Coordination::isHardwareError(e.code))
-            table_is_valid = false;
-    }
-    catch (const Exception &)
-    {
-        tryLogCurrentException(log);
-        table_is_valid = false;
-    }
+            if (metadata_stat.numChildren == 0)
+            {
+                table_is_valid = false;
+                return;
+            }
+
+            if (metadata_string != stored_metadata_string)
+            {
+                LOG_ERROR(
+                    log,
+                    "Table definition does not match to the one stored in the path {}. Stored defintion: {}",
+                    root_path,
+                    stored_metadata_string);
+                table_is_valid = false;
+                return;
+            }
+
+            // validate all metadata nodes are present
+            Coordination::Requests requests;
+            requests.push_back(zkutil::makeCheckRequest(table_path, -1));
+            requests.push_back(zkutil::makeCheckRequest(dropped_path, -1));
+
+            Coordination::Responses responses;
+            client->tryMulti(requests, responses);
+
+            table_is_valid = responses[0]->error == Coordination::Error::ZOK && responses[1]->error == Coordination::Error::ZNONODE;
+        }
+        catch (const Coordination::Exception & e)
+        {
+            tryLogCurrentException(log);
+
+            if (!Coordination::isHardwareError(e.code))
+                table_is_valid = false;
+        }
+    }();
 
     return table_is_valid;
 }
@@ -585,12 +660,6 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
     for (const auto & key : keys)
     {
         const auto full_path = fullPathForKey(key);
-        if (full_path == metadata_path)
-        {
-            values.emplace_back();
-            continue;
-        }
-
         values.emplace_back(client->asyncTryGet(full_path));
     }
 
@@ -599,9 +668,6 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & value = values[i];
-        if (!value.valid())
-            continue;
-
         if (value.wait_until(wait_until) != std::future_status::ready)
             throw DB::Exception(ErrorCodes::KEEPER_EXCEPTION, "Failed to fetch values: timeout");
 
@@ -634,7 +700,17 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
 Block StorageKeeperMap::getSampleBlock(const Names &) const
 {
     auto metadata = getInMemoryMetadataPtr();
-    return metadata ? metadata->getSampleBlock() : Block();
+    return metadata->getSampleBlock();
+}
+
+void StorageKeeperMap::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    verifyTableId(new_name);
+}
+
+void StorageKeeperMap::rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)
+{
+    checkTableCanBeRenamed(new_table_id);
 }
 
 namespace
@@ -643,24 +719,19 @@ namespace
 StoragePtr create(const StorageFactory::Arguments & args)
 {
     ASTs & engine_args = args.engine_args;
-    if (engine_args.empty() || engine_args.size() > 3)
+    if (engine_args.empty() || engine_args.size() > 2)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage KeeperMap requires 1-3 arguments:\n"
             "root_path: path in the Keeper where the values will be stored (required)\n"
-            "create_missing_root_path: 1 if the root path should be created if it's missing, otherwise throw exception (default: 1)\n",
             "keys_limit: number of keys allowed to be stored, 0 is no limit (default: 0)");
 
     const auto root_path_node = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
     auto root_path = checkAndGetLiteralArgument<std::string>(root_path_node, "root_path");
 
-    bool create_missing_root_path = true;
-    if (engine_args.size() > 1)
-        create_missing_root_path = checkAndGetLiteralArgument<UInt64>(engine_args[1], "create_missing_root_path");
-
     UInt64 keys_limit = 0;
-    if (engine_args.size() > 2)
-        keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[2], "keys_limit");
+    if (engine_args.size() > 1)
+        keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[1], "keys_limit");
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
@@ -675,7 +746,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_shared<StorageKeeperMap>(
-        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], root_path, create_missing_root_path, keys_limit);
+        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], root_path, keys_limit);
 }
 
 }
