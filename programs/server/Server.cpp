@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -1870,6 +1871,114 @@ void Server::createServers(
     http_params->setTimeout(settings.http_receive_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
+
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
+    auto createFactory = [&](const std::string & type) -> Poco::SharedPtr<TCPServerConnectionFactory> //TCPServerConnectionFactory::Ptr
+    {
+        if (type == "tcp")
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
+        if (type == "tls")
+            return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this));
+        if (type == "mysql")
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
+        if (type == "postgres")
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
+        if (type == "http")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"))
+            );
+        if (type == "prometheus")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"))
+            );
+        if (type == "interserver")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"))
+            );
+
+
+        throw Exception("LOGICAL ERROR: Unknown protocol name.", ErrorCodes::LOGICAL_ERROR);
+    };
+
+    for (const auto & protocol : protocols)
+    {
+        std::string prefix = protocol + ".";
+
+        if (config.has(prefix + "host") && config.has(prefix + "port"))
+        {
+
+            std::string port_name = prefix + "port";
+            std::string listen_host = prefix + "host";
+            bool is_secure = false;
+            auto stack = std::make_unique<TCPProtocolStackFactory>(*this);
+            while (true)
+            {
+                if (!config.has(prefix + "type"))
+                {
+                    // misconfigured - lack of "type"
+                    stack.reset();
+                    break;
+                }
+
+                std::string type = config.getString(prefix + "type");
+                if (type == "tls")
+                {
+                    if (is_secure)
+                    {
+                        // misconfigured - only one tls layer is allowed
+                        stack.reset();
+                        break;
+                    }
+                    is_secure = true;
+                }
+
+                TCPServerConnectionFactory::Ptr factory = createFactory(type);
+                if (!factory)
+                {
+                    // misconfigured - protocol "type" doesn't exist
+                    stack.reset();
+                    break;
+                }
+
+                stack->append(factory);
+
+                if (!config.has(prefix + "impl"))
+                {
+                    stack->append(createFactory("tcp"));
+                    break;
+                }
+                prefix = "protocols." + config.getString(prefix + "impl");
+            }
+
+            if (!stack)
+                continue;
+
+            createServer(config, listen_host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, listen_host, port, is_secure);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name.c_str(),
+                    "secure native protocol (tcp_secure): " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        stack.release(),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
+            });
+        }
+    }
+
+
+
+    
     for (const auto & listen_host : listen_hosts)
     {
         /// HTTP
