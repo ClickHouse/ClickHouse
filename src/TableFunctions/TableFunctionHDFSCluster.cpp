@@ -14,6 +14,7 @@
 #include <TableFunctions/TableFunctionHDFS.h>
 #include <TableFunctions/TableFunctionHDFSCluster.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -74,7 +75,10 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }

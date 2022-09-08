@@ -80,7 +80,7 @@ enum class Error : int32_t
     ZUNIMPLEMENTED = -6,        /// Operation is unimplemented
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
-    ZINVALIDSTATE = -9,         /// Invliad zhandle state
+    ZINVALIDSTATE = -9,         /// Invalid zhandle state
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than
@@ -428,6 +428,12 @@ public:
     Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
+    template <typename... Args>
+    Exception(const Error code_, fmt::format_string<Args...> fmt, Args &&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code_)
+    {
+    }
+
     const char * name() const noexcept override { return "Coordination::Exception"; }
     const char * className() const noexcept override { return "Coordination::Exception"; }
     Exception * clone() const override { return new Exception(*this); }
@@ -439,7 +445,7 @@ public:
 /** Usage scenario:
   * - create an object and issue commands;
   * - you provide callbacks for your commands; callbacks are invoked in internal thread and must be cheap:
-  *   for example, just signal a condvar / fulfull a promise.
+  *   for example, just signal a condvar / fulfill a promise.
   * - you also may provide callbacks for watches; they are also invoked in internal thread and must be cheap.
   * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
   *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
