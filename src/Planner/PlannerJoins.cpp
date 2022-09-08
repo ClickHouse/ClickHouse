@@ -388,9 +388,12 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                         right_key_node->result_type->getName());
                 }
 
+                auto cast_type_name = common_type->getName();
+                Field cast_type_constant_value(cast_type_name);
+
                 ColumnWithTypeAndName cast_column;
-                cast_column.name = "__constant_" + Field(common_type->getName()).dump();
-                cast_column.column = DataTypeString().createColumnConst(0, common_type->getName());
+                cast_column.name = calculateConstantActionNodeName(cast_type_constant_value);
+                cast_column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
                 cast_column.type = std::make_shared<DataTypeString>();
 
                 const ActionsDAG::Node * cast_type_constant_node = nullptr;

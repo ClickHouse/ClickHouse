@@ -21,9 +21,10 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
   * into actions dag.
   *
   * Preconditions:
-  * 1. Column name to identifier map in planner context must be already initialized.
-  * Identifiers in this map are used as action dag node names for column query tree nodes.
-  * 2. Sets for IN functions are already collected in global context.
+  * 1. Table expression data for table expression nodes is collected in planner context.
+  * For column node, that has column table expression source, identifier for column name in table expression data
+  * is used as action dag node name.
+  * 2. Sets for IN functions are already collected in planner global context.
   *
   * During actions build, there is special handling for following functions:
   * 1. Aggregate functions are added in actions dag as INPUT nodes. Aggregate functions arguments are not added.
@@ -58,5 +59,10 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
   */
 String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context);
 
+/// Calculate action node name for constant
+String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
+
+/// Calculate action node name for constant, data type will be derived from constant literal value
+String calculateConstantActionNodeName(const Field & constant_literal);
 
 }
