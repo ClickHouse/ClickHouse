@@ -1046,12 +1046,12 @@ void MergeTreeData::loadDataPartsFromDisk(
                 throw;
 
             broken = true;
-            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while loading part {} on path {}", part->name, part_path));
+            tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part->name, part_path));
         }
         catch (...)
         {
             broken = true;
-            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while loading part {} on path {}", part->name, part_path));
+            tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part->name, part_path));
         }
 
         /// Ignore broken parts that can appear as a result of hard server restart.
@@ -1065,7 +1065,7 @@ void MergeTreeData::loadDataPartsFromDisk(
             }
             catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while calculating part size {} on path {}", part->name, part_path));
+                tryLogCurrentException(log, fmt::format("while calculating part size {} on path {}", part->name, part_path));
             }
 
             std::string part_size_str = "failed to calculate size";
