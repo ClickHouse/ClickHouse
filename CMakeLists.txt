@@ -232,7 +232,7 @@ endif()
 # (empty stack frames and no local variables)."
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
-    OFF) # FIXME
+    ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     set(USE_DEBUG_HELPERS ON)
