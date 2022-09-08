@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
@@ -48,9 +49,10 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const ValueSizeMap & /* avg_value_size_hints */,
     const ReadBufferFromFileBase::ProfileCallback & /* profile_callback */) const
 {
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
     return std::make_unique<MergeTreeReaderInMemory>(
-        ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
+        read_info, ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
