@@ -3641,8 +3641,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
         {
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
-            LOG_TRACE(log, "Got {} replicas confirmed quorum {}, going to remove node",
-                      quorum_entry.replicas.size(), quorum_status_path);
+            LOG_TRACE(log, "Got {} (of {}) replicas confirmed quorum {}, going to remove node",
+                      quorum_entry.replicas.size(), quorum_entry.required_number_of_replicas, quorum_status_path);
 
             Coordination::Requests ops;
             Coordination::Responses responses;
@@ -3690,8 +3690,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         }
         else
         {
-            LOG_TRACE(log, "Quorum {} still not satisfied (have only {} replicas), updating node",
-                      quorum_status_path, quorum_entry.replicas.size());
+            LOG_TRACE(log, "Quorum {} still not satisfied (have only {} of {} replicas), updating node",
+                      quorum_status_path, quorum_entry.replicas.size(), quorum_entry.required_number_of_replicas);
             /// We update the node, registering there one more replica.
             auto code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
 
@@ -4305,12 +4305,12 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
             auto added_parts = part_with_quorum.added_parts;
 
             for (const auto & added_part : added_parts)
+            {
                 if (!getActiveContainingPart(added_part.second))
-                    throw Exception(
-                        "Replica doesn't have part " + added_part.second
-                            + " which was successfully written to quorum of other replicas."
-                              " Send query to another replica or disable 'select_sequential_consistency' setting.",
-                        ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+                    throw Exception(ErrorCodes::REPLICA_IS_NOT_IN_QUORUM,
+                        "Replica doesn't have part '{}' which was successfully written to quorum of other replicas. "
+                        "Send query to another replica or disable 'select_sequential_consistency' setting", added_part.second);
+            }
 
             for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
                 max_added_blocks[max_block.first] = max_block.second;
@@ -4431,13 +4431,13 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
-    // TODO: insert_quorum = 'auto' would be supported in https://github.com/ClickHouse/ClickHouse/pull/39970, now it's same as 0.
     return std::make_shared<ReplicatedMergeTreeSink>(
         *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
         deduplicate,
+        query_settings.insert_quorum.is_auto,
         local_context);
 }
 
@@ -5126,7 +5126,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
+    ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
         /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
@@ -8417,7 +8417,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, getContext(), /*is_attach*/true);
+    auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
     for (auto part : parts)
         sink->writeExistingPart(part);
 }
