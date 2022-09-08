@@ -29,7 +29,6 @@ def generate_cluster_def():
 
 
 main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
-
 user_configs = ["configs/allow_database_types.xml"]
 
 nodes = []
@@ -184,6 +183,7 @@ def test_concurrent_backups_on_different_nodes():
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     if db_engine == "Replicated":
         db_engine = "Replicated('/clickhouse/path/','{shard}','{replica}')"
+
     if table_engine.endswith("MergeTree"):
         table_engine += " ORDER BY tuple()"
 
@@ -219,6 +219,12 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
                 f"RENAME TABLE {table_name1} TO {table_name2}"
             )
 
+    def truncate_table():
+        while time.time() < end_time:
+            table_name = f"mydb.tbl{randint(1, num_nodes)}"
+            node = nodes[randint(0, num_nodes - 1)]
+            node.query(f"TRUNCATE TABLE IF EXISTS {table_name} NO DELAY")
+
     def make_backup():
         ids = []
         while time.time() < end_time:
@@ -240,6 +246,7 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
         futures.append(executor.submit(create_table))
         futures.append(executor.submit(drop_table))
         futures.append(executor.submit(rename_table))
+        futures.append(executor.submit(truncate_table))
         for future in futures:
             future.result()
         ids = ids_future.result()

@@ -8264,7 +8264,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto backup_entries = backupParts(data_parts, "");
+    auto backup_entries = backupParts(data_parts, "", local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();
