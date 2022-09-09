@@ -1003,7 +1003,7 @@ the types from input data will be compared with the types of the corresponding c
 
 ## JSONObjectEachRow {#jsonobjecteachrow}
 
-In this format, all data is represented as a single JSON Object, each row is represented as separate field of this object similar to JSONEachRowFormat.
+In this format, all data is represented as a single JSON Object, each row is represented as separate field of this object similar to JSONEachRow format.
 
 Example:
 
@@ -1146,7 +1146,7 @@ SELECT * FROM json_each_row_nested
 - [output_format_json_escape_forward_slashes](../operations/settings/settings.md#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.
 - [output_format_json_named_tuples_as_objects](../operations/settings/settings.md#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `false`.
 - [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) - output a JSON array of all rows in JSONEachRow(Compact) format. Default value - `false`.
-- [output_format_json_validate_utf8](../operations/settings/settings.md#output_format_json_validate_utf8) - enables validation of UTF-8 sequences in JSON output formats (note that it desn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8). Default value - `false`.
+- [output_format_json_validate_utf8](../operations/settings/settings.md#output_format_json_validate_utf8) - enables validation of UTF-8 sequences in JSON output formats (note that it doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8). Default value - `false`.
 
 ## Native {#native}
 
