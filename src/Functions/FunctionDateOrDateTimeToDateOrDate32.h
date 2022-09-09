@@ -56,7 +56,7 @@ public:
             return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDate32())
             if (enable_date32_results)
-                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform>::execute(arguments, result_type, input_rows_count);
+                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, true>::execute(arguments, result_type, input_rows_count);
             else
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
@@ -67,7 +67,7 @@ public:
 
             const TransformDateTime64<Transform> transformer(scale);
             if (enable_date32_results)
-                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
+                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), true>::execute(arguments, result_type, input_rows_count, transformer);
             else
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
