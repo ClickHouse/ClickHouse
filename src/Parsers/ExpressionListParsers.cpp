@@ -2158,6 +2158,12 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
         && ParserExpressionImpl<IntervalLayer>().parse(pos, node, expected);
 }
 
+bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserToken(TokenType::OpeningSquareBracket).ignore(pos, expected)
+        && ParserExpressionImpl<ArrayLayer>().parse(pos, node, expected);
+}
+
 template<class Type>
 std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type>::operators_table({
         {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
@@ -2362,7 +2368,7 @@ typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::try
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
         ParseTimestampOperatorExpression(pos, tmp, expected) ||
         tuple_literal_parser.parse(pos, tmp, expected) ||
-        (layers.size() == 1 && array_literal_parser.parse(pos, tmp, expected)) ||
+        array_literal_parser.parse(pos, tmp, expected) ||
         number_parser.parse(pos, tmp, expected) ||
         literal_parser.parse(pos, tmp, expected) ||
         asterisk_parser.parse(pos, tmp, expected) ||

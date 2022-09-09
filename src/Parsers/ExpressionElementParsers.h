@@ -9,26 +9,6 @@ namespace DB
 {
 
 
-class ParserArray : public IParserBase
-{
-protected:
-    const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** If in parenthesis an expression from one element - returns this element in `node`;
-  *  or if there is a SELECT subquery in parenthesis, then this subquery returned in `node`;
-  *  otherwise returns `tuple` function from the contents of brackets.
-  */
-class ParserParenthesisExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "parenthesized expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
 /** The SELECT subquery is in parenthesis.
   */
 class ParserSubquery : public IParserBase
