@@ -124,7 +124,7 @@ public:
 
     virtual ~IMetadataStorage() = default;
 
-    /// ==== More specefic methods. Previous were almost general purpose. ====
+    /// ==== More specific methods. Previous were almost general purpose. ====
 
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
