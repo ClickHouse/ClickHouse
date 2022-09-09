@@ -7336,6 +7336,21 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
 }
 
 
+bool StorageReplicatedMergeTree::canUseZeroCopyReplication() const
+{
+    auto settings_ptr = getSettings();
+    if (!settings_ptr->allow_remote_fs_zero_copy_replication)
+        return false;
+
+    auto disks = getStoragePolicy()->getDisks();
+    for (const auto & disk : disks)
+    {
+        if (disk->supportZeroCopyReplication())
+            return true;
+    }
+    return false;
+}
+
 void StorageReplicatedMergeTree::checkBrokenDisks()
 {
     auto disks = getStoragePolicy()->getDisks();
