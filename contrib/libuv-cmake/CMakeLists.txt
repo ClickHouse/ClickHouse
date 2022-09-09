@@ -1,4 +1,3 @@
-# once fixed, please remove similar places in CMakeLists of libuv users (search "ch_contrib::uv")
 if (OS_DARWIN AND COMPILER_GCC)
     message (WARNING "libuv cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082")
     return()
@@ -15,7 +14,6 @@ set(uv_sources
     src/inet.c
     src/random.c
     src/strscpy.c
-    src/strtok.c
     src/threadpool.c
     src/timer.c
     src/uv-common.c
@@ -76,13 +74,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
   list(APPEND uv_libraries rt)
   list(APPEND uv_sources
-       src/unix/epoll.c
        src/unix/linux-core.c
        src/unix/linux-inotify.c
        src/unix/linux-syscalls.c
        src/unix/procfs-exepath.c
        src/unix/random-getrandom.c
-       src/unix/random-sysctl-linux.c)
+       src/unix/random-sysctl-linux.c
+       src/unix/sysinfo-loadavg.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
@@ -112,7 +110,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OS/390")
        src/unix/pthread-fixes.c
        src/unix/pthread-barrier.c
        src/unix/os390.c
-       src/unix/os390-proctitle.c
        src/unix/os390-syscalls.c)
 endif()
 

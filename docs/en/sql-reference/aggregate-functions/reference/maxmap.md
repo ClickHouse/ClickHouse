@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/maxmap
-sidebar_position: 143
+toc_priority: 143
 ---
 
-# maxMap
+# maxMap {#agg_functions-maxmap}
 
 Syntax: `maxMap(key, value)` or `maxMap(Tuple(key, value))`
 

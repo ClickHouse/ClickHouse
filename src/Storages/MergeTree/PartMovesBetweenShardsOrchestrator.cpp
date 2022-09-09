@@ -386,7 +386,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 else
                 {
                     // Need to remove ATTACH_PART from the queue or drop data.
-                    // Similar to `StorageReplicatedMergeTree::dropPart` without extra
+                    // Similar to `StorageReplicatedMergeTree::dropPart` w/o extra
                     // checks as we know drop shall be possible.
                     ReplicatedMergeTreeLogEntryData attach_rollback_log_entry;
 

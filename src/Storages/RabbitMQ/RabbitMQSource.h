@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class RabbitMQSource : public ISource
+class RabbitMQSource : public SourceWithProgress
 {
 
 public:
@@ -32,9 +32,6 @@ public:
     void updateChannel();
     bool sendAck();
 
-
-    void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
-
 private:
     StorageRabbitMQ & storage;
     StorageSnapshotPtr storage_snapshot;
@@ -48,11 +45,6 @@ private:
     const Block virtual_header;
 
     ConsumerBufferPtr buffer;
-
-    Poco::Timespan max_execution_time = 0;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
-
-    bool checkTimeLimit() const;
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,

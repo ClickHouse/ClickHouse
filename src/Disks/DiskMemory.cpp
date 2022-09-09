@@ -7,8 +7,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
-#include <Disks/ObjectStorages/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 
 namespace DB
 {
@@ -22,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-class DiskMemoryDirectoryIterator final : public IDirectoryIterator
+class DiskMemoryDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
     explicit DiskMemoryDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
@@ -264,7 +262,7 @@ void DiskMemory::moveDirectory(const String & /*from_path*/, const String & /*to
     throw Exception("Method moveDirectory is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-DirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path) const
+DiskDirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
 {
     std::lock_guard lock(mutex);
 
@@ -328,7 +326,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path
     return std::make_unique<ReadIndirectBuffer>(path, iter->second.data);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
+std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     std::lock_guard lock(mutex);
 
@@ -411,7 +409,7 @@ void DiskMemory::removeRecursive(const String & path)
     }
 }
 
-void DiskMemory::listFiles(const String & path, std::vector<String> & file_names) const
+void DiskMemory::listFiles(const String & path, std::vector<String> & file_names)
 {
     std::lock_guard lock(mutex);
 
@@ -443,13 +441,6 @@ void DiskMemory::truncateFile(const String & path, size_t size)
         throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
 
     file_it->second.data.resize(size);
-}
-
-MetadataStoragePtr DiskMemory::getMetadataStorage()
-{
-    auto object_storage = std::make_shared<LocalObjectStorage>();
-    return std::make_shared<FakeMetadataStorageFromDisk>(
-        std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
 }
 
 

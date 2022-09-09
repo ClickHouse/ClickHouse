@@ -6,4 +6,4 @@ GIT_ROOT=$(git rev-parse --show-cdup)
 GIT_ROOT=${GIT_ROOT:-.}
 act --list --directory="$GIT_ROOT" 1>/dev/null 2>&1 || act --list --directory="$GIT_ROOT" 2>&1
 
-actionlint -ignore 'reusable workflow call.+' || :
+actionlint || :

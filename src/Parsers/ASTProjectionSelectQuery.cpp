@@ -100,7 +100,7 @@ void ASTProjectionSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.contains(expr))
+    else if (positions.count(expr))
     {
         size_t pos = positions[expr];
         children.erase(children.begin() + pos);
@@ -113,7 +113,7 @@ void ASTProjectionSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 
 ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
 {
-    if (!positions.contains(expr))
+    if (!positions.count(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
 }

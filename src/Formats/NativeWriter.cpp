@@ -35,7 +35,7 @@ NativeWriter::NativeWriter(
     {
         ostr_concrete = typeid_cast<CompressedWriteBuffer *>(&ostr);
         if (!ostr_concrete)
-            throw Exception("When need to write index for NativeWriter, ostr must be CompressedWriteBuffer.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("When need to write index for NativeBlockOutputStream, ostr must be CompressedWriteBuffer.", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -103,7 +103,7 @@ void NativeWriter::write(const Block & block)
             mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
         }
 
-        auto column = block.safeGetByPosition(i);
+        ColumnWithTypeAndName column = block.safeGetByPosition(i);
 
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
@@ -145,7 +145,7 @@ void NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            auto info = column.type->getSerializationInfo(*column.column);
+            auto info = column.column->getSerializationInfo();
             serialization = column.type->getSerialization(*info);
 
             bool has_custom = info->hasCustomSerialization();

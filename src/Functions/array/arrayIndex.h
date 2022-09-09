@@ -718,7 +718,9 @@ private:
     /**
      * Catches arguments of type LowCardinality(T) (left) and U (right).
      *
-     * The perftests showed that the amount of action needed to convert the non-constant right argument to the index column
+     * The perftests
+     * https://clickhouse-test-reports.s3.yandex.net/12550/2d27fa0fa8c198a82bf1fe3625050ccf56695976/integration_tests_(release).html
+     * showed that the amount of action needed to convert the non-constant right argument to the index column
      * (similar to the left one's) is significantly higher than converting the array itself to an ordinary column.
      *
      * So, in terms of performance it's more optimal to fall back to default implementation and catch only constant

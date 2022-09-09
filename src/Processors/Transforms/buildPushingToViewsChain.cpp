@@ -13,15 +13,14 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -189,8 +188,8 @@ Chain buildPushingToViewsChain(
     auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
                                          : metadata_snapshot->getSampleBlock();
 
-    /** TODO This is a very important line. At any insertion into the table one of chains should own lock.
-      * Although now any insertion into the table is done via PushingToViews chain,
+    /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
+      * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
     result_chain.addTableLock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
@@ -238,30 +237,29 @@ Chain buildPushingToViewsChain(
         ASTPtr query;
         Chain out;
 
-        ThreadGroupStatusPtr running_group;
-        if (current_thread && current_thread->getThreadGroup())
-            running_group = current_thread->getThreadGroup();
-        else
-            running_group = std::make_shared<ThreadGroupStatus>();
+        /// If the materialized view is executed outside of a query, for example as a result of SYSTEM FLUSH LOGS or
+        /// SYSTEM FLUSH DISTRIBUTED ..., we can't attach to any thread group and we won't log, so there is no point on collecting metrics
+        std::unique_ptr<ThreadStatus> view_thread_status_ptr = nullptr;
 
-        /// We are creating a ThreadStatus per view to store its metrics individually
-        /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
-        /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
-        /// and switch back to the original thread_status.
-        auto * original_thread = current_thread;
-        SCOPE_EXIT({ current_thread = original_thread; });
-
-        std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
-        /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
-        /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
-        /// N times more interruptions
-        view_thread_status_ptr->disableProfiling();
-        /// view_thread_status_ptr will be moved later (on and on), so need to capture raw pointer.
-        view_thread_status_ptr->deleter = [thread_status = view_thread_status_ptr.get(), running_group]
+        ThreadGroupStatusPtr running_group = current_thread && current_thread->getThreadGroup()
+            ? current_thread->getThreadGroup()
+            : MainThreadStatus::getInstance().getThreadGroup();
+        if (running_group)
         {
-            thread_status->detachQuery();
-        };
-        view_thread_status_ptr->attachQuery(running_group);
+            /// We are creating a ThreadStatus per view to store its metrics individually
+            /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
+            /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
+            /// and switch back to the original thread_status.
+            auto * original_thread = current_thread;
+            SCOPE_EXIT({ current_thread = original_thread; });
+
+            view_thread_status_ptr = std::make_unique<ThreadStatus>();
+            /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
+            /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
+            /// N times more interruptions
+            view_thread_status_ptr->disableProfiling();
+            view_thread_status_ptr->attachQuery(running_group);
+        }
 
         auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
         runtime_stats->target_name = database_table.getFullTableName();
@@ -316,7 +314,7 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
         }
         else
             out = buildPushingToViewsChain(
@@ -394,7 +392,7 @@ Chain buildPushingToViewsChain(
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
-        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
+        auto sink = std::make_shared<PushingToWindowViewSink>(live_view_header, *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
@@ -411,14 +409,6 @@ Chain buildPushingToViewsChain(
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
 
-    if (result_chain.getOutputHeader().columns() != 0)
-    {
-        /// Convert result header to empty block.
-        auto dag = ActionsDAG::makeConvertingActions(result_chain.getOutputHeader().getColumnsWithTypeAndName(), {}, ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(std::move(dag));
-        result_chain.addSink(std::make_shared<ConvertingTransform>(result_chain.getOutputHeader(), std::move(actions)));
-    }
-
     return result_chain;
 }
 
@@ -430,13 +420,25 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     ///  but it will contain single block (that is INSERT-ed into main table).
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
-    local_context->addViewSource(std::make_shared<StorageValues>(
+    local_context->addViewSource(StorageValues::create(
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
         std::move(block),
         views_data.source_storage->getVirtuals()));
 
+    /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+    ///
+    /// - We copy Context inside InterpreterSelectQuery to support
+    ///   modification of context (Settings) for subqueries
+    /// - InterpreterSelectQuery lives shorter than query pipeline.
+    ///   It's used just to build the query pipeline and no longer needed
+    /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+    ///   **can** take a reference to Context from InterpreterSelectQuery
+    ///   (the problem raises only when function uses context from the
+    ///    execute*() method, like FunctionDictGet do)
+    /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
     InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
+
     auto pipeline = select.buildQueryPipeline();
     pipeline.resize(1);
     pipeline.dropTotalsAndExtremes();

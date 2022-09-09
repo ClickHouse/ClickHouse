@@ -35,7 +35,7 @@ using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSub
 struct NameCutToFirstSignificantSubdomainWithWWW { static constexpr auto name = "cutToFirstSignificantSubdomainWithWWW"; };
 using FunctionCutToFirstSignificantSubdomainWithWWW = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain<false>>, NameCutToFirstSignificantSubdomainWithWWW>;
 
-REGISTER_FUNCTION(CutToFirstSignificantSubdomain)
+void registerFunctionCutToFirstSignificantSubdomain(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutToFirstSignificantSubdomain>();
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>();

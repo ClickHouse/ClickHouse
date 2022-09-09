@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -112,7 +112,7 @@ template <>
 const char * FunctionPolygonsWithin<SphericalPoint>::name = "polygonsWithinSpherical";
 
 
-REGISTER_FUNCTION(PolygonsWithin)
+void registerFunctionPolygonsWithin(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsWithin<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsWithin<SphericalPoint>>();

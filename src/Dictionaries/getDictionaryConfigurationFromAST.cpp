@@ -244,7 +244,7 @@ void buildAttributeExpressionIfNeeded(
     root->appendChild(expression_element);
 }
 
-/** Transforms single dictionary attribute to configuration
+/** Transofrms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>
@@ -288,14 +288,6 @@ void buildSingleAttribute(
         AutoPtr<Text> hierarchical(doc->createTextNode("true"));
         hierarchical_element->appendChild(hierarchical);
         attribute_element->appendChild(hierarchical_element);
-    }
-
-    if (dict_attr->bidirectional)
-    {
-        AutoPtr<Element> bidirectional_element(doc->createElement("bidirectional"));
-        AutoPtr<Text> bidirectional(doc->createTextNode("true"));
-        bidirectional_element->appendChild(bidirectional);
-        attribute_element->appendChild(bidirectional_element);
     }
 
     if (dict_attr->injective)

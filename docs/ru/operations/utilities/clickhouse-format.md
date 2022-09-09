@@ -1,7 +1,6 @@
 ---
-slug: /ru/operations/utilities/clickhouse-format
-sidebar_position: 65
-sidebar_label: clickhouse-format
+toc_priority: 65
+toc_title: clickhouse-format
 ---
 
 # clickhouse-format {#clickhouse-format}

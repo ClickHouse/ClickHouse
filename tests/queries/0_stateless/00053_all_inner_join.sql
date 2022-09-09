@@ -6,5 +6,4 @@ ALL INNER JOIN
 (
     SELECT intDiv(number, 2) AS k, number AS joined FROM system.numbers LIMIT 10
 ) AS b
-USING k
-ORDER BY k, joined;
+USING k;

@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/dictionaries/internal-dicts
-sidebar_position: 39
-sidebar_label: "Встроенные словари"
+toc_priority: 39
+toc_title: "Встроенные словари"
 ---
 
 # Встроенные словари {#internal_dicts}

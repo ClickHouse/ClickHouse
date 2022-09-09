@@ -38,5 +38,3 @@ Response	0	Error	/test/01158/default/rmt/blocks/all_6308706741995381342_24957917
 Response	0	Error	/test/01158/default/rmt/temp/abandonable_lock-	1	1	\N	0	3	ZRUNTIMEINCONSISTENCY	\N	\N		0	0	0	0
 Request	0	Get	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	\N	0	0	\N	\N	\N		0	0	0	0
 Response	0	Get	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	\N	0	0	ZOK	\N	\N		0	0	9	0
-duration_ms
-1

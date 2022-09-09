@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
  *  Keeps stream alive by outputting blocks with no rows
  *  based on period specified by the heartbeat interval.
  */
-class LiveViewSource : public ISource
+class LiveViewSource : public SourceWithProgress
 {
 
 using NonBlockingResult = std::pair<Block, bool>;
@@ -23,7 +23,7 @@ public:
         std::shared_ptr<bool> active_ptr_,
         const bool has_limit_, const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : ISource(storage_->getHeader())
+        : SourceWithProgress(storage_->getHeader())
         , storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
           active_ptr(active_ptr_),

@@ -40,7 +40,7 @@ def started_cluster():
             node.query(
                 """
             CREATE TABLE sometable(date Date, id UInt32, value Int32)
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/sometable', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/sometable', '{replica}', date, id, 8192);
                 """.format(
                     replica=node.name
                 ),
@@ -51,7 +51,7 @@ def started_cluster():
             node.query(
                 """
             CREATE TABLE someothertable(date Date, id UInt32, value Int32)
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/someothertable', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/someothertable', '{replica}', date, id, 8192);
                 """.format(
                     replica=node.name
                 ),
