@@ -123,7 +123,18 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
         }
     }
     else
-        converted_value = value.value / DecimalUtils::scaleMultiplier<MaxNativeType>(scale_from - scale_to);
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_from - scale_to);
+        if (value.value % multiplier != 0)
+        {
+            if constexpr (throw_exception)
+                throw Exception(std::string(ToDataType::family_name) + " convert overflow",
+                                ErrorCodes::DECIMAL_OVERFLOW);
+            else
+                return ReturnType(false);
+        }
+        converted_value = value.value / multiplier;
+    }
 
     if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType))
     {
