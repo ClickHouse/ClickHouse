@@ -18,6 +18,7 @@ For example, the following query deletes all rows from the `hits` table where th
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
+Lightweight deletes are asynchronous by default. Set `mutations_sync` equal to 1 to wait for one replica to process the statement, and set `mutations_sync` to 2 to wait for all replicas.
 
 :::note
 This feature is experimental and requires you to set `allow_experimental_lightweight_delete` to true:
@@ -30,7 +31,7 @@ SET allow_experimental_lightweight_delete = true;
 
 An [alternative way to delete rows](./alter/delete.md) in ClickHouse is `ALTER TABLE ... DELETE`, which might be more efficient if you do bulk deletes only occasionally and don't need the operation to be applied instantly. In most use cases the new lightweight `DELETE FROM` behavior will be considerably faster.
 
-:::info
-Lightweight deletes are asynchronous by default. Set `mutations_sync` equal to 1 to wait for one replica to process the statement, and set `mutations_sync` to 2 to wait for all replicas.
+:::warn
+Even though deletes are becoming more lightweight in ClickHouse, they should still not be used as aggressively as on OLTP system. Ligthweight deletes are currently efficient for wide parts, but for compact parts they can be a heavyweight operation, and it may be better to use `ALTER TABLE` for some scenarios.
 :::
 
