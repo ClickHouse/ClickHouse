@@ -4,7 +4,6 @@
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
