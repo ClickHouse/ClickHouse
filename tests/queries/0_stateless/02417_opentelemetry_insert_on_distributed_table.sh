@@ -11,60 +11,104 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
-SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
-TRUNCATE TABLE IF EXISTS system.opentelemetry_span_log ON CLUSTER test_cluster_two_shards;
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 
-DROP TABLE IF EXISTS default.dist_opentelemetry ON CLUSTER test_cluster_two_shards;
-DROP TABLE IF EXISTS default.local_opentelemetry ON CLUSTER test_cluster_two_shards;
-
-CREATE TABLE default.dist_opentelemetry  ON CLUSTER test_cluster_two_shards (key UInt64) Engine=Distributed('test_cluster_two_shards', default, local_opentelemetry, key % 2);
-CREATE TABLE default.local_opentelemetry ON CLUSTER test_cluster_two_shards (key UInt64) Engine=MergeTree ORDER BY key;
+CREATE TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry  (key UInt64) Engine=Distributed('test_cluster_two_shards', ${CLICKHOUSE_DATABASE}, local_opentelemetry, key % 2);
+CREATE TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry (key UInt64) Engine=MergeTree ORDER BY key;
 "
 
 #
 # INSERT ASYNC test
 # Do test with opentelemetry enabled
 #
-${CLICKHOUSE_CLIENT} -nq "
-INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1, insert_distributed_sync=0 VALUES(1),(2);
-"
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
+echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS insert_distributed_sync=0 VALUES(1),(2)" |
+${CLICKHOUSE_CURL} \
+    -X POST \
+    -H "traceparent: 00-$trace_id-5250000000000525-01" \
+    -H "tracestate: some custom state" \
+    "${CLICKHOUSE_URL}" \
+    --data @-
 
 # Check log
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
 -- Make sure INSERT on distributed finishes
-SYSTEM FLUSH DISTRIBUTED default.dist_opentelemetry ON CLUSTER test_cluster_two_shards;
+SYSTEM FLUSH DISTRIBUTED ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 
 -- Make sure opentelemetry span log flushed
-SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
+SYSTEM FLUSH LOGS;
 
 -- Above INSERT will insert data to two shards respectively, so there will be two spans generated
-SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%writeToLocal%';
-SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%processFile%';
+SELECT count() FROM system.opentelemetry_span_log
+WHERE lower(hex(trace_id)) = '${trace_id}'
+AND   operation_name like '%writeToLocal%'
+AND   attribute['clickhouse.shard_num']   = '1'
+AND   attribute['clickhouse.cluster']     = 'test_cluster_two_shards'
+AND   attribute['clickhouse.distributed'] = '${CLICKHOUSE_DATABASE}.dist_opentelemetry'
+AND   attribute['clickhouse.remote']      = '${CLICKHOUSE_DATABASE}.local_opentelemetry'
+AND   attribute['clickhouse.rows']        = '1'
+AND   attribute['clickhouse.bytes']       = '8'
+;
+
+SELECT count() FROM system.opentelemetry_span_log
+WHERE lower(hex(trace_id)) = '${trace_id}'
+AND   operation_name like '%writeToLocal%'
+AND   attribute['clickhouse.shard_num']   = '2'
+AND   attribute['clickhouse.cluster']     = 'test_cluster_two_shards'
+AND   attribute['clickhouse.distributed'] = '${CLICKHOUSE_DATABASE}.dist_opentelemetry'
+AND   attribute['clickhouse.remote']      = '${CLICKHOUSE_DATABASE}.local_opentelemetry'
+AND   attribute['clickhouse.rows']        = '1'
+AND   attribute['clickhouse.bytes']       = '8'
+;
+
 "
 
 #
 # INSERT SYNC test
 # Do test with opentelemetry enabled and in SYNC mode
 #
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
--- Clear log
-TRUNCATE TABLE IF EXISTS system.opentelemetry_span_log ON CLUSTER test_cluster_two_shards;
-
-INSERT INTO default.dist_opentelemetry SETTINGS opentelemetry_start_trace_probability=1, insert_distributed_sync=1 VALUES(1),(2);
-"
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
+echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS insert_distributed_sync=1 VALUES(1),(2)" |
+${CLICKHOUSE_CURL} \
+    -X POST \
+    -H "traceparent: 00-$trace_id-5250000000000525-01" \
+    -H "tracestate: some custom state" \
+    "${CLICKHOUSE_URL}" \
+    --data @-
 
 # Check log
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
-SYSTEM FLUSH LOGS ON CLUSTER test_cluster_two_shards;
+SYSTEM FLUSH LOGS;
 
 -- Above INSERT will insert data to two shards in the same flow, so there should be two spans generated with the same operation name
-SELECT attribute FROM cluster('test_cluster_two_shards', system, opentelemetry_span_log) WHERE operation_name like '%runWritingJob%';
+SELECT count() FROM system.opentelemetry_span_log
+WHERE lower(hex(trace_id)) = '${trace_id}'
+AND   operation_name like '%runWritingJob%'
+AND   attribute['clickhouse.shard_num']   = '1'
+AND   attribute['clickhouse.cluster']     = 'test_cluster_two_shards'
+AND   attribute['clickhouse.distributed'] = '${CLICKHOUSE_DATABASE}.dist_opentelemetry'
+AND   attribute['clickhouse.remote']      = '${CLICKHOUSE_DATABASE}.local_opentelemetry'
+AND   attribute['clickhouse.rows']        = '1'
+AND   attribute['clickhouse.bytes']       = '8'
+;
+
+SELECT count() FROM system.opentelemetry_span_log
+WHERE lower(hex(trace_id)) = '${trace_id}'
+AND   operation_name like '%runWritingJob%'
+AND   attribute['clickhouse.shard_num']   = '2'
+AND   attribute['clickhouse.cluster']     = 'test_cluster_two_shards'
+AND   attribute['clickhouse.distributed'] = '${CLICKHOUSE_DATABASE}.dist_opentelemetry'
+AND   attribute['clickhouse.remote']      = '${CLICKHOUSE_DATABASE}.local_opentelemetry'
+AND   attribute['clickhouse.rows']        = '1'
+AND   attribute['clickhouse.bytes']       = '8'
+;
 "
 
 #
 # Cleanup
 #
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -nq "
-DROP TABLE default.dist_opentelemetry  ON CLUSTER test_cluster_two_shards;
-DROP TABLE default.local_opentelemetry ON CLUSTER test_cluster_two_shards;
+DROP TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
+DROP TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 "
