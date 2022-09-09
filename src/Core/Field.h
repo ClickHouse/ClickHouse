@@ -594,13 +594,6 @@ public:
         ptr->assign(reinterpret_cast<const char *>(data), size);
     }
 
-    void assignString(String && str)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(std::move(str));
-    }
-
     /// Field is template parameter, to allow universal reference for field,
     /// that is useful for const and non-const .
     template <typename F, typename FieldRef>
@@ -682,6 +675,13 @@ private:
         assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
+    }
+
+    void assignString(String && str)
+    {
+        assert(which == Types::String);
+        String * ptr = reinterpret_cast<String *>(&storage);
+        ptr->assign(std::move(str));
     }
 
     void create(const Field & x)
