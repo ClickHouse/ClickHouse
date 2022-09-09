@@ -10,6 +10,7 @@
 #include <Storages/StorageExternalDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 
 
@@ -113,7 +114,10 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }
