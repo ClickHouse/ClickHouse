@@ -687,14 +687,14 @@ void HashJoin::setTotals(const Block & block)
 
 /// If prepared merge blocks is smaller than max_merged_block_size. just empalce back to prepare_merged_blocks.
 /// Otherwise, merge to one block.
-bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits)
+bool HashJoin::tryMergeBlocks(Block & source_block)
 {
     if (data->exceed_memory)
         return false;
 
     const auto max_merged_block_size = table_join->maxMergedBlockSize();
-    data->total_rows += source_block.rows();
-    data->total_bytes += source_block.bytes();
+    data->total_rows += data->type == Type::CROSS ? source_block.rows() : getTotalRowCount() + source_block.rows();
+    data->total_bytes += data->type == Type::CROSS ? source_block.bytes() : getTotalByteCount() + source_block.bytes();
 
     auto merge_block = [&](Blocks & prepare_merged_blocks) -> bool
     {
@@ -710,8 +710,6 @@ bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits)
         if (!source_block)
             return merge_block(data->prepare_merged_blocks);
 
-        if (!check_limits)
-            return true;
         return table_join->sizeLimits().softCheck(data->total_rows, data->total_bytes);
     }
 
@@ -731,7 +729,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     Block block = materializeBlock(source_block);
 
     ///Parallel Hash or setTotal does not need to merge blocks.
-    if (table_join->preferMergeRightTable() && !finish_filling_right_side && tryMergeBlocks(block, check_limits))
+    if (table_join->preferMergeRightTable() && !finish_filling_right_side && tryMergeBlocks(block))
         return true;
 
     size_t rows = block.rows();

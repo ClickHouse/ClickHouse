@@ -424,7 +424,7 @@ private:
 
     bool empty() const;
 
-    bool tryMergeBlocks(Block & block, bool check_limits);
+    bool tryMergeBlocks(Block & block);
 };
 
 }
