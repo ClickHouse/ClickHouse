@@ -39,7 +39,9 @@ def cluster():
 def get_large_objects_count(cluster, size=100, folder="data"):
     minio = cluster.minio_client
     counter = 0
-    for obj in minio.list_objects(cluster.minio_bucket, "{}/".format(folder)):
+    for obj in minio.list_objects(
+        cluster.minio_bucket, "{}/".format(folder), recursive=True
+    ):
         if obj.size is not None and obj.size >= size:
             counter = counter + 1
     return counter
