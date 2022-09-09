@@ -299,8 +299,10 @@ ProcessListEntry::~ProcessListEntry()
 
     it->onStop();
     /// This removes the memory_tracker of one request.
-    if (!parent.block_processes)
+    if (it->canBeRemoved())
         parent.processes.erase(it);
+    else
+        it->markReadyForRemoval();
 
     if (!found)
     {
@@ -420,8 +422,6 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
 
 QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {
-    auto lock = safeLock();
-
     auto user_it = user_to_queries.find(current_user);
     if (user_it != user_to_queries.end())
     {
@@ -438,31 +438,70 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
+    auto [lock, blocker] = safeLock();
+
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
+    // To forbid element to be removed from process list
+    elem->forbidRemoval();
+    lock.unlock();
 
     if (!elem)
         return CancellationCode::NotFound;
 
-    return elem->cancelQuery(kill);
+    auto code =  elem->cancelQuery(kill);
+    lock.lock();
+    // If query already finished we need to remove it from process list
+    if (elem->isReadyForRemoval())
+    {
+        bool removed = false;
+        for (auto it = processes.begin(); it != processes.end(); ++it)
+        {
+            if (&(*it) == elem)
+            {
+                processes.erase(it);
+                removed = true;
+                break;
+            }
+        }
+        if (!removed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query status is set to be ready for removal, but no such element is found in the process list");
+    }
+    else
+        elem->allowRemoval();
+    return code;
 }
 
 
 void ProcessList::killAllQueries()
 {
     auto [lock, blocker] = safeLock();
-    block_processes = true;
 
+    // Query cancellation with locked mutex may lead to deadlocks.
+    // So we create a snapshot of the query list, release lock
+    // and after that call cancelQuery.
     std::vector<QueryStatus *> query_statuses;
     query_statuses.reserve(processes.size());
     for (auto & process : processes)
+    {
+        process.forbidRemoval(); // To forbid elements to be removed from process list
         query_statuses.push_back(&process);
+    }
     lock.unlock();
 
     for (auto * status : query_statuses)
         status->cancelQuery(true);
 
     lock.lock();
-    block_processes = false;
+    // Remove query statuses for all already stopped queries
+    auto it = processes.begin();
+    while (it != processes.end())
+    {
+        auto current = it++;
+        if (current->isReadyForRemoval())
+            processes.erase(current);
+        else
+            current->allowRemoval(); // Allow ~ProcessListEntry to remove query status
+    }
 }
 
 

@@ -134,6 +134,15 @@ protected:
 
 public:
 
+    enum class KillQueryFlags
+    {
+        NONE,
+        FORBID_REMOVAL,
+        READY_FOR_REMOVAL,
+    };
+
+    KillQueryFlags kill_query_flags = KillQueryFlags::NONE;
+
     QueryStatus(
         ContextPtr context_,
         const String & query_,
@@ -144,6 +153,18 @@ public:
         );
 
     ~QueryStatus();
+
+    void allowRemoval() { kill_query_flags = KillQueryFlags::NONE; }
+    void forbidRemoval() { kill_query_flags = KillQueryFlags::FORBID_REMOVAL; }
+
+    void markReadyForRemoval()
+    {
+        assert(kill_query_flags == KillQueryFlags::FORBID_REMOVAL);
+        kill_query_flags = KillQueryFlags::READY_FOR_REMOVAL;
+    }
+
+    bool canBeRemoved() const { return kill_query_flags == KillQueryFlags::NONE; }
+    bool isReadyForRemoval() const { return kill_query_flags == KillQueryFlags::READY_FOR_REMOVAL; }
 
     const ClientInfo & getClientInfo() const
     {
@@ -330,9 +351,6 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
-
-    /// Do not allow to modify processes list during killAllQueries operations
-    bool block_processes = false;
 
     /// List of queries
     Container processes;
