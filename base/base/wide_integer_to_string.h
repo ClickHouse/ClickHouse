@@ -51,8 +51,8 @@ struct fmt::formatter<wide::integer<Bits, Signed>>
 {
     constexpr auto parse(format_parse_context & ctx)
     {
-        auto it = ctx.begin();
-        auto end = ctx.end();
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
 
         /// Only support {}.
         if (it != end && *it != '}')
