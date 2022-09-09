@@ -30,12 +30,12 @@ The supported formats are:
 | [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔      |
 | [Values](#data-format-values)                                                             | ✔    | ✔      |
 | [Vertical](#vertical)                                                                     | ✗    | ✔      |
-| [JSON](#json)                                                                             | ✗    | ✔      |
+| [JSON](#json)                                                                             | ✔    | ✔      |
 | [JSONAsString](#jsonasstring)                                                             | ✔    | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗    | ✔      |
+| [JSONStrings](#jsonstrings)                                                               | ✔    | ✔      |
 | [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔      |
-| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗    | ✔      |
-| [JSONCompact](#jsoncompact)                                                               | ✗    | ✔      |
+| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✔    | ✔      |
+| [JSONCompact](#jsoncompact)                                                               | ✔    | ✔      |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔      |
@@ -48,6 +48,7 @@ The supported formats are:
 | [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔      |
 | [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔      |
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
+| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔    | ✔      |
 | [TSKV](#tskv)                                                                             | ✔    | ✔      |
 | [Pretty](#pretty)                                                                         | ✗    | ✔      |
 | [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
@@ -609,8 +610,6 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 `extremes` – Extreme values (when extremes are set to 1).
 
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) to 1.
 
 **See Also**
@@ -694,8 +693,8 @@ Columns that are not present in the block will be filled with default values (yo
 
 ## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
 
-Differs from JSONColumns output format in that it also outputs some metadata and statistics (similar to JSON output format).
-This format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
+Differs from JSONColumns format in that it also contains some metadata and statistics (similar to JSON format).
+Output format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
 
 Example:
 ```json
@@ -1002,6 +1001,21 @@ the types from input data will be compared with the types of the corresponding c
 [44, "hello", [0,1,2,3]]
 ```
 
+## JSONObjectEachRow {#jsonobjecteachrow}
+
+In this format, all data is represented as a single JSON Object, each row is represented as separate field of this object similar to JSONEachRowFormat.
+
+Example:
+
+```json
+{
+  "row_1": {"num": 42, "str": "hello", "arr":  [0,1]},
+  "row_2": {"num": 43, "str": "hello", "arr":  [0,1,2]},
+  "row_3": {"num": 44, "str": "hello", "arr":  [0,1,2,3]}
+}
+```
+
+
 ### Inserting Data {#json-inserting-data}
 
 ``` sql
@@ -1125,11 +1139,14 @@ SELECT * FROM json_each_row_nested
 
 - [input_format_import_nested_json](../operations/settings/settings.md#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
 - [input_format_json_read_bools_as_numbers](../operations/settings/settings.md#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
+- [input_format_json_read_numbers_as_strings](../operations/settings/settings.md#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `true`.
 - [output_format_json_quote_64bit_integers](../operations/settings/settings.md#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
+- [output_format_json_quote_decimals](../operations/settings/settings.md#output_format_json_quote_decimals) - controls quoting of decimals in JSON output format. Default value - `false`.
 - [output_format_json_escape_forward_slashes](../operations/settings/settings.md#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.
 - [output_format_json_named_tuples_as_objects](../operations/settings/settings.md#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `false`.
 - [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) - output a JSON array of all rows in JSONEachRow(Compact) format. Default value - `false`.
+- [output_format_json_validate_utf8](../operations/settings/settings.md#output_format_json_validate_utf8) - enables validation of UTF-8 sequences in JSON output formats (note that it desn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8). Default value - `false`.
 
 ## Native {#native}
 
