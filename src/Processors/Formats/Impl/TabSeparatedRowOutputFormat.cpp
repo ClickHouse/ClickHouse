@@ -60,11 +60,16 @@ void TabSeparatedRowOutputFormat::writeFieldDelimiter()
 }
 
 
-void TabSeparatedRowOutputFormat::writeRowEndDelimiter()
+void TabSeparatedRowOutputFormat::writeRowBetweenDelimiter()
 {
     if (format_settings.tsv.crlf_end_of_line)
         writeChar('\r', out);
     writeChar('\n', out);
+}
+
+void TabSeparatedRowOutputFormat::writeSuffix()
+{
+    writeRowBetweenDelimiter();
 }
 
 void TabSeparatedRowOutputFormat::writeBeforeTotals()

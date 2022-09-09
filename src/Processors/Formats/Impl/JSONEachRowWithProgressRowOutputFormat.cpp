@@ -16,7 +16,7 @@ void JSONEachRowWithProgressRowOutputFormat::writeRowStartDelimiter()
 
 void JSONEachRowWithProgressRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}}\n", out);
+    writeCString("}}", out);
     field_number = 0;
 }
 

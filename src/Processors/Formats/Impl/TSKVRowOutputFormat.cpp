@@ -30,8 +30,13 @@ void TSKVRowOutputFormat::writeField(const IColumn & column, const ISerializatio
 
 void TSKVRowOutputFormat::writeRowEndDelimiter()
 {
-    writeChar('\n', out);
     field_number = 0;
+}
+
+
+void TSKVRowOutputFormat::writeRowBetweenDelimiter()
+{
+    writeChar('\n', out);
 }
 
 

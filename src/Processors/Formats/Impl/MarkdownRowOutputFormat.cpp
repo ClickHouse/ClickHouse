@@ -47,7 +47,12 @@ void MarkdownRowOutputFormat::writeFieldDelimiter()
 
 void MarkdownRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString(" |\n", out);
+    writeCString(" |", out);
+}
+
+void MarkdownRowOutputFormat::writeRowBetweenDelimiter()
+{
+    writeChar('\n', out);
 }
 
 void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)

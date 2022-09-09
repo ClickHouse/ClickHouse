@@ -1,0 +1,12 @@
+{% for format in ['CSV', 'TSV', 'JSONEachRow', 'JSONEachRowWithProgress', 'JSONCompactEachRow', 'TSKV', 'XML', 'Markdown', 'CustomSeparated', 'SQLInsert', 'Vertical', 'JSON', 'JSONCompact', 'Values'] -%}
+
+select '{{ format }}';
+select formatRow('{{ format }}', number, 'good') from numbers(3);
+
+{% endfor -%}
+
+-- unknown format
+select formatRow('aaa', *) from numbers(3); -- { serverError 73 }
+
+select formatRow('Avro', *) from numbers(3); -- {serverError BAD_ARGUMENTS}
+

@@ -33,11 +33,12 @@ public:
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
-    void writeRowEndDelimiter() override;
+    void writeRowBetweenDelimiter() override;
     void writeBeforeTotals() override;
     void writeBeforeExtremes() override;
 
     void writePrefix() override;
+    void writeSuffix() override;
     void writeLine(const std::vector<String> & values);
 
     bool with_names;

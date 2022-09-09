@@ -101,16 +101,20 @@ void XMLRowOutputFormat::writeRowStartDelimiter()
 
 void XMLRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("\t\t</row>\n", *ostr);
+    writeCString("\t\t</row>", *ostr);
     field_number = 0;
     ++row_count;
+}
+
+void XMLRowOutputFormat::writeRowBetweenDelimiter()
+{
+    writeChar('\n', *ostr);
 }
 
 
 void XMLRowOutputFormat::writeSuffix()
 {
     writeCString("\t</data>\n", *ostr);
-
 }
 
 

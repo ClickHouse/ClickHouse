@@ -27,19 +27,23 @@ namespace
 
 /** formatRow(<format>, x, y, ...) is a function that allows you to use RowOutputFormat over
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
-  * formatRowNoNewline(...) trims the newline character of each row.
   */
 
-template <bool no_newline>
 class FunctionFormatRow : public IFunction
 {
 public:
-    static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
+    static constexpr auto name = "formatRow";
 
     FunctionFormatRow(const String & format_name_, ContextPtr context_) : format_name(format_name_), context(context_)
     {
         if (!FormatFactory::instance().getAllFormats().contains(format_name))
             throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
+        /// It's impossible to output separate rows in Avro format, because of specific
+        /// implementation (we cannot separate table schema and rows, rows are written
+        /// in our buffer in batches)
+        if (format_name == "Avro")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format Avro is not supported in function {}");
+
     }
 
     String getName() const override { return name; }
@@ -60,26 +64,27 @@ public:
         for (auto i = 1u; i < arguments.size(); ++i)
             arg_columns.insert(arguments[i]);
         materializeBlockInplace(arg_columns);
-        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, [&](const Columns &, size_t row)
-        {
-            if constexpr (no_newline)
-            {
-                // replace '\n' with '\0'
-                if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
-                    buffer.position()[-1] = '\0';
-            }
-            else
-                writeChar('\0', buffer);
-            offsets[row] = buffer.count();
-        });
+        auto format_settings = getFormatSettings(context);
+        /// For SQLInsert output format we should set max_batch_size settings to 1 so
+        /// each line will contain prefix INSERT INTO ... (otherwise only subset of columns
+        /// will contain it according to max_batch_size setting)
+        format_settings.sql_insert.max_batch_size = 1;
+        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, {}, format_settings);
 
         /// This function make sense only for row output formats.
-        if (!dynamic_cast<IRowOutputFormat *>(out.get()))
+        auto * row_output_format = dynamic_cast<IRowOutputFormat *>(out.get());
+        if (!row_output_format)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot turn rows into a {} format strings. {} function supports only row output formats", format_name, getName());
 
-        /// Don't write prefix if any.
-        out->doNotWritePrefix();
-        out->write(arg_columns);
+        auto & working_buf = row_output_format->getWriteBuffer();
+        auto columns = arg_columns.getColumns();
+        for (size_t i = 0; i != input_rows_count; ++i)
+        {
+            row_output_format->write(columns, i);
+            writeChar('\0', working_buf);
+            offsets[i] = working_buf.count();
+        }
+
         return col_str;
     }
 
@@ -88,11 +93,10 @@ private:
     ContextPtr context;
 };
 
-template <bool no_newline>
 class FormatRowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
+    static constexpr auto name = "formatRow";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
     explicit FormatRowOverloadResolver(ContextPtr context_) : context(context_) { }
     String getName() const override { return name; }
@@ -110,7 +114,7 @@ public:
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), context),
+                std::make_shared<FunctionFormatRow>(name_col->getValue<String>(), context),
                 collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         else
@@ -127,8 +131,7 @@ private:
 
 REGISTER_FUNCTION(FormatRow)
 {
-    factory.registerFunction<FormatRowOverloadResolver<true>>();
-    factory.registerFunction<FormatRowOverloadResolver<false>>();
+    factory.registerFunction<FormatRowOverloadResolver>();
 }
 
 }

@@ -28,6 +28,7 @@ public:
 
 private:
     void writePrefix() override;
+    void writeSuffix() override;
 
     void writeTotals(const Columns & columns, size_t row_num) override;
 
@@ -35,6 +36,7 @@ private:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
+    void writeRowBetweenDelimiter() override;
 
     void consumeTotals(Chunk) override;
     /// No extremes.

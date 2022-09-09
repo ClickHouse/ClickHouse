@@ -339,7 +339,6 @@ formatReadableQuantity
 formatReadableSize
 formatReadableTimeDelta
 formatRow
-formatRowNoNewline
 fragment
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull

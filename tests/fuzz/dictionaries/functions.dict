@@ -435,7 +435,6 @@
 "toInt32"
 "e"
 "wordShingleSimHashCaseInsensitiveUTF8"
-"formatRowNoNewline"
 "JSON_QUERY"
 "isIPv4String"
 "UUIDNumToString"

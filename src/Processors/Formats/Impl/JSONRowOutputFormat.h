@@ -43,6 +43,8 @@ public:
         statistics.rows_before_limit = rows_before_limit_;
     }
 
+    WriteBuffer & getWriteBuffer() const override { return *ostr; }
+
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;

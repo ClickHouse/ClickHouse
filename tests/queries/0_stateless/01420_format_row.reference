@@ -1,12 +1,56 @@
-0,"good"\n
-1,"good"\n
-2,"good"\n
-0\t2001-12-12\t1.4
-1\t2001-12-12\t1.4
-2\t2001-12-12\t1.4
-{"number":"0","toNullable(3)":3,"NULL":null}\n
-{"number":"1","toNullable(3)":3,"NULL":null}\n
-{"number":"2","toNullable(3)":3,"NULL":null}\n
-{"number":"0"}
-{"number":"1"}
-{"number":"2"}
+CSV
+0,"good"
+1,"good"
+2,"good"
+TSV
+0\tgood
+1\tgood
+2\tgood
+JSONEachRow
+{"number":"0","\'good\'":"good"}
+{"number":"1","\'good\'":"good"}
+{"number":"2","\'good\'":"good"}
+JSONEachRowWithProgress
+{"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3","result_rows":"0","result_bytes":"0"}}\n{"row":{"number":"0","\'good\'":"good"}}
+{"row":{"number":"1","\'good\'":"good"}}
+{"row":{"number":"2","\'good\'":"good"}}
+JSONCompactEachRow
+["0", "good"]
+["1", "good"]
+["2", "good"]
+TSKV
+number=0\t\'good\'=good
+number=1\t\'good\'=good
+number=2\t\'good\'=good
+XML
+\t\t<row>\n\t\t\t<number>0</number>\n\t\t\t<field>good</field>\n\t\t</row>
+\t\t<row>\n\t\t\t<number>1</number>\n\t\t\t<field>good</field>\n\t\t</row>
+\t\t<row>\n\t\t\t<number>2</number>\n\t\t\t<field>good</field>\n\t\t</row>
+Markdown
+| 0 | good |
+| 1 | good |
+| 2 | good |
+CustomSeparated
+0\tgood\n
+1\tgood\n
+2\tgood\n
+SQLInsert
+INSERT INTO table (`number`, `\'good\'`) VALUES (0, \'good\');
+INSERT INTO table (`number`, `\'good\'`) VALUES (1, \'good\');
+INSERT INTO table (`number`, `\'good\'`) VALUES (2, \'good\');
+Vertical
+Row 1:\n──────\nnumber: 0\n\'good\': good\n
+Row 2:\n──────\nnumber: 1\n\'good\': good\n
+Row 3:\n──────\nnumber: 2\n\'good\': good\n
+JSON
+\t\t{\n\t\t\t"number": "0",\n\t\t\t"\'good\'": "good"\n\t\t}
+\t\t{\n\t\t\t"number": "1",\n\t\t\t"\'good\'": "good"\n\t\t}
+\t\t{\n\t\t\t"number": "2",\n\t\t\t"\'good\'": "good"\n\t\t}
+JSONCompact
+\t\t["0", "good"]
+\t\t["1", "good"]
+\t\t["2", "good"]
+Values
+(0,\'good\')
+(1,\'good\')
+(2,\'good\')

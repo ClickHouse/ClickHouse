@@ -49,7 +49,12 @@ void JSONCompactEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONCompactEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("]\n", out);
+    writeChar(']', out);
+}
+
+void JSONCompactEachRowRowOutputFormat::writeRowBetweenDelimiter()
+{
+    writeChar('\n', out);
 }
 
 void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
@@ -90,6 +95,11 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
 
     if (with_types)
         writeLine(header.getDataTypeNames());
+}
+
+void JSONCompactEachRowRowOutputFormat::writeSuffix()
+{
+    writeChar('\n', out);
 }
 
 void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)

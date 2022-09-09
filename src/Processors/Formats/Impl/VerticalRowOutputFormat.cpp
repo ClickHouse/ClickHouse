@@ -71,6 +71,7 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeRowStartDelimiter()
 {
+    field_number = 0;
     ++row_number;
 
     if (row_number > format_settings.pretty.max_rows)
@@ -92,8 +93,7 @@ void VerticalRowOutputFormat::writeRowBetweenDelimiter()
     if (row_number > format_settings.pretty.max_rows)
         return;
 
-    writeCString("\n", out);
-    field_number = 0;
+    writeChar('\n', out);
 }
 
 
