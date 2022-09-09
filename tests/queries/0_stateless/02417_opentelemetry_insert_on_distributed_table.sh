@@ -52,7 +52,7 @@ CREATE TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry (key UInt64) Engine=Merg
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 insert $trace_id 0
 check_span $trace_id '%writeToLocal%' '1'
-check_span $trace_id '%writeToLocal%' '2'
+check_span $trace_id '%processFile%'  '2'
 
 
 #
