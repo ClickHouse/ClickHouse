@@ -10,7 +10,7 @@
 	url = https://github.com/lz4/lz4.git
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
-	url = https://github.com/ClickHouse/librdkafka.git
+	url = https://github.com/azat-archive/librdkafka.git
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse/cctz.git
@@ -32,7 +32,7 @@
 	url = https://github.com/google/re2.git
 [submodule "contrib/llvm"]
 	path = contrib/llvm
-	url = https://github.com/ClickHouse/llvm
+	url = https://github.com/azat-ch/llvm
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse/mariadb-connector-c.git
@@ -144,7 +144,7 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/ClickHouse/libcpuid.git
+	url = https://github.com/azat-ch/libcpuid.git
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/ClickHouse/openldap.git
@@ -164,7 +164,7 @@
 	url = https://github.com/fmtlib/fmt.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
-	url = https://github.com/ClickHouse/sentry-native.git
+	url = https://github.com/azat-ch/sentry-native.git
 [submodule "contrib/krb5"]
 	path = contrib/krb5
 	url = https://github.com/ClickHouse/krb5

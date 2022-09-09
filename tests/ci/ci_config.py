@@ -8,7 +8,7 @@ BuildConfig = Dict[str, ConfValue]
 CI_CONFIG = {
     "build_config": {
         "package_release": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -19,7 +19,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "coverity": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
@@ -29,7 +29,7 @@ CI_CONFIG = {
             "official": False,
         },
         "package_aarch64": {
-            "compiler": "clang-14-aarch64",
+            "compiler": "clang-15-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -40,7 +40,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_asan": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
@@ -49,7 +49,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_ubsan": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
@@ -67,7 +67,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_msan": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
@@ -76,7 +76,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_debug": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
@@ -85,7 +85,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_release": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -94,7 +94,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_tidy": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
@@ -104,7 +104,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_shared": {
-            "compiler": "clang-14",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -113,7 +113,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin": {
-            "compiler": "clang-14-darwin",
+            "compiler": "clang-15-darwin",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -123,7 +123,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_aarch64": {
-            "compiler": "clang-14-aarch64",
+            "compiler": "clang-15-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -132,7 +132,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_freebsd": {
-            "compiler": "clang-14-freebsd",
+            "compiler": "clang-15-freebsd",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -142,7 +142,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin_aarch64": {
-            "compiler": "clang-14-darwin-aarch64",
+            "compiler": "clang-15-darwin-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -152,11 +152,21 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_ppc64le": {
-            "compiler": "clang-14-ppc64le",
+            "compiler": "clang-15-ppc64le",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "powerpc64le",
+            "libraries": "static",
+            "tidy": "disable",
+            "with_coverage": False,
+        },
+        "binary_amd64sse2": {
+            "compiler": "clang-15-amd64sse2",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "binary",
+            "static_binary_name": "amd64sse2",
             "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
@@ -182,6 +192,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_amd64sse2",
         ],
     },
     "tests_config": {
@@ -246,6 +257,12 @@ CI_CONFIG = {
         },
         "Stateless tests (release, s3 storage)": {
             "required_build": "package_release",
+        },
+        "Stateless tests (debug, s3 storage)": {
+            "required_build": "package_debug",
+        },
+        "Stateless tests (tsan, s3 storage)": {
+            "required_build": "package_tsan",
         },
         "Stress test (asan)": {
             "required_build": "package_asan",

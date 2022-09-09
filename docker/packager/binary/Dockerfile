@@ -67,24 +67,5 @@ ENV GOCACHE=/workdir/
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
 
-# NOTE: thread sanitizer is broken in clang-14, we have to build it with clang-15
-# https://github.com/ClickHouse/ClickHouse/pull/39450
-# https://github.com/google/sanitizers/issues/1540
-# https://github.com/google/sanitizers/issues/1552
-
-RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-15 main" >> \
-        /etc/apt/sources.list.d/clang.list \
-    && apt-get update \
-    && apt-get install \
-        clang-15 \
-        llvm-15 \
-        clang-tidy-15 \
-        --yes --no-install-recommends \
-    && apt-get clean
-
-# for external_symbolizer_path
-RUN ln -s /usr/bin/llvm-symbolizer-15 /usr/bin/llvm-symbolizer
-
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]
