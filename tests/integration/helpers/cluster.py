@@ -792,7 +792,9 @@ class ClickHouseCluster:
         binary_dir = os.path.dirname(self.server_bin_path)
 
         # always prefer clickhouse-keeper standalone binary
-        if os.path.exists(os.path.join(binary_dir, "clickhouse-keeper")) and not os.path.islink(os.path.join(binary_dir, "clickhouse-keeper")):
+        if os.path.exists(
+            os.path.join(binary_dir, "clickhouse-keeper")
+        ) and not os.path.islink(os.path.join(binary_dir, "clickhouse-keeper")):
             binary_path = os.path.join(binary_dir, "clickhouse-keeper")
             keeper_cmd_prefix = "clickhouse-keeper"
         else:
