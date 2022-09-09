@@ -34,7 +34,7 @@ elseif (ARCH_AARCH64)
 
     # The LSE extension for atomic operations is mandatory in ARM >= v8.1. As we target v8.0,
     # use a runtime-dispatch that falls back to non-atomic operations hardware w/o LSE.
-    # -moutline-atomic is supported from gcc >=10.1 and clang >=12.0
+    # -moutline-atomic is supported from GCC >=10.1 and Clang >=12.0
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -moutline-atomics")
 
 elseif (ARCH_PPC64LE)
