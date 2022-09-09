@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/groupbitand
 sidebar_position: 125
 ---
 

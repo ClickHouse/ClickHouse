@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -33,7 +32,6 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCPU;
 class QueryThreadLog;
-struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
@@ -102,8 +100,16 @@ public:
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
-
-extern thread_local ThreadStatus * current_thread;
+/**
+ * We use **constinit** here to tell the compiler the current_thread variable is initialized.
+ * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
+ * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
+ * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
+ * See also:
+ * - https://en.cppreference.com/w/cpp/language/constinit
+ * - https://github.com/ClickHouse/ClickHouse/pull/40078
+ */
+extern thread_local constinit ThreadStatus * current_thread;
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
@@ -134,12 +140,6 @@ public:
 
     using Deleter = std::function<void()>;
     Deleter deleter;
-
-    // This is the current most-derived OpenTelemetry span for this thread. It
-    // can be changed throughout the query execution, whenever we enter a new
-    // span or exit it. See OpenTelemetrySpanHolder that is normally responsible
-    // for these changes.
-    OpenTelemetryTraceContext thread_trace_context;
 
 protected:
     ThreadGroupStatusPtr thread_group;

@@ -63,7 +63,7 @@ void DisksApp::addOptions(
 
     positional_options_description.add("command_name", 1);
 
-    supported_commands = {"list-disks", "list", "move", "remove", "link", "copy", "write", "read"};
+    supported_commands = {"list-disks", "list", "move", "remove", "link", "copy", "write", "read", "mkdir"};
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("list", makeCommandList());
@@ -73,6 +73,7 @@ void DisksApp::addOptions(
     command_descriptions.emplace("copy", makeCommandCopy());
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
+    command_descriptions.emplace("mkdir", makeCommandMkDir());
 }
 
 void DisksApp::processOptions()
@@ -110,7 +111,7 @@ void DisksApp::init(std::vector<String> & common_arguments)
     if (options.count("help"))
     {
         printHelpMessage(options_description);
-        exit(0);
+        exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     if (!supported_commands.contains(command_name))

@@ -1,10 +1,10 @@
 ---
+slug: /en/development/tests
 sidebar_position: 70
 sidebar_label: Testing
+title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 ---
-
-# ClickHouse Testing
 
 ## Functional Tests
 
@@ -192,7 +192,7 @@ ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/L
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
 LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
-Fuzzer example can be found at `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
+Fuzzer example can be found at `src/Parsers/fuzzers/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
 
 Fuzzers are not built by default. To build fuzzers both `-DENABLE_FUZZING=1` and `-DENABLE_TESTS=1` options should be set.

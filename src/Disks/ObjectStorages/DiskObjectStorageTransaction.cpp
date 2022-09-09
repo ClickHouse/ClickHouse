@@ -1,9 +1,9 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Common/checkStackSize.h>
-#include <Common/getRandomASCIIString.h>
 #include <ranges>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -109,7 +109,6 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
             if (hardlink_count == 0)
             {
                 objects_to_remove = objects;
-                remove_from_cache = true;
             }
         }
         catch (const Exception & e)
@@ -136,14 +135,89 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     {
         if (!delete_metadata_only && !objects_to_remove.empty())
             object_storage.removeObjects(objects_to_remove);
-
-        if (remove_from_cache)
-        {
-            for (const auto & object : objects_to_remove)
-                object_storage.removeCacheIfExists(object.getPathKeyForCache());
-        }
     }
 };
+
+struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperation
+{
+    RemoveBatchRequest remove_paths;
+    bool keep_all_batch_data;
+    NameSet file_names_remove_metadata_only;
+    StoredObjects objects_to_remove;
+    bool remove_from_cache = false;
+
+    RemoveManyObjectStorageOperation(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        const RemoveBatchRequest & remove_paths_,
+        bool keep_all_batch_data_,
+        const NameSet & file_names_remove_metadata_only_)
+        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , remove_paths(remove_paths_)
+        , keep_all_batch_data(keep_all_batch_data_)
+        , file_names_remove_metadata_only(file_names_remove_metadata_only_)
+    {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("RemoveManyObjectStorageOperation (paths size: {}, keep all batch {}, files to keep {})", remove_paths.size(), keep_all_batch_data, fmt::join(file_names_remove_metadata_only, ", "));
+    }
+
+    void execute(MetadataTransactionPtr tx) override
+    {
+        for (const auto & [path, if_exists] : remove_paths)
+        {
+
+            if (!metadata_storage.exists(path))
+            {
+                if (if_exists)
+                    continue;
+
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
+            }
+
+            if (!metadata_storage.isFile(path))
+                throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
+
+            try
+            {
+                uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
+                auto objects = metadata_storage.getStorageObjects(path);
+
+                tx->unlinkMetadata(path);
+
+                /// File is really redundant
+                if (hardlink_count == 0 && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
+                    objects_to_remove.insert(objects_to_remove.end(), objects.begin(), objects.end());
+            }
+            catch (const Exception & e)
+            {
+                /// If it's impossible to read meta - just remove it from FS.
+                if (e.code() == ErrorCodes::UNKNOWN_FORMAT
+                    || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+                    || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
+                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+                {
+                    tx->unlinkFile(path);
+                }
+                else
+                    throw;
+            }
+        }
+    }
+
+    void undo() override
+    {
+
+    }
+
+    void finalize() override
+    {
+        if (!objects_to_remove.empty())
+            object_storage.removeObjects(objects_to_remove);
+    }
+};
+
 
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
@@ -186,9 +260,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                 if (hardlink_count == 0)
                 {
                     objects_to_remove[path_to_remove] = objects_paths;
-                    objects_to_remove_from_cache.insert(objects_to_remove_from_cache.end(), objects_paths.begin(), objects_paths.end());
                 }
-
             }
             catch (const Exception & e)
             {
@@ -237,9 +309,6 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             }
             object_storage.removeObjects(remove_from_remote);
         }
-
-        for (const auto & object : objects_to_remove_from_cache)
-            object_storage.removeCacheIfExists(object.getPathKeyForCache());
     }
 };
 
@@ -491,14 +560,8 @@ void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
 void DiskObjectStorageTransaction::removeSharedFiles(
     const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    for (const auto & file : files)
-    {
-        bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
-        if (file.if_exists)
-            removeSharedFileIfExists(file.path, keep_file);
-        else
-            removeSharedFile(file.path, keep_file);
-    }
+    auto operation = std::make_unique<RemoveManyObjectStorageOperation>(object_storage, metadata_storage, files, keep_all_batch_data, file_names_remove_metadata_only);
+    operations_to_execute.emplace_back(std::move(operation));
 }
 
 namespace
@@ -645,9 +708,11 @@ void DiskObjectStorageTransaction::commit()
         {
             operations_to_execute[i]->execute(metadata_transaction);
         }
-        catch (Exception & ex)
+        catch (...)
         {
-            ex.addMessage(fmt::format("While executing operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
+            tryLogCurrentException(
+                &Poco::Logger::get("DiskObjectStorageTransaction"),
+                fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
             {
@@ -655,9 +720,12 @@ void DiskObjectStorageTransaction::commit()
                 {
                     operations_to_execute[j]->undo();
                 }
-                catch (Exception & rollback_ex)
+                catch (...)
                 {
-                    rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
+                    tryLogCurrentException(
+                        &Poco::Logger::get("DiskObjectStorageTransaction"),
+                        fmt::format("An error occurred while undoing transaction's operation #{}", i));
+
                     throw;
                 }
             }

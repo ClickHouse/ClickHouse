@@ -1,4 +1,5 @@
 ---
+slug: /en/development/developer-instruction
 sidebar_position: 61
 sidebar_label: Getting Started
 description: Prerequisites and an overview of how to build ClickHouse

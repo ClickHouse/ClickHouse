@@ -19,6 +19,7 @@ struct ExternalDataSourceConfiguration
     UInt16 port = 0;
     String username = "default";
     String password;
+    String quota_key;
     String database;
     String table;
     String schema;

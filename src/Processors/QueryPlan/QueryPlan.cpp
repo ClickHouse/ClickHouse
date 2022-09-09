@@ -325,8 +325,22 @@ static void explainStep(
                 elem.dumpNameAndType(settings.out);
             }
         }
-
         settings.out.write('\n');
+
+    }
+
+    if (options.sorting)
+    {
+        if (step.hasOutputStream())
+        {
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+            {
+                settings.out << ": ";
+                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
+            }
+            settings.out.write('\n');
+        }
     }
 
     if (options.actions)

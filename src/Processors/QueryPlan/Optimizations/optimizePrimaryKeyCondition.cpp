@@ -1,9 +1,10 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/StorageMerge.h>
 #include <Interpreters/ActionsDAG.h>
-#include <stack>
+#include <deque>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -16,33 +17,41 @@ void optimizePrimaryKeyCondition(QueryPlan::Node & root)
         size_t next_child = 0;
     };
 
-    std::stack<Frame> stack;
-    stack.push({.node = &root});
+    std::deque<Frame> stack;
+    stack.push_back({.node = &root});
 
     while (!stack.empty())
     {
-        auto & frame = stack.top();
+        auto & frame = stack.back();
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
-            stack.push({.node = frame.node->children[frame.next_child]});
+            stack.push_back({.node = frame.node->children[frame.next_child]});
 
             ++frame.next_child;
             continue;
         }
 
-        if (auto * filter_step = typeid_cast<FilterStep *>(frame.node->step.get()))
+        auto add_filter = [&](auto & storage)
         {
-            auto * child = frame.node->children.at(0);
-            if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(child->step.get()))
-                read_from_merge_tree->addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
+            for (auto iter=stack.rbegin() + 1; iter!=stack.rend(); ++iter)
+            {
+                if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
+                    storage.addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
+                else if (typeid_cast<ExpressionStep *>(iter->node->step.get()))
+                    ;
+                else
+                    break;
+            }
+        };
 
-            if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child->step.get()))
-                read_from_merge->addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
-        }
+        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
+            add_filter(*read_from_merge_tree);
+        else if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(frame.node->step.get()))
+            add_filter(*read_from_merge);
 
-        stack.pop();
+        stack.pop_back();
     }
 }
 
