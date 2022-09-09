@@ -13,7 +13,7 @@ sidebar_label: "Профиль настроек"
 ``` sql
 CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluster_name1]
         [, name2 [ON CLUSTER cluster_name2] ...]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
 ```
 
 Секция `ON CLUSTER` позволяет создавать профили на кластере, см. [Распределенные DDL запросы](../../../sql-reference/distributed-ddl.md).
