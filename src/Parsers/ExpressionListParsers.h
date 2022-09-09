@@ -240,6 +240,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// TODO: ?
+class ParserArray : public IParserBase
+{
+protected:
+    const char * getName() const override { return "array"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 // It's used to parse expressions in table function.
 class ParserTableFunctionExpression : public IParserBase
 {

@@ -40,6 +40,7 @@
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -50,89 +51,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
-}
-
-
-bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr contents_node;
-    ParserExpressionList contents(false);
-
-    if (pos->type != TokenType::OpeningSquareBracket)
-        return false;
-    ++pos;
-
-    if (!contents.parse(pos, contents_node, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingSquareBracket)
-        return false;
-    ++pos;
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "array";
-    function_node->arguments = contents_node;
-    function_node->children.push_back(contents_node);
-    node = function_node;
-
-    return true;
-}
-
-
-bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr contents_node;
-    ParserExpressionList contents(false);
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ++pos;
-
-    if (!contents.parse(pos, contents_node, expected))
-        return false;
-
-    bool is_elem = true;
-    if (pos->type == TokenType::Comma)
-    {
-        is_elem = false;
-        ++pos;
-    }
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    const auto & expr_list = contents_node->as<ASTExpressionList &>();
-
-    /// Empty expression in parentheses is not allowed.
-    if (expr_list.children.empty())
-    {
-        expected.add(pos, "non-empty parenthesized list of expressions");
-        return false;
-    }
-
-    /// Special case for one-element tuple.
-    if (expr_list.children.size() == 1 && is_elem)
-    {
-        auto * ast_literal = expr_list.children.front()->as<ASTLiteral>();
-        /// But only if its argument is not tuple,
-        /// since otherwise it will do incorrect transformation:
-        ///
-        ///     (foo,bar) IN (('foo','bar')) -> (foo,bar) IN ('foo','bar')
-        if (!(ast_literal && ast_literal->value.getType() == Field::Types::Tuple))
-        {
-            node = expr_list.children.front();
-            return true;
-        }
-    }
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "tuple";
-    function_node->arguments = contents_node;
-    function_node->children.push_back(contents_node);
-    node = function_node;
-
-    return true;
 }
 
 
@@ -1885,6 +1803,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
     std::vector<CollectionOfLiteralsLayer<Collection>> layers;
     layers.emplace_back(pos);
+    pos.increaseDepth();
 
     ParserLiteral literal_p;
 
@@ -1905,6 +1824,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 literal->end = ++pos;
 
                 layers.pop_back();
+                pos.decreaseDepth();
 
                 if (layers.empty())
                 {
@@ -1913,6 +1833,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 }
 
                 layers.back().arr.push_back(literal->value);
+                continue;
             }
             else if (pos->type == TokenType::Comma)
             {
@@ -1931,9 +1852,14 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
         ASTPtr literal_node;
         if (literal_p.parse(pos, literal_node, expected))
+        {
             layers.back().arr.push_back(literal_node->as<ASTLiteral &>().value);
+        }
         else if (pos->type == opening_bracket)
+        {
             layers.emplace_back(pos);
+            pos.increaseDepth();
+        }
         else
             return false;
     }
