@@ -17,3 +17,5 @@ INSERT INTO join_on_disk SELECT number as id FROM numbers_mt(50000);
 INSERT INTO join_on_disk SELECT number as id FROM numbers_mt(1000);
 
 SELECT id FROM join_on_disk lhs LEFT JOIN (SELECT id FROM join_on_disk GROUP BY id) rhs USING (id) FORMAT Null;
+
+DROP TABLE join_on_disk;
