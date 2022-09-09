@@ -21,6 +21,9 @@ struct QueryPlanOptimizationSettings
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
 
+    /// window functions read in order optimization
+    bool optimize_read_in_window_order = true;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
