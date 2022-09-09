@@ -5,7 +5,6 @@
 #include <optional>
 #include <re2/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 
 using namespace Azure::Storage::Blobs;
 

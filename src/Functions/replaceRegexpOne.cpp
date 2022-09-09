@@ -17,7 +17,7 @@ using FunctionReplaceRegexpOne = FunctionStringReplace<ReplaceRegexpImpl<true>, 
 
 }
 
-REGISTER_FUNCTION(ReplaceRegexpOne)
+void registerFunctionReplaceRegexpOne(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReplaceRegexpOne>();
 }

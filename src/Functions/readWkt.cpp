@@ -96,7 +96,7 @@ struct ReadWKTMultiPolygonNameHolder
     static constexpr const char * name = "readWKTMultiPolygon";
 };
 
-REGISTER_FUNCTION(ReadWKT)
+void registerFunctionReadWKT(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();

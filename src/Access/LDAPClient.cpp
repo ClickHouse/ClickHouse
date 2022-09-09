@@ -509,6 +509,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                 if (referrals)
                 {
                     SCOPE_EXIT({
+//                      ldap_value_free(referrals);
                         ber_memvfree(reinterpret_cast<void **>(referrals));
                         referrals = nullptr;
                     });

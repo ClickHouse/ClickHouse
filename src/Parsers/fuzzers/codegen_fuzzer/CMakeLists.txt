@@ -31,13 +31,12 @@ add_custom_command(
     DEPENDS "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
 )
 
-set(PROTOBUF_GENERATE_CPP_APPEND_PATH TRUE)
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS "${CURRENT_DIR_IN_BINARY}/out.proto")
+PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS "${CURRENT_DIR_IN_BINARY}/out.proto")
 set(FUZZER_SRCS codegen_select_fuzzer.cpp "${CURRENT_DIR_IN_BINARY}/out.cpp" ${PROTO_SRCS} ${PROTO_HDRS})
 
 set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
 
-clickhouse_add_executable(codegen_select_fuzzer ${FUZZER_SRCS})
+add_executable(codegen_select_fuzzer ${FUZZER_SRCS})
 
 set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier")
 

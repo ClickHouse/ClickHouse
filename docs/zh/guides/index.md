@@ -1,5 +1,4 @@
 ---
-slug: /zh/guides/
 sidebar_position: 38
 sidebar_label: ClickHouse指南
 ---

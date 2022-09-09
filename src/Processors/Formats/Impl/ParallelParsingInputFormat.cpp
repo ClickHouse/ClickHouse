@@ -121,7 +121,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
@@ -233,7 +233,7 @@ Chunk ParallelParsingInputFormat::generate()
         else
         {
             // Pass the unit back to the segmentator.
-            std::lock_guard lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             unit.status = READY_TO_INSERT;
             segmentator_condvar.notify_all();
         }

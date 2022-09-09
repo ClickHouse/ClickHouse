@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: Client Libraries
 ---
@@ -32,7 +31,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [chconn](https://github.com/vahid-sohrabloo/chconn)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
-    -   [uptrace/go-clickhouse](https://clickhouse.uptrace.dev/)
 -   Swift
     -   [ClickHouseNIO](https://github.com/patrick-zippenfenig/ClickHouseNIO)
     -   [ClickHouseVapor ORM](https://github.com/patrick-zippenfenig/ClickHouseVapor)
@@ -53,6 +51,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
     -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
+    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)

@@ -31,7 +31,7 @@ else
     DO_CHOWN=0
 fi
 
-KEEPER_CONFIG="${KEEPER_CONFIG:-/etc/clickhouse-keeper/keeper_config.xml}"
+KEEPER_CONFIG="${KEEPER_CONFIG:-/etc/clickhouse-keeper/config.yaml}"
 
 if [ -f "$KEEPER_CONFIG" ] && ! $gosu test -f "$KEEPER_CONFIG" -a -r "$KEEPER_CONFIG"; then
     echo "Configuration file '$KEEPER_CONFIG' isn't readable by user with id '$USER'"

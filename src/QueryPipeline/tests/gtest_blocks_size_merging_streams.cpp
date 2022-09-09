@@ -83,7 +83,7 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
     EXPECT_EQ(pipe.numOutputPorts(), 3);
 
     auto transform = std::make_shared<MergingSortedTransform>(pipe.getHeader(), pipe.numOutputPorts(), sort_description,
-        DEFAULT_MERGE_BLOCK_SIZE, SortingQueueStrategy::Batch, 0, nullptr, false, true);
+        DEFAULT_MERGE_BLOCK_SIZE, false, nullptr, false, true);
 
     pipe.addTransform(std::move(transform));
 
@@ -93,24 +93,29 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
     size_t total_rows = 0;
     Block block1;
     Block block2;
+    Block block3;
     executor.pull(block1);
     executor.pull(block2);
+    executor.pull(block3);
 
     Block tmp_block;
     ASSERT_FALSE(executor.pull(tmp_block));
 
-    for (const auto & block : {block1, block2})
+    for (const auto & block : {block1, block2, block3})
         total_rows += block.rows();
-
     /**
       * First block consists of 1 row from block3 with 21 rows + 2 rows from block2 with 10 rows
       * + 5 rows from block 1 with 5 rows granularity
       */
     EXPECT_EQ(block1.rows(), 8);
     /**
-      * Second block consists of 8 rows from block2 + 20 rows from block3
+      * Combination of 10 and 21 rows blocks
       */
-    EXPECT_EQ(block2.rows(), 28);
+    EXPECT_EQ(block2.rows(), 14);
+    /**
+      * Combination of 10 and 21 rows blocks
+      */
+    EXPECT_EQ(block3.rows(), 14);
 
     EXPECT_EQ(total_rows, 5 + 10 + 21);
 }
@@ -125,7 +130,7 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
     EXPECT_EQ(pipe.numOutputPorts(), 3);
 
     auto transform = std::make_shared<MergingSortedTransform>(pipe.getHeader(), pipe.numOutputPorts(), sort_description,
-            DEFAULT_MERGE_BLOCK_SIZE, SortingQueueStrategy::Batch, 0, nullptr, false, true);
+            DEFAULT_MERGE_BLOCK_SIZE, false, nullptr, false, true);
 
     pipe.addTransform(std::move(transform));
 

@@ -74,6 +74,7 @@ public:
     using key_type = Key;
     using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
+    using cell_type = Cell;
 
     class Reader final : private Cell::State
     {
@@ -246,6 +247,39 @@ public:
         }
     }
 
+
+    /// Same, but return false if it's full.
+    bool ALWAYS_INLINE tryEmplace(Key x, iterator & it, bool & inserted)
+    {
+        Cell * res = findCell(x);
+        it = iteratorTo(res);
+        inserted = res == buf + m_size;
+        if (inserted)
+        {
+            if (res == buf + capacity)
+                return false;
+
+            new(res) Cell(x, *this);
+            ++m_size;
+        }
+        return true;
+    }
+
+
+    /// Copy the cell from another hash table. It is assumed that there was no such key in the table yet.
+    void ALWAYS_INLINE insertUnique(const Cell * cell)
+    {
+        memcpy(&buf[m_size], cell, sizeof(*cell));
+        ++m_size;
+    }
+
+    void ALWAYS_INLINE insertUnique(Key x)
+    {
+        new(&buf[m_size]) Cell(x, *this);
+        ++m_size;
+    }
+
+
     iterator ALWAYS_INLINE find(Key x)                 { return iteratorTo(findCell(x)); }
     const_iterator ALWAYS_INLINE find(Key x) const     { return iteratorTo(findCell(x)); }
 
@@ -347,3 +381,36 @@ template
 >
 using SmallSet = SmallTable<Key, HashTableCell<Key, HashUnused>, capacity>;
 
+
+template
+<
+    typename Key,
+    typename Cell,
+    size_t capacity
+>
+class SmallMapTable : public SmallTable<Key, Cell, capacity>
+{
+public:
+    using key_type = Key;
+    using mapped_type = typename Cell::mapped_type;
+    using value_type = typename Cell::value_type;
+    using cell_type = Cell;
+
+    mapped_type & ALWAYS_INLINE operator[](Key x)
+    {
+        typename SmallMapTable::iterator it;
+        bool inserted;
+        this->emplace(x, it, inserted);
+        new (&it->getMapped()) mapped_type();
+        return it->getMapped();
+    }
+};
+
+
+template
+<
+    typename Key,
+    typename Mapped,
+    size_t capacity
+>
+using SmallMap = SmallMapTable<Key, HashMapCell<Key, Mapped, HashUnused>, capacity>;

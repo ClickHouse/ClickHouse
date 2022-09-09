@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/encoding-functions
----
 # 编码函数 {#bian-ma-han-shu}
 
 ## char {#char}

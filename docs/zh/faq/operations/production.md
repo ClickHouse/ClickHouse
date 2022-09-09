@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/operations/production
 title: Which ClickHouse version to use in production?
 toc_hidden: true
 sidebar_position: 10

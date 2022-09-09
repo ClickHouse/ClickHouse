@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest, no-tsan, no-asan, no-random-settings, no-s3-storage, no-msan
+# Tags: no-replicated-database, no-parallel, no-fasttest, no-tsan, no-asan, no-random-settings, no-s3-storage
 # Tag no-fasttest: max_memory_usage_for_user can interfere another queries running concurrently
 
 # Regression for MemoryTracker that had been incorrectly accounted
@@ -32,7 +32,7 @@ function execute_group_by()
     # max_memory_usage_for_user is installed to 0 once there are no more
     # queries for user.
     local opts=(
-        "--max_memory_usage_for_user="$((200<<20))
+        "--max_memory_usage_for_user="$((150<<20))
         "--max_threads=2"
     )
     execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5'

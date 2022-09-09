@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/in-functions
 sidebar_position: 60
 sidebar_label: "Функции для реализации оператора IN"
 ---

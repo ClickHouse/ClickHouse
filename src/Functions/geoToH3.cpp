@@ -141,7 +141,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(GeoToH3)
+void registerFunctionGeoToH3(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGeoToH3>();
 }

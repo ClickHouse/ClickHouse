@@ -4,7 +4,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(ShowCertificate)
+void registerFunctionShowCertificate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionShowCertificate>();
 }

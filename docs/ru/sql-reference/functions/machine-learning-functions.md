@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/machine-learning-functions
 sidebar_position: 64
 sidebar_label: "Функции машинного обучения"
 ---

@@ -142,9 +142,8 @@ private:
     BloomFilterParameters params;
     TokenExtractorPtr token_extractor;
     RPN rpn;
-
     /// Sets from syntax analyzer.
-    PreparedSetsPtr prepared_sets;
+    PreparedSets prepared_sets;
 };
 
 class MergeTreeIndexFullText final : public IMergeTreeIndex

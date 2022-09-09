@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/criteo
 sidebar_position: 18
 sidebar_label: "Терабайт логов кликов от Criteo"
 ---

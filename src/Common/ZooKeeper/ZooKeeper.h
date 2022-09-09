@@ -13,7 +13,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 #include <Common/thread_local_rng.h>
 #include <unistd.h>
 #include <random>
@@ -72,11 +72,24 @@ using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 class ZooKeeper
 {
 public:
-
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    /// hosts_string -- comma separated [secure://]host:port list
+    explicit ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+              const std::string & chroot_ = "",
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
+    explicit ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+              const std::string & chroot_ = "",
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
     /** Config of the form:
         <zookeeper>
@@ -113,8 +126,6 @@ public:
 
     /// Returns true, if the session has expired.
     bool expired();
-
-    DB::KeeperApiVersion getApiVersion();
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -173,25 +184,21 @@ public:
 
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
-                        const EventPtr & watch = nullptr,
-                        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                        const EventPtr & watch = nullptr);
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
-                             Coordination::WatchCallback watch_callback,
-                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                             Coordination::WatchCallback watch_callback);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist.
     Coordination::Error tryGetChildren(const std::string & path, Strings & res,
                            Coordination::Stat * stat = nullptr,
-                           const EventPtr & watch = nullptr,
-                           Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                           const EventPtr & watch = nullptr);
 
     Coordination::Error tryGetChildrenWatch(const std::string & path, Strings & res,
                                 Coordination::Stat * stat,
-                                Coordination::WatchCallback watch_callback,
-                                Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                                Coordination::WatchCallback watch_callback);
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
@@ -201,10 +208,6 @@ public:
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
-
-    std::string sync(const std::string & path);
-
-    Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
     Int64 getClientID();
 
@@ -272,15 +275,9 @@ public:
     FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
-    FutureGetChildren asyncGetChildren(
-        const std::string & path,
-        Coordination::WatchCallback watch_callback = {},
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+    FutureGetChildren asyncGetChildren(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGetChildren asyncTryGetChildrenNoThrow(
-        const std::string & path,
-        Coordination::WatchCallback watch_callback = {},
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+    FutureGetChildren asyncTryGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
@@ -296,11 +293,6 @@ public:
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
-
-    using FutureSync = std::future<Coordination::SyncResponse>;
-    FutureSync asyncSync(const std::string & path);
-    /// Like the previous one but don't throw any exceptions on future.get()
-    FutureSync asyncTrySyncNoThrow(const std::string & path);
 
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
@@ -324,7 +316,8 @@ public:
 private:
     friend class EphemeralNodeHolder;
 
-    void init(ZooKeeperArgs args_);
+    void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -333,23 +326,25 @@ private:
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type);
+        const std::string & path, Strings & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
-    Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
-    ZooKeeperArgs args;
+    Strings hosts;
+    std::string identity;
+    int32_t session_timeout_ms;
+    int32_t operation_timeout_ms;
+    std::string chroot;
+    std::string implementation;
 
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
+
+    GetPriorityForLoadBalancing get_priority_load_balancing;
 
     AtomicStopwatch session_uptime;
 };

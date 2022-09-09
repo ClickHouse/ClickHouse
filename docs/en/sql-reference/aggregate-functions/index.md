@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/
 sidebar_label: Aggregate Functions
 sidebar_position: 33
 ---

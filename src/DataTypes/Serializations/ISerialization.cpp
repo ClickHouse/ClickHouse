@@ -224,10 +224,8 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 
 void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
-    if (!cache || path.empty())
-        return;
-
-    cache->emplace(getSubcolumnNameForStream(path), column);
+    if (cache && !path.empty())
+        cache->emplace(getSubcolumnNameForStream(path), column);
 }
 
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
@@ -236,7 +234,10 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path));
-    return it == cache->end() ? nullptr : it->second;
+    if (it == cache->end())
+        return nullptr;
+
+    return it->second;
 }
 
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)

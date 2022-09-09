@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
@@ -12,7 +13,6 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <memory>
 #include <mutex>
@@ -40,10 +40,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class IDisk;
-using DiskPtr = std::shared_ptr<IDisk>;
-using DisksMap = std::map<String, DiskPtr>;
-
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 using Reservations = std::vector<ReservationPtr>;
@@ -53,13 +49,7 @@ class WriteBufferFromFileBase;
 class MMappedFileCache;
 class IMetadataStorage;
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;
-struct IDiskTransaction;
-using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
-struct RemoveRequest;
-using RemoveBatchRequest = std::vector<RemoveRequest>;
 
-class DiskObjectStorage;
-using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 /**
  * Provide interface for reservation.
@@ -102,12 +92,10 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
-        : executor(executor_)
+    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>())
+        : executor(std::move(executor_))
     {
     }
-
-    virtual DiskTransactionPtr createTransaction();
 
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
@@ -193,7 +181,6 @@ public:
         const WriteSettings & settings = {}) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
-    /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;
 
     /// Remove file if it exists.
@@ -221,36 +208,52 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
-    virtual bool supportsCache() const { return false; }
+    virtual String getCacheBasePath() const { return ""; }
 
-    virtual NameSet getCacheLayersNames() const
+    /// Returns a list of paths because for Log family engines there might be
+    /// multiple files in remote fs for single clickhouse file.
+    virtual std::vector<String> getRemotePaths(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getDataSourceDescription().type);
-    }
-
-    /// Returns a list of storage objects (contains path, size, ...).
-    /// (A list is returned because for Log family engines there might
-    /// be multiple files in remote fs for single clickhouse file.
-    virtual StoredObjects getStorageObjects(const String &) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePaths() not implemented for disk: {}`", getType());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
+    using LocalPathWithRemotePaths = std::pair<String, std::vector<String>>;
 
-    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
+    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
     }
+
+    struct RemoveRequest
+    {
+        String path;
+        bool if_exists = false;
+
+        explicit RemoveRequest(String path_, bool if_exists_ = false)
+            : path(std::move(path_)), if_exists(std::move(if_exists_))
+        {
+        }
+    };
+
+    using RemoveBatchRequest = std::vector<RemoveRequest>;
 
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+    {
+        for (const auto & file : files)
+        {
+            bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+            if (file.if_exists)
+                removeSharedFileIfExists(file.path, keep_file);
+            else
+                removeSharedFile(file.path, keep_file);
+        }
+    }
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
@@ -271,8 +274,8 @@ public:
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
-    /// Return data source description
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
+    /// Return disk type - "local", "s3", etc.
+    virtual DiskType getType() const = 0;
 
     /// Involves network interaction.
     virtual bool isRemote() const = 0;
@@ -321,7 +324,7 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual MetadataStoragePtr getMetadataStorage() = 0;
+    virtual MetadataStoragePtr getMetadataStorage();
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
@@ -349,22 +352,6 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    /// Create disk object storage according to disk type.
-    /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
-    /// for DiskObjectStorage create just a copy.
-    virtual DiskObjectStoragePtr createDiskObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            getDataSourceDescription().type);
-    }
-
-    virtual bool supportsStat() const { return false; }
-    virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
-
-    virtual bool supportsChmod() const { return false; }
-    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
 protected:
     friend class DiskDecorator;
@@ -378,9 +365,10 @@ protected:
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
 private:
-    std::shared_ptr<Executor> executor;
+    std::unique_ptr<Executor> executor;
 };
 
+using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
 
 /**

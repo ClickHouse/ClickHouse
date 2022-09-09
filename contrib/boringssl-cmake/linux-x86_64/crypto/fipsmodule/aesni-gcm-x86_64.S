@@ -556,10 +556,12 @@ _aesni_ctr32_6x:
 .align	32
 aesni_gcm_encrypt:
 .cfi_startproc	
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
+#ifndef BORINGSSL_FIPS
 .extern	BORINGSSL_function_hit
 .hidden BORINGSSL_function_hit
 	movb	$1,BORINGSSL_function_hit+2(%rip)
+#endif
 #endif
 	xorq	%r10,%r10
 
@@ -849,4 +851,3 @@ aesni_gcm_encrypt:
 .byte	65,69,83,45,78,73,32,71,67,77,32,109,111,100,117,108,101,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	64
 #endif
-.section	.note.GNU-stack,"",@progbits
