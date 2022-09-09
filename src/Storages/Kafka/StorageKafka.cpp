@@ -432,18 +432,8 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
     {
         conf.set("sasl.username", sasl_user);
         conf.set("sasl.password", sasl_password);
-        if (security_protocol != "")
-        {
-            conf.set("security.protocol", security_protocol);
-        } else {
-            conf.set("security.protocol", "sasl_plaintext");
-        }
-        if (sasl_mechanism != "")
-        {
-            conf.set("sasl.mechanism", sasl_mechanism);
-        } else {
-            conf.set("sasl.mechanism", "PLAIN");
-        }
+        conf.set("security.protocol", security_protocol);
+        conf.set("sasl.mechanism", sasl_mechanism);
     }
 
     updateConfiguration(conf);
@@ -492,18 +482,8 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
     {
       conf.set("sasl.username", sasl_user);
       conf.set("sasl.password", sasl_password);
-      if (security_protocol != "")
-      {
-          conf.set("security.protocol", security_protocol);
-      } else {
-          conf.set("security.protocol", "sasl_plaintext");
-      }
-      if (sasl_mechanism != "")
-      {
-          conf.set("sasl.mechanism", sasl_mechanism);
-      } else {
-          conf.set("sasl.mechanism", "PLAIN");
-      }
+      conf.set("security.protocol", security_protocol);
+      conf.set("sasl.mechanism", sasl_mechanism);
     }
 
     // Create a consumer and subscribe to topics
