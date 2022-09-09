@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -29,7 +30,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Disks/StoragePolicy.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -563,10 +563,11 @@ public:
         Transaction & out_transaction);
 
     /// Unlocked version of previous one. Useful when added multiple parts with a single lock.
-    DataPartsVector renameTempPartAndReplaceUnlocked(
+    bool renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
-        DataPartsLock & lock);
+        DataPartsLock & lock,
+        DataPartsVector * out_covered_parts = nullptr);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -917,6 +918,8 @@ public:
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
 
+    MergeTreeData::MutableDataPartPtr createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn);
+
     MergeTreeDataFormatVersion format_version;
 
     /// Merging params - what additional actions to perform during merge.
@@ -1215,6 +1218,10 @@ protected:
         const MergeTreePartInfo & new_part_info,
         const String & new_part_name,
         DataPartPtr & out_covering_part,
+        DataPartsLock & data_parts_lock) const;
+
+    DataPartsVector getCoveredOutdatedParts(
+        const MergeTreePartInfo & part_info,
         DataPartsLock & data_parts_lock) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
