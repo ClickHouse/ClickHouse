@@ -21,6 +21,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const String & s = get<const String &>(field);

@@ -6,13 +6,6 @@
 namespace DB
 {
 
-/* Format JSONCompactColumns reads each block of data in the next format:
- * [
- *     [value1, value2, value3, ...],
- *     [value1, value2m value3, ...],
- *     ...
- * ]
- */
 class JSONColumnsWithMetadataReader : public JSONColumnsReader
 {
 public:

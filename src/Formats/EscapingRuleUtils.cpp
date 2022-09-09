@@ -383,8 +383,6 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
                 }
             }
         }
-
-
     };
 
     auto transform_complex_types = [&](DataTypes & data_types)

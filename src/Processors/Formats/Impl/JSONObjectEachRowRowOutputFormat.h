@@ -9,6 +9,14 @@
 namespace DB
 {
 
+/* Outputs data as a single JSON Object with rows as fields:
+ * {
+ *     "row_1": {"num": 42, "str": "hello", "arr": [0,1]},
+ *     "row_2": {"num": 43, "str": "hello", "arr": [0,1,2]},
+ *     "row_3": {"num": 44, "str": "hello", "arr": [0,1,2,3]},
+ * }
+ */
+
 class JSONObjectEachRowRowOutputFormat : public JSONEachRowRowOutputFormat
 {
 public:
