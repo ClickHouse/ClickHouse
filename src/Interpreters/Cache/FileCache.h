@@ -18,6 +18,7 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Common/StatusFile.h>
 
 namespace DB
 {
@@ -143,6 +144,7 @@ private:
 
     bool is_initialized = false;
     std::exception_ptr initialization_exception;
+    std::unique_ptr<StatusFile> status_file;
 
     mutable std::mutex mutex;
 
