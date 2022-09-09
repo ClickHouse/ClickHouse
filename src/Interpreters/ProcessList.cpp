@@ -349,7 +349,7 @@ QueryStatus::~QueryStatus()
     assert(executors.empty());
 }
 
-CancellationCode QueryStatus::cancelQuery(bool)
+CancellationCode QueryStatus::cancelQuery()
 {
     if (is_killed.load())
         return CancellationCode::CancelSent;
@@ -436,7 +436,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
 {
     auto [lock, blocker] = safeLock();
 
@@ -448,7 +448,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     if (!elem)
         return CancellationCode::NotFound;
 
-    auto code =  elem->cancelQuery(kill);
+    auto code =  elem->cancelQuery();
     lock.lock();
     // If query already finished we need to remove it from process list
     if (elem->isReadyForRemoval())
@@ -489,7 +489,7 @@ void ProcessList::killAllQueries()
     lock.unlock();
 
     for (auto * status : query_statuses)
-        status->cancelQuery(true);
+        status->cancelQuery();
 
     lock.lock();
     // Remove query statuses for all already stopped queries
