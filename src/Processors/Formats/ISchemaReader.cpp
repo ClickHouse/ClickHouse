@@ -113,6 +113,11 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
 
     DataTypes data_types = readRowAndGetDataTypes();
+    
+    /// Check that we read at list one column.
+    if (data_types.empty())
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
+
     /// If column names weren't set, use default names 'c1', 'c2', ...
     if (column_names.empty())
     {
@@ -120,20 +125,19 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         for (size_t i = 0; i != data_types.size(); ++i)
             column_names.push_back("c" + std::to_string(i + 1));
     }
-    else if (!data_types.empty())
+    /// If column names were set, check that the number of names match the number of types.
+    else if (column_names.size() != data_types.size())
     {
-        /// If column names were set, check that the number of names match the number of types.
-        if (column_names.size() != data_types.size())
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
-
-        for (size_t i = 0; i != column_names.size(); ++i)
-        {
-            auto hint_it = hints.find(column_names[i]);
-            if (hint_it != hints.end())
-                data_types[i] = hint_it->second;
-        }
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
+    }
+    
+    for (size_t i = 0; i != column_names.size(); ++i)
+    {
+        auto hint_it = hints.find(column_names[i]);
+        if (hint_it != hints.end())
+            data_types[i] = hint_it->second;
     }
 
     for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
@@ -157,10 +161,6 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             chooseResultColumnType(data_types[i], new_data_types[i], transform_types_if_needed, getDefaultType(i), std::to_string(i + 1), rows_read);
         }
     }
-
-    /// Check that we read at list one column.
-    if (data_types.empty())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
     NamesAndTypesList result;
     for (size_t i = 0; i != data_types.size(); ++i)
