@@ -58,6 +58,8 @@ public:
     /// Add limits from external query.
     void addStorageLimits(const StorageLimitsList & limits);
 
+    ContextPtr getContext() const { return context; }
+
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;

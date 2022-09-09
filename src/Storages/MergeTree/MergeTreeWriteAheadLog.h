@@ -62,7 +62,10 @@ public:
 
     void addPart(DataPartInMemoryPtr & part);
     void dropPart(const String & part_name);
-    std::vector<MergeTreeMutableDataPartPtr> restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    std::vector<MergeTreeMutableDataPartPtr> restore(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        std::unique_lock<std::mutex> & parts_lock);
 
     using MinMaxBlockNumber = std::pair<Int64, Int64>;
     static std::optional<MinMaxBlockNumber> tryParseMinMaxBlockNumber(const String & filename);
