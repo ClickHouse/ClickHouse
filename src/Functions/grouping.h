@@ -19,6 +19,8 @@ protected:
     static constexpr UInt64 ONE = 1;
 
     const ColumnNumbers arguments_indexes;
+    // Initial implementation of GROUPING function returned 1 if the argument is used as an aggregation key.
+    // This differs from the behavior described in the standard and other DBMS.
     const bool force_compatibility;
 
     static constexpr UInt64 COMPATIBLE_MODE[]   = {1, 0};
