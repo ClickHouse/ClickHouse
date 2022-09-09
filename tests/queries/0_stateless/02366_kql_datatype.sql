@@ -50,6 +50,9 @@ print timespan(1.5h) / timespan(30m);
 print '-- null';
 print isnull(null);
 print bool(null), int(null), long(null), real(null), double(null);
+print '-- decimal';
+print decimal(null);
+print decimal(123.345);
 print '-- dynamic'; -- only support 1D array at the moment
 print dynamic([1,2,3]);
 print dynamic(['a', 'b', 'c']);
@@ -91,8 +94,11 @@ print v1=make_timespan(1,12), v2=make_timespan(1,12,30), v3=make_timespan(1,12,3
 print '-- totimespan()';
 print totimespan('0.00:01:00');
 print '-- tolong()';
-print tolong('123')
+print tolong('123');
 print tolong('abc');
+print '-- todecimal()';
+print todecimal(123.345);
+print todecimal(null);
 -- TODO:
 -- print totimespan('abc') == null;
 

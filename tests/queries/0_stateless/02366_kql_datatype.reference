@@ -43,6 +43,9 @@ inf
 -- null
 1
 \N	\N	\N	\N	\N
+-- decimal
+\N
+123.345
 -- dynamic
 [1,2,3]
 ['a','b','c']
@@ -83,3 +86,7 @@ true
 60
 -- tolong()
 123
+\N
+-- todecimal()
+123.345
+\N
