@@ -7,8 +7,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -573,9 +573,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
-    UUID uuid = table->getStorageID().uuid;
     table.reset();
-    database->waitDetachedTableNotInUse(uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -753,7 +751,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "if you want to clean the data and drop this replica", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
-    /// However, the main use case is to drop dead replica, which cannot become active.
+    /// However, the main usecase is to drop dead replica, which cannot become active.
     /// This check prevents only from accidental drop of some other replica.
     if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
         throw Exception("Can't drop replica: " + query.replica + ", because it's active",

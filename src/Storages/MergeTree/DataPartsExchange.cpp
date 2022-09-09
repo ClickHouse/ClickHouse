@@ -458,11 +458,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             Disks disks = data.getDisks();
             for (const auto & data_disk : disks)
                 if (data_disk->supportZeroCopyReplication())
-                    capability.push_back(toString(data_disk->getDataSourceDescription().type));
+                    capability.push_back(toString(data_disk->getType()));
         }
         else if (disk->supportZeroCopyReplication())
         {
-            capability.push_back(toString(disk->getDataSourceDescription().type));
+            capability.push_back(toString(disk->getType()));
         }
     }
     if (!capability.empty())
@@ -773,7 +773,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     ThrottlerPtr throttler)
 {
     assert(!tmp_prefix.empty());
-    const auto data_settings = data.getSettings();
 
     /// We will remove directory if it's already exists. Make precautions.
     if (tmp_prefix.empty() //-V560
@@ -801,14 +800,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     {
         LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
             data_part_storage_builder->getFullPath());
-
-        /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
-        /// is executed as a callback.
-        ///
-        /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
-        /// or not. So we are not doing it
-        bool keep_shared = disk->supportZeroCopyReplication() && data_settings->allow_remote_fs_zero_copy_replication;
-        data_part_storage_builder->removeSharedRecursive(keep_shared);
+        data_part_storage_builder->removeRecursive();
     }
 
     data_part_storage_builder->createDirectories();

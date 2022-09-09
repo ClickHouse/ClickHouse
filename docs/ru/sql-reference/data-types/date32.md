@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/date32
 sidebar_position: 48
 sidebar_label: Date32
 ---

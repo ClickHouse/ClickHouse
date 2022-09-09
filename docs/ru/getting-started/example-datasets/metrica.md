@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/metrica
 sidebar_position: 15
 sidebar_label: "Анонимизированные данные Яндекс.Метрики"
 ---

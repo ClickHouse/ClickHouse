@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/formats
 sidebar_position: 21
 sidebar_label: Input and Output Formats
 ---

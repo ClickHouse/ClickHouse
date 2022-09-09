@@ -31,7 +31,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_comment("COMMENT");
@@ -42,9 +41,7 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
     return comment;
 }
-
 }
-
 
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

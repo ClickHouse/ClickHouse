@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/general/
 title: Общие вопросы о ClickHouse
 toc_hidden_folder: true
 sidebar_position: 1

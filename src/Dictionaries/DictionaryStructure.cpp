@@ -55,7 +55,6 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
 
     return magic_enum::enum_cast<AttributeUnderlyingType>(static_cast<TypeIndexUnderlying>(index));
 }
-
 }
 
 

@@ -69,7 +69,7 @@ public:
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
-    void transform(const Transformer & transformer, bool check_ports = true);
+    void transform(const Transformer & transformer);
 
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);

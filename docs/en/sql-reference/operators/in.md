@@ -1,6 +1,3 @@
----
-slug: /en/sql-reference/operators/in
----
 # IN Operators
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.

@@ -122,7 +122,7 @@ public:
 
 REGISTER_FUNCTION(Lemmatize)
 {
-    factory.registerFunction<FunctionLemmatize>();
+    factory.registerFunction<FunctionLemmatize>(FunctionFactory::CaseInsensitive);
 }
 
 }

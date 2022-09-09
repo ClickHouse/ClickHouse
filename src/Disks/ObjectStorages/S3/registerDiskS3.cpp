@@ -15,6 +15,9 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
+#include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
@@ -130,7 +133,7 @@ void registerDiskS3(DiskFactory & factory)
         auto s3_storage = std::make_unique<S3ObjectStorage>(
             getClient(config, config_prefix, context),
             getSettings(config, config_prefix, context),
-            uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
+            uri.version_id, s3_capabilities, uri.bucket);
 
         bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
 
@@ -159,6 +162,7 @@ void registerDiskS3(DiskFactory & factory)
             "DiskS3",
             std::move(metadata_storage),
             std::move(s3_storage),
+            DiskType::S3,
             send_metadata,
             copy_thread_pool_size);
 

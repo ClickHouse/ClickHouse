@@ -1,6 +1,3 @@
----
-slug: /zh/development/style
----
 # 如何编写 C++ 代码 {#ru-he-bian-xie-c-dai-ma}
 
 ## 一般建议 {#yi-ban-jian-yi}

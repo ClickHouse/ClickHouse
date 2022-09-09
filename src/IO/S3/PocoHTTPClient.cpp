@@ -121,29 +121,9 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    try
-    {
-        auto response = Aws::MakeShared<PocoHTTPResponse>("PocoHTTPClient", request);
-        makeRequestInternal(*request, response, readLimiter, writeLimiter);
-        return response;
-    }
-    catch (const Exception &)
-    {
-        throw;
-    }
-    catch (const Poco::Exception & e)
-    {
-        throw Exception(Exception::CreateFromPocoTag{}, e);
-    }
-    catch (const std::exception & e)
-    {
-        throw Exception(Exception::CreateFromSTDTag{}, e);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        throw;
-    }
+    auto response = Aws::MakeShared<PocoHTTPResponse>("PocoHTTPClient", request);
+    makeRequestInternal(*request, response, readLimiter, writeLimiter);
+    return response;
 }
 
 namespace

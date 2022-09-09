@@ -260,12 +260,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     auto * state_object = checkAndGetState<SerializeStateObject>(state);
 
     if (!column_object.isFinalized())
-    {
-        auto finalized_object = column_object.clone();
-        assert_cast<ColumnObject &>(*finalized_object).finalize();
-        serializeBinaryBulkWithMultipleStreams(*finalized_object, offset, limit, settings, state);
-        return;
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write non-finalized ColumnObject");
 
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 

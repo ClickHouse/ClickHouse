@@ -39,7 +39,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -640,18 +639,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
-    bool can_analyze_again = false;
-    if (context->hasQueryContext())
-    {
-        /// Check number of calls of 'analyze' function.
-        /// If it is too big, we will not analyze the query again not to have exponential blowup.
-        std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
-        ++current_query_analyze_count;
-        can_analyze_again = settings.max_analyze_depth == 0 || current_query_analyze_count < settings.max_analyze_depth;
-    }
-
-    if (can_analyze_again && (analysis_result.prewhere_constant_filter_description.always_false ||
-                              analysis_result.prewhere_constant_filter_description.always_true))
+    if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
     {
         if (analysis_result.prewhere_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
@@ -659,9 +647,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
-
-    if (can_analyze_again && (analysis_result.where_constant_filter_description.always_false ||
-                              analysis_result.where_constant_filter_description.always_true))
+    if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
     {
         if (analysis_result.where_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
@@ -672,8 +658,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
-        size_t current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter.load();
-        LOG_TRACE(log, "Running 'analyze' second time (current analyze depth: {})", current_query_analyze_count);
+        LOG_TRACE(log, "Running 'analyze' second time");
 
         /// Reuse already built sets for multiple passes of analysis
         prepared_sets = query_analyzer->getPreparedSets();
@@ -1198,7 +1183,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
 
-    /// Do I need to aggregate in a separate row that has not passed max_rows_to_group_by?
+    /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
     bool aggregate_overflow_row =
         expressions.need_aggregate &&
         query.group_by_with_totals &&
@@ -1437,7 +1422,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, bool is_right)
                     {
                         SortDescription order_descr;
                         order_descr.reserve(key_names.size());
@@ -1456,43 +1441,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             this->context->getTemporaryVolume(),
                             settings.min_free_disk_space_for_temporary_data,
                             settings.optimize_sorting_by_input_stream_properties);
-                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
+                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", is_right ? "right" : "left"));
                         plan.addStep(std::move(sorting_step));
-                    };
-
-                    auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
-                    auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
-                    {
-                        auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
-                            plan.getCurrentDataStream(), key_names, settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_pos);
-                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
-
-                        auto * step_raw_ptr = creating_set_step.get();
-                        plan.addStep(std::move(creating_set_step));
-                        return step_raw_ptr;
                     };
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
                     {
-                        const auto & table_join = expressions.join->getTableJoin();
-                        const auto & join_clause = table_join.getOnlyClause();
-
-                        auto join_kind = table_join.kind();
-                        bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
-                        {
-                            auto * left_set = add_create_set(query_plan, join_clause.key_names_left, JoinTableSide::Left);
-                            auto * right_set = add_create_set(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
-
-                            if (isInnerOrLeft(join_kind))
-                                right_set->setFiltering(left_set->getSet());
-
-                            if (isInnerOrRight(join_kind))
-                                left_set->setFiltering(right_set->getSet());
-                        }
-
-                        add_sorting(query_plan, join_clause.key_names_left, JoinTableSide::Left);
-                        add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
+                        const auto & join_clause = expressions.join->getTableJoin().getOnlyClause();
+                        add_sorting(query_plan, join_clause.key_names_left, false);
+                        add_sorting(*joined_plan, join_clause.key_names_right, true);
                     }
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
@@ -1763,7 +1720,7 @@ static void executeMergeAggregatedImpl(
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size);
+    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2241,7 +2198,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         query_info.syntax_analyzer_result);
                 }
             }
-            else if (optimize_aggregation_in_order)
+            else
             {
                 if (query_info.projection)
                 {
@@ -2359,7 +2316,6 @@ static Aggregator::Params getAggregatorParams(
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
-        settings.max_block_size,
         /* only_merge */ false,
         stats_collecting_params
     };
@@ -2636,7 +2592,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 
     auto finish_sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
-        input_sorting_info->sort_description_for_merging,
+        input_sorting_info->order_key_prefix_descr,
         output_order_descr,
         settings.max_block_size,
         limit);

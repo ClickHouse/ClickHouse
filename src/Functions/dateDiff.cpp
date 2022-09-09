@@ -263,7 +263,8 @@ private:
 
 REGISTER_FUNCTION(DateDiff)
 {
-    factory.registerFunction<FunctionDateDiff>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateDiff>(FunctionFactory::CaseInsensitive);
 }
 
 }
+

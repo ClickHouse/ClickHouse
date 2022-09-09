@@ -35,7 +35,7 @@ void HDFSObjectStorage::startup()
 
 std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString(32);
+    return getRandomASCIIString();
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
@@ -70,12 +70,11 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
         auto hdfs_path = path.substr(begin_of_path);
         auto hdfs_uri = path.substr(0, begin_of_path);
 
-        return std::make_unique<ReadBufferFromHDFS>(
-            hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
+        return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config, disk_read_settings);
     };
 
     auto hdfs_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, disk_read_settings);
-    auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl), read_settings);
+    auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }
 

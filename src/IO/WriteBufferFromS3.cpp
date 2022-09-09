@@ -4,7 +4,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -15,7 +15,6 @@
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
-#include <aws/s3/model/HeadObjectRequest.h>
 
 #include <utility>
 
@@ -40,7 +39,7 @@ namespace ErrorCodes
 struct WriteBufferFromS3::UploadPartTask
 {
     Aws::S3::Model::UploadPartRequest req;
-    bool is_finished = false;
+    bool is_finised = false;
     std::string tag;
     std::exception_ptr exception;
 };
@@ -48,7 +47,7 @@ struct WriteBufferFromS3::UploadPartTask
 struct WriteBufferFromS3::PutObjectTask
 {
     Aws::S3::Model::PutObjectRequest req;
-    bool is_finished = false;
+    bool is_finised = false;
     std::exception_ptr exception;
 };
 
@@ -64,10 +63,10 @@ WriteBufferFromS3::WriteBufferFromS3(
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
-    , s3_settings(s3_settings_)
     , client_ptr(std::move(client_ptr_))
-    , object_metadata(std::move(object_metadata_))
     , upload_part_size(s3_settings_.min_upload_part_size)
+    , s3_settings(s3_settings_)
+    , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
     , write_settings(write_settings_)
 {
@@ -161,20 +160,6 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
-
-    if (s3_settings.check_objects_after_upload)
-    {
-        LOG_TRACE(log, "Checking object {} exists after upload", key);
-
-        Aws::S3::Model::HeadObjectRequest request;
-        request.SetBucket(bucket);
-        request.SetKey(key);
-
-        auto response = client_ptr->HeadObject(request);
-
-        if (!response.IsSuccess())
-            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket);
-    }
 }
 
 void WriteBufferFromS3::createMultipartUpload()
@@ -218,7 +203,7 @@ void WriteBufferFromS3::writePart()
         return;
     }
 
-    if (TSA_SUPPRESS_WARNING_FOR_READ(part_tags).size() == S3_WARN_MAX_PARTS)
+    if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
         // Don't throw exception here by ourselves but leave the decision to take by S3 server.
         LOG_WARNING(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
@@ -231,7 +216,6 @@ void WriteBufferFromS3::writePart()
         int part_number;
         {
             std::lock_guard lock(bg_tasks_mutex);
-
             task = &upload_object_tasks.emplace_back();
             ++num_added_bg_tasks;
             part_number = num_added_bg_tasks;
@@ -241,7 +225,7 @@ void WriteBufferFromS3::writePart()
         auto task_finish_notify = [&, task]()
         {
             std::lock_guard lock(bg_tasks_mutex);
-            task->is_finished = true;
+            task->is_finised = true;
             ++num_finished_bg_tasks;
 
             /// Notification under mutex is important here.
@@ -277,11 +261,9 @@ void WriteBufferFromS3::writePart()
     else
     {
         UploadPartTask task;
-        auto & tags = TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags); /// Suppress warning because schedule == false.
-
-        fillUploadRequest(task.req, tags.size() + 1);
+        fillUploadRequest(task.req, part_tags.size() + 1);
         processUploadRequest(task);
-        tags.push_back(task.tag);
+        part_tags.push_back(task.tag);
     }
 }
 
@@ -305,7 +287,6 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     if (outcome.IsSuccess())
     {
         task.tag = outcome.GetResult().GetETag();
-        std::lock_guard lock(bg_tasks_mutex); /// Protect part_tags from race
         LOG_TRACE(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, task.tag, part_tags.size());
     }
     else
@@ -316,11 +297,9 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 
 void WriteBufferFromS3::completeMultipartUpload()
 {
-    const auto & tags = TSA_SUPPRESS_WARNING_FOR_READ(part_tags);
+    LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
 
-    LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
-
-    if (tags.empty())
+    if (part_tags.empty())
         throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
@@ -329,10 +308,10 @@ void WriteBufferFromS3::completeMultipartUpload()
     req.SetUploadId(multipart_upload_id);
 
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
-    for (size_t i = 0; i < tags.size(); ++i)
+    for (size_t i = 0; i < part_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(tags[i]).WithPartNumber(i + 1));
+        multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
     }
 
     req.SetMultipartUpload(multipart_upload);
@@ -340,12 +319,12 @@ void WriteBufferFromS3::completeMultipartUpload()
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
     if (outcome.IsSuccess())
-        LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
+        LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
     else
     {
         throw Exception(ErrorCodes::S3_ERROR, "{} Tags:{}",
             outcome.GetError().GetMessage(),
-            fmt::join(tags.begin(), tags.end(), " "));
+            fmt::join(part_tags.begin(), part_tags.end(), " "));
     }
 }
 
@@ -370,7 +349,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
         auto task_notify_finish = [&]()
         {
             std::lock_guard lock(bg_tasks_mutex);
-            put_object_task->is_finished = true;
+            put_object_task->is_finised = true;
 
             /// Notification under mutex is important here.
             /// Othervies, WriteBuffer could be destroyed in between
@@ -423,7 +402,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
     req.SetContentType("binary/octet-stream");
 }
 
-void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
+void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
     auto outcome = client_ptr->PutObject(task.req);
     bool with_pool = static_cast<bool>(schedule);
@@ -437,25 +416,23 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
 {
     if (schedule)
     {
-        std::unique_lock lock(bg_tasks_mutex);
-
-        /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
-        auto & tasks = TSA_SUPPRESS_WARNING_FOR_WRITE(upload_object_tasks);
-
-        while (!tasks.empty() && tasks.front().is_finished)
+        std::lock_guard lock(bg_tasks_mutex);
         {
-            auto & task = tasks.front();
-            auto exception = task.exception;
-            auto tag = std::move(task.tag);
-            tasks.pop_front();
-
-            if (exception)
+            while (!upload_object_tasks.empty() && upload_object_tasks.front().is_finised)
             {
-                waitForAllBackGroundTasksUnlocked(lock);
-                std::rethrow_exception(exception);
-            }
+                auto & task = upload_object_tasks.front();
+                auto exception = task.exception;
+                auto tag = std::move(task.tag);
+                upload_object_tasks.pop_front();
 
-            TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags).push_back(tag);
+                if (exception)
+                {
+                    waitForAllBackGroundTasks();
+                    std::rethrow_exception(exception);
+                }
+
+                part_tags.push_back(tag);
+            }
         }
     }
 }
@@ -465,33 +442,22 @@ void WriteBufferFromS3::waitForAllBackGroundTasks()
     if (schedule)
     {
         std::unique_lock lock(bg_tasks_mutex);
-        waitForAllBackGroundTasksUnlocked(lock);
-    }
-}
+        bg_tasks_condvar.wait(lock, [this]() { return num_added_bg_tasks == num_finished_bg_tasks; });
 
-void WriteBufferFromS3::waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock)
-{
-    if (schedule)
-    {
-        bg_tasks_condvar.wait(bg_tasks_lock, [this]() {return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
-
-        /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
-        auto & tasks = TSA_SUPPRESS_WARNING_FOR_WRITE(upload_object_tasks);
-        while (!tasks.empty())
+        while (!upload_object_tasks.empty())
         {
-            auto & task = tasks.front();
-
+            auto & task = upload_object_tasks.front();
             if (task.exception)
                 std::rethrow_exception(task.exception);
 
-            TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags).push_back(task.tag);
+            part_tags.push_back(task.tag);
 
-            tasks.pop_front();
+            upload_object_tasks.pop_front();
         }
 
         if (put_object_task)
         {
-            bg_tasks_condvar.wait(bg_tasks_lock, [this]() { return put_object_task->is_finished; });
+            bg_tasks_condvar.wait(lock, [this]() { return put_object_task->is_finised; });
             if (put_object_task->exception)
                 std::rethrow_exception(put_object_task->exception);
         }

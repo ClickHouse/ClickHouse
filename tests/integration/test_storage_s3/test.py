@@ -1478,46 +1478,52 @@ def test_wrong_format_usage(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10e6)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10)"
     )
-    # size(test_wrong_format.native) = 10e6*8+16(header) ~= 76MiB
 
-    # ensure that not all file will be loaded into memory
     result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage='10Mi'"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage=1000"
     )
 
     assert "Not a Parquet file" in result
 
 
-def check_profile_event_for_query(instance, query, profile_event, amount):
+def get_profile_event_for_query(instance, query, profile_event):
     instance.query("system flush logs")
+    time.sleep(0.5)
     query = query.replace("'", "\\'")
-    res = int(
+    return int(
         instance.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by event_time desc limit 1"
         )
     )
-
-    assert res == amount
 
 
 def check_cache_misses(instance, file, storage_name, started_cluster, bucket, amount=1):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheMisses", amount)
+    assert (
+        get_profile_event_for_query(instance, query, "SchemaInferenceCacheMisses")
+        == amount
+    )
 
 
 def check_cache_hits(instance, file, storage_name, started_cluster, bucket, amount=1):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheHits", amount)
+    assert (
+        get_profile_event_for_query(instance, query, "SchemaInferenceCacheHits")
+        == amount
+    )
 
 
 def check_cache_invalidations(
     instance, file, storage_name, started_cluster, bucket, amount=1
 ):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(
-        instance, query, "SchemaInferenceCacheInvalidations", amount
+    assert (
+        get_profile_event_for_query(
+            instance, query, "SchemaInferenceCacheInvalidations"
+        )
+        == amount
     )
 
 
@@ -1525,8 +1531,9 @@ def check_cache_evictions(
     instance, file, storage_name, started_cluster, bucket, amount=1
 ):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(
-        instance, query, "SchemaInferenceCacheEvictions", amount
+    assert (
+        get_profile_event_for_query(instance, query, "SchemaInferenceCacheEvictions")
+        == amount
     )
 
 

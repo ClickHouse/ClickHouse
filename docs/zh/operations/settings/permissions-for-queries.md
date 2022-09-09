@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/settings/permissions-for-queries
 sidebar_position: 58
 sidebar_label: "\u67E5\u8BE2\u6743\u9650"
 ---

@@ -1,11 +1,10 @@
 ---
-slug: /en/development/adding_test_queries
 sidebar_label: Adding Test Queries
 sidebar_position: 63
-title: How to add test queries to ClickHouse CI
 description: Instructions on how to add a test case to ClickHouse continuous integration
 ---
 
+# How to add test queries to ClickHouse CI
 
 ClickHouse has hundreds (or even thousands) of features. Every commit gets checked by a complex set of tests containing many thousands of test cases.
 

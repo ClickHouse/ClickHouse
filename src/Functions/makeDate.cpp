@@ -62,7 +62,7 @@ protected:
             DataTypePtr argument_type = arguments[i].type;
             if (!isNumber(argument_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument '{}' for function {} must be a number", std::string(argument_names[i]), getName());
+                    "Argument '{}' for function {} must be number", std::string(argument_names[i]), getName());
         }
     }
 
@@ -322,7 +322,7 @@ public:
             const auto& fraction_argument = arguments[argument_names.size()];
             if (!isNumber(fraction_argument.type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument 'fraction' for function {} must be a number", getName());
+                    "Argument 'fraction' for function {} must be number", getName());
         }
 
         /// Optional precision argument

@@ -234,13 +234,7 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        auto delegate_description = delegate->getDataSourceDescription();
-        delegate_description.is_encrypted = true;
-        return delegate_description;
-    }
-
+    DiskType getType() const override { return DiskType::Encrypted; }
     bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;

@@ -86,7 +86,6 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::Increment
     CurrentMetrics::Metric
     CurrentMetrics::values
-    CurrentMetrics::Value
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}

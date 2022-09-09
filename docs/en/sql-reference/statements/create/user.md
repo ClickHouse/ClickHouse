@@ -1,9 +1,12 @@
 ---
-slug: /en/sql-reference/statements/create/user
 sidebar_position: 39
 sidebar_label: USER
-title: "CREATE USER"
+tags:
+  - create user
+  - add user
 ---
+
+# CREATE USER
 
 Creates [user accounts](../../../operations/access-rights.md#user-account-management).
 

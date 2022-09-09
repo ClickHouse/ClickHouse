@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialmovingaverage
 sidebar_position: 108
 ---
 

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/FileCache.h>
 #include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/Cache/FileSegment.h>
+#include <Common/FileSegment.h>
 
 
 namespace CurrentMetrics
