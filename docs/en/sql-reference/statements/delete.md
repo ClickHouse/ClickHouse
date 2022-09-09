@@ -10,7 +10,7 @@ sidebar_label: DELETE
 DELETE FROM [db.]table [WHERE expr]
 ```
 
-For MergeTree tables, `DELETE FROM` performs a lightweight delete on the given table, which means that the deleted rows are marked as deleted immediately and deleted rows will be filtered out of all subsequent queries. The underlying data is permanently deleted whenever merges occur.
+`DELETE FROM` removes rows from table `[db.]table` that match expression `expr`. The deleted rows are marked as deleted immediately and will be automatically filtered out of all subsequent queries. Cleanup of data happens asynchronously in background. This feature is only available for MergeTree table engine family.
 
 For example, the following query deletes all rows from the `hits` table where the `Title` column contains the text `hello`:
 
