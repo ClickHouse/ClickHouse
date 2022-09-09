@@ -20,15 +20,10 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
     String output_format = context->getSettingsRef().errors_output_format;
     if (!FormatFactory::instance().isOutputFormat(output_format))
         output_format = DEFAULT_OUTPUT_FORMAT;
-    try
-    {
+    if (context->hasInsertionTable())
         table = context->getInsertionTable().getTableName();
+    if (context->getInsertionTable().hasDatabase())
         database = context->getInsertionTable().getDatabaseName();
-    }
-    catch (...)
-    {
-        /// Ignore
-    }
 
     String path_in_setting = context->getSettingsRef().input_format_record_errors_file_path;
     errors_file_path = context->getApplicationType() == Context::ApplicationType::SERVER ? context->getUserFilesPath() + path_in_setting
@@ -55,8 +50,8 @@ void InputFormatErrorsLogger::logErrorImpl(ErrorEntry entry)
     auto error = header.cloneEmpty();
     auto columns = error.mutateColumns();
     columns[0]->insert(entry.time);
-    database.empty() ? columns[1]->insert(Null()) : columns[1]->insert(database);
-    table.empty() ? columns[2]->insert(Null()) : columns[2]->insert(table);
+    database.empty() ? columns[1]->insertDefault() : columns[1]->insert(database);
+    table.empty() ? columns[2]->insertDefault() : columns[2]->insert(table);
     columns[3]->insert(entry.offset);
     columns[4]->insert(entry.reason);
     columns[5]->insert(entry.raw_data);
