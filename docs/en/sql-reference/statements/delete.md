@@ -28,7 +28,7 @@ SET allow_experimental_lightweight_delete = true;
 
 :::
 
-The [traditional way to delete rows](./alter/delete.md) in ClickHouse was to use `ALTER TABLE ... DELETE`, which is still a valid method for deleting rows. However, in most use cases the new lightweight `DELETE FROM` behavior will be considerably faster.
+An [alternative way to delete rows](./alter/delete.md) in ClickHouse is `ALTER TABLE ... DELETE`, which might be more efficient if you do bulk deletes only occasionally and don't need the operation to be applied instantly. In most use cases the new lightweight `DELETE FROM` behavior will be considerably faster.
 
 :::info
 Lightweight deletes are asynchronous by default. Set `mutations_sync` equal to 1 to wait for one replica to process the statement, and set `mutations_sync` to 2 to wait for all replicas.
