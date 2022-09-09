@@ -350,8 +350,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                 interpreter.buildQueryPlan(plan);
                 auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(getContext()),
-                    BuildQueryPipelineSettings::fromContext(getContext()));
+                    QueryPlanOptimizationSettings::fromContext(interpreter.getContext()),
+                    BuildQueryPipelineSettings::fromContext(interpreter.getContext()));
 
                 if (settings.graph)
                 {
@@ -392,11 +392,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             interpreter.buildQueryPlan(plan);
             // collect the selected marks, rows, parts during build query pipeline.
             plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(getContext()),
-                BuildQueryPipelineSettings::fromContext(getContext()));
+                QueryPlanOptimizationSettings::fromContext(interpreter.getContext()),
+                BuildQueryPipelineSettings::fromContext(interpreter.getContext()));
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(interpreter.getContext()));
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;
