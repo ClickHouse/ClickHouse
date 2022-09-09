@@ -30,3 +30,4 @@ ${CLICKHOUSE_CLIENT} --query "drop table if exists data;"
 rm ${CLICKHOUSE_USER_FILES_PATH}/a.csv
 rm ${CLICKHOUSE_USER_FILES_PATH}/errors_server
 rm ${CLICKHOUSE_USER_FILES_PATH}/errors_client
+
