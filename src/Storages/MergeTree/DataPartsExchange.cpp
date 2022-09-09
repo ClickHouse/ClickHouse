@@ -399,7 +399,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table", name);
 }
 
-MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
+MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const String & part_name,
@@ -420,6 +420,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 
+    const auto data_settings = data.getSettings();
+
+    if (data_settings->allow_remote_fs_zero_copy_replication && !try_zero_copy)
+        LOG_WARNING(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
+
     /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
     /// but detached part name prefix should not contain underscore.
     static const String TMP_PREFIX = "tmp-fetch_";
@@ -429,7 +434,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     /// Validation of the input that may come from malicious replica.
     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
-    const auto data_settings = data.getSettings();
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
@@ -465,6 +469,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             capability.push_back(toString(disk->getDataSourceDescription().type));
         }
     }
+
     if (!capability.empty())
     {
         ::sort(capability.begin(), capability.end());
@@ -474,6 +479,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     else
     {
+        if (data_settings->allow_remote_fs_zero_copy_replication)
+            LOG_WARNING(log, "Cannot select any zero-copy disk for {}", part_name);
+
         try_zero_copy = false;
     }
 
@@ -585,7 +593,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             temporary_directory_lock = {};
 
             /// Try again but without zero-copy
-            return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
+            return fetchSelectedPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }

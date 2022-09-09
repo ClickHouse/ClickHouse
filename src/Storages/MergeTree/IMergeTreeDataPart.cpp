@@ -532,25 +532,6 @@ void IMergeTreeDataPart::removeIfNeeded()
             LOG_TRACE(storage.log, "Removed part from old location {}", path);
         }
     }
-    catch (const Exception & ex)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while removing part {} with path {}", name, path));
-
-        /// In this case we want to avoid assertions, because such errors are unavoidable in setup
-        /// with zero-copy replication.
-        if (const auto * keeper_exception = dynamic_cast<const Coordination::Exception *>(&ex))
-        {
-            if (Coordination::isHardwareError(keeper_exception->code))
-                return;
-        }
-
-        /// FIXME If part it temporary, then directory will not be removed for 1 day (temporary_directories_lifetime).
-        /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
-        /// then all future attempts to execute part producing operation will fail with "directory already exists".
-        assert(!is_temp);
-        assert(state != MergeTreeDataPartState::DeleteOnDestroy);
-        assert(state != MergeTreeDataPartState::Temporary);
-    }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while removing part {} with path {}", name, path));
@@ -558,11 +539,6 @@ void IMergeTreeDataPart::removeIfNeeded()
         /// FIXME If part it temporary, then directory will not be removed for 1 day (temporary_directories_lifetime).
         /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
         /// then all future attempts to execute part producing operation will fail with "directory already exists".
-        ///
-        /// For remote disks this issue is really frequent, so we don't about server here
-        assert(!is_temp);
-        assert(state != MergeTreeDataPartState::DeleteOnDestroy);
-        assert(state != MergeTreeDataPartState::Temporary);
     }
 }
 
@@ -1433,7 +1409,10 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 {
     /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
+    {
+        LOG_DEBUG(storage.log, "Blobs for part {} cannot be removed because it's forced to be keeped", name);
         return std::make_pair(false, NameSet{});
+    }
 
     return storage.unlockSharedData(*this);
 }
@@ -1456,6 +1435,12 @@ void IMergeTreeDataPart::remove() const
     part_is_probably_removed_from_disk = true;
 
     auto [can_remove, files_not_to_remove] = canRemovePart();
+
+    if (!can_remove)
+        LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
+
+    if (!files_not_to_remove.empty())
+        LOG_TRACE(storage.log, "Some blobs ({}) of part {} cannot be removed", fmt::join(files_not_to_remove, ", "), name);
 
     if (!isStoredOnDisk())
         return;

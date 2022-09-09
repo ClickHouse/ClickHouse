@@ -316,7 +316,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             interpreter.buildQueryPlan(plan);
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(interpreter.getContext()));
 
             if (settings.json)
             {
@@ -326,7 +326,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
                 plan_array->add(std::move(plan_map));
 
-                auto format_settings = getFormatSettings(getContext());
+                auto format_settings = getFormatSettings(interpreter.getContext());
                 format_settings.json.quote_64bit_integers = false;
 
                 JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
