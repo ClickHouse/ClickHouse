@@ -7554,7 +7554,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
 
     if (!part.data_part_storage || !part.data_part_storage->supportZeroCopyReplication())
     {
-        LOG_TRACE(log, "Part {} is not stored on zero-copy replicaed disk, blobs can be removed", part.name);
+        LOG_TRACE(log, "Part {} is not stored on zero-copy replicated disk, blobs can be removed", part.name);
         return std::make_pair(true, NameSet{});
     }
 
