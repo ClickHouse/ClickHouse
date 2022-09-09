@@ -144,6 +144,8 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
+    /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
+    modified_context->setSetting("max_analyze_depth", Field{0});
 
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);

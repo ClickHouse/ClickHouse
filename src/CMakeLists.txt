@@ -42,6 +42,14 @@ endif ()
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
+if (NO_SSE3_OR_HIGHER)
+    # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
+    # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
+    # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
+    # machinery and always use generic code. (The cleaner alternative is removing FORCE_INLINE but that impacts performance too much.)
+    set(ENABLE_MULTITARGET_CODE OFF)
+endif()
+
 if (ENABLE_MULTITARGET_CODE)
     add_definitions(-DENABLE_MULTITARGET_CODE=1)
 else()
@@ -129,6 +137,9 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
+
+add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)
@@ -244,6 +255,7 @@ add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
+add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)

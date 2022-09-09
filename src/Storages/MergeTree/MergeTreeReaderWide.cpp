@@ -26,7 +26,7 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
-    DataPartWidePtr data_part_,
+    MergeTreeDataPartInfoForReaderPtr data_part_info_,
     NamesAndTypesList columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
@@ -37,7 +37,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        data_part_,
+        data_part_info_,
         columns_,
         metadata_snapshot_,
         uncompressed_cache_,
@@ -53,7 +53,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part);
+        data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -73,7 +73,7 @@ size_t MergeTreeReaderWide::readRows(
         std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         std::unordered_set<std::string> prefetched_streams;
-        if (data_part->data_part_storage->isStoredOnRemoteDisk() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
+        if (data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
         {
             /// Request reading of data in advance,
             /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
@@ -136,17 +136,17 @@ size_t MergeTreeReaderWide::readRows(
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            storage.reportBrokenPart(data_part);
+            data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + " "
+        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + " "
                      "from mark " + toString(from_mark) + " "
                      "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part);
+        data_part_info_for_read->reportBroken();
 
         throw;
     }
@@ -167,7 +167,7 @@ void MergeTreeReaderWide::addStreams(
         if (streams.contains(stream_name))
             return;
 
-        bool data_file_exists = data_part->checksums.files.contains(stream_name + DATA_FILE_EXTENSION);
+        bool data_file_exists = data_part_info_for_read->getChecksums().files.contains(stream_name + DATA_FILE_EXTENSION);
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -178,10 +178,10 @@ void MergeTreeReaderWide::addStreams(
         bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part->data_part_storage, stream_name, DATA_FILE_EXTENSION,
-            data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
-            uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-            &data_part->index_granularity_info,
+            data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
+            data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
+            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+            &data_part_info_for_read->getIndexGranularityInfo(),
             profile_callback, clock_type, is_lc_dict));
     };
 

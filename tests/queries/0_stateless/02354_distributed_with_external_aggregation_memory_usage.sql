@@ -1,4 +1,4 @@
--- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-s3-storage
 
 create table t_2354_dist_with_external_aggr(a UInt64, b String, c FixedString(100)) engine = MergeTree order by tuple();
 
@@ -19,4 +19,4 @@ select a, b, c, sum(a) as s
 from remote('127.0.0.{1,2}', currentDatabase(), t_2354_dist_with_external_aggr)
 group by a, b, c
 format Null
-settings max_memory_usage = '4G';
+settings max_memory_usage = '4Gi';

@@ -61,6 +61,9 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get install gcc-11 g++-11 --yes \
     && apt-get clean
 
+# A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
+RUN apt-get install binutils-riscv64-linux-gnu
+
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
 ARG NFPM_VERSION=2.16.0
@@ -95,9 +98,13 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get update \
     && apt-get install \
         clang-15 \
+        llvm-15 \
         clang-tidy-15 \
         --yes --no-install-recommends \
     && apt-get clean
+
+# for external_symbolizer_path
+RUN ln -s /usr/bin/llvm-symbolizer-15 /usr/bin/llvm-symbolizer
 
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]

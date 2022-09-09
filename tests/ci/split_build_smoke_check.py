@@ -126,7 +126,7 @@ if __name__ == "__main__":
     )
 
     ch_helper = ClickHouseHelper()
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     report_url = upload_results(
         s3_helper,
         pr_info.number,
