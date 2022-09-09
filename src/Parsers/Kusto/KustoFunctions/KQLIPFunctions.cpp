@@ -264,10 +264,12 @@ bool FormatIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
     const auto mask = getOptionalArgument(function_name, pos);
     const auto calculated_mask = mask ? *mask : "32";
     out = std::format(
-        "if(empty({1} as formatted_ip_{2}) or not {0} between 0 and 32, '', concat(formatted_ip_{2}, '/', toString({0})))",
+        "if(empty({1} as formatted_ip_{2}) or position(toTypeName({0}), 'Int') = 0 or not {0} between 0 and 32, '', "
+        "concat(formatted_ip_{2}, '/', toString(toInt64(min2({0}, ifNull({3} as suffix_{2}, 32))))))",
         calculated_mask,
         kqlCallToExpression("format_ipv4", {ip_address, calculated_mask}, pos.max_depth),
-        generateUniqueIdentifier());
+        generateUniqueIdentifier(),
+        kqlCallToExpression("ipv4_netmask_suffix", {"tostring("+ip_address+")"}, pos.max_depth));
     return true;
 }
 }
