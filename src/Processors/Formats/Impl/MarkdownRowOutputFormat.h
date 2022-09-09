@@ -28,8 +28,11 @@ private:
     /// Write '|' between values
     void writeFieldDelimiter() override;
 
-    /// Write '|\n' after each row
-    void writeRowEndDelimiter() override ;
+    /// Write '|' at the end of each row
+    void writeRowEndDelimiter() override;
+
+    /// Write '\n' after each row
+    void writeRowBetweenDelimiter() override;
 
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
 

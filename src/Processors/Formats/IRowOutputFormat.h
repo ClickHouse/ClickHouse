@@ -26,17 +26,18 @@ class IRowOutputFormat : public IOutputFormat
 public:
     using Params = RowOutputFormatParams;
 
+    /** Write a row.
+      * Default implementation calls methods to write single values and delimiters
+      * (except delimiter between rows (writeRowBetweenDelimiter())).
+      */
+    virtual void write(const Columns & columns, size_t row_num);
+
 protected:
     IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_);
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
 
-    /** Write a row.
-      * Default implementation calls methods to write single values and delimiters
-      * (except delimiter between rows (writeRowBetweenDelimiter())).
-      */
-    virtual void write(const Columns & columns, size_t row_num);
     virtual void writeMinExtreme(const Columns & columns, size_t row_num);
     virtual void writeMaxExtreme(const Columns & columns, size_t row_num);
     virtual void writeTotals(const Columns & columns, size_t row_num);

@@ -76,6 +76,8 @@ public:
 
     void doNotWritePrefix() { need_write_prefix = false; }
 
+    virtual WriteBuffer & getWriteBuffer() const { return out; }
+
 protected:
     friend class ParallelFormattingOutputFormat;
 

@@ -23,7 +23,6 @@ public:
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
-public:
     /// Content-Type to set when sending HTTP response.
     String getContentType() const override
     {

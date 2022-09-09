@@ -55,11 +55,17 @@ void CSVRowOutputFormat::writeFieldDelimiter()
 }
 
 
-void CSVRowOutputFormat::writeRowEndDelimiter()
+void CSVRowOutputFormat::writeRowBetweenDelimiter()
 {
     if (format_settings.csv.crlf_end_of_line)
         writeChar('\r', out);
     writeChar('\n', out);
+}
+
+void CSVRowOutputFormat::writeSuffix()
+{
+    /// Write '\n' after data.
+    writeRowBetweenDelimiter();
 }
 
 void CSVRowOutputFormat::writeBeforeTotals()
