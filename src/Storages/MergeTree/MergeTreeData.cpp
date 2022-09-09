@@ -2161,6 +2161,9 @@ void MergeTreeData::dropAllData()
     }
     catch (...)
     {
+        /// Removing from memory only successfully removed parts from disk
+        /// Parts removal process can be important and on the next try it's better to try to remove
+        /// them instead of remove recursive call.
         LOG_WARNING(log, "dropAllData: got exception removing parts from disk, removing successfully removed parts from memory.");
         for (const auto & part : all_parts)
         {
