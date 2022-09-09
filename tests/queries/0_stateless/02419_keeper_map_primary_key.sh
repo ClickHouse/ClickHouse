@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-fasttest
+# Tags: no-ordinary-database, no-fasttest, long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
