@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
@@ -74,7 +75,10 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }
