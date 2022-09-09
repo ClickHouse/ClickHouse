@@ -323,6 +323,7 @@ struct ContextSharedPart
         {
             try
             {
+                LOG_DEBUG(log, "Desctructing threadpool reader");
                 threadpool_reader->wait();
                 threadpool_reader.reset();
             }
@@ -336,6 +337,7 @@ struct ContextSharedPart
         {
             try
             {
+                LOG_DEBUG(log, "Desctructing threadpool writer");
                 threadpool_writer->wait();
                 threadpool_writer.reset();
             }
