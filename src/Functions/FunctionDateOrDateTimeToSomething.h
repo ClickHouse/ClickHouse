@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 /// See DateTimeTransforms.h
 template <typename ToDataType, typename Transform>
 class FunctionDateOrDateTimeToSomething : public IFunctionDateOrDateTime<Transform>
