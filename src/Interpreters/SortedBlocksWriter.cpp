@@ -87,7 +87,7 @@ void SortedBlocksWriter::insert(Block && block)
     {
         std::lock_guard lock{insert_mutex};
 
-        /// insert bock into BlocksList undef lock
+        /// insert block into BlocksList under lock
         inserted_blocks.insert(std::move(block));
 
         size_t total_row_count = inserted_blocks.row_count + row_count_in_flush;
