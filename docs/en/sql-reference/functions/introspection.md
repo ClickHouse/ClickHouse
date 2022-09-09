@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/introspection
 sidebar_position: 65
 sidebar_label: Introspection
 ---

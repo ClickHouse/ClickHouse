@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/ip-address-functions
+---
 # IP函数 {#iphan-shu}
 
 ## IPv4NumToString(num) {#ipv4numtostringnum}

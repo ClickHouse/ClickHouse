@@ -73,15 +73,31 @@ public:
             return key_names_right.size();
         }
 
-        String formatDebug() const
+        String formatDebug(bool short_format = false) const
         {
-            return fmt::format("Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
-                               fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "),
-                               condColumnNames().first, condColumnNames().second);
+            const auto & [left_cond, right_cond] = condColumnNames();
+
+            if (short_format)
+            {
+                return fmt::format("({}) = ({}){}{}", fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "),
+                                   !left_cond.empty() ? " AND " + left_cond : "", !right_cond.empty() ? " AND " + right_cond : "");
+            }
+
+            return fmt::format(
+                "Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
+                 fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
     };
 
     using Clauses = std::vector<JoinOnClause>;
+
+    static std::string formatClauses(const Clauses & clauses, bool short_format = false)
+    {
+        std::vector<std::string> res;
+        for (const auto & clause : clauses)
+            res.push_back("[" + clause.formatDebug(short_format) + "]");
+        return fmt::format("{}", fmt::join(res, "; "));
+    }
 
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
