@@ -8,6 +8,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageS3.h>
 #include <Formats/FormatFactory.h>
@@ -138,6 +139,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
 {
     if (s3_configuration->structure == "auto")
     {
+        context->checkAccess(getSourceAccessType());
         return StorageS3::getTableStructureFromData(
             s3_configuration->format,
             S3::URI(Poco::URI(s3_configuration->url)),
