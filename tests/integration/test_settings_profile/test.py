@@ -392,6 +392,68 @@ def test_alter_and_drop():
     instance.query("SET max_memory_usage = 120000000", user="robin")
 
 
+def test_changeable_in_readonly():
+    instance.query(
+        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000003 MIN 90000000 MAX 110000000 CHANGEABLE_IN_READONLY SETTINGS readonly = 1 TO robin"
+    )
+    assert (
+        instance.query(
+            "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
+            user="robin",
+        )
+        == "100000003\n"
+    )
+    assert (
+        instance.query(
+            "SELECT value FROM system.settings WHERE name = 'readonly'",
+            user="robin",
+        )
+        == "1\n"
+    )
+    assert (
+        "Setting max_memory_usage shouldn't be less than 90000000"
+        in instance.query_and_get_error("SET max_memory_usage = 80000000", user="robin")
+    )
+    assert (
+        "Setting max_memory_usage shouldn't be greater than 110000000"
+        in instance.query_and_get_error(
+            "SET max_memory_usage = 120000000", user="robin"
+        )
+    )
+
+    assert system_settings_profile_elements(profile_name="xyz") == [
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            0,
+            "max_memory_usage",
+            100000003,
+            90000000,
+            110000000,
+            "\\N",
+            1,
+            "\\N",
+        ],
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            1,
+            "readonly",
+            1,
+            "\\N",
+            "\\N",
+            "\\N",
+            "\\N",
+            "\\N",
+        ]
+    ]
+
+    instance.query("SET max_memory_usage = 90000000", user="robin")
+    instance.query("SET max_memory_usage = 110000000", user="robin")
+
+
 def test_show_profiles():
     instance.query("CREATE SETTINGS PROFILE xyz")
     assert instance.query("SHOW SETTINGS PROFILES") == "default\nreadonly\nxyz\n"
