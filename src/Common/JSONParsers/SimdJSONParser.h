@@ -40,9 +40,7 @@ struct SimdJSONParser
                 case simdjson::dom::element_type::ARRAY: return ElementType::ARRAY;
                 case simdjson::dom::element_type::OBJECT: return ElementType::OBJECT;
                 case simdjson::dom::element_type::BOOL: return ElementType::BOOL;
-                case simdjson::dom::element_type::NULL_VALUE:
-                default:
-                    return ElementType::NULL_VALUE;
+                case simdjson::dom::element_type::NULL_VALUE: return ElementType::NULL_VALUE;
             }
         }
 

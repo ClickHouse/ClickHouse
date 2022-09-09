@@ -34,9 +34,7 @@ struct RapidJSONParser
                 case rapidjson::kObjectType: return ElementType::OBJECT;
                 case rapidjson::kTrueType: return ElementType::BOOL;
                 case rapidjson::kFalseType: return ElementType::BOOL;
-                case rapidjson::kNullType:
-                default:
-                    return ElementType::NULL_VALUE;
+                case rapidjson::kNullType: return ElementType::NULL_VALUE;
             }
         }
 
