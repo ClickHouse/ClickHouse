@@ -28,6 +28,7 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionIntHash64>();
     factory.registerFunction<FunctionURLHash>();
     factory.registerFunction<FunctionJavaHash>();
+    factory.registerFunction<FunctionJavaIntHash>();
     factory.registerFunction<FunctionJavaHashUTF16LE>();
     factory.registerFunction<FunctionHiveHash>();
     factory.registerFunction<FunctionMurmurHash2_32>();

@@ -80,7 +80,46 @@ namespace ErrorCodes
   * intHash32: number -> UInt32
   * intHash64: number -> UInt64
   *
+  * Non-cryptographic hash function from Java integer types (Byte, Short, Integer, Long)
+  * javaIntHash: number -> Int32
   */
+
+struct JavaIntHashImpl
+{
+    using ReturnType = Int32;
+
+#define IS_INT64 std::is_same_v<T, std::int64_t>
+#define IS_INTEGER  std::is_integral_v<T>
+#define SHORT_INT sizeof(T) <= sizeof(int32_t)
+
+    template <class T, typename std::enable_if_t<IS_INT64, T>* = nullptr>
+    static int32_t apply(T x)
+    {
+        T copy = x;
+        /// Implement Java >>> operation
+        copy = copy >> 32;
+        struct Long
+        {
+            int32_t low;
+            int32_t high;
+        } * l = reinterpret_cast<Long *>(&copy);
+        l->high = 0;
+        return static_cast<int32_t>(x ^ copy);
+    }
+
+    template <class T, typename std::enable_if<IS_INTEGER && SHORT_INT, T>::type* = nullptr>
+    static int32_t apply(T x)
+    {
+        return x;
+    }
+
+    template <class T, typename std::enable_if<!(IS_INT64 || (IS_INTEGER && SHORT_INT)), T>::type * = nullptr>
+    static int32_t apply(T /*x*/)
+    {
+        throw Exception("Not implemented type for Java int hash ", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+};
 
 struct IntHash32Impl
 {
@@ -1408,10 +1447,12 @@ struct ImplWyHash64
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
+struct NameJavaIntHash { static constexpr auto name = "javaIntHash"; };
 
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
+using FunctionJavaIntHash = FunctionIntHash<JavaIntHashImpl, NameJavaIntHash>;
 #if USE_SSL
 using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;

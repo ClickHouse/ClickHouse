@@ -8,3 +8,7 @@ select javaHashUTF16LE(convertCharset('FJKLDSJFIOLD_389159837589429', 'utf-8', '
 select javaHashUTF16LE(convertCharset('𐐀𐐁𐐂𐐃𐐄', 'utf-8', 'utf-16le'));
 select hiveHash('abc');
 select hiveHash('874293087');
+select javaIntHash(12345)
+select javaIntHash(-12345)
+select javaIntHash(toInt64(12345))
+select javaIntHash(toInt64(-12345))
