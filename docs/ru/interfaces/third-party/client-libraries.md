@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: "Клиентские библиотеки от сторонних разработчиков"
 ---

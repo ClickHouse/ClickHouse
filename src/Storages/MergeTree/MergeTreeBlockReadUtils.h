@@ -79,7 +79,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
-    const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
     bool with_subcolumns);
 

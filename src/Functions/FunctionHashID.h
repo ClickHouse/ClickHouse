@@ -52,7 +52,6 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -70,7 +69,7 @@ public:
         if (arguments.size() > 1)
         {
             const auto & hash_col = arguments[1];
-            if (!isString(hash_col.type))
+            if (!isString(hash_col.type) || !isColumnConst(*hash_col.column.get()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument of function {} must be String, got {}",
@@ -81,7 +80,7 @@ public:
         if (arguments.size() > 2)
         {
             const auto & min_length_col = arguments[2];
-            if (!isUInt8(min_length_col.type))
+            if (!isUInt8(min_length_col.type) || !isColumnConst(*min_length_col.column.get()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Third argument of function {} must be UInt8, got {}",
@@ -92,7 +91,7 @@ public:
         if (arguments.size() > 3)
         {
             const auto & alphabet_col = arguments[3];
-            if (!isString(alphabet_col.type))
+            if (!isString(alphabet_col.type) || !isColumnConst(*alphabet_col.column.get()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Fourth argument of function {} must be String, got {}",

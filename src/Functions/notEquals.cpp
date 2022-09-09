@@ -7,7 +7,7 @@ namespace DB
 
 using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
 
-REGISTER_FUNCTION(NotEquals)
+void registerFunctionNotEquals(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNotEquals>();
 }

@@ -22,7 +22,6 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     size_t marks_count_,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
     bool save_marks_in_cache_,
-    const ReadSettings & read_settings_,
     size_t columns_in_mark_)
     : data_part_storage(std::move(data_part_storage_))
     , mark_cache(mark_cache_)
@@ -30,10 +29,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     , marks_count(marks_count_)
     , index_granularity_info(index_granularity_info_)
     , save_marks_in_cache(save_marks_in_cache_)
-    , columns_in_mark(columns_in_mark_)
-    , read_settings(read_settings_)
-{
-}
+    , columns_in_mark(columns_in_mark_) {}
 
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
@@ -42,7 +38,8 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
 
 #ifndef NDEBUG
     if (column_index >= columns_in_mark)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column index: {} is out of range [0, {})", column_index, columns_in_mark);
+        throw Exception("Column index: " + toString(column_index)
+            + " is out of range [0, " + toString(columns_in_mark) + ")", ErrorCodes::LOGICAL_ERROR);
 #endif
 
     return (*marks)[row_index * columns_in_mark + column_index];
@@ -69,17 +66,16 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
-        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
+        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
         buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
 
         if (!buffer->eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read all marks from file {}, is eof: {}, buffer size: {}, file size: {}",
-                mrk_path, buffer->eof(), buffer->buffer().size(), file_size);
+            throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof())
+            + ", buffer size: " + std::to_string(buffer->buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
     }
     else
     {
-        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
+        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
         size_t i = 0;
         while (!buffer->eof())
         {
@@ -89,7 +85,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         }
 
         if (i * mark_size != file_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}", mrk_path);
+            throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
     res->protect();
     return res;
@@ -116,7 +112,7 @@ void MergeTreeMarksLoader::loadMarks()
         marks = loadMarksImpl();
 
     if (!marks)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to load marks: {}", String(fs::path(data_part_storage->getFullPath()) / mrk_path));
+        throw Exception("Failed to load marks: " + std::string(fs::path(data_part_storage->getFullPath()) / mrk_path), ErrorCodes::LOGICAL_ERROR);
 }
 
 }

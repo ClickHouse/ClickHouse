@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/simplelinearregression
 sidebar_position: 220
 ---
 

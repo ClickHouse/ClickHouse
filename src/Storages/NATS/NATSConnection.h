@@ -65,9 +65,6 @@ private:
     // true if at any point successfully connected to NATS
     bool has_connection = false;
 
-    // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert
-    bool skip_verification = false;
-
     std::mutex mutex;
 };
 

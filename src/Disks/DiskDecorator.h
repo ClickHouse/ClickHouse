@@ -72,7 +72,7 @@ public:
     void sync(int fd) const;
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
-    DataSourceDescription getDataSourceDescription() const override { return delegate->getDataSourceDescription(); }
+    DiskType getType() const override { return delegate->getType(); }
     bool isRemote() const override { return delegate->isRemote(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
@@ -83,13 +83,12 @@ public:
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     bool supportsCache() const override { return delegate->supportsCache(); }
-    const String & getCacheBasePath() const override { return delegate->getCacheBasePath(); }
+    String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
 
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
-    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
+    DiskObjectStoragePtr createDiskObjectStorage(const String &) override;
 
-    DiskObjectStoragePtr createDiskObjectStorage() override;
-    NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
 
@@ -98,14 +97,7 @@ public:
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 
     void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
-
     UInt64 getRevision() const override { return delegate->getRevision(); }
-
-    bool supportsStat() const override { return delegate->supportsStat(); }
-    struct stat stat(const String & path) const override { return delegate->stat(path); }
-
-    bool supportsChmod() const override { return delegate->supportsChmod(); }
-    void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
 
 protected:
     Executor & getExecutor() override;

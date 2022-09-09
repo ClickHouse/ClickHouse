@@ -17,8 +17,6 @@ class LocalObjectStorage : public IObjectStorage
 public:
     LocalObjectStorage();
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-
     std::string getName() const override { return "LocalObjectStorage"; }
 
     bool exists(const StoredObject & object) const override;
@@ -88,7 +86,6 @@ public:
 
 private:
     Poco::Logger * log;
-    DataSourceDescription data_source_description;
 };
 
 }

@@ -3,9 +3,9 @@
 #if USE_HDFS
 #include <mutex>
 #include <Common/logger_useful.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-
 
 namespace CurrentMetrics
 {
@@ -112,8 +112,6 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     Stopwatch next_watch;
     Int64 wait = -1;
     size_t size = 0;
-    size_t bytes_read = 0;
-
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
@@ -128,9 +126,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
             LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
 
             /// If prefetch_future is valid, size should always be greater than zero.
-            assert(offset <= size);
-            bytes_read = size - offset;
-
+            assert(offset < size);
             wait = watch.elapsedMicroseconds();
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, wait);
         }
@@ -151,10 +147,9 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         auto offset = result.offset;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-        assert(offset <= size);
-        bytes_read = size - offset;
+        assert(offset < size);
 
-        if (bytes_read)
+        if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
             internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
@@ -171,7 +166,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
     sum_duration += next_watch.elapsedMicroseconds();
     sum_wait += wait;
-    return bytes_read;
+    return size;
 }
 
 off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)

@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/settings/settings-profiles
 sidebar_position: 61
 sidebar_label: "Профили настроек"
 ---

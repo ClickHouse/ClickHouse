@@ -5,9 +5,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/ColumnWithTypeAndName.h>
+
 
 namespace DB
 {
@@ -114,7 +115,7 @@ struct AggregationKeysInfo
     GroupByKind group_by_kind;
 };
 
-/// Collect ExpressionAction from AST. Returns PreparedSets
+/// Collect ExpressionAction from AST. Returns PreparedSets and SubqueriesForSets too.
 class ActionsMatcher
 {
 public:
@@ -125,7 +126,8 @@ public:
         SizeLimits set_size_limit;
         size_t subquery_depth;
         const NamesAndTypesList & source_columns;
-        PreparedSetsPtr prepared_sets;
+        PreparedSets & prepared_sets;
+        SubqueriesForSets & subqueries_for_sets;
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;
@@ -148,7 +150,8 @@ public:
             size_t subquery_depth_,
             std::reference_wrapper<const NamesAndTypesList> source_columns_,
             ActionsDAGPtr actions_dag,
-            PreparedSetsPtr prepared_sets_,
+            PreparedSets & prepared_sets_,
+            SubqueriesForSets & subqueries_for_sets_,
             bool no_subqueries_,
             bool no_makeset_,
             bool only_consts_,

@@ -4,7 +4,6 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 
-
 namespace DB
 {
 
@@ -44,9 +43,9 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     out->finalize();
 }
 
-const std::string & IObjectStorage::getCacheBasePath() const
+std::string IObjectStorage::getCacheBasePath() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for {}", getName());
 }
 
 void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)

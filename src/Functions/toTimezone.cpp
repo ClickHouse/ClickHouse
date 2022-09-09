@@ -123,7 +123,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(ToTimeZone)
+void registerFunctionToTimeZone(FunctionFactory & factory)
 {
     factory.registerFunction<ToTimeZoneOverloadResolver>();
     factory.registerAlias("toTimeZone", "toTimezone");

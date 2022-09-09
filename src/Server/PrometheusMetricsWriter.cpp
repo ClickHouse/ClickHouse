@@ -1,10 +1,10 @@
 #include "PrometheusMetricsWriter.h"
 
-#include <IO/WriteHelpers.h>
-#include <Common/StatusInfo.h>
-#include <regex>    /// TODO: this library is harmful.
 #include <algorithm>
 
+#include <IO/WriteHelpers.h>
+#include <Common/StatusInfo.h>
+#include <regex>
 
 namespace
 {
@@ -31,11 +31,6 @@ bool replaceInvalidChars(std::string & metric_name)
     metric_name = std::regex_replace(metric_name, std::regex("[^a-zA-Z0-9_:]"), "_");
     metric_name = std::regex_replace(metric_name, std::regex("^[^a-zA-Z]*"), "");
     return !metric_name.empty();
-}
-
-void convertHelpToSingleLine(std::string & help)
-{
-    std::replace(help.begin(), help.end(), '\n', ' ');
 }
 
 }
@@ -66,8 +61,6 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
             std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
 
-            convertHelpToSingleLine(metric_doc);
-
             if (!replaceInvalidChars(metric_name))
                 continue;
             std::string key{profile_events_prefix + metric_name};
@@ -86,8 +79,6 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
             std::string metric_name{CurrentMetrics::getName(static_cast<CurrentMetrics::Metric>(i))};
             std::string metric_doc{CurrentMetrics::getDocumentation(static_cast<CurrentMetrics::Metric>(i))};
-
-            convertHelpToSingleLine(metric_doc);
 
             if (!replaceInvalidChars(metric_name))
                 continue;
@@ -123,8 +114,6 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::lock_guard<std::mutex> lock(CurrentStatusInfo::locks[static_cast<CurrentStatusInfo::Status>(i)]);
             std::string metric_name{CurrentStatusInfo::getName(static_cast<CurrentStatusInfo::Status>(i))};
             std::string metric_doc{CurrentStatusInfo::getDocumentation(static_cast<CurrentStatusInfo::Status>(i))};
-
-            convertHelpToSingleLine(metric_doc);
 
             if (!replaceInvalidChars(metric_name))
                 continue;

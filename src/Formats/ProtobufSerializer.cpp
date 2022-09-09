@@ -3427,23 +3427,19 @@ namespace
         return std::make_shared<DataTypeEnum<Type>>(std::move(values));
     }
 
-    std::optional<NameAndTypePair> getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat = true)
+    NameAndTypePair getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool allow_repeat = true)
     {
         if (allow_repeat && field_descriptor->is_map())
         {
-            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, skip_unsupported_fields, false);
-            if (!name_and_type)
-                return std::nullopt;
-            const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type->type.get());
-            return NameAndTypePair{name_and_type->name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type.type.get());
+            return {name_and_type.name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
         }
 
         if (allow_repeat && field_descriptor->is_repeated())
         {
-            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, skip_unsupported_fields, false);
-            if (!name_and_type)
-                return std::nullopt;
-            return NameAndTypePair{name_and_type->name, std::make_shared<DataTypeArray>(name_and_type->type)};
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            return {name_and_type.name, std::make_shared<DataTypeArray>(name_and_type.type)};
         }
 
         switch (field_descriptor->type())
@@ -3451,35 +3447,31 @@ namespace
             case FieldTypeId::TYPE_SFIXED32:
             case FieldTypeId::TYPE_SINT32:
             case FieldTypeId::TYPE_INT32:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeInt32>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeInt32>()};
             case FieldTypeId::TYPE_SFIXED64:
             case FieldTypeId::TYPE_SINT64:
             case FieldTypeId::TYPE_INT64:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeInt64>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeInt64>()};
             case FieldTypeId::TYPE_BOOL:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeUInt8>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt8>()};
             case FieldTypeId::TYPE_FLOAT:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
             case FieldTypeId::TYPE_DOUBLE:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
             case FieldTypeId::TYPE_UINT32:
             case FieldTypeId::TYPE_FIXED32:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
             case FieldTypeId::TYPE_UINT64:
             case FieldTypeId::TYPE_FIXED64:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
             case FieldTypeId::TYPE_BYTES:
             case FieldTypeId::TYPE_STRING:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeString>()};
+                return {field_descriptor->name(), std::make_shared<DataTypeString>()};
             case FieldTypeId::TYPE_ENUM:
             {
                 const auto * enum_descriptor = field_descriptor->enum_type();
                 if (enum_descriptor->value_count() == 0)
-                {
-                    if (skip_unsupported_fields)
-                        return std::nullopt;
                     throw Exception("Empty enum field", ErrorCodes::BAD_ARGUMENTS);
-                }
                 int max_abs = std::abs(enum_descriptor->value(0)->number());
                 for (int i = 1; i != enum_descriptor->value_count(); ++i)
                 {
@@ -3487,33 +3479,21 @@ namespace
                         max_abs = std::abs(enum_descriptor->value(i)->number());
                 }
                 if (max_abs < 128)
-                    return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
+                    return {field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
                 else if (max_abs < 32768)
-                    return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int16>(enum_descriptor)};
+                    return {field_descriptor->name(), getEnumDataType<Int16>(enum_descriptor)};
                 else
-                {
-                    if (skip_unsupported_fields)
-                        return std::nullopt;
                     throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
-                }
             }
             case FieldTypeId::TYPE_GROUP:
             case FieldTypeId::TYPE_MESSAGE:
             {
                 const auto * message_descriptor = field_descriptor->message_type();
-                if (message_descriptor->field_count() == 0)
-                {
-                    if (skip_unsupported_fields)
-                        return std::nullopt;
-                    throw Exception("Empty messages are not supported", ErrorCodes::BAD_ARGUMENTS);
-                }
-                else if (message_descriptor->field_count() == 1)
+                if (message_descriptor->field_count() == 1)
                 {
                     const auto * nested_field_descriptor = message_descriptor->field(0);
-                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor, skip_unsupported_fields);
-                    if (!nested_name_and_type)
-                        return std::nullopt;
-                    return NameAndTypePair{field_descriptor->name() + "_" + nested_name_and_type->name, nested_name_and_type->type};
+                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor);
+                    return {field_descriptor->name() + "_" + nested_name_and_type.name, nested_name_and_type.type};
                 }
                 else
                 {
@@ -3521,16 +3501,11 @@ namespace
                     Strings nested_names;
                     for (int i = 0; i != message_descriptor->field_count(); ++i)
                     {
-                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields);
-                        if (!nested_name_and_type)
-                            continue;
-                        nested_types.push_back(nested_name_and_type->type);
-                        nested_names.push_back(nested_name_and_type->name);
+                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i));
+                        nested_types.push_back(nested_name_and_type.type);
+                        nested_names.push_back(nested_name_and_type.name);
                     }
-
-                    if (nested_types.empty())
-                        return std::nullopt;
-                    return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
+                    return {field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
                 }
             }
         }
@@ -3565,16 +3540,11 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers);
 }
 
-NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields)
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor)
 {
     NamesAndTypesList schema;
     for (int i = 0; i != message_descriptor->field_count(); ++i)
-    {
-        if (auto name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields))
-            schema.push_back(*name_and_type);
-    }
-    if (schema.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert Protobuf schema to ClickHouse table schema, all fields have unsupported types");
+        schema.push_back(getNameAndDataTypeFromField(message_descriptor->field(i)));
     return schema;
 }
 

@@ -312,7 +312,7 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
     return DiskDecorator::checkUniqueId(id);
 }
 
-const String & DiskRestartProxy::getCacheBasePath() const
+String DiskRestartProxy::getCacheBasePath() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getCacheBasePath();

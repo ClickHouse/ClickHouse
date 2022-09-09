@@ -8,6 +8,7 @@
 #include "Common/formatReadable.h"
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
+#include <Common/Stopwatch.h>
 #include "IO/WriteBufferFromString.h"
 #include <Databases/DatabaseMemory.h>
 
@@ -32,13 +33,6 @@ namespace
 namespace DB
 {
 
-UInt64 ProgressIndication::getElapsedNanoseconds() const
-{
-    /// New server versions send server-side elapsed time, which is preferred for calculations.
-    UInt64 server_elapsed_ns = progress.elapsed_ns.load(std::memory_order_relaxed);
-    return server_elapsed_ns ? server_elapsed_ns : watch.elapsed();
-}
-
 bool ProgressIndication::updateProgress(const Progress & value)
 {
     return progress.incrementPiecewiseAtomically(value);
@@ -62,7 +56,7 @@ void ProgressIndication::resetProgress()
     write_progress_on_update = false;
     {
         std::lock_guard lock(profile_events_mutex);
-        cpu_usage_meter.reset(getElapsedNanoseconds());
+        cpu_usage_meter.reset(static_cast<double>(clock_gettime_ns()));
         thread_data.clear();
     }
 }
@@ -99,7 +93,7 @@ void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread
         total_cpu_ns += aggregateCPUUsageNs(new_host_map.second);
         thread_data[new_host_map.first] = std::move(new_host_map.second);
     }
-    cpu_usage_meter.add(getElapsedNanoseconds(), total_cpu_ns);
+    cpu_usage_meter.add(static_cast<double>(clock_gettime_ns()), total_cpu_ns);
 }
 
 size_t ProgressIndication::getUsedThreadsCount() const
@@ -116,7 +110,7 @@ size_t ProgressIndication::getUsedThreadsCount() const
 double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
-    return cpu_usage_meter.rate(getElapsedNanoseconds());
+    return cpu_usage_meter.rate(clock_gettime_ns());
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
@@ -145,7 +139,7 @@ void ProgressIndication::writeFinalProgress()
     std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
                 << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
-    UInt64 elapsed_ns = getElapsedNanoseconds();
+    size_t elapsed_ns = watch.elapsed();
     if (elapsed_ns)
         std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
@@ -191,7 +185,7 @@ void ProgressIndication::writeProgress()
         << formatReadableQuantity(progress.read_rows) << " rows, "
         << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
-    UInt64 elapsed_ns = getElapsedNanoseconds();
+    auto elapsed_ns = watch.elapsed();
     if (elapsed_ns)
         message << " ("
                 << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "

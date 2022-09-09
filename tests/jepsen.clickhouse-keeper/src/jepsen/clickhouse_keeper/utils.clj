@@ -88,13 +88,9 @@
         new-set (conj current-set elem)]
     (zk-set conn path (pr-str new-set) (:version (:stat current-value)))))
 
-(defn zk-create
-  [conn path data]
-  (zk/create conn path :data (data/to-bytes (str data)) :persistent? true))
-
 (defn zk-create-if-not-exists
   [conn path data]
-  (if-not (zk/exists conn path) (zk-create conn path data)))
+  (zk/create conn path :data (data/to-bytes (str data)) :persistent? true))
 
 (defn zk-create-sequential
   [conn path-prefix data]
@@ -123,10 +119,6 @@
       (subs path 0 rslash_pos)
       "/")))
 
-(defn concat-path
-  [parent child]
-  (str parent (if (= parent "/") "" "/") child))
-
 (defn zk-multi-delete-first-child
   [conn path]
   (let [{children :children stat :stat} (zk-list-with-stat conn path)
@@ -136,7 +128,7 @@
       (try
         (do (.check txn path (:version stat))
             (.setData txn path (data/to-bytes "") -1) ; I'm just checking multitransactions
-            (.delete txn (concat-path path first-child) -1)
+            (.delete txn (str path first-child) -1)
             (.commit txn)
             first-child)
         (catch KeeperException$BadVersionException _ nil)
@@ -196,14 +188,13 @@
   [url]
   (let [encoded-url (md5 url)
         expected-file-name (.getName (io/file url))
-        dest-folder (str binaries-cache-dir "/" encoded-url)
-        dest-file (str dest-folder "/clickhouse")
+        dest-file (str binaries-cache-dir "/" encoded-url)
         dest-symlink (str common-prefix "/" expected-file-name)
         wget-opts (concat cu/std-wget-opts [:-O dest-file])]
     (when-not (cu/exists? dest-file)
       (info "Downloading" url)
-      (do (c/exec :mkdir :-p dest-folder)
-          (c/cd dest-folder
+      (do (c/exec :mkdir :-p binaries-cache-dir)
+          (c/cd binaries-cache-dir
                 (cu/wget-helper! wget-opts url))))
     (c/exec :rm :-rf dest-symlink)
     (c/exec :ln :-s dest-file dest-symlink)

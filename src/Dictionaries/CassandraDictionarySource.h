@@ -8,7 +8,6 @@
 #include "IDictionarySource.h"
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
 #include <Poco/Logger.h>
 #include <mutex>
 

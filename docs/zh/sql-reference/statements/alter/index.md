@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/alter/
 sidebar_position: 35
 sidebar_label: ALTER
 ---
@@ -8,8 +7,8 @@ sidebar_label: ALTER
 
 大多数 `ALTER TABLE` 查询修改表设置或数据:
 
--   [COLUMN](../../../sql-reference/statements/alter/column.mdx)
--   [PARTITION](../../../sql-reference/statements/alter/partition.mdx)
+-   [COLUMN](../../../sql-reference/statements/alter/column.md)
+-   [PARTITION](../../../sql-reference/statements/alter/partition.md)
 -   [DELETE](../../../sql-reference/statements/alter/delete.md)
 -   [UPDATE](../../../sql-reference/statements/alter/update.md)
 -   [ORDER BY](../../../sql-reference/statements/alter/order-by.md)
@@ -27,9 +26,9 @@ sidebar_label: ALTER
 
 这些 `ALTER` 语句修改与基于角色的访问控制相关的实体:
 
--   [USER](../../../sql-reference/statements/alter/user.mdx)
+-   [USER](../../../sql-reference/statements/alter/user.md)
 -   [ROLE](../../../sql-reference/statements/alter/role.md)
--   [QUOTA](../../../sql-reference/statements/alter/quota.mdx)
+-   [QUOTA](../../../sql-reference/statements/alter/quota.md)
 -   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
 

@@ -1,5 +1,4 @@
 ---
-slug: /zh/getting-started/tutorial
 sidebar_position: 12
 sidebar_label: 使用教程
 ---

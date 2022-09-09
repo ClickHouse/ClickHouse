@@ -17,7 +17,7 @@ using FunctionMultiMatchAny = FunctionsMultiStringSearch<MultiMatchAnyImpl<NameM
 
 }
 
-REGISTER_FUNCTION(MultiMatchAny)
+void registerFunctionMultiMatchAny(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiMatchAny>();
 }

@@ -142,7 +142,7 @@ public:
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
-    using DataPartState = MergeTreeDataPartState;
+    using DataPartState = IMergeTreeDataPart::State;
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
 
@@ -177,7 +177,7 @@ public:
         /// Rename map new_name -> old_name
         std::unordered_map<String, String> rename_map;
 
-        bool isColumnRenamed(const String & new_name) const { return rename_map.contains(new_name); }
+        bool isColumnRenamed(const String & new_name) const { return rename_map.count(new_name) > 0; }
         String getColumnOldName(const String & new_name) const { return rename_map.at(new_name); }
     };
 
@@ -443,8 +443,6 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    bool supportsLightweightDelete() const override;
-
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -461,7 +459,7 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
-    String getLogName() const { return *std::atomic_load(&log_name); }
+    String getLogName() const { return log_name; }
 
     Int64 getMaxBlockNumber() const;
 
@@ -634,11 +632,11 @@ public:
     /// Delete WAL files containing parts, that all already stored on disk.
     size_t clearOldWriteAheadLogs();
 
-    size_t clearOldBrokenPartsFromDetachedDirectory();
+    size_t clearOldBrokenPartsFromDetachedDirecory();
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
+    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", });
 
     size_t clearEmptyParts();
 
@@ -653,9 +651,6 @@ public:
     /// and the marks cache. Must be called with locked lockExclusively()
     /// because changes relative_data_path.
     void rename(const String & new_table_path, const StorageID & new_table_id) override;
-
-    /// Also rename log names.
-    void renameInMemory(const StorageID & new_table_id) override;
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -761,7 +756,7 @@ public:
 
     const ColumnsDescription & getObjectColumns() const { return object_columns; }
 
-    /// Creates description of columns of data type Object from the range of data parts.
+    /// Creates desciprion of columns of data type Object from the range of data parts.
     static ColumnsDescription getObjectColumns(
         const DataPartsVector & parts, const ColumnsDescription & storage_columns);
 
@@ -792,7 +787,7 @@ public:
         NameSet hardlinks_from_source_part;
     };
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
+    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
@@ -945,9 +940,6 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
-    /// True if at least one part contains lightweight delete.
-    mutable std::atomic_bool has_lightweight_delete_parts = false;
-
     /// Parts that currently moving from disk/volume to another.
     /// This set have to be used with `currently_processing_in_background_mutex`.
     /// Moving may conflict with merges and mutations, but this is OK, because
@@ -1001,9 +993,6 @@ public:
     /// Used for freezePartitionsByMatcher and unfreezePartitionsByMatcher
     using MatcherFn = std::function<bool(const String &)>;
 
-    /// Returns an object that protects temporary directory from cleanup
-    scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name);
-
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -1030,10 +1019,8 @@ protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
-    /// log_name will change during table RENAME. Use atomic_shared_ptr to allow concurrent RW.
-    /// NOTE clang-14 doesn't have atomic_shared_ptr yet. Use std::atomic* operations for now.
-    std::shared_ptr<String> log_name;
-    std::atomic<Poco::Logger *> log;
+    String log_name;
+    Poco::Logger * log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.
@@ -1083,7 +1070,7 @@ protected:
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
-    /// Current description of columns of data type Object.
+    /// Current descriprion of columns of data type Object.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
@@ -1105,8 +1092,8 @@ protected:
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.
     /// These callbacks will be passed to the constructor of each task.
-    IExecutableTask::TaskResultCallback common_assignee_trigger;
-    IExecutableTask::TaskResultCallback moves_assignee_trigger;
+    std::function<void(bool)> common_assignee_trigger;
+    std::function<void(bool)> moves_assignee_trigger;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;
@@ -1125,7 +1112,7 @@ protected:
         return {begin, end};
     }
 
-    /// Creates description of columns of data type Object from the range of data parts.
+    /// Creates desciprion of columns of data type Object from the range of data parts.
     static ColumnsDescription getObjectColumns(
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
@@ -1263,7 +1250,7 @@ private:
     void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
-    /// in precommitted state and to transaction
+    /// in precommitted state and to transasction
     void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartStorageBuilderPtr builder);
 
     /// Low-level method for preparing parts for commit (in-memory).
@@ -1339,7 +1326,8 @@ private:
     void loadDataPartsFromWAL(
         DataPartsVector & broken_parts_to_detach,
         DataPartsVector & duplicate_parts_to_remove,
-        MutableDataPartsVector & parts_from_wal);
+        MutableDataPartsVector & parts_from_wal,
+        DataPartsLock & part_lock);
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
@@ -1351,7 +1339,7 @@ private:
     /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
     /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_successed);
 
     TemporaryParts temporary_parts;
 };

@@ -24,12 +24,11 @@ namespace DB
 ///
 struct FilesystemCacheLogElement
 {
-    enum class CacheType
+    enum class ReadType
     {
         READ_FROM_CACHE,
         READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
         READ_FROM_FS_BYPASSING_CACHE,
-        WRITE_THROUGH_CACHE,
     };
 
     time_t event_time{};
@@ -39,9 +38,9 @@ struct FilesystemCacheLogElement
 
     std::pair<size_t, size_t> file_segment_range{};
     std::pair<size_t, size_t> requested_range{};
-    CacheType cache_type{};
+    ReadType read_type{};
     size_t file_segment_size;
-    bool read_from_cache_attempted;
+    bool cache_attempted;
     String read_buffer_id;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 

@@ -17,8 +17,6 @@ RUN apt-get update -y \
             mysql-client=8.0* \
             ncdu \
             netcat-openbsd \
-            nodejs \
-            npm \
             openjdk-11-jre-headless \
             openssl \
             postgresql-client \
@@ -37,7 +35,6 @@ RUN apt-get update -y \
             wget \
             zstd \
             file \
-            pv \
     && apt-get clean
 
 
@@ -76,8 +73,6 @@ RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.g
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
-
-RUN npm install -g azurite
 
 COPY run.sh /
 COPY setup_minio.sh /

@@ -194,7 +194,7 @@ struct NameArrayLastOrNull { static constexpr auto name = "arrayLastOrNull"; };
 using ArrayLastOrNullImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::Last, ArrayFirstLastElementNotExistsStrategy::Null>;
 using FunctionArrayLastOrNull = FunctionArrayMapped<ArrayLastOrNullImpl, NameArrayLastOrNull>;
 
-REGISTER_FUNCTION(ArrayFirst)
+void registerFunctionArrayFirst(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayFirst>();
     factory.registerFunction<FunctionArrayFirstOrNull>();

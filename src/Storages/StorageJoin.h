@@ -4,7 +4,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/JoinUtils.h>
+#include <Interpreters/join_common.h>
 
 
 namespace DB
@@ -31,8 +31,8 @@ public:
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,
-        JoinKind kind_,
-        JoinStrictness strictness_,
+        ASTTableJoin::Kind kind_,
+        ASTTableJoin::Strictness strictness_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
@@ -76,10 +76,14 @@ public:
     Block getRightSampleBlock() const
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        Block block = metadata_snapshot->getSampleBlock();
+        Block block = metadata_snapshot->getSampleBlock().sortColumns();
         if (use_nulls && isLeftOrFull(kind))
+        {
             for (auto & col : block)
+            {
                 JoinCommon::convertColumnToNullable(col);
+            }
+        }
         return block;
     }
 
@@ -90,8 +94,8 @@ private:
     const Names key_names;
     bool use_nulls;
     SizeLimits limits;
-    JoinKind kind;                    /// LEFT | INNER ...
-    JoinStrictness strictness;        /// ANY | ALL
+    ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
+    ASTTableJoin::Strictness strictness;        /// ANY | ALL
     bool overwrite;
 
     std::shared_ptr<TableJoin> table_join;

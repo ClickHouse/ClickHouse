@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/database-engines/
 sidebar_label: 数据库引擎
 sidebar_position: 27
 ---

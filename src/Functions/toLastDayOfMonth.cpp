@@ -8,12 +8,14 @@ namespace DB
 
 using FunctionToLastDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate, ToLastDayOfMonthImpl>;
 
-REGISTER_FUNCTION(ToLastDayOfMonth)
+void registerFunctionToLastDayOfMonth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToLastDayOfMonth>();
 
     /// MySQL compatibility alias.
-    factory.registerAlias("LAST_DAY", "toLastDayOfMonth", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToLastDayOfMonth>("LAST_DAY", FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

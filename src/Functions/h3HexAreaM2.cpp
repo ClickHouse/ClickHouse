@@ -94,7 +94,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3HexAreaM2)
+void registerFunctionH3HexAreaM2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3HexAreaM2>();
 }

@@ -7,7 +7,7 @@
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/checkAndGetLiteralArgument.h>

@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/file
 sidebar_position: 37
 sidebar_label: File
 ---

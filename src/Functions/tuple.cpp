@@ -83,7 +83,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Tuple)
+void registerFunctionTuple(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTuple>();
 }
