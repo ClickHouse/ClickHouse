@@ -50,3 +50,30 @@ ALTER TABLE t_mutations_subcolumns MODIFY COLUMN `obj.k3` String; -- { serverErr
 ALTER TABLE t_mutations_subcolumns DROP COLUMN `obj.k3`; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 
 DROP TABLE IF EXISTS t_mutations_subcolumns;
+
+CREATE TABLE t_mutations_subcolumns (a UInt64, obj JSON)
+ENGINE = MergeTree ORDER BY a PARTITION BY a;
+
+INSERT INTO t_mutations_subcolumns VALUES (1, '{"k1": 1}');
+INSERT INTO t_mutations_subcolumns VALUES (2, '{"k2": 1}');
+INSERT INTO t_mutations_subcolumns VALUES (3, '{"k3": 1}');
+
+ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k2 = 1;
+SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
+
+ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k1 = 0;
+SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
+
+TRUNCATE TABLE t_mutations_subcolumns;
+
+INSERT INTO t_mutations_subcolumns VALUES (1, '{"k1": [{"k2": 1}, {"k2": 2}]}')
+INSERT INTO t_mutations_subcolumns VALUES (2, '{"k1": [{"k3": 1}, {"k3": 2}, {"k3": 3}]}')
+INSERT INTO t_mutations_subcolumns VALUES (3, '{"k1": [{"k2": 10, "k3": 10}]}');
+
+SELECT count(), min(a) FROM t_mutations_subcolumns;
+
+ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k1.k2 = [1, 2];
+SELECT count(), min(a) FROM t_mutations_subcolumns;
+
+ALTER TABLE t_mutations_subcolumns DELETE WHERE length(obj.k1.k3) = 3;
+SELECT count(), min(a) FROM t_mutations_subcolumns;

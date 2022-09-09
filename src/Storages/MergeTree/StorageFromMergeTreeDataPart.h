@@ -50,11 +50,10 @@ public:
         if (!hasObjectColumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
-        auto object_columns = getObjectColumns(
-            parts.begin(), parts.end(),
-            storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
-
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
+        /// Here we obtain object columns from storage, because query
+        /// can include subcolumns that are missing in current part,
+        /// but which exist in other parts.
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, storage.getObjectColumns());
     }
 
     void read(
