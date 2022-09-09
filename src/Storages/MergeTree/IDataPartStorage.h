@@ -177,11 +177,12 @@ public:
     /// Also creates a new tmp_dir for internal disk (if disk is mentioned the first time).
     using TemporaryFilesOnDisks = std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>>;
     virtual void backup(
-        TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries) const = 0;
+        BackupEntries & backup_entries,
+        bool make_temporary_hard_links,
+        TemporaryFilesOnDisks * temp_dirs) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
     /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.

@@ -346,9 +346,10 @@ void WriteBufferFromS3::completeMultipartUpload()
         LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
     else
     {
-        throw Exception(ErrorCodes::S3_ERROR, "{} Tags:{}",
-            outcome.GetError().GetMessage(),
-            fmt::join(tags.begin(), tags.end(), " "));
+        throw S3Exception(
+            outcome.GetError().GetErrorType(),
+            "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+            outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
     }
 }
 
@@ -433,7 +434,10 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else
-        throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+        throw S3Exception(
+            outcome.GetError().GetErrorType(),
+            "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+            outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()
