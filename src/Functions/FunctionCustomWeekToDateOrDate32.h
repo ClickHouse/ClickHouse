@@ -48,7 +48,7 @@ public:
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDate32())
             if (enable_date32_results)
-                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32>::execute(
+                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, true>::execute(
                     arguments, result_type, input_rows_count, Transform{});
             else
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(
@@ -59,7 +59,7 @@ public:
         else if (which.isDateTime64())
         {
             if (enable_date32_results)
-                return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate32>::execute(
+                return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate32, true>::execute(
                     arguments, result_type, input_rows_count,
                     TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
             else
