@@ -3,6 +3,9 @@
 # shellcheck disable=SC2086
 # shellcheck disable=SC2024
 
+# Avoid overlaps with previous runs
+dmesg --clear
+
 set -x
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling

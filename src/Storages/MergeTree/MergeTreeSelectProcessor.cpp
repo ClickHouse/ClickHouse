@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Interpreters/Context.h>
 
 
@@ -51,7 +52,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
-        storage, storage_snapshot, data_part,
+        LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
         required_columns, virt_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter

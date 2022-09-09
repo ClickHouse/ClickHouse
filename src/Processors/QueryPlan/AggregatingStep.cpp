@@ -251,14 +251,17 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 outputs.push_back(grouping_node);
 
                 const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
+                const auto & used_keys = grouping_sets_params[set_counter].used_keys;
 
                 auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
                 for (size_t i = 0; i < output_header.columns(); ++i)
                 {
                     auto & col = output_header.getByPosition(i);
-                    const auto it = std::find_if(
+                    const auto missing_it = std::find_if(
                         missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
-                    if (it != missing_columns.end())
+                    const auto used_it = std::find_if(
+                        used_keys.begin(), used_keys.end(), [&](const auto & used_col) { return used_col == col.name; });
+                    if (missing_it != missing_columns.end())
                     {
                         auto column_with_default = col.column->cloneEmpty();
                         col.type->insertDefaultInto(*column_with_default);
@@ -270,7 +273,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     else
                     {
                         const auto * column_node = dag->getOutputs()[header.getPositionByName(col.name)];
-                        if (group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+                        if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
                             outputs.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
                         else
                             outputs.push_back(column_node);
