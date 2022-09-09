@@ -425,18 +425,29 @@ public:
         /// We are going to merge all the flags into a single one to be able to call the nested batching functions
         std::vector<const UInt8 *> nullable_filters;
         const IColumn * nested_columns[number_of_arguments];
-        std::unique_ptr<UInt8[]> converted_if_flags = nullptr;
+
+        std::unique_ptr<UInt8[]> final_flags = nullptr;
+        const UInt8 * final_flags_ptr = nullptr;
 
         if (if_argument_pos >= 0)
         {
-            converted_if_flags = std::make_unique<UInt8[]>(row_end);
+            final_flags = std::make_unique<UInt8[]>(row_end);
+            final_flags_ptr = final_flags.get();
 
+            bool included_elements = 0;
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = row_begin; i < row_end; i++)
             {
-                converted_if_flags[i] = !flags.data()[i];
+                final_flags[i] = !flags.data()[i];
+                included_elements += !!flags.data()[i];
             }
-            nullable_filters.push_back(converted_if_flags.get());
+
+            if (included_elements == 0)
+                return;
+            if (included_elements != (row_end - row_begin))
+            {
+                nullable_filters.push_back(final_flags_ptr);
+            }
         }
 
         for (size_t i = 0; i < number_of_arguments; ++i)
@@ -457,8 +468,6 @@ public:
             }
         }
 
-        std::unique_ptr<UInt8[]> final_flags;
-        const UInt8 * final_flags_ptr = nullptr;
         bool found_one = false;
 
         chassert(nullable_filters.size() > 0); /// We work under the assumption that we reach this because one argument was NULL
@@ -477,15 +486,20 @@ public:
         }
         else
         {
-            final_flags = std::make_unique<UInt8[]>(row_end);
-            final_flags_ptr = final_flags.get();
-            for (size_t i = row_begin; i < row_end; i++)
+            if (!final_flags)
             {
-                for (size_t f = 0; f < nullable_filters.size(); f++)
+                final_flags = std::make_unique<UInt8[]>(row_end);
+                final_flags_ptr = final_flags.get();
+            }
+
+            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
+            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
+            {
+                for (size_t i = row_begin; i < row_end; i++)
                 {
-                    final_flags[i] |= nullable_filters[f][i];
+                    final_flags[i] |= nullable_filters[filter][i];
+                    found_one |= !final_flags[i];
                 }
-                found_one |= !final_flags[i];
             }
         }
 
