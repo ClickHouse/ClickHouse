@@ -24,9 +24,28 @@ print array_split(dynamic([1,2,3,4,5]), 2);
 print array_split(dynamic([1,2,3,4,5]), dynamic([1,3]));
 print array_split(dynamic([1,2,3,4,5]), dynamic([-1,-2]));
 print '-- array_sort_asc()';
-print array_sort_asc(dynamic([1,3,4,5,2]),dynamic(["a","b","c","d","e"]));
+print t = array_sort_asc(dynamic([null, 'd', 'a', 'c', 'c']));
+print t = array_sort_asc(dynamic([4, 1, 3, 2]));
+print t = array_sort_asc(dynamic(['b', 'a', 'c']), dynamic(['q', 'p', 'r']))[1];
+print array_sort_asc(dynamic(['q', 'p', 'r']), dynamic(['clickhouse','hello', 'world']));
+print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , false);
+print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2);
+print t = array_sort_asc( dynamic([null, null, null]) , false);
+print array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 < 2)[1];
+print array_sort_asc(dynamic(['1','3','4','5','2']),dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]))[4];
 print array_sort_asc(split("John,Paul,George,Ringo", ","));
 print array_sort_asc(dynamic([null,"blue","yellow","green",null]));
 print v=array_sort_asc(dynamic([null,"blue","yellow","green",null]), false);
-
--- array_sort_desc()
+print '-- array_sort_desc()';
+print t = array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c']));
+print t = array_sort_desc(dynamic([4, 1, 3, 2]));
+print t = array_sort_desc(dynamic(['b', 'a', 'c']), dynamic(['q', 'p', 'r']))[1];
+print array_sort_desc(dynamic(['q', 'p', 'r']), dynamic(['clickhouse','hello', 'world']))
+print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , false);
+print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2);
+print t = array_sort_desc( dynamic([null, null, null]) , false);
+print array_sort_desc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 < 2)[1];
+print array_sort_desc(dynamic(['1','3','4','5','2']),dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]), dynamic(["a","b","c","d","e"]))[4];
+print array_sort_desc(split("John,Paul,George,Ringo", ","));
+print array_sort_desc(dynamic([null,"blue","yellow","green",null]));
+print v=array_sort_desc(dynamic([null,"blue","yellow","green",null]), false);

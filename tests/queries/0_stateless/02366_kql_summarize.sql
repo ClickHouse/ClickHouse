@@ -61,8 +61,9 @@ Customers | project Age | where Age > 40 | summarize binary_all_or(Age);
 Customers | project Age | where Age > 40 | summarize binary_all_xor(Age);
 
 -- TODO:
--- Customers | project Age | summarize percentile(Age, 95); -- expect 46
--- Customers | project Age | summarize percentiles(Age, 5, 50, 95); -- expect 25,28,46
+Customers | project Age | summarize percentile(Age, 95);
+Customers | project Age | summarize percentiles(Age, 5, 50, 95);
+Customers | project Age | summarize percentiles(Age, 5, 50, 95)[1];
 -- Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilew(AgeBucket, w, 75); -- expect 35
 -- Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilesw(AgeBucket, w, 50, 75, 99.9); -- expect 25,35,45
 
