@@ -74,7 +74,7 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     auto metadata_str = metadata_storage->readFileToString(file_path);
     ReadBufferFromString buffer(metadata_str);
     readIntText(version, buffer);
-    if (version < 1 or version > 2)
+    if (version < 1 || version > 2)
     {
         LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown frozen metadata version: {}", version);
         return false;
