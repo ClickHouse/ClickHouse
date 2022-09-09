@@ -447,7 +447,7 @@ def test_changeable_in_readonly():
             "\\N",
             "\\N",
             "\\N",
-        ]
+        ],
     ]
 
     instance.query("SET max_memory_usage = 90000000", user="robin")
