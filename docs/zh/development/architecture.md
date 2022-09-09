@@ -1,3 +1,6 @@
+---
+slug: /zh/development/architecture
+---
 # ClickHouse 架构概述 {#clickhouse-jia-gou-gai-shu}
 
 ClickHouse 是一个真正的列式数据库管理系统（DBMS)。在 ClickHouse 中，数据始终是按列存储的，包括矢量（向量或列块）执行的过程。只要有可能，操作都是基于矢量进行分派的，而不是单个的值，这被称为«矢量化查询执行»，它有利于降低实际的数据处理开销。

@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/example-datasets/metrica
 sidebar_position: 15
 sidebar_label: Yandex.Metrica Data
 ---

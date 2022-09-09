@@ -1,4 +1,5 @@
 ---
+slug: /zh/whats-new/roadmap
 sidebar_position: 74
 sidebar_label: Roadmap
 ---

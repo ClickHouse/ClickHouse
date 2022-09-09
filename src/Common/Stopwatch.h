@@ -31,7 +31,7 @@ inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type =
 }
 
 /** Differs from Poco::Stopwatch only by using 'clock_gettime' instead of 'gettimeofday',
-  *  returns nanoseconds instead of microseconds, and also by other minor differencies.
+  *  returns nanoseconds instead of microseconds, and also by other minor differences.
   */
 class Stopwatch
 {
@@ -152,4 +152,3 @@ private:
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
     UInt64 nanoseconds(UInt64 prev_time) const { return clock_gettime_ns_adjusted(prev_time, clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
 };
-

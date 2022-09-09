@@ -1,9 +1,10 @@
 ---
+slug: /en/development/build-cross-osx
 sidebar_position: 66
+title: How to Build ClickHouse on Linux for Mac OS X 
 sidebar_label: Build on Linux for Mac OS X
 ---
 
-# How to Build ClickHouse on Linux for Mac OS X 
 
 This is for the case when you have a Linux machine and want to use it to build `clickhouse` binary that will run on OS X. 
 This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with [another instruction](../development/build-osx.md).

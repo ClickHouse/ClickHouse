@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# This is a workaround for bug in llvm/clang,
+# that does not produce .debug_aranges with LTO
+#
+# NOTE: this is a temporary solution, that should be removed once [1] will be
+# resolved.
+#
+#   [1]: https://discourse.llvm.org/t/clang-does-not-produce-full-debug-aranges-section-with-thinlto/64898/8
+
+# NOTE: only -flto=thin is supported.
+# NOTE: it is not possible to check was there -gdwarf-aranges initially or not.
+if [[ "$*" =~ -plugin-opt=thinlto ]]; then
+    exec "@LLD_PATH@" -mllvm -generate-arange-section "$@"
+else
+    exec "@LLD_PATH@" "$@"
+fi

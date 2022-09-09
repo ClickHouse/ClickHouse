@@ -1,8 +1,8 @@
 ---
+slug: /en/getting-started/example-datasets/menus
 sidebar_label: New York Public Library "What's on the Menu?" Dataset
+title: "New York Public Library \"What's on the Menu?\" Dataset"
 ---
-
-# New York Public Library "What's on the Menu?" Dataset
 
 The dataset is created by the New York Public Library. It contains historical data on the menus of hotels, restaurants and cafes with the dishes along with their prices.
 
