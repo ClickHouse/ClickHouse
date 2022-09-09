@@ -1,4 +1,4 @@
-{'clickhouse.shard_num':'1','clickhouse.cluster':'test_cluster_two_shards','clickhouse.distributed':'default.dist_opentelemetry','clickhouse.remote':'default.local_opentelemetry','clickhouse.rows':'1','clickhouse.bytes':'8'}
-{'clickhouse.shard_num':'2','clickhouse.cluster':'test_cluster_two_shards','clickhouse.distributed':'default.dist_opentelemetry','clickhouse.remote':'default.local_opentelemetry','clickhouse.rows':'1','clickhouse.bytes':'8'}
-{'clickhouse.shard_num':'1','clickhouse.cluster':'test_cluster_two_shards','clickhouse.distributed':'default.dist_opentelemetry','clickhouse.remote':'default.local_opentelemetry','clickhouse.rows':'1','clickhouse.bytes':'8'}
-{'clickhouse.shard_num':'2','clickhouse.cluster':'test_cluster_two_shards','clickhouse.distributed':'default.dist_opentelemetry','clickhouse.remote':'default.local_opentelemetry','clickhouse.rows':'1','clickhouse.bytes':'8'}
+1
+1
+1
+1
