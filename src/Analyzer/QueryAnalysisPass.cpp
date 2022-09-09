@@ -88,8 +88,6 @@ namespace ErrorCodes
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
     extern const int BAD_ARGUMENTS;
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
     extern const int TYPE_MISMATCH;
     extern const int AMBIGUOUS_IDENTIFIER;
     extern const int INVALID_WITH_FILL_EXPRESSION;
