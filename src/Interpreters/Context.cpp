@@ -1344,29 +1344,6 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != UUID())
-    {
-        // Use the OpenTelemetry trace context we received from the client, and
-        // create a new span for the query.
-        query_trace_context = client_info.client_trace_context;
-        query_trace_context.span_id = thread_local_rng();
-    }
-    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        // If this is an initial query without any parent OpenTelemetry trace, we
-        // might start the trace ourselves, with some configurable probability.
-        std::bernoulli_distribution should_start_trace{
-            settings.opentelemetry_start_trace_probability};
-
-        if (should_start_trace(thread_local_rng))
-        {
-            // Use the randomly generated default query id as the new trace id.
-            query_trace_context.trace_id = random.uuid;
-            query_trace_context.span_id = thread_local_rng();
-            // Mark this trace as sampled in the flags.
-            query_trace_context.trace_flags = 1;
-        }
-    }
 
     String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
