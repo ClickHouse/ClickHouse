@@ -492,6 +492,8 @@ size_t HashJoin::getTotalRowCount() const
         }
     }
 
+    if (!data->prepare_merged_blocks.empty())
+        res += data->total_rows;
 
     return res;
 }
@@ -513,6 +515,9 @@ size_t HashJoin::getTotalByteCount() const
         }
         res += data->pool.size();
     }
+
+    if (!data->prepare_merged_blocks.empty())
+        res += data->total_bytes;
 
     return res;
 }
@@ -680,27 +685,32 @@ void HashJoin::setTotals(const Block & block)
     if (!data->prepare_merged_blocks.empty())
     {
         auto merged_block = concatenateBlocks(data->prepare_merged_blocks);
-        addJoinedBlock(merged_block, true);
         data->prepare_merged_blocks.clear();
+        data->total_rows = 0;
+        data->total_bytes = 0;
+        addJoinedBlock(merged_block, true);
     }
 }
 
-/// If prepared merge blocks is smaller than max_merged_block_size. just empalce back to prepare_merged_blocks.
-/// Otherwise, merge to one block.
+/// If prepare_merge_blocks size is smaller than max_merged_block_size, just empalce back to prepare_merged_blocks.
+/// Otherwise, merge to one block and clear prepare_merged_blocks.
 bool HashJoin::tryMergeBlocks(Block & source_block)
 {
     if (data->exceed_memory)
         return false;
 
     const auto max_merged_block_size = table_join->maxMergedBlockSize();
-    data->total_rows += data->type == Type::CROSS ? source_block.rows() : getTotalRowCount() + source_block.rows();
-    data->total_bytes += data->type == Type::CROSS ? source_block.bytes() : getTotalByteCount() + source_block.bytes();
+    // perprare_merge_blocks row and bytes
+    data->total_rows += source_block.rows();
+    data->total_bytes += source_block.bytes();
 
     auto merge_block = [&](Blocks & prepare_merged_blocks) -> bool
     {
         auto merged_block = concatenateBlocks(prepare_merged_blocks);
         source_block.swap(merged_block);
         prepare_merged_blocks.clear();
+        data->total_rows = 0;
+        data->total_bytes = 0;
         return false;
     };
 
@@ -710,7 +720,10 @@ bool HashJoin::tryMergeBlocks(Block & source_block)
         if (!source_block)
             return merge_block(data->prepare_merged_blocks);
 
-        return table_join->sizeLimits().softCheck(data->total_rows, data->total_bytes);
+        if (!table_join->sizeLimits().softCheck(getTotalRowCount(), getTotalByteCount()))
+            return merge_block(data->prepare_merged_blocks);
+
+        return true;
     }
 
     data->exceed_memory = true;
