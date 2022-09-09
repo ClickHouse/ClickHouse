@@ -684,15 +684,6 @@ private:
         *ptr = std::forward<T>(x);
     }
 
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void assignString(const CharT * data, size_t size)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(reinterpret_cast<const char *>(data), size);
-    }
-
     void create(const Field & x)
     {
         dispatch([this] (auto & value) { createConcrete(value); }, x);
