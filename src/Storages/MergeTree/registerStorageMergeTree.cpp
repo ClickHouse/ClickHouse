@@ -681,17 +681,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         auto storage_policy = args.getContext()->getStoragePolicy(storage_settings->storage_policy);
 
-        for (const auto & disk : storage_policy->getDisks())
-        {
-            /// TODO: implement it the main issue in DataPartsExchange (not able to send directories metadata)
-            if (storage_settings->allow_remote_fs_zero_copy_replication
-                && disk->supportZeroCopyReplication() && metadata.hasProjections())
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections are not supported when zero-copy replication is enabled for table. "
-                                "Currently disk '{}' supports zero copy replication", disk->getName());
-            }
-        }
-
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,

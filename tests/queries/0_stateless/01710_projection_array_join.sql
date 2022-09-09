@@ -1,4 +1,3 @@
--- Tags: no-s3-storage
 set allow_experimental_projection_optimization = 1;
 
 drop table if exists x;
