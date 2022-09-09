@@ -251,6 +251,7 @@ dragonbox
 durations
 endian
 enum
+exFAT
 fastops
 fcoverage
 filesystem

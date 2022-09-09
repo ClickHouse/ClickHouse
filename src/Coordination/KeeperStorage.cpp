@@ -871,7 +871,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             path_created += seq_num_str.str();
         }
 
-        if (path_created.starts_with(keeper_system_path))
+        if (Coordination::matchPath(path_created, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
         {
             auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
 
@@ -1041,7 +1041,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
-        if (request.path.starts_with(keeper_system_path))
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
         {
             auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", request.path);
 
@@ -1195,7 +1195,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
-        if (request.path.starts_with(keeper_system_path))
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
         {
             auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
 
@@ -1464,7 +1464,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
     {
         Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
 
-        if (request.path.starts_with(keeper_system_path))
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
         {
             auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
 

@@ -754,7 +754,7 @@ private:
         std::vector<EphemeralLockInZooKeeper> & delimiting_block_locks,
         std::vector<size_t> & log_entry_ops_idx);
     void dropAllPartsInPartitions(
-        zkutil::ZooKeeper & zookeeper, const Strings partition_ids, std::vector<LogEntryPtr> & entries, ContextPtr query_context, bool detach);
+        zkutil::ZooKeeper & zookeeper, const Strings & partition_ids, std::vector<LogEntryPtr> & entries, ContextPtr query_context, bool detach);
 
     LogEntryPtr dropAllPartsInPartition(
         zkutil::ZooKeeper & zookeeper, const String & partition_id, ContextPtr query_context, bool detach);
