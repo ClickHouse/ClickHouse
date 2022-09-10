@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
     extern const int THERE_IS_NO_PROFILE;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -133,6 +134,7 @@ namespace
         }
         else if (has_ssh_keys)
         {
+#if USE_SSL
             user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
 
             Poco::Util::AbstractConfiguration::Keys entries;
@@ -171,6 +173,9 @@ namespace
                     throw Exception("Unknown ssh_key entry pattern type: " + entry, ErrorCodes::BAD_ARGUMENTS);
             }
             user->auth_data.setSshKeys(std::move(keys));
+#else
+            throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
         }
 
         auto auth_type = user->auth_data.getType();

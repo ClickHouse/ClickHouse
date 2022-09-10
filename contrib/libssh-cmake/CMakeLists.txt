@@ -1,3 +1,9 @@
+if (NOT ENABLE_SSL)
+    message(STATUS "Not using openssl. Libssh can't be built")
+    return()
+endif()
+
+
 if (NOT LIBSSH_GLOBAL_BIND_CONFIG)
   set(GLOBAL_BIND_CONFIG "/etc/ssh/libssh_server_config")
 else()

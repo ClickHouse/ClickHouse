@@ -1,4 +1,6 @@
 #pragma once
+#include <Common/config.h>
+#if USE_SSL
 #include <stdexcept>
 #include <string_view>
 #include <base/types.h>
@@ -133,3 +135,15 @@ private:
 };
 
 }
+
+
+#else
+namespace ssh
+{
+class SshKey
+{
+public:
+    bool isEmpty() { return true; }
+};
+}
+#endif

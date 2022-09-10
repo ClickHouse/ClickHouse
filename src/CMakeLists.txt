@@ -382,7 +382,9 @@ if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
 
-target_link_libraries(clickhouse_common_io PUBLIC ssh)
+if (TARGET ssh)
+    target_link_libraries(clickhouse_common_io PUBLIC ssh)
+endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 

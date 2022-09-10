@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
@@ -63,6 +64,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     }
     else
     {
+#if USE_SSL
         std::string filename = config.getString("ssh-key-file");
         std::string passphrase;
         std::string prompt{"Enter your private key passphrase (leave empty for no passphrase): "};
@@ -77,6 +79,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         }
         else
             throw Exception("Found public key in file: " + filename + " but expected private", ErrorCodes::BAD_ARGUMENTS);
+#else
+        throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
     }
 
     quota_key = config.getString("quota_key", "");

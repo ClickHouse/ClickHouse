@@ -289,9 +289,13 @@ void Connection::sendHello()
         }
         else
         {
+#if USE_SSL
             String to_sign = packStringForSshSign();
             String signature = ssh_private_key.signString(to_sign);
             writeStringBinary(signature, *out);
+#else
+        throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
         }
     }
 

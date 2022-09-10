@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -66,6 +67,7 @@ namespace
         return checkPasswordDoubleSHA1MySQL(scramble, scrambled_password, Util::encodeDoubleSHA1(password_plaintext));
     }
 
+#if USE_SSL
     bool checkSshSignature(const std::vector<ssh::SshKey>& keys, std::string_view signature, std::string_view original)
     {
         for (const ssh::SshKey& key: keys)
@@ -77,6 +79,7 @@ namespace
         }
         return false;
     }
+#endif
 }
 
 
@@ -215,8 +218,11 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 throw Authentication::Require<SSLCertificateCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
+#if USE_SSL
                 return checkSshSignature(auth_data.getSshKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
-
+#else
+                throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
             case AuthenticationType::MAX:
                 break;
         }
