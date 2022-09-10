@@ -39,7 +39,7 @@ const uint8_t geohash_base32_decode_lookup_table[256] = {
 
 const size_t BITS_PER_SYMBOL = 5;
 const size_t MAX_PRECISION = 12;
-const size_t MAX_BITS = MAX_PRECISION * BITS_PER_SYMBOL * 1.5;
+const size_t MAX_BITS = (MAX_PRECISION * BITS_PER_SYMBOL * 3) / 2;
 const Float64 LON_MIN = -180;
 const Float64 LON_MAX = 180;
 const Float64 LAT_MIN = -90;
