@@ -58,5 +58,13 @@ INSERT INTO t_read_in_order SELECT toDateTime('2020-10-10 00:00:00') + number, 1
 EXPLAIN PIPELINE SELECT toStartOfDay(dt) as date, d FROM t_read_in_order ORDER BY date, round(d) LIMIT 5;
 SELECT toStartOfDay(dt) as date, d FROM t_read_in_order ORDER BY date, round(d) LIMIT 5;
 
+SELECT * from (
+  SELECT toStartOfDay(dt) as date, d FROM t_read_in_order ORDER BY date, round(d) LIMIT 50000000000
+  -- subquery with limit 50000000 to stabilize a test result and prevent order by d pushdown
+) order by d limit 5;
+
 EXPLAIN PIPELINE SELECT toStartOfDay(dt) as date, d FROM t_read_in_order ORDER BY date, round(d) LIMIT 5;
-SELECT toStartOfDay(dt) as date, d FROM t_read_in_order WHERE date = '2020-10-10' ORDER BY round(d) LIMIT 5;
+SELECT * from (
+  SELECT toStartOfDay(dt) as date, d FROM t_read_in_order WHERE date = '2020-10-10' ORDER BY round(d) LIMIT 50000000000
+  -- subquery with limit 50000000 to stabilize a test result and prevent order by d pushdown
+) order by d limit 5;
