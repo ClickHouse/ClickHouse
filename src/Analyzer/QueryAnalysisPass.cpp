@@ -88,8 +88,6 @@ namespace ErrorCodes
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
     extern const int BAD_ARGUMENTS;
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
     extern const int TYPE_MISMATCH;
     extern const int AMBIGUOUS_IDENTIFIER;
     extern const int INVALID_WITH_FILL_EXPRESSION;
@@ -791,12 +789,6 @@ private:
 
 using TableExpressionsAliasVisitor = TableExpressionsAliasVisitorMatcher::Visitor;
 
-struct StorageLockAndSnapshot
-{
-    TableLockHolder lock;
-    StorageSnapshotPtr snapshot;
-};
-
 class QueryAnalyzer
 {
 public:
@@ -851,7 +843,7 @@ private:
 
     static QueryTreeNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression_node, IdentifierView nested_path);
 
-    QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunction(const std::string & function_name);
+    static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunction(const std::string & function_name);
 
     void evaluateScalarSubquery(QueryTreeNodePtr & query_tree_node, size_t subquery_depth);
 
@@ -2651,8 +2643,8 @@ void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const Qu
         auto & lambda_argument_node_typed = lambda_argument_node->as<IdentifierNode &>();
         const auto & lambda_argument_name = lambda_argument_node_typed.getIdentifier().getFullName();
 
-        bool has_expression_node = data.scope.alias_name_to_expression_node.count(lambda_argument_name) > 0;
-        bool has_alias_node = data.scope.alias_name_to_lambda_node.count(lambda_argument_name) > 0;
+        bool has_expression_node = data.scope.alias_name_to_expression_node.contains(lambda_argument_name);
+        bool has_alias_node = data.scope.alias_name_to_lambda_node.contains(lambda_argument_name);
 
         if (has_expression_node || has_alias_node)
         {

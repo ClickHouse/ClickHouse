@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET use_analyzer = 1;
 
 -- Empty from section

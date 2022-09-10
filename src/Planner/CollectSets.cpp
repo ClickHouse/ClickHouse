@@ -46,7 +46,7 @@ public:
         const auto & global_planner_context = planner_context.getGlobalPlannerContext();
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
 
-        String set_key = global_planner_context->getSetKey(in_second_argument);
+        String set_key = global_planner_context->createSetKey(in_second_argument);
         auto prepared_set = global_planner_context->getSetOrNull(set_key);
 
         if (prepared_set)
