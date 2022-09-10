@@ -50,8 +50,6 @@ WorkflowDescription = namedtuple(
 
 # See https://api.github.com/orgs/{name}
 TRUSTED_ORG_IDS = {
-    7409213,  # yandex
-    28471076,  # altinity
     54801242,  # clickhouse
 }
 
@@ -104,8 +102,6 @@ TRUSTED_CONTRIBUTORS = {
         "kreuzerkrieg",
         "lehasm",  # DOCSUP
         "michon470",  # DOCSUP
-        "MyroTk",  # Tester in Altinity
-        "myrrc",  # Michael Kot, Altinity
         "nikvas0",
         "nvartolomei",
         "olgarev",  # DOCSUP
