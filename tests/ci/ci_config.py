@@ -161,6 +161,16 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
+        "binary_amd64sse2": {
+            "compiler": "clang-14-amd64sse2",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "binary",
+            "static_binary_name": "amd64sse2",
+            "libraries": "static",
+            "tidy": "disable",
+            "with_coverage": False,
+        },
     },
     "builds_report_config": {
         "ClickHouse build check": [
@@ -182,6 +192,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_amd64sse2",
         ],
     },
     "tests_config": {
