@@ -165,7 +165,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
 
     double avg_chars_size = 1; /// By default reserve only for empty strings.
 
-    if (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0]))
+    if (avg_value_size_hint > 0.0 && avg_value_size_hint > sizeof(offsets[0]))
     {
         /// Randomly selected.
         constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
@@ -173,7 +173,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
 
-    size_t size_to_reserve = data.size() + std::ceil(limit * avg_chars_size);
+    size_t size_to_reserve = data.size() + static_cast<size_t>(std::ceil(limit * avg_chars_size));
 
     /// Never reserve for too big size.
     if (size_to_reserve < 256 * 1024 * 1024)

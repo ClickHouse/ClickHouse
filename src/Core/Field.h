@@ -885,25 +885,25 @@ inline char & Field::reinterpret<char>()
 template <typename T>
 T get(const Field & field)
 {
-    return field.template get<T>();
+    return static_cast<T>(field.template get<T>());
 }
 
 template <typename T>
 T get(Field & field)
 {
-    return field.template get<T>();
+    return static_cast<T>(field.template get<T>());
 }
 
 template <typename T>
 T safeGet(const Field & field)
 {
-    return field.template safeGet<T>();
+    return static_cast<T>(field.template safeGet<T>());
 }
 
 template <typename T>
 T safeGet(Field & field)
 {
-    return field.template safeGet<T>();
+    return static_cast<T>(field.template safeGet<T>());
 }
 
 template <typename T>
@@ -1036,4 +1036,3 @@ struct fmt::formatter<DB::Field>
         return format_to(ctx.out(), "{}", toString(x));
     }
 };
-
