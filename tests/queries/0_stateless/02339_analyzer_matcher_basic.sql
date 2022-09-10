@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET use_analyzer = 1;
 
 SELECT 'Matchers without FROM section';

@@ -10,6 +10,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantValue.h>
 
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
@@ -24,6 +25,7 @@
 #include <Interpreters/Context.h>
 
 #include <Planner/PlannerContext.h>
+#include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
 
 namespace DB
@@ -38,12 +40,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
-{
-    auto constant_name = applyVisitor(FieldVisitorToString(), constant_literal);
-    return "__constant_" + constant_name + "_" + constant_type->getName();
-}
 
 class ActionsScopeNode
 {
@@ -353,7 +349,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
     const auto & global_planner_context = planner_context->getGlobalPlannerContext();
-    auto set_key = global_planner_context->getSetKey(in_second_argument);
+    auto set_key = global_planner_context->createSetKey(in_second_argument);
     auto prepared_set = global_planner_context->getSetOrThrow(set_key);
 
     auto column_set = ColumnSet::create(1, std::move(prepared_set));
@@ -526,11 +522,11 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
                 if (isNameOfInFunction(function_node.getFunctionName()))
                 {
                     const auto & in_second_argument_node = function_node.getArguments().getNodes().at(1);
-                    in_function_second_argument_node_name = planner_context.getGlobalPlannerContext()->getSetKey(in_second_argument_node);
+                    in_function_second_argument_node_name = planner_context.getGlobalPlannerContext()->createSetKey(in_second_argument_node);
                 }
 
                 WriteBufferFromOwnString buffer;
-                buffer << "__function_" + function_node.getFunctionName();
+                buffer << function_node.getFunctionName();
 
                 const auto & function_parameters_nodes = function_node.getParameters().getNodes();
 
@@ -618,6 +614,17 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
 {
     QueryTreeNodeToName empty_map;
     return calculateActionNodeName(node, planner_context, empty_map);
+}
+
+String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
+{
+    auto constant_name = applyVisitor(FieldVisitorToString(), constant_literal);
+    return constant_name + "_" + constant_type->getName();
+}
+
+String calculateConstantActionNodeName(const Field & constant_literal)
+{
+    return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
 }
 
 }

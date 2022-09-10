@@ -119,14 +119,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
 
     QueryPlan query_plan;
 
-    auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
-    auto it = table_expression_node_to_data.find(table_expression);
-    if (it == table_expression_node_to_data.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Table expression {} is not registered",
-            table_expression->formatASTForErrorMessage());
-
-    auto & table_expression_data = it->second;
+    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     if (table_node || table_function_node)
     {
@@ -155,7 +148,7 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
 
         if (read_additional_column)
         {
-            auto column_identifier = planner_context->getColumnUniqueIdentifier(table_expression, read_additional_column->name);
+            const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(*read_additional_column, table_expression);
             column_names.push_back(read_additional_column->name);
             table_expression_data.addColumn(*read_additional_column, column_identifier);
         }
@@ -295,10 +288,11 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 
             const auto & cast_type = it->second;
             auto cast_type_name = cast_type->getName();
+            Field cast_type_constant_value(cast_type_name);
 
             ColumnWithTypeAndName column;
-            column.name = "__constant_" + cast_type_name;
-            column.column = DataTypeString().createColumnConst(0, cast_type_name);
+            column.name = calculateConstantActionNodeName(cast_type_constant_value);
+            column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
             column.type = std::make_shared<DataTypeString>();
 
             const auto * cast_type_constant_node = &cast_actions_dag->addColumn(std::move(column));
@@ -335,7 +329,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 
         for (auto & output_node : cast_actions_dag->getOutputs())
         {
-            if (output_node->type == ActionsDAG::ActionType::INPUT && output_node->result_name.starts_with("__column"))
+            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
                 output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
         }
 
@@ -454,7 +448,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 
     for (auto & column_from_joined_table : columns_from_joined_table)
     {
-        if (column_from_joined_table.name.starts_with("__column"))
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name))
             table_join->addJoinedColumn(column_from_joined_table);
     }
 
@@ -484,7 +478,7 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 
     for (auto & output : drop_unused_columns_after_join->getOutputs())
     {
-        if (output->result_name.starts_with("__column"))
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output->result_name))
             updated_outputs.push_back(output);
     }
 
@@ -1114,7 +1108,8 @@ void Planner::buildQueryPlanIfNeeded()
             : static_cast<size_t>(settings.max_threads);
 
         bool storage_has_evenly_distributed_read = false;
-        auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
+        const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
+
         if (table_expression_node_to_data.size() == 1)
         {
             auto it = table_expression_node_to_data.begin();
@@ -1323,10 +1318,11 @@ void Planner::buildQueryPlanIfNeeded()
                         if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
                         {
                             auto cast_type_name = expression_to_interpolate->result_type->getName();
+                            Field cast_type_constant_value(cast_type_name);
 
                             ColumnWithTypeAndName column;
-                            column.name = "__constant_" + cast_type_name;
-                            column.column = DataTypeString().createColumnConst(0, cast_type_name);
+                            column.name = calculateConstantActionNodeName(cast_type_name);
+                            column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
                             column.type = std::make_shared<DataTypeString>();
 
                             const auto * cast_type_constant_node = &interpolate_actions_dag->addColumn(std::move(column));
@@ -1442,7 +1438,7 @@ void Planner::buildQueryPlanIfNeeded()
     /// Extend lifetime of context, table locks, storages
     query_plan.addInterpreterContext(planner_context->getQueryContext());
 
-    for (auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
+    for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
     {
         if (auto * table_node = table_expression->as<TableNode>())
         {
