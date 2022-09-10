@@ -9,6 +9,11 @@
 # - two-level group by
 # - max_memory_usage_for_user
 # - one users' query in background (to avoid reseting max_memory_usage_for_user)
+# - query with limit (to not consume all the rows)
+#
+# For details see [1].
+#
+#   [1]: https://github.com/ClickHouse/ClickHouse/pull/11022
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,7 +43,7 @@ function execute_group_by()
         "--max_bytes_before_external_group_by=$((1<<40))"
         "--collect_hash_table_stats_during_aggregation=0"
     )
-    execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5'
+    execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5 LIMIT 10'
 }
 
 # This is needed to keep at least one running query for user for the time of test.
