@@ -4,6 +4,7 @@ Partial sorting plan
   optimize_read_in_window_order=1
     Prefix sort description: n ASC
     Result sort description: n ASC, x ASC
+MergeTreeInOrder 0 → 1
 No sorting plan
   optimize_read_in_window_order=0
     Sort description: n ASC, x ASC
