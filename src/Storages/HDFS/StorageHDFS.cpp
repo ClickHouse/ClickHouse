@@ -255,7 +255,7 @@ private:
 class HDFSSource::URISIterator::Impl
 {
 public:
-    explicit Impl(const std::vector<const String> & uris_, ContextPtr context)
+    explicit Impl(const std::vector<String> & uris_, ContextPtr context)
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
@@ -293,7 +293,7 @@ String HDFSSource::DisclosedGlobIterator::next()
     return pimpl->next();
 }
 
-HDFSSource::URISIterator::URISIterator(const std::vector<const String> & uris_, ContextPtr context)
+HDFSSource::URISIterator::URISIterator(const std::vector<String> & uris_, ContextPtr context)
     : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_, context))
 {
 }
