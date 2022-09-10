@@ -3,6 +3,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/logger_useful.h>
+#include "Server/TCPProtocolStackData.h"
 #include <Server/IServer.h>
 #include <Server/TCPHandler.h>
 #include <Server/TCPServerConnectionFactory.h>
@@ -46,6 +47,21 @@ public:
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
 
             return new TCPHandler(server, tcp_server, socket, parse_proxy_protocol, server_display_name);
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            LOG_TRACE(log, "TCP Request. Client is not connected (most likely RST packet was sent).");
+            return new DummyTCPHandler(socket);
+        }
+    }
+
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data) override
+    {
+        try
+        {
+            LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
+
+            return new TCPHandler(server, tcp_server, socket, stack_data, server_display_name);
         }
         catch (const Poco::Net::NetException &)
         {

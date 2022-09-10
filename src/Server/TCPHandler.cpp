@@ -109,6 +109,16 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
 {
 }
 
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_)
+: Poco::Net::TCPServerConnection(socket_)
+    , server(server_)
+    , tcp_server(tcp_server_)
+    , log(&Poco::Logger::get("TCPHandler"))
+    , forwarded_for(stack_data.forwarded_for)
+    , server_display_name(std::move(server_display_name_))
+{
+}
+
 TCPHandler::~TCPHandler()
 {
     try

@@ -71,6 +71,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
+#include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
@@ -88,6 +89,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
+#include <unordered_set>
 
 #include <Server/TCPProtocolStack.h>
 
@@ -1882,6 +1884,8 @@ void Server::createServers(
             return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
         if (type == "tls")
             return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this));
+        if (type == "proxy1")
+            return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this));
         if (type == "mysql")
             return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
         if (type == "postgres")
@@ -1906,51 +1910,53 @@ void Server::createServers(
     for (const auto & protocol : protocols)
     {
         std::string prefix = protocol + ".";
+        std::unordered_set<std::string> pset {prefix};
 
         if (config.has(prefix + "host") && config.has(prefix + "port"))
         {
-
             std::string port_name = prefix + "port";
             std::string listen_host = prefix + "host";
             bool is_secure = false;
             auto stack = std::make_unique<TCPProtocolStackFactory>(*this);
             while (true)
             {
-                if (!config.has(prefix + "type"))
+                // if there is no "type" - it's a reference to another protocol and this is just another endpoint
+                if (config.has(prefix + "type"))
                 {
-                    // misconfigured - lack of "type"
-                    stack.reset();
-                    break;
-                }
-
-                std::string type = config.getString(prefix + "type");
-                if (type == "tls")
-                {
-                    if (is_secure)
+                    std::string type = config.getString(prefix + "type");
+                    if (type == "tls")
                     {
-                        // misconfigured - only one tls layer is allowed
+                        if (is_secure)
+                        {
+                            // misconfigured - only one tls layer is allowed
+                            stack.reset();
+                            break;
+                        }
+                        is_secure = true;
+                    }
+
+                    TCPServerConnectionFactory::Ptr factory = createFactory(type);
+                    if (!factory)
+                    {
+                        // misconfigured - protocol type doesn't exist
                         stack.reset();
                         break;
                     }
-                    is_secure = true;
+
+                    stack->append(factory);
+
+                    if (!config.has(prefix + "impl"))
+                        break;
                 }
 
-                TCPServerConnectionFactory::Ptr factory = createFactory(type);
-                if (!factory)
+                prefix = "protocols." + config.getString(prefix + "impl") + ".";
+
+                if (!pset.insert(prefix).second)
                 {
-                    // misconfigured - protocol "type" doesn't exist
+                    // misconfigured - loop is detected
                     stack.reset();
                     break;
                 }
-
-                stack->append(factory);
-
-                if (!config.has(prefix + "impl"))
-                {
-                    stack->append(createFactory("tcp"));
-                    break;
-                }
-                prefix = "protocols." + config.getString(prefix + "impl");
             }
 
             if (!stack)

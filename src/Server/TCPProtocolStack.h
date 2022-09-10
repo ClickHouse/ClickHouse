@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <memory>
 #include <list>
 
@@ -14,12 +15,23 @@
 #include <Poco/Net/SecureStreamSocket.h>
 
 #include "Poco/Net/SSLManager.h"
+#include <Common/NetException.h>
 
+#include "Interpreters/Context.h"
+#include "Server/TCPProtocolStackData.h"
 #include "base/types.h"
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int CANNOT_READ_FROM_SOCKET;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+}
 
 class TCPConnectionAccessor : public Poco::Net::TCPServerConnection
 {
@@ -43,12 +55,16 @@ public:
 
     void run() override
     {
+        TCPProtocolStackData stack_data;
+        stack_data.socket = socket();
         for (auto & factory : stack)
         {
-            std::unique_ptr<TCPServerConnection> connection(factory->createConnection(socket(), tcp_server));
+            std::unique_ptr<TCPServerConnection> connection(factory->createConnection(socket(), tcp_server, stack_data));
             connection->run();
-            if (auto * accessor = dynamic_cast<TCPConnectionAccessor*>(connection.get()); accessor)
-                socket() = accessor->socket();
+            if (stack_data.socket != socket())
+                socket() = stack_data.socket;
+//            if (auto * accessor = dynamic_cast<TCPConnectionAccessor*>(connection.get()); accessor)
+  //              socket() = accessor->socket();
         }
     }
 };
@@ -99,17 +115,23 @@ public:
 
 
 
-class TLSHandler : public TCPConnectionAccessor
+class TLSHandler : public Poco::Net::TCPServerConnection //TCPConnectionAccessor
 {
     using StreamSocket = Poco::Net::StreamSocket;
     using SecureStreamSocket = Poco::Net::SecureStreamSocket;
 public:
-    explicit TLSHandler(const StreamSocket & socket) : TCPConnectionAccessor(socket) {}
+    explicit TLSHandler(const StreamSocket & socket, TCPProtocolStackData & stack_data_)
+        : Poco::Net::TCPServerConnection(socket) //TCPConnectionAccessor(socket)
+        , stack_data(stack_data_)
+    {}
 
     void run() override
     {
         socket() = SecureStreamSocket::attach(socket(), Poco::Net::SSLManager::instance().defaultServerContext());
+        stack_data.socket = socket();
     }
+private:
+    TCPProtocolStackData & stack_data;
 };
 
 
@@ -134,12 +156,18 @@ public:
         server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &/* tcp_server*/) override
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
+    {
+        TCPProtocolStackData stack_data;
+        return createConnection(socket, tcp_server, stack_data);
+    }
+
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &/* tcp_server*/, TCPProtocolStackData & stack_data) override
     {
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TLSHandler(socket);
+            return new TLSHandler(socket, stack_data);
         }
         catch (const Poco::Net::NetException &)
         {
@@ -149,5 +177,165 @@ public:
     }
 };
 
+
+class ProxyV1Handler : public Poco::Net::TCPServerConnection
+{
+    using StreamSocket = Poco::Net::StreamSocket;
+public:
+    explicit ProxyV1Handler(const StreamSocket & socket, IServer & server_, TCPProtocolStackData & stack_data_)
+        : Poco::Net::TCPServerConnection(socket), server(server_), stack_data(stack_data_) {}
+
+    void run() override
+    {
+        const auto & settings = server.context()->getSettingsRef();
+        socket().setReceiveTimeout(settings.receive_timeout);
+        
+        std::string word;
+        bool eol;
+
+        // Read PROXYv1 protocol header
+        // http://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
+
+        // read "PROXY"
+        if (!readWord(5, word, eol) || word != "PROXY" || eol)
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+        // read "TCP4" or "TCP6" or "UNKNOWN"
+        if (!readWord(7, word, eol))
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+        if (word != "TCP4" && word != "TCP6" && word != "UNKNOWN")
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+        if (word == "UNKNOWN" && eol)
+            return;
+
+        if (eol)
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+        // read address
+        if (!readWord(39, word, eol) || eol)
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+        stack_data.forwarded_for = std::move(word);
+
+        // read address
+        if (!readWord(39, word, eol) || eol)
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+        // read port
+        if (!readWord(5, word, eol) || eol)
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        
+        // read port and "\r\n"
+        if (!readWord(5, word, eol) || !eol)
+            throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    }
+
+protected:
+    bool readWord(int max_len, std::string & word, bool & eol)
+    {
+        word.clear();
+        eol = false;
+
+        char ch = 0;
+        int n = 0;
+        bool is_cr = false;
+        try
+        {
+            for (++max_len; max_len > 0 || is_cr; --max_len)
+            {
+                n = socket().receiveBytes(&ch, 1);
+                if (n == 0)
+                {
+                    socket().shutdown();
+                    return false;
+                }
+                if (n < 0)
+                    break;
+
+                if (is_cr)
+                    return ch == 0x0A;
+
+                if (ch == 0x0D)
+                {
+                    is_cr = true;
+                    eol = true;
+                    continue;
+                }
+
+                if (ch == ' ')
+                    return true;
+
+                word.push_back(ch);
+            }
+        }
+        catch (const Poco::Net::NetException & e)
+        {
+            throw NetException(e.displayText() + ", while reading from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+        }
+        catch (const Poco::TimeoutException &)
+        {
+            throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
+                socket().peerAddress().toString(),
+                socket().getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+        }
+        catch (const Poco::IOException & e)
+        {
+            throw NetException(e.displayText() + ", while reading from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+        }
+
+        if (n < 0)
+            throw NetException("Cannot read from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+
+        return false;
+    }
+
+private:
+    IServer & server;
+    TCPProtocolStackData & stack_data;
+};
+
+class ProxyV1HandlerFactory : public TCPServerConnectionFactory
+{
+private:
+    IServer & server;
+    Poco::Logger * log;
+    std::string server_display_name;
+
+    class DummyTCPHandler : public Poco::Net::TCPServerConnection
+    {
+    public:
+        using Poco::Net::TCPServerConnection::TCPServerConnection;
+        void run() override {}
+    };
+
+public:
+    explicit ProxyV1HandlerFactory(IServer & server_)
+        : server(server_), log(&Poco::Logger::get("ProxyV1HandlerFactory"))
+    {
+        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
+    }
+
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
+    {
+        TCPProtocolStackData stack_data;
+        return createConnection(socket, tcp_server, stack_data);
+    }
+
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &/* tcp_server*/, TCPProtocolStackData & stack_data) override
+    {
+        try
+        {
+            LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
+            return new ProxyV1Handler(socket, server, stack_data);
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            LOG_TRACE(log, "TCP Request. Client is not connected (most likely RST packet was sent).");
+            return new DummyTCPHandler(socket);
+        }
+    }
+};
 
 }
