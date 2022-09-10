@@ -377,8 +377,7 @@ def test_show_profiles():
         == "CREATE SETTINGS PROFILE default\n"
     )
     assert (
-        instance.query("SHOW CREATE PROFILES")
-        == "CREATE SETTINGS PROFILE default\n"
+        instance.query("SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )
