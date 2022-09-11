@@ -115,8 +115,8 @@ def prepare_for_hung_check(drop_databases):
     # We attach gdb to clickhouse-server before running tests
     # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
     # However, it obstruct checking for hung queries.
-    #logging.info("Will terminate gdb (if any)")
-    #call_with_retry("kill -TERM $(pidof gdb)")
+    logging.info("Will terminate gdb (if any)")
+    call_with_retry("kill -TERM $(pidof gdb)")
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
