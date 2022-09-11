@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
+#include <Common/config.h>
+
 #include <Formats/NativeWriter.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
@@ -579,6 +581,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
                 throw;
 
+
+#if USE_AWS_S3
             if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
             {
                 /// It doesn't make sense to retry Access Denied or No Such Key
@@ -588,6 +592,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
                     throw;
                 }
             }
+#endif
 
             LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
 
