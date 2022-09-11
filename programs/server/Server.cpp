@@ -1882,7 +1882,7 @@ void Server::createServers(
             return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
 
         if (type == "tls")
-#if USE_SSL        
+#if USE_SSL
             return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this, conf_name));
 #else
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -1975,7 +1975,7 @@ void Server::createServers(
             });
         }
     }
-    
+
     for (const auto & listen_host : listen_hosts)
     {
         /// HTTP
