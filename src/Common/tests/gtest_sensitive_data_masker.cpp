@@ -60,24 +60,6 @@ TEST(Common, SensitiveDataMasker)
         "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', '******') WHERE "
         "ssn='000-00-0000' or email='hidden@hidden.test'");
 
-#ifndef NDEBUG
-    // simple benchmark
-    auto start = std::chrono::high_resolution_clock::now();
-    static constexpr size_t iterations = 200000;
-    for (int i = 0; i < iterations; ++i)
-    {
-        std::string query2 = "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', 'qwerty123') WHERE ssn='123-45-6789' or "
-                             "email='JonhSmith@secret.domain.test'";
-        masker2.wipeSensitiveData(query2);
-    }
-    auto finish = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = finish - start;
-    std::cout << "Elapsed time: " << elapsed.count() << "s per " << iterations <<" calls (" << elapsed.count() * 1000000 / iterations << "µs per call)"
-              << std::endl;
-    // I have: "Elapsed time: 3.44022s per 200000 calls (17.2011µs per call)"
-    masker2.printStats();
-#endif
-
     DB::SensitiveDataMasker maskerbad(*empty_xml_config , "");
 
     // gtest has not good way to check exception content, so just do it manually (see https://github.com/google/googletest/issues/952 )
@@ -104,8 +86,7 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule>
             <name>test</name>
@@ -118,7 +99,7 @@ TEST(Common, SensitiveDataMasker)
     </query_masking_rules>
 </clickhouse>)END");
 
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
@@ -134,14 +115,13 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name></rule>
     </query_masking_rules>
 </clickhouse>)END");
 
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
@@ -157,14 +137,13 @@ TEST(Common, SensitiveDataMasker)
     try
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
-<clickhouse>
+            xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
     </query_masking_rules>
 </clickhouse>)END");
 
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
@@ -180,7 +159,7 @@ TEST(Common, SensitiveDataMasker)
 
     {
         std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam(R"END(<?xml version="1.0"?>
+            xml_isteam(R"END(
 <clickhouse>
     <query_masking_rules>
         <rule>
