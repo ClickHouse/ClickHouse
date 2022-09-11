@@ -174,8 +174,6 @@ handle SIGTERM nostop noprint pass
 handle SIGUSR1 nostop noprint pass
 handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
-handle SIGABRT print stop nopass
-handle SIGTRAP print stop nopass
 info signals
 continue
 backtrace full
