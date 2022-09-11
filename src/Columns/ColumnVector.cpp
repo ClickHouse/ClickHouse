@@ -918,7 +918,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     auto res = this->create();
     auto & res_data = res->getData();
 
-    T default_value = safeGet<T>(default_field);
+    T default_value = default_field.safeGet<T>();
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];
