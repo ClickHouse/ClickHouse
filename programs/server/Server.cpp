@@ -1873,12 +1873,10 @@ void Server::createServers(
     http_params->setTimeout(settings.http_receive_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-
-
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
 
-    auto createFactory = [&](const std::string & type, const std::string & conf_name) -> Poco::SharedPtr<TCPServerConnectionFactory> //TCPServerConnectionFactory::Ptr
+    auto createFactory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
             return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
@@ -1908,16 +1906,20 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
-        std::string conf_name = protocol;
-        std::string prefix = protocol + ".";
+        std::string conf_name = "protocols." + protocol;
+        std::string prefix = conf_name + ".";
         std::unordered_set<std::string> pset {prefix};
 
         if (config.has(prefix + "host") && config.has(prefix + "port"))
         {
+            std::string description {"<undefined> protocol"};
+            if (config.has(prefix + "description"))
+                description = config.getString(prefix + "description");
             std::string port_name = prefix + "port";
-            std::string listen_host = prefix + "host";
+            std::string listen_host = config.getString(prefix + "host");
             bool is_secure = false;
             auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+
             while (true)
             {
                 // if there is no "type" - it's a reference to another protocol and this is just an endpoint
@@ -1941,14 +1943,11 @@ void Server::createServers(
                 prefix = conf_name + ".";
 
                 if (!pset.insert(conf_name).second)
-                {
-                    // misconfigured - loop is detected
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
-                }
             }
 
             if (!stack || stack->size() == 0)
-                continue;
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
 
             createServer(config, listen_host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
@@ -1960,7 +1959,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name.c_str(),
-                    "secure native protocol (tcp_secure): " + address.toString(),
+                    description + ": " + address.toString(),
                     std::make_unique<TCPServer>(
                         stack.release(),
                         server_pool,
@@ -1969,9 +1968,6 @@ void Server::createServers(
             });
         }
     }
-
-
-
     
     for (const auto & listen_host : listen_hosts)
     {
