@@ -84,6 +84,8 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProxyV1HandlerFactory.h>
+#include <Server/TLSHandlerFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
@@ -91,7 +93,7 @@
 #include <filesystem>
 #include <unordered_set>
 
-#include <Server/TCPProtocolStack.h>
+#include <Server/TCPProtocolStackFactory.h>
 
 #include "config_core.h"
 #include "Common/config_version.h"
