@@ -111,7 +111,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             for (const auto & disk : volumes[i]->getDisks())
             {
-                UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
+                UInt64 required_maximum_available_space = static_cast<size_t>(disk->getTotalSpace() * policy->getMoveFactor());
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
                 if (unreserved_space < required_maximum_available_space && !disk->isBroken())

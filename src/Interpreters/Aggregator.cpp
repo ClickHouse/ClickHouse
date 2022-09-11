@@ -1530,8 +1530,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     file_buf.next();
 
     double elapsed_seconds = watch.elapsedSeconds();
-    double compressed_bytes = file_buf.count();
-    double uncompressed_bytes = compressed_buf.count();
+    size_t compressed_bytes = file_buf.count();
+    size_t uncompressed_bytes = compressed_buf.count();
 
     {
         std::lock_guard lock(temporary_files.mutex);
@@ -1553,12 +1553,12 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         rows,
         ReadableSize(uncompressed_bytes),
         ReadableSize(compressed_bytes),
-        uncompressed_bytes / rows,
-        compressed_bytes / rows,
-        uncompressed_bytes / compressed_bytes,
-        rows / elapsed_seconds,
-        ReadableSize(uncompressed_bytes / elapsed_seconds),
-        ReadableSize(compressed_bytes / elapsed_seconds));
+        static_cast<double>(uncompressed_bytes) / rows,
+        static_cast<double>(compressed_bytes) / rows,
+        static_cast<double>(uncompressed_bytes) / compressed_bytes,
+        static_cast<double>(rows) / elapsed_seconds,
+        ReadableSize(static_cast<double>(uncompressed_bytes) / elapsed_seconds),
+        ReadableSize(static_cast<double>(compressed_bytes) / elapsed_seconds));
 }
 
 
