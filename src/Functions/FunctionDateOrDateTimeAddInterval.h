@@ -718,10 +718,10 @@ public:
         }
         else
         {
-            static_assert("Failed to resolve return type.");
+            static_assert(sizeof(FromDataType) == 0, "Failed to resolve return type.");
         }
 
-        //to make PVS and GCC happy.
+        // To make PVS-Studio and GCC happy.
         return nullptr;
     }
 

@@ -188,7 +188,7 @@ public:
             return;
         }
 
-        UInt64 num_units = value / unit_size;
+        UInt64 num_units = static_cast<UInt64>(value / unit_size);
 
         if (!num_units)
         {
