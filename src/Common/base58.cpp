@@ -4,24 +4,25 @@
 namespace DB
 {
 
-size_t encodeBase58(const UInt8 * src, size_t srclen, UInt8 * dst)
+size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
 {
     const char * base58_encoding_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
     size_t processed = 0;
     size_t zeros = 0;
 
-    for (;*src == '\0' && processed < srclen - 1; ++src)
+    while (*src == '\0' && processed < src_length - 1)
     {
         ++processed;
         ++zeros;
         *dst = '1';
         ++dst;
+        ++src;
     }
 
     size_t idx = 0;
 
-    while (processed < srclen - 1)
+    while (processed < src_length - 1)
     {
         UInt8 carry = static_cast<UInt8>(*src);
 
