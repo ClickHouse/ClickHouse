@@ -1882,8 +1882,15 @@ void Server::createServers(
     {
         if (type == "tcp")
             return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
+
         if (type == "tls")
+#if USE_SSL        
             return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this, conf_name));
+#else
+            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
@@ -2055,39 +2062,11 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
 #if USE_SSL
-            //Poco::Net::SecureServerSocket socket;
-            Poco::Net::ServerSocket socket;
+            Poco::Net::SecureServerSocket socket;
             auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
 
-/*
-            TCPProtocolStackFactory *stack = new TCPProtocolStackFactory(*this);
-            stack->append(new TLSHandlerFactory(*this));
-            stack->append(new TCPHandlerFactory(*this, false, false));
-            
-            return ProtocolServerAdapter(
-                listen_host,
-                port_name,
-                "secure native protocol (tcp_secure): " + address.toString(),
-                std::make_unique<TCPServer>(
-                    stack,
-                    server_pool,
-                    socket,
-                    new Poco::Net::TCPServerParams));
-*/
-            return ProtocolServerAdapter(
-                listen_host,
-                port_name,
-                "secure native protocol (tcp_secure): " + address.toString(),
-                std::make_unique<TCPServer>(
-                    new TCPProtocolStackFactory(*this, "", new TLSHandlerFactory(*this, ""), new TCPHandlerFactory(*this, false, false)),
-                    server_pool,
-                    socket,
-                    new Poco::Net::TCPServerParams));
-
-
-/*
             return ProtocolServerAdapter(
                 listen_host,
                 port_name,
@@ -2097,7 +2076,6 @@ void Server::createServers(
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
-*/                    
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
