@@ -363,9 +363,11 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
-    /// Get connection from global context and reconnect if needed
+    /// Get connection from global context and reconnect if needed.
     /// NOTE: use it only when table is shut down, in all other cases
-    /// use getZooKeeper() because it managed by restarting thread.
+    /// use getZooKeeper() because it is managed by restarting thread
+    /// which guarantees that we have only one connected object
+    /// for table.
     zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
     zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
     void setZooKeeper();
