@@ -38,6 +38,8 @@ struct FormatSettings
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
     String column_names_for_schema_inference;
+    String schema_inference_hints;
+
     bool try_infer_integers = false;
     bool try_infer_dates = false;
     bool try_infer_datetimes = false;
@@ -109,11 +111,11 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
-        bool input_format_enum_as_number = false;
-        bool input_format_arrays_as_nested_csv = false;
+        bool enum_as_number = false;
+        bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
         char tuple_delimiter = ',';
-        bool input_format_use_best_effort_in_schema_inference = true;
+        bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
     } csv;
 
@@ -225,8 +227,8 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         String null_representation = "\\N";
-        bool input_format_enum_as_number = false;
-        bool input_format_use_best_effort_in_schema_inference = true;
+        bool enum_as_number = false;
+        bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
     } tsv;
 

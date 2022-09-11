@@ -16,8 +16,16 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
+
+
+namespace ProfileEvents
+{
+    extern const Event ExternalProcessingFilesTotal;
+}
 
 namespace DB
 {
@@ -34,7 +42,6 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
-
 struct statvfs getStatVFS(const String & path)
 {
     struct statvfs fs;
@@ -47,18 +54,20 @@ struct statvfs getStatVFS(const String & path)
     return fs;
 }
 
-
-bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
+bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 {
-    auto free_space = fs::space(path).free;
+    fs::path filepath(path);
+    /// `path` may point to nonexisting file, then we can't check it directly, move to parent directory
+    while (filepath.has_parent_path() && !fs::exists(filepath))
+        filepath = filepath.parent_path();
+    auto free_space = fs::space(filepath).free;
     return data_size <= free_space;
 }
 
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(path);
-
-    /// NOTE: std::make_shared cannot use protected constructors
     return std::make_unique<TemporaryFile>(path);
 }
 
@@ -77,6 +86,22 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #else
     throw DB::Exception("The function getDeviceId is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
 #endif
+}
+
+
+std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path)
+{
+#if defined(OS_LINUX)
+    struct stat sb;
+    if (lstat(path.c_str(), &sb))
+        return {};
+    WriteBufferFromOwnString ss;
+    ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
+    return ss.str();
+#else
+    return {};
+#endif
+
 }
 
 #if !defined(OS_LINUX)
@@ -351,4 +376,24 @@ void setModificationTime(const std::string & path, time_t time)
     if (utime(path.c_str(), &tb) != 0)
         DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
+
+bool isSymlink(const fs::path & path)
+{
+    /// Remove trailing slash before checking if file is symlink.
+    /// Let /path/to/link is a symlink to /path/to/target/dir/ directory.
+    /// In this case is_symlink("/path/to/link") is true,
+    /// but is_symlink("/path/to/link/") is false (it's a directory)
+    if (path.filename().empty())
+        return fs::is_symlink(path.parent_path());      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+    return fs::is_symlink(path);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
+fs::path readSymlink(const fs::path & path)
+{
+    /// See the comment for isSymlink
+    if (path.filename().empty())
+        return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+    return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
 }

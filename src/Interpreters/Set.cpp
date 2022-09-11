@@ -22,6 +22,8 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/Chunk.h>
+
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <base/range.h>
@@ -162,8 +164,16 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     data.init(data.chooseMethod(key_columns, key_sizes));
 }
 
-
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
+{
+    Columns cols;
+    cols.reserve(columns.size());
+    for (const auto & column : columns)
+        cols.emplace_back(column.column);
+    return insertFromBlock(cols);
+}
+
+bool Set::insertFromBlock(const Columns & columns)
 {
     std::lock_guard<std::shared_mutex> lock(rwlock);
 
@@ -179,11 +189,11 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
+        materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = columns.at(0).column->size();
+    size_t rows = columns.at(0)->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -393,7 +403,13 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
 
 bool Set::areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
-    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
+    /// Out-of-bound access can happen when same set expression built with different columns.
+    /// Caller may call this method to make sure that the set is indeed the one they want
+    /// without awaring data_types.size().
+    if (set_type_idx >= data_types.size())
+        return false;
+    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))
+        ->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
 }
 
 void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const

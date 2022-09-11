@@ -1170,7 +1170,10 @@ private:
             ctx->new_data_part->getColumns(),
             skip_part_indices,
             ctx->compression_codec,
-            ctx->txn);
+            ctx->txn,
+            false,
+            false,
+            ctx->context->getWriteSettings());
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1299,7 +1302,7 @@ private:
                     *ctx->source_part->data_part_storage, it->name(), destination);
                 hardlinked_files.insert(it->name());
             }
-            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
+            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->data_part_storage_builder->createProjection(destination);

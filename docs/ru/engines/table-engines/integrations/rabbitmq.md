@@ -1,3 +1,6 @@
+---
+slug: /ru/engines/table-engines/integrations/rabbitmq
+---
 # RabbitMQ {#rabbitmq-engine}
 
 Движок работает с [RabbitMQ](https://www.rabbitmq.com).

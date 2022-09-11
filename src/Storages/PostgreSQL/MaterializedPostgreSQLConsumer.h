@@ -94,6 +94,8 @@ private:
 
     void syncTables();
 
+    void updateLsn();
+
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     void processReplicationMessage(const char * replication_message, size_t size);
@@ -124,7 +126,7 @@ private:
 
     static void assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx);
 
-    /// lsn - log sequnce nuumber, like wal offset (64 bit).
+    /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
@@ -135,6 +137,8 @@ private:
     Poco::Logger * log;
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
+
+    bool committed = false;
 
     std::shared_ptr<postgres::Connection> connection;
 

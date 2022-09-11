@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/errors
+---
 # system.errors {#system_tables-errors}
 
 Содержит коды ошибок с указанием количества срабатываний.

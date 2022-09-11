@@ -1,4 +1,5 @@
 ---
+slug: /ru/guides/apply-catboost-model
 sidebar_position: 41
 sidebar_label: "Применение модели CatBoost в ClickHouse"
 ---
