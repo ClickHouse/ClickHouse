@@ -45,7 +45,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
+void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory & factory)
 {
     factory.registerFunction(NameQuantileBFloat16Weighted::name, createAggregateFunctionQuantile<FuncQuantileBFloat16Weighted>);
     factory.registerFunction(NameQuantilesBFloat16Weighted::name, createAggregateFunctionQuantile<FuncQuantilesBFloat16Weighted>);
