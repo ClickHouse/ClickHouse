@@ -6,7 +6,6 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -71,7 +70,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
-#include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
@@ -82,18 +80,18 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
+#include <Server/TCPProtocolStackFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
 #include <unordered_set>
-
-#include <Server/TCPProtocolStackFactory.h>
 
 #include "config_core.h"
 #include "Common/config_version.h"
@@ -2066,13 +2064,12 @@ void Server::createServers(
             auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
-
             return ProtocolServerAdapter(
                 listen_host,
                 port_name,
                 "secure native protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
-                    new TCPHandlerFactory(*this, true, false),
+                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
