@@ -3,7 +3,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <mutex>
 
 
 namespace DB
@@ -46,16 +45,21 @@ private:
 
 
 /// Handler for requests to catboost library. The call protocol is as follows:
-/// (1) Send a "catboost_GetTreeCount" request from the server to the bridge, containing a library path (e.g /home/user/libcatboost.so) and
-///     a model path (e.g. /home/user/model.bin). Rirst, this unloads the catboost library handler associated to the model path (if it was
-///     loaded), then loads the catboost library handler associated to the model path, then executes GetTreeCount() on the library handler
-///     and finally sends the result back to the server.
-///     Step (1) is called once by the server from FunctionCatBoostEvaluate::getReturnTypeImpl(). The library path handler is unloaded in
-///     the beginning because it contains state which may no longer be valid if the user runs catboost("/path/to/model.bin", ...) more than
-///     once and if "model.bin" was updated in between.
-/// (2) Send "catboost_Evaluate" from the server to the bridge, containing the model path and the features to run the interference on.
-///     Step (2) is called multiple times (once per chunk) by the server from function FunctionCatBoostEvaluate::executeImpl(). The library
-///     handler for the given model path is expected to be already loaded by Step (1).
+/// (1) Send a "catboost_GetTreeCount" request from the server to the bridge. It contains a library path (e.g /home/user/libcatboost.so) and
+///     a model path (e.g. /home/user/model.bin). This loads the catboost library handler associated with the model path, then executes
+///     GetTreeCount() on the library handler and sends the result back to the server.
+/// (2) Send "catboost_Evaluate" from the server to the bridge. It contains a model path and the features to run the interference on. Step
+///     (2) is called multiple times (once per chunk) by the server.
+///
+/// We would ideally like to have steps (1) and (2) in one atomic handler but can't because the evaluation on the server side is divided
+/// into two dependent phases: FunctionCatBoostEvaluate::getReturnTypeImpl() and ::executeImpl(). So the model may in principle be unloaded
+/// from the library-bridge between steps (1) and (2). Step (2) checks if that is the case and fails gracefully. This is okay because that
+/// situation considered exceptional and rare.
+///
+/// An update of a model is performed by unloading it. The first call to "catboost_GetTreeCount" brings it into memory again.
+///
+/// Further handlers are provided for unloading a specific model, for unloading all models or for retrieving information about the loaded
+/// models for display in a system view.
 class CatBoostLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
@@ -64,7 +68,6 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
-    std::mutex mutex;
     const size_t keep_alive_timeout;
     Poco::Logger * log;
 };

@@ -35,6 +35,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -373,10 +374,17 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         }
         case Type::RELOAD_MODEL:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
+            bridge_helper->removeModel();
+            break;
+        }
         case Type::RELOAD_MODELS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            /// SYSTEM RELOAD MODEL(S) is no longer supported. For compat reasons, it is not completely removed but retained as no-op.
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
+            bridge_helper->removeAllModels();
             break;
         }
         case Type::RELOAD_FUNCTION:

@@ -34,7 +34,8 @@ CatBoostLibraryHandler::APIHolder::APIHolder(SharedLibrary & lib)
 CatBoostLibraryHandler::CatBoostLibraryHandler(
     const std::string & library_path,
     const std::string & model_path)
-    : library(std::make_shared<SharedLibrary>(library_path))
+    : loading_start_time(std::chrono::system_clock::now())
+    , library(std::make_shared<SharedLibrary>(library_path))
     , api(*library)
 {
     model_calcer_handle = api.ModelCalcerCreate();
@@ -51,11 +52,23 @@ CatBoostLibraryHandler::CatBoostLibraryHandler(
     tree_count = 1;
     if (api.GetDimensionsCount)
         tree_count = api.GetDimensionsCount(model_calcer_handle);
+
+    loading_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - loading_start_time);
 }
 
 CatBoostLibraryHandler::~CatBoostLibraryHandler()
 {
     api.ModelCalcerDelete(model_calcer_handle);
+}
+
+std::chrono::system_clock::time_point CatBoostLibraryHandler::getLoadingStartTime() const
+{
+    return loading_start_time;
+}
+
+std::chrono::milliseconds CatBoostLibraryHandler::getLoadingDuration() const
+{
+    return loading_duration;
 }
 
 namespace

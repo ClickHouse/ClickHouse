@@ -10,6 +10,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Net/HTTPRequest.h>
 
+#include <random>
+
 namespace DB
 {
 
@@ -25,6 +27,16 @@ CatBoostLibraryBridgeHelper::CatBoostLibraryBridgeHelper(
     : LibraryBridgeHelper(context_->getGlobalContext())
     , library_path(library_path_)
     , model_path(model_path_)
+{
+}
+
+CatBoostLibraryBridgeHelper::CatBoostLibraryBridgeHelper(ContextPtr context_, std::string_view model_path_)
+    : CatBoostLibraryBridgeHelper(context_, "", model_path_)
+{
+}
+
+CatBoostLibraryBridgeHelper::CatBoostLibraryBridgeHelper(ContextPtr context_)
+    : CatBoostLibraryBridgeHelper(context_, "", "")
 {
 }
 
@@ -71,6 +83,74 @@ bool CatBoostLibraryBridgeHelper::bridgeHandShake()
     return true;
 }
 
+ExternalModelInfos CatBoostLibraryBridgeHelper::listModels()
+{
+    startBridgeSync();
+
+    ReadWriteBufferFromHTTP buf(
+        createRequestURI(CATBOOST_LIST_METHOD),
+        Poco::Net::HTTPRequest::HTTP_POST,
+        [](std::ostream &) {},
+        http_timeouts, credentials);
+
+    ExternalModelInfos result;
+
+    UInt64 num_rows;
+    readIntBinary(num_rows, buf);
+
+    for (UInt64 i = 0; i < num_rows; ++i)
+    {
+        ExternalModelInfo info;
+
+        readStringBinary(info.model_path, buf);
+        readStringBinary(info.model_type, buf);
+
+        UInt64 t;
+        readIntBinary(t, buf);
+        info.loading_start_time = std::chrono::system_clock::from_time_t(t);
+
+        readIntBinary(t, buf);
+        info.loading_duration = std::chrono::milliseconds(t);
+
+        result.push_back(info);
+    }
+
+    return result;
+}
+
+void CatBoostLibraryBridgeHelper::removeModel()
+{
+    startBridgeSync();
+
+    ReadWriteBufferFromHTTP buf(
+        createRequestURI(CATBOOST_REMOVEMODEL_METHOD),
+        Poco::Net::HTTPRequest::HTTP_POST,
+        [this](std::ostream & os)
+        {
+            os << "model_path=" << escapeForFileName(model_path);
+        },
+        http_timeouts, credentials);
+
+    String result;
+    readStringBinary(result, buf);
+    assert(result == "1");
+}
+
+void CatBoostLibraryBridgeHelper::removeAllModels()
+{
+    startBridgeSync();
+
+    ReadWriteBufferFromHTTP buf(
+        createRequestURI(CATBOOST_REMOVEALLMODELS_METHOD),
+        Poco::Net::HTTPRequest::HTTP_POST,
+        [](std::ostream &){},
+        http_timeouts, credentials);
+
+    String result;
+    readStringBinary(result, buf);
+    assert(result == "1");
+}
+
 size_t CatBoostLibraryBridgeHelper::getTreeCount()
 {
     startBridgeSync();
@@ -85,9 +165,9 @@ size_t CatBoostLibraryBridgeHelper::getTreeCount()
         },
         http_timeouts, credentials);
 
-    size_t res;
-    readIntBinary(res, buf);
-    return res;
+    size_t result;
+    readIntBinary(result, buf);
+    return result;
 }
 
 ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & columns)

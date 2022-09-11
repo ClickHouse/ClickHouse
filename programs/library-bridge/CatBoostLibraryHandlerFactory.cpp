@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -11,39 +12,64 @@ CatBoostLibraryHandlerFactory & CatBoostLibraryHandlerFactory::instance()
     return instance;
 }
 
-CatBoostLibraryHandlerPtr CatBoostLibraryHandlerFactory::get(const String & model_path)
+CatBoostLibraryHandlerPtr CatBoostLibraryHandlerFactory::getOrCreateModel(const String & model_path, const String & library_path, bool create_if_not_found)
 {
     std::lock_guard lock(mutex);
 
-    if (auto handler = library_handlers.find(model_path); handler != library_handlers.end())
+    auto handler = library_handlers.find(model_path);
+    bool found = (handler != library_handlers.end());
+
+    if (found)
         return handler->second;
-    return nullptr;
-}
-
-void CatBoostLibraryHandlerFactory::create(const String & library_path, const String & model_path)
-{
-    std::lock_guard lock(mutex);
-
-    if (library_handlers.contains(model_path))
+    else
     {
-        LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Cannot load catboost library handler for model path {} because it exists already", model_path);
-        return;
+        if (create_if_not_found)
+        {
+            auto new_handler = std::make_shared<CatBoostLibraryHandler>(library_path, model_path);
+            library_handlers.emplace(std::make_pair(model_path, new_handler));
+            LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Loaded catboost library handler for model path '{}'", model_path);
+            return new_handler;
+        }
+        return nullptr;
     }
-
-    library_handlers.emplace(std::make_pair(model_path, std::make_shared<CatBoostLibraryHandler>(library_path, model_path)));
-    LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Loaded catboost library handler for model path {}.", model_path);
 }
 
-void CatBoostLibraryHandlerFactory::remove(const String & model_path)
+void CatBoostLibraryHandlerFactory::removeModel(const String & model_path)
 {
     std::lock_guard lock(mutex);
+
     bool deleted = library_handlers.erase(model_path);
     if (!deleted)
     {
-        LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Cannot unload catboost library handler for model path: {}", model_path);
+        LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Cannot unload catboost library handler for model path '{}'", model_path);
         return;
     }
-    LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Unloaded catboost library handler for model path: {}", model_path);
+    LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Unloaded catboost library handler for model path '{}'", model_path);
+}
+
+void CatBoostLibraryHandlerFactory::removeAllModels()
+{
+    std::lock_guard lock(mutex);
+    library_handlers.clear();
+    LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Unloaded all catboost library handlers");
+}
+
+ExternalModelInfos CatBoostLibraryHandlerFactory::getModelInfos()
+{
+    std::lock_guard lock(mutex);
+
+    ExternalModelInfos result;
+
+    for (const auto & handler : library_handlers)
+        result.push_back({
+            .model_path = handler.first,
+            .model_type = "catboost",
+            .loading_start_time = handler.second->getLoadingStartTime(),
+            .loading_duration = handler.second->getLoadingDuration()
+        });
+
+    return result;
+
 }
 
 }
