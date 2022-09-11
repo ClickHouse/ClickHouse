@@ -774,7 +774,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Common code for finish and exception callbacks
             auto status_info_to_query_log = [](QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr) mutable
             {
-                DB::UInt64 query_time = info.elapsed_seconds * 1000000;
+                UInt64 query_time = static_cast<UInt64>(info.elapsed_seconds * 1000000);
                 ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
                 if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
                 {
@@ -789,7 +789,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, query_time);
                 }
 
-                element.query_duration_ms = info.elapsed_seconds * 1000;
+                element.query_duration_ms = static_cast<UInt64>(info.elapsed_seconds * 1000);
 
                 element.read_rows = info.read_rows;
                 element.read_bytes = info.read_bytes;

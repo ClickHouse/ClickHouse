@@ -252,9 +252,10 @@ private:
         return findIndex(t);
     }
 
-    static inline LUTIndex toLUTIndex(LUTIndex i)
+    template <typename T>
+    static inline LUTIndex toLUTIndex(T i)
     {
-        return i;
+        return LUTIndex(static_cast<UInt32>(i));
     }
 
     template <typename DateOrTime>
