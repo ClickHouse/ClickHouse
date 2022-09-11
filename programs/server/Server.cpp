@@ -1118,7 +1118,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             size_t max_server_memory_usage = config->getUInt64("max_server_memory_usage", 0);
 
             double max_server_memory_usage_to_ram_ratio = config->getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
-            size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+            size_t default_max_server_memory_usage = static_cast<size_t>(memory_amount * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
@@ -1391,7 +1391,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Lower cache size on low-memory systems.
     double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
-    size_t max_cache_size = memory_amount * cache_size_to_ram_max_ratio;
+    size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
@@ -1597,7 +1597,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
-        if (total_memory_tracker_sample_probability)
+        if (total_memory_tracker_sample_probability > 0.0)
         {
             total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
         }
