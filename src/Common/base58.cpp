@@ -97,7 +97,8 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
 
     while (processed < src_length)
     {
-        UInt32 carry = map_digits[*src];
+        Int8 digit = map_digits[*src];
+        UInt32 carry = digit == -1 ? 0xFFFFFFFFU : static_cast<UInt32>(digit);
         if (carry == static_cast<UInt32>(-1))
         {
             return {};
