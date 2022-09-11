@@ -36,14 +36,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    // Take parameter type from query
-    String getParamType(const String query) const 
-    {
-        auto start = query.find(':');
-        auto end = query.find('}');
-        return query.substr(start + 1, end - start - 1);
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
         // Check and get query
@@ -61,42 +53,6 @@ public:
         // Get parameter
         const ColumnConst * param = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
 
-        String param_type = getParamType(query);
-
-        // Check excpected and parameter type
-        if (param_type != param->getDataType()) 
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Expected another variable type",
-                arguments[1].type->getName(),
-                1,
-                getName());
-
-        String val = param->getValue<String>();
-
-        // Insert parameter into query
-        query.replace(query.find('{'), query.find('}'), val);
-
-        ContextMutablePtr new_context;
-        new_context = Context::createCopy(context);
-
-        // Execute query and return result
-        auto io_block = executeQuery(query, new_context);
-
-        if (io_block.pipeline.pulling()) 
-        {
-            PullingPipelineExecutor executor(io_block.pipeline);
-            Block block;
-
-            while (executor.pull(block))
-            {
-                for (const auto & col : block)
-                {
-                    return col.column;
-                }
-            }
-        }
-        
     }
 
 private:
