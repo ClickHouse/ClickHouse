@@ -55,7 +55,7 @@ struct QuantileReservoirSampler
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
     {
-        return Value(data.quantileInterpolated(level));
+        return static_cast<Value>(data.quantileInterpolated(level));
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.

@@ -133,7 +133,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                 getItemsImpl<ValueType>(
                     requested_key_points,
                     [&](size_t row) { return attribute_data[row]; },
-                    [&](auto value) { result_data.emplace_back(value); },
+                    [&](auto value) { static_cast<Type>(result_data.emplace_back(value)); },
                     default_value_provider);
             }
         };
