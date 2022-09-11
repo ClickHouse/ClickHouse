@@ -38,7 +38,7 @@ public:
     }
 private:
     std::string conf_name;
-    TCPProtocolStackData & stack_data;
+    TCPProtocolStackData & stack_data [[maybe_unused]];
 };
 
 
