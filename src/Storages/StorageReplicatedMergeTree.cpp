@@ -7584,7 +7584,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         return std::make_pair(true, NameSet{});
     }
 
-    /// We remove parts during table shutdown. If exception happen restarting thread will be already turned
+    /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
     /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
     /// context.
     zkutil::ZooKeeperPtr zookeeper;
