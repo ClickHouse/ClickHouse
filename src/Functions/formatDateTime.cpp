@@ -278,10 +278,14 @@ private:
         }
     };
 
+    std::string & default_user_timezone = "";
+
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
+
+    explicit FunctionFormatDateTimeImpl(std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
 
     String getName() const override
     {

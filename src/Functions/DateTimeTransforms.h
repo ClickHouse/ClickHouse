@@ -1194,8 +1194,8 @@ struct Transformer
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static ColumnPtr execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                             size_t /*input_rows_count*/, const Transform & transform = {}, const std::string & default_user_timezone = "")
     {
         using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
 
@@ -1217,7 +1217,7 @@ struct DateTimeTransformImpl
                 if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                     time_zone_argument_position = 2;
 
-                const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
+                const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0, default_user_timezone);
                 Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
             }
 
