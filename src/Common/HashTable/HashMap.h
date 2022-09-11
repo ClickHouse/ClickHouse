@@ -3,6 +3,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/Prefetching.h>
 
 
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
@@ -199,22 +200,30 @@ public:
     ///  have a key equals to the given cell, a new cell gets emplaced into that map,
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
-    template <typename Func>
+    template <typename Func, bool prefetch = false>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        const auto end = this->end();
+        DB::PrefetchingHelper prefetching;
+        size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
 
-        constexpr size_t prefetch_look_ahead = 8;
-        auto prefetch_it = this->begin();
-        for (size_t i = 0; i < prefetch_look_ahead && prefetch_it != end; ++i, ++prefetch_it)
-            ;
+        size_t i = 0;
+        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
 
-        for (auto it = this->begin(); it != end; ++it)
+        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
         {
-            if (prefetch_it != end)
+            if constexpr (prefetch)
             {
-                that.prefetchByHash(prefetch_it.getHash());
-                ++prefetch_it;
+                if (i == prefetching.iterationsToMeasure())
+                {
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - prefetching.getInitialLookAheadValue());
+                }
+
+                if (likely(prefetch_it != end))
+                {
+                    that.prefetchByHash(prefetch_it.getHash());
+                    ++prefetch_it;
+                }
             }
 
             typename Self::LookupResult res_it;
@@ -289,6 +298,15 @@ public:
         if (auto it = this->find(x); it != this->end())
             return it->getMapped();
         throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
+    }
+
+private:
+    auto advanceIterator(auto it, size_t n)
+    {
+        size_t i = 0;
+        while (i++ < n && it != this->end())
+            ++it;
+        return it;
     }
 };
 

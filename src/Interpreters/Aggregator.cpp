@@ -288,6 +288,16 @@ concept HasPrefetchMemberFunc = requires
 {
     {std::declval<HashTable>().prefetch(std::declval<KeyHolder>())} -> std::same_as<void>;
 };
+
+size_t getL2CacheSize()
+{
+#ifdef OS_LINUX
+    return sysconf(_SC_LEVEL2_CACHE_SIZE);
+#else
+    return 8 * 1024 * 1024; /// 8MB looks like a reasonable default
+#endif
+}
+
 }
 
 namespace DB
@@ -331,7 +341,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 
     switch (type)
     {
-    #define M(NAME) \
+#define M(NAME) \
         case Type::NAME: \
             NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
             (NAME).reset(); \
@@ -977,7 +987,7 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = method.data.size() > DEFAULT_BLOCK_SIZE;
+        const bool prefetch = method.data.getBufferSizeInBytes() > getL2CacheSize();
 
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -1018,8 +1028,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
-    /// During processing of row #i will also prefetch row number #(row + prefetch_look_ahead).
-    static constexpr uint8_t prefetch_look_ahead = 8;
+    /// During processing of row #i we will prefetch HashTable cell for row #(row + prefetch_look_ahead).
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
 
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
@@ -1033,6 +1044,9 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
+                if (i == row_begin + prefetching.iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
                 if (i + prefetch_look_ahead < row_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
@@ -1096,6 +1110,9 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
+                if (i == row_begin + prefetching.iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
                 if (i + prefetch_look_ahead < row_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
@@ -2384,16 +2401,13 @@ void NO_INLINE Aggregator::mergeDataNullKey(
 }
 
 
-template <typename Method, bool use_compiled_functions, typename Table>
-void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst,
-    Table & table_src,
-    Arena * arena) const
+template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
+void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const
 {
     if constexpr (Method::low_cardinality_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    table_src.mergeToViaEmplace(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+    auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
     {
         if (!inserted)
         {
@@ -2408,7 +2422,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
                     for (size_t i = 0; i < params.aggregates_size; ++i)
                     {
                         if (!is_aggregate_function_compiled[i])
-                            aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+                            aggregate_functions[i]->merge(
+                                dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
                     }
 
                     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2434,7 +2449,9 @@ void NO_INLINE Aggregator::mergeDataImpl(
         }
 
         src = nullptr;
-    });
+    };
+
+    table_src.template mergeToViaEmplace<decltype(merge), prefetch>(table_dst, std::move(merge));
 
     table_src.clearAndShrink();
 }
@@ -2529,6 +2546,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
+    const bool prefetch = getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getL2CacheSize();
+
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
@@ -2542,18 +2561,22 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder)
             {
-                mergeDataImpl<Method, true>(
-                    getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool);
+                if (prefetch)
+                    mergeDataImpl<Method, true, true>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
+                else
+                    mergeDataImpl<Method, true, false>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
             }
             else
 #endif
             {
-                mergeDataImpl<Method, false>(
-                    getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool);
+                if (prefetch)
+                    mergeDataImpl<Method, false, true>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
+                else
+                    mergeDataImpl<Method, false, false>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
             }
         }
         else if (res->without_key)
@@ -2589,6 +2612,9 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 {
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
+
+    const bool prefetch = getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getL2CacheSize();
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst))
@@ -2598,18 +2624,22 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            mergeDataImpl<Method, true>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena);
+            if (prefetch)
+                mergeDataImpl<Method, true, true>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
+            else
+                mergeDataImpl<Method, true, false>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
         }
         else
 #endif
         {
-            mergeDataImpl<Method, false>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena);
+            if (prefetch)
+                mergeDataImpl<Method, false, true>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
+            else
+                mergeDataImpl<Method, false, false>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
         }
     }
 }
