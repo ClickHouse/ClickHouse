@@ -15,7 +15,6 @@ mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
-ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
@@ -48,6 +47,8 @@ ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/enable_zero_copy_replication.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
@@ -59,6 +60,7 @@ ln -sf $SRC_PATH/users.d/session_log_test.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/memory_profiler.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/no_fsync_metadata.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/filelog.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/enable_blobs_check.xml $DEST_SERVER_PATH/users.d/
 
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
 # when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),
@@ -74,6 +76,10 @@ ln -sf $SRC_PATH/test_function.xml $DEST_SERVER_PATH/
 
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
 
+ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/lem-en.bin $DEST_SERVER_PATH/config.d/
+
 ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
@@ -81,6 +87,12 @@ ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 # Retain any pre-existing config and allow ClickHouse to load it if required
 ln -sf --backup=simple --suffix=_original.xml \
    $SRC_PATH/config.d/query_masking_rules.xml $DEST_SERVER_PATH/config.d/
+
+if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/zookeeper_fault_injection.xml $DEST_SERVER_PATH/config.d/
+else
+    ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
+fi
 
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
 create_snapshot_on_exit=$(($RANDOM % 2))

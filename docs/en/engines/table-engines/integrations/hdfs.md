@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/integrations/hdfs
 sidebar_position: 6
 sidebar_label: HDFS
 ---
@@ -51,10 +52,14 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 ## Implementation Details {#implementation-details}
 
 -   Reads and writes can be parallel.
--   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
+    -   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+  
+  :::warning Zero-copy replication is not ready for production
+  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+  :::
 
 **Globs in path**
 

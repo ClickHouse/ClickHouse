@@ -93,6 +93,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <filesystem>
+#include <re2/re2.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -664,8 +665,8 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                "Policy '{} is used temporary files, such policy should have exactly one volume", policy_name);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
@@ -708,7 +709,10 @@ void Context::setUserDefinedPath(const String & path)
 void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
-    shared->addWarningMessage(msg);
+    auto suppress_re = getConfigRef().getString("warning_supress_regexp", "");
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -1331,29 +1335,6 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != UUID())
-    {
-        // Use the OpenTelemetry trace context we received from the client, and
-        // create a new span for the query.
-        query_trace_context = client_info.client_trace_context;
-        query_trace_context.span_id = thread_local_rng();
-    }
-    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        // If this is an initial query without any parent OpenTelemetry trace, we
-        // might start the trace ourselves, with some configurable probability.
-        std::bernoulli_distribution should_start_trace{
-            settings.opentelemetry_start_trace_probability};
-
-        if (should_start_trace(thread_local_rng))
-        {
-            // Use the randomly generated default query id as the new trace id.
-            query_trace_context.trace_id = random.uuid;
-            query_trace_context.span_id = thread_local_rng();
-            // Mark this trace as sampled in the flags.
-            query_trace_context.trace_flags = 1;
-        }
-    }
 
     String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
@@ -3451,7 +3432,6 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
-    res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
@@ -3460,6 +3440,13 @@ ReadSettings Context::getReadSettings() const
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
+
+    /// Zero read buffer will not make progress.
+    if (!settings.max_read_buffer_size)
+    {
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value '{}' for max_read_buffer_size", settings.max_read_buffer_size);
+    }
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.remote_fs_buffer_size = settings.max_read_buffer_size;

@@ -250,7 +250,7 @@ def test_mysql_client_exception(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 0, Exception: Connections to all replicas failed: default@127.0.0.1:10086 as user default",
+            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 0, Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -365,7 +365,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "DATABASE()\ndefault\n"
+    assert stdout.decode() == "currentDatabase()\ndefault\n"
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
@@ -377,7 +377,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "DATABASE()\ndefault\n"
+    assert stdout.decode() == "currentDatabase()\ndefault\n"
 
 
 def test_mysql_select_user(started_cluster):

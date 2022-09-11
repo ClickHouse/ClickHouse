@@ -25,7 +25,7 @@ def cluster():
 
 def assert_objects_count(cluster, objects_count, path="data/"):
     minio = cluster.minio_client
-    s3_objects = list(minio.list_objects(cluster.minio_bucket, path))
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, path, recursive=True))
     if objects_count != len(s3_objects):
         for s3_object in s3_objects:
             object_meta = minio.stat_object(cluster.minio_bucket, s3_object.object_name)

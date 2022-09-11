@@ -399,7 +399,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table", name);
 }
 
-MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
+MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const String & part_name,
@@ -420,6 +420,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 
+    const auto data_settings = data.getSettings();
+
+    if (data.canUseZeroCopyReplication() && !try_zero_copy)
+        LOG_INFO(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
+
     /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
     /// but detached part name prefix should not contain underscore.
     static const String TMP_PREFIX = "tmp-fetch_";
@@ -429,7 +434,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     /// Validation of the input that may come from malicious replica.
     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
-    const auto data_settings = data.getSettings();
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
@@ -458,13 +462,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             Disks disks = data.getDisks();
             for (const auto & data_disk : disks)
                 if (data_disk->supportZeroCopyReplication())
-                    capability.push_back(toString(data_disk->getType()));
+                    capability.push_back(toString(data_disk->getDataSourceDescription().type));
         }
         else if (disk->supportZeroCopyReplication())
         {
-            capability.push_back(toString(disk->getType()));
+            capability.push_back(toString(disk->getDataSourceDescription().type));
         }
     }
+
     if (!capability.empty())
     {
         ::sort(capability.begin(), capability.end());
@@ -474,6 +479,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     else
     {
+        if (data.canUseZeroCopyReplication())
+            LOG_INFO(log, "Cannot select any zero-copy disk for {}", part_name);
+
         try_zero_copy = false;
     }
 
@@ -585,7 +593,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             temporary_directory_lock = {};
 
             /// Try again but without zero-copy
-            return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
+            return fetchSelectedPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }
@@ -773,6 +781,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     ThrottlerPtr throttler)
 {
     assert(!tmp_prefix.empty());
+    const auto data_settings = data.getSettings();
 
     /// We will remove directory if it's already exists. Make precautions.
     if (tmp_prefix.empty() //-V560
@@ -800,7 +809,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     {
         LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
             data_part_storage_builder->getFullPath());
-        data_part_storage_builder->removeRecursive();
+
+        /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
+        /// is executed as a callback.
+        ///
+        /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
+        /// or not. So we are not doing it
+        bool keep_shared = disk->supportZeroCopyReplication() && data_settings->allow_remote_fs_zero_copy_replication;
+        data_part_storage_builder->removeSharedRecursive(keep_shared);
     }
 
     data_part_storage_builder->createDirectories();

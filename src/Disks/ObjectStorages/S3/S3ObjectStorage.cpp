@@ -2,6 +2,8 @@
 
 #if USE_AWS_S3
 
+#include <IO/S3Common.h>
+
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
@@ -25,8 +27,10 @@
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 #include <Common/getRandomASCIIString.h>
+
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
+
 
 namespace DB
 {
@@ -52,7 +56,7 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+        throw S3Exception(fmt::format("{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType())), err.GetErrorType());
     }
 }
 
@@ -66,7 +70,7 @@ void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response,
     if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
     {
         const auto & err = response.GetError();
-        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+        throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
     }
 }
 
@@ -87,7 +91,19 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
 
 std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    /// Path to store the new S3 object.
+
+    /// Total length is 32 a-z characters for enough randomness.
+    /// First 3 characters are used as a prefix for
+    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+
+    constexpr size_t key_name_total_size = 32;
+    constexpr size_t key_name_prefix_size = 3;
+
+    /// Path to store new S3 object.
+    return fmt::format("{}/{}",
+        getRandomASCIIString(key_name_prefix_size),
+        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
@@ -154,7 +170,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl), disk_read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
     }
 }
@@ -242,6 +258,8 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
     auto outcome = client_ptr->DeleteObject(request);
 
     throwIfUnexpectedError(outcome, if_exists);
+
+    LOG_TRACE(log, "Object with path {} was removed from S3", object.absolute_path);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
@@ -285,6 +303,8 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
             auto outcome = client_ptr->DeleteObjects(request);
 
             throwIfUnexpectedError(outcome, if_exists);
+
+            LOG_TRACE(log, "Objects with paths [{}] were removed from S3", keys);
         }
     }
 }
@@ -369,6 +389,15 @@ void S3ObjectStorage::copyObjectImpl(
     }
 
     throwIfError(outcome);
+
+    auto settings_ptr = s3_settings.get();
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObjectMultipartImpl(
@@ -450,6 +479,14 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
         throwIfError(outcome);
     }
+
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObject( // NOLINT
@@ -511,7 +548,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         getClient(config, config_prefix, context),
         getSettings(config, config_prefix, context),
-        version_id, s3_capabilities, new_namespace);
+        version_id, s3_capabilities, new_namespace,
+        S3::URI(Poco::URI(config.getString(config_prefix + ".endpoint"))).endpoint);
 }
 
 }

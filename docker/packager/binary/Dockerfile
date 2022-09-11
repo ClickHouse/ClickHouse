@@ -78,9 +78,13 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get update \
     && apt-get install \
         clang-15 \
+        llvm-15 \
         clang-tidy-15 \
         --yes --no-install-recommends \
     && apt-get clean
+
+# for external_symbolizer_path
+RUN ln -s /usr/bin/llvm-symbolizer-15 /usr/bin/llvm-symbolizer
 
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]

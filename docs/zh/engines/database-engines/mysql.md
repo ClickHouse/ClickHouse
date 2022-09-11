@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/database-engines/mysql
 sidebar_position: 30
 sidebar_label: MySQL
 ---

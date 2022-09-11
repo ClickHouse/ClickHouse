@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/ColumnsDescription.h>
+#include <Storages/Cache/SchemaCache.h>
 #include <Formats/FormatFactory.h>
 
 namespace DB
@@ -47,8 +48,8 @@ DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type);
 /// in the block and return names and types.
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
 
-String getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
-Strings getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+SchemaCache::Key  getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+SchemaCache::Keys  getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
 void splitSchemaCacheKey(const String & key, String & source, String & format, String & additional_format_info);
 }

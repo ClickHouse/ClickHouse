@@ -966,7 +966,13 @@ Default value: 5000.
 
 See also:
 
--   [Apache Kafka](https://kafka.apache.org/)
+- [Apache Kafka](https://kafka.apache.org/)
+
+## kafka_disable_num_consumers_limit {#kafka-disable-num-consumers-limit}
+
+Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
+
+Default value: false.
 
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
@@ -1170,8 +1176,9 @@ Enables the quorum writes.
 
 -   If `insert_quorum < 2`, the quorum writes are disabled.
 -   If `insert_quorum >= 2`, the quorum writes are enabled.
+-   If `insert_quorum = 'auto'`, use majority number (`number_of_replicas / 2 + 1`) as quorum number.
 
-Default value: 0.
+Default value: 0 - disabled.
 
 Quorum writes
 
@@ -1254,6 +1261,8 @@ Possible values:
 Default value: 1.
 
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
+For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 ## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -1286,6 +1295,9 @@ Possilbe values:
 Default value: empty string (disabled)
 
 `insert_deduplication_token` is used for deduplication _only_ when not empty.
+
+For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 Example:
 
@@ -3237,7 +3249,7 @@ Possible values:
 -   Positive integer.
 -   0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `100000`.
 
 ## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 

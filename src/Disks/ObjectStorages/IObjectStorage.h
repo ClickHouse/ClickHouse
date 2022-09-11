@@ -15,8 +15,8 @@
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskType.h>
 #include <Common/ThreadPool.h>
-#include <Common/FileCache.h>
 #include <Disks/WriteMode.h>
 
 
@@ -57,6 +57,8 @@ class IObjectStorage
 {
 public:
     IObjectStorage() = default;
+
+    virtual DataSourceDescription getDataSourceDescription() const = 0;
 
     virtual std::string getName() const = 0;
 
