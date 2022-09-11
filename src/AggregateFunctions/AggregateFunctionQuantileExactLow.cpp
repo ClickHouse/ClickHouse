@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/QuantileReservoirSampler.h>
+#include <AggregateFunctions/QuantileExact.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -19,8 +19,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool float_return> using FuncQuantile = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantile, false, std::conditional_t<float_return, Float64, void>, false>;
-template <typename Value, bool float_return> using FuncQuantiles = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantiles, false, std::conditional_t<float_return, Float64, void>, true>;
+template <typename Value, bool _> using FuncQuantileExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantileExactLow, false, void, false>;
+template <typename Value, bool _> using FuncQuantilesExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantilesExactLow, false, void, true>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
@@ -45,11 +45,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
     if (which.idx == TypeIndex::Decimal256) return std::make_shared<Function<Decimal256, false>>(argument_types, params);
     if (which.idx == TypeIndex::DateTime64) return std::make_shared<Function<DateTime64, false>>(argument_types, params);
 
-    if (which.idx == TypeIndex::Int128) return std::make_shared<Function<Int128, true>>(argument_types, params);
-    if (which.idx == TypeIndex::UInt128) return std::make_shared<Function<Int128, true>>(argument_types, params);
-    if (which.idx == TypeIndex::Int256) return std::make_shared<Function<Int256, true>>(argument_types, params);
-    if (which.idx == TypeIndex::UInt256) return std::make_shared<Function<UInt256, true>>(argument_types, params);
-
     throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
@@ -61,11 +56,11 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantile::name, createAggregateFunctionQuantile<FuncQuantile>);
-    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, properties });
+    factory.registerFunction(NameQuantileExactLow::name, createAggregateFunctionQuantile<FuncQuantileExactLow>);
+    factory.registerFunction(NameQuantilesExactLow::name, { createAggregateFunctionQuantile<FuncQuantilesExactLow>, properties });
 
     /// 'median' is an alias for 'quantile'
-    factory.registerAlias("median", NameQuantile::name);
+    factory.registerAlias("medianExactLow", NameQuantileExactLow::name);
 }
 
 }
