@@ -26,6 +26,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -422,8 +423,6 @@ CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(
 
 void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    std::lock_guard lock(mutex);
-
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
 
@@ -460,7 +459,51 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 
     try
     {
-        if (method == "catboost_GetTreeCount")
+        if (method == "catboost_list")
+        {
+            ExternalModelInfos model_infos = CatBoostLibraryHandlerFactory::instance().getModelInfos();
+
+            writeIntBinary(static_cast<UInt64>(model_infos.size()), out);
+
+            for (const auto & info : model_infos)
+            {
+                writeStringBinary(info.model_path, out);
+                writeStringBinary(info.model_type, out);
+
+                UInt64 t = std::chrono::system_clock::to_time_t(info.loading_start_time);
+                writeIntBinary(t, out);
+
+                t = info.loading_duration.count();
+                writeIntBinary(t, out);
+
+            }
+        }
+        else if (method == "catboost_removeModel")
+        {
+            auto & read_buf = request.getStream();
+            params.read(read_buf);
+
+            if (!params.has("model_path"))
+            {
+                processError(response, "No 'model_path' in request URL");
+                return;
+            }
+
+            const String & model_path = params.get("model_path");
+
+            CatBoostLibraryHandlerFactory::instance().removeModel(model_path);
+
+            String res = "1";
+            writeStringBinary(res, out);
+        }
+        else if (method == "catboost_removeAllModels")
+        {
+            CatBoostLibraryHandlerFactory::instance().removeAllModels();
+
+            String res = "1";
+            writeStringBinary(res, out);
+        }
+        else if (method == "catboost_GetTreeCount")
         {
             auto & read_buf = request.getStream();
             params.read(read_buf);
@@ -481,18 +524,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 
             const String & model_path = params.get("model_path");
 
-            CatBoostLibraryHandlerFactory::instance().remove(model_path);
-
-            CatBoostLibraryHandlerFactory::instance().create(library_path, model_path);
-
-            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().get(model_path);
-
-            if (!catboost_handler)
-            {
-                processError(response, "CatBoost library is not loaded for model " + model_path);
-                return;
-            }
-
+            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().getOrCreateModel(model_path, library_path, /*create_if_not_found*/ true);
             size_t tree_count = catboost_handler->getTreeCount();
             writeIntBinary(tree_count, out);
         }
@@ -526,11 +558,11 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             for (const auto & p : col_ptrs)
                 col_raw_ptrs.push_back(&*p);
 
-            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().get(model_path);
+            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().getOrCreateModel(model_path, "DummyLibraryPath", /*create_if_not_found*/ false);
 
             if (!catboost_handler)
             {
-                processError(response, "CatBoost library is not loaded for model" + model_path);
+                processError(response, "CatBoost library is not loaded for model '" + model_path + "'. Please try again.");
                 return;
             }
 

@@ -44,6 +44,8 @@ def testConstantFeatures(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    result = instance.query("system reload models")
+
     result = instance.query(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 2.0, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
     )
@@ -54,6 +56,8 @@ def testConstantFeatures(ch_cluster):
 def testNonConstantFeatures(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
 
     instance.query("DROP TABLE IF EXISTS T;")
     instance.query(
@@ -73,6 +77,8 @@ def testNonConstantFeatures(ch_cluster):
 def testModelPathIsNotAConstString(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
 
     err = instance.query_and_get_error(
         "select catboostEvaluate(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
@@ -98,6 +104,8 @@ def testWrongNumberOfFeatureArguments(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    result = instance.query("system reload models")
+
     err = instance.query_and_get_error(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin');"
     )
@@ -116,6 +124,8 @@ def testFloatFeatureMustBeNumeric(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    result = instance.query("system reload models")
+
     err = instance.query_and_get_error(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 'a', 3, 4, 5, 6, 7, 8, 9, 10, 11);"
     )
@@ -126,6 +136,8 @@ def testCategoricalFeatureMustBeNumericOrString(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    result = instance.query("system reload models")
+
     err = instance.query_and_get_error(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 2.0, 3, 4, 5, 6, 7, tuple(8), 9, 10, 11);"
     )
@@ -135,6 +147,8 @@ def testCategoricalFeatureMustBeNumericOrString(ch_cluster):
 def testOnLowCardinalityFeatures(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
 
     # same but on domain-compressed data
     result = instance.query(
@@ -147,6 +161,8 @@ def testOnLowCardinalityFeatures(ch_cluster):
 def testOnNullableFeatures(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
 
     result = instance.query(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', toNullable(1.0), toNullable(2.0), toNullable(3), toNullable(4), toNullable(5), toNullable(6), toNullable(7), toNullable(8), toNullable(9), toNullable(10), toNullable(11));"
@@ -164,6 +180,8 @@ def testOnNullableFeatures(ch_cluster):
 def testInvalidLibraryPath(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
 
     # temporarily move library elsewhere
     instance.exec_in_container(
@@ -196,6 +214,8 @@ def testInvalidModelPath(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    result = instance.query("system reload models")
+
     err = instance.query_and_get_error(
         "select catboostEvaluate('', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
     )
@@ -210,6 +230,8 @@ def testInvalidModelPath(ch_cluster):
 def testRecoveryAfterCrash(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
 
     result = instance.query(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 2.0, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
@@ -235,6 +257,8 @@ def testAmazonModelSingleRow(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    result = instance.query("system reload models")
+
     result = instance.query(
         "select catboostEvaluate('/etc/clickhouse-server/model/amazon_model.bin', 1, 2, 3, 4, 5, 6, 7, 8, 9);"
     )
@@ -245,6 +269,8 @@ def testAmazonModelSingleRow(ch_cluster):
 def testAmazonModelManyRows(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
 
     result = instance.query("drop table if exists amazon")
 
@@ -272,6 +298,8 @@ def testModelUpdate(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    result = instance.query("system reload models")
+
     query = "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 2.0, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
 
     result = instance.query(query)
@@ -294,12 +322,17 @@ def testModelUpdate(ch_cluster):
         ]
     )
 
-    # since the amazon model has a different number of features than the simple model, we should get an error
-    err = instance.query_and_get_error(query)
-    assert (
-        "Number of columns is different with number of features: columns size 11 float features size 0 + cat features size 9"
-        in err
+    # unload simple model
+    result = instance.query(
+        "system reload model '/etc/clickhouse-server/model/simple_model.bin'"
     )
+
+    # load the simple-model-camouflaged amazon model
+    result = instance.query(
+        "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1, 2, 3, 4, 5, 6, 7, 8, 9);"
+    )
+    expected = "0.7774665009089274\n"
+    assert result == expected
 
     # restore
     instance.exec_in_container(
@@ -316,3 +349,54 @@ def testModelUpdate(ch_cluster):
             "mv /etc/clickhouse-server/model/simple_model.bin.bak /etc/clickhouse-server/model/simple_model.bin",
         ]
     )
+
+
+def testSystemModelsAndModelRefresh(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    result = instance.query("system reload models")
+
+    # check model system view
+    result = instance.query("select * from system.models")
+    expected = ""
+    assert result == expected
+
+    # load simple model
+    result = instance.query(
+        "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 2.0, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
+    )
+    expected = "-1.930268705869267\n"
+    assert result == expected
+
+    # check model system view with one model loaded
+    result = instance.query("select * from system.models")
+    assert result.count("\n") == 1
+    expected = "/etc/clickhouse-server/model/simple_model.bin"
+    assert expected in result
+
+    # load amazon model
+    result = instance.query(
+        "select catboostEvaluate('/etc/clickhouse-server/model/amazon_model.bin', 1, 2, 3, 4, 5, 6, 7, 8, 9);"
+    )
+    expected = "0.7774665009089274\n"
+    assert result == expected
+
+    # check model system view with one model loaded
+    result = instance.query("select * from system.models")
+    assert result.count("\n") == 2
+    expected = "/etc/clickhouse-server/model/simple_model.bin"
+    assert expected in result
+    expected = "/etc/clickhouse-server/model/amazon_model.bin"
+    assert expected in result
+
+    # unload simple model
+    result = instance.query(
+        "system reload model '/etc/clickhouse-server/model/simple_model.bin'"
+    )
+
+    # check model system view, it should not display the removed model
+    result = instance.query("select * from system.models")
+    assert result.count("\n") == 1
+    expected = "/etc/clickhouse-server/model/amazon_model.bin"
+    assert expected in result

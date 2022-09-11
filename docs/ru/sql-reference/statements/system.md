@@ -9,6 +9,8 @@ sidebar_label: SYSTEM
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [RELOAD MODELS](#query_language-system-reload-models)
+-   [RELOAD MODEL](#query_language-system-reload-model)
 -   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
 -   [RELOAD FUNCTION](#query_language-system-reload-functions)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
@@ -60,6 +62,26 @@ sidebar_label: SYSTEM
 
 ``` sql
 SELECT name, status FROM system.dictionaries;
+```
+
+## RELOAD MODELS {#query_language-system-reload-models}
+
+Перегружает все модели [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse).
+
+**Синтаксис**
+
+```sql
+SYSTEM RELOAD MODELS
+```
+
+## RELOAD MODEL {#query_language-system-reload-model}
+
+Полностью перегружает модель [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) `model_path`.
+
+**Синтаксис**
+
+```sql
+SYSTEM RELOAD MODEL <model_path>
 ```
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}

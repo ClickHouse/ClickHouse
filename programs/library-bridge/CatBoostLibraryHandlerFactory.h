@@ -3,7 +3,9 @@
 #include "CatBoostLibraryHandler.h"
 
 #include <base/defines.h>
+#include <Common/ExternalModelInfo.h>
 
+#include <chrono>
 #include <mutex>
 #include <unordered_map>
 
@@ -16,14 +18,15 @@ class CatBoostLibraryHandlerFactory final : private boost::noncopyable
 public:
     static CatBoostLibraryHandlerFactory & instance();
 
-    CatBoostLibraryHandlerPtr get(const String & model_path);
+    CatBoostLibraryHandlerPtr getOrCreateModel(const String & model_path, const String & library_path, bool create_if_not_found);
 
-    void create(const String & library_path, const String & model_path);
+    void removeModel(const String & model_path);
+    void removeAllModels();
 
-    void remove(const String & model_path);
+    ExternalModelInfos getModelInfos();
 
 private:
-    /// map: model path -> shared library handler
+    /// map: model path --> catboost library handler
     std::unordered_map<String, CatBoostLibraryHandlerPtr> library_handlers TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };

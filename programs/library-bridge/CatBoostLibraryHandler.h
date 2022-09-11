@@ -10,6 +10,7 @@
 #include <Common/SharedLibrary.h>
 #include <base/defines.h>
 
+#include <chrono>
 #include <mutex>
 
 namespace DB
@@ -42,16 +43,22 @@ public:
     };
 
     CatBoostLibraryHandler(
-        const std::string & library_path,
-        const std::string & model_path);
+        const String & library_path,
+        const String & model_path);
 
     ~CatBoostLibraryHandler();
+
+    std::chrono::system_clock::time_point getLoadingStartTime() const;
+    std::chrono::milliseconds getLoadingDuration() const;
 
     size_t getTreeCount() const;
 
     ColumnPtr evaluate(const ColumnRawPtrs & columns) const;
 
 private:
+    std::chrono::system_clock::time_point loading_start_time;
+    std::chrono::milliseconds loading_duration;
+
     const SharedLibraryPtr library;
     const APIHolder api;
 
