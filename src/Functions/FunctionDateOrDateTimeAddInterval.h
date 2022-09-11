@@ -671,9 +671,13 @@ public:
         using ResultDataType = TransformResultDataType<FromDataType>;
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
+        {
             return std::make_shared<DataTypeDate>();
+        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
+        {
             return std::make_shared<DataTypeDate32>();
+        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
@@ -757,4 +761,3 @@ public:
 };
 
 }
-

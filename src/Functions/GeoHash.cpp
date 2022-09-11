@@ -301,8 +301,8 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
     Float64 lon_max = ceil(longitude_max / lon_step) * lon_step;
     Float64 lat_max = ceil(latitude_max / lat_step) * lat_step;
 
-    UInt32 lon_items = (lon_max - lon_min) / lon_step;
-    UInt32 lat_items = (lat_max - lat_min) / lat_step;
+    UInt32 lon_items = static_cast<UInt32>((lon_max - lon_min) / lon_step);
+    UInt32 lat_items = static_cast<UInt32>((lat_max - lat_min) / lat_step);
 
     return GeohashesInBoxPreparedArgs
     {
