@@ -6,7 +6,7 @@
 namespace DB
 {
 
-size_t encodeBase58(const UInt8 * src, size_t srclen, UInt8 * dst);
-size_t decodeBase58(const UInt8 * src, size_t srclen, UInt8 * dst);
+size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst);
+size_t decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst);
 
 }
