@@ -65,3 +65,5 @@ index `time` (`time`) type minmax granularity 3
 order by (`time`);
 
 select count(*) as `value`, 0 as `data` from test group by `data`;
+
+drop table test;
