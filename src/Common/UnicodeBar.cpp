@@ -28,12 +28,12 @@ namespace UnicodeBar
 
     size_t getWidthInBytes(double width)
     {
-        return ceil(width - 1.0 / 8) * UNICODE_BAR_CHAR_SIZE;
+        return static_cast<size_t>(ceil(width - 1.0 / 8) * UNICODE_BAR_CHAR_SIZE);
     }
 
     void render(double width, char * dst)
     {
-        size_t floor_width = floor(width);
+        size_t floor_width = static_cast<size_t>(floor(width));
 
         for (size_t i = 0; i < floor_width; ++i)
         {
@@ -41,7 +41,7 @@ namespace UnicodeBar
             dst += UNICODE_BAR_CHAR_SIZE;
         }
 
-        size_t remainder = floor((width - floor_width) * 8);
+        size_t remainder = static_cast<size_t>(floor((width - floor_width) * 8));
 
         if (remainder)
         {
@@ -59,4 +59,3 @@ namespace UnicodeBar
         return res;
     }
 }
-

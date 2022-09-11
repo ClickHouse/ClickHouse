@@ -81,7 +81,7 @@ class QuantileTDigest
       */
     struct Params
     {
-        Value epsilon = 0.01;
+        Value epsilon = 0.01f;
         size_t max_centroids = 2048;
         size_t max_unmerged = 2048;
     };
@@ -99,13 +99,12 @@ class QuantileTDigest
     BetterFloat count = 0;
     size_t unmerged = 0;
 
-    /** Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
-      */
+    /// Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
         /// Symmetric interpolation for better results with infinities.
         double k = (x - x1) / (x2 - x1);
-        return (1 - k) * y1 + k * y2;
+        return static_cast<Value>((1 - k) * y1 + k * y2);
     }
 
     struct RadixSortTraits
