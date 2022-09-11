@@ -221,7 +221,7 @@ void Connection::disconnect()
 }
 
 
-String Connection::packStringForSshSign()
+String Connection::packStringForSshSign(String challenge)
 {
     String message;
     message.append((DBMS_NAME " ") + client_name);
@@ -230,6 +230,7 @@ String Connection::packStringForSshSign()
     message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
     message.append(default_database);
     message.append(user);
+    message.append(challenge);
     return message;
 }
 
@@ -257,6 +258,30 @@ void Connection::sendHello()
         || has_control_character(user)
         || has_control_character(password))
         throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
+
+    String challenge;
+    // You may want to ask a server for a challenge if you want to authenticate using ssh keys
+    if (!ssh_private_key.isEmpty())
+    {
+        writeVarUInt(Protocol::Client::SshChallengeRequest, *out);
+        UInt64 packet_type = 0;
+        if (in->eof())
+            throw Poco::Net::NetException("Connection reset by peer");
+
+        readVarUInt(packet_type, *in);
+        if (packet_type == Protocol::Server::SshChallenge)
+        {
+            readStringBinary(challenge, *in);
+        }
+        else if (packet_type == Protocol::Server::Exception)
+            receiveException()->rethrow();
+        else
+        {
+            /// Close connection, to not stay in unsynchronised state.
+            disconnect();
+            throwUnexpectedPacket(packet_type, "SshChallenge or Exception");
+        }
+    }
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
@@ -290,7 +315,7 @@ void Connection::sendHello()
         else
         {
 #if USE_SSL
-            String to_sign = packStringForSshSign();
+            String to_sign = packStringForSshSign(challenge);
             String signature = ssh_private_key.signString(to_sign);
             writeStringBinary(signature, *out);
 #else

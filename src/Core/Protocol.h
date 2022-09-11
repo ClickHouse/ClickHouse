@@ -82,7 +82,9 @@ namespace Protocol
                                             /// And client returns back response
             ProfileEvents = 14,             /// Packet with profile events from server.
             MergeTreeReadTaskRequest = 15,  /// Request from a MergeTree replica to a coordinator
-            MAX = MergeTreeReadTaskRequest,
+
+            SshChallenge = 16,              /// Return challenge for ssh signature signing
+            MAX = SshChallenge,
 
         };
 
@@ -109,6 +111,7 @@ namespace Protocol
                 "ReadTaskRequest",
                 "ProfileEvents",
                 "MergeTreeReadTaskRequest",
+                "SshChallenge",
             };
             return packet <= MAX
                 ? data[packet]
@@ -146,7 +149,9 @@ namespace Protocol
             IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
-            MAX = MergeTreeReadTaskResponse,
+
+            SshChallengeRequest = 11,       /// Request for ssh signature challenge
+            MAX = SshChallengeRequest,
         };
 
         inline const char * toString(UInt64 packet)
@@ -162,7 +167,8 @@ namespace Protocol
                 "Scalar",
                 "IgnoredPartUUIDs",
                 "ReadTaskResponse",
-                "MergeTreeReadTaskResponse"
+                "MergeTreeReadTaskResponse",
+                "SshChallengeRequest",
             };
             return packet <= MAX
                 ? data[packet]

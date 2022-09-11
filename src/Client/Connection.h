@@ -248,7 +248,7 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
-    String packStringForSshSign();
+    String packStringForSshSign(String challenge);
     void sendAddendum();
     void receiveHello();
 

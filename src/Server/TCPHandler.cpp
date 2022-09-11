@@ -97,6 +97,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_PROTOCOL;
     extern const int AUTHENTICATION_FAILED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -1054,6 +1055,17 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
+String createChallenge()
+{
+#if USE_SSL
+    pcg64_fast rng(randomSeed());
+    UInt64 rand = rng();
+    return encodeSHA256(&rand, sizeof(rand));
+#else
+    throw Exception("Can't generate challenge, because ClickHouse was built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+}
+
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1081,7 +1093,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     return res;
 }
 
-String TCPHandler::prepareStringForSshSign(String user)
+String TCPHandler::prepareStringForSshValidation(String user, String challenge)
 {
     String output;
     output.append(client_name);
@@ -1090,17 +1102,30 @@ String TCPHandler::prepareStringForSshSign(String user)
     output.append(std::to_string(client_tcp_protocol_version));
     output.append(default_database);
     output.append(user);
+    output.append(challenge);
     return output;
 }
 
 void TCPHandler::receiveHello()
 {
-    /// Receive `hello` packet.
+
+    String challenge;
+
     UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+
+    // First message can require challenge to authenticate in further hello message
+    if (packet_type == Protocol::Client::SshChallengeRequest)
+    {
+        challenge = createChallenge();
+        writeVarUInt(Protocol::Server::SshChallenge, *out);
+        writeString(challenge, *out);
+        readVarUInt(packet_type, *in);
+    }
+
+    /// Receive `hello` packet.
     String user;
     String password;
-
-    readVarUInt(packet_type, *in);
     if (packet_type != Protocol::Client::Hello)
     {
         /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
@@ -1143,9 +1168,9 @@ void TCPHandler::receiveHello()
     }
 
     session = makeSession();
-    if (session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
+    if (!challenge.empty() && session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
     {
-        auto cred = SshCredentials(user, password, prepareStringForSshSign(user));
+        auto cred = SshCredentials(user, password, prepareStringForSshValidation(user, challenge));
         session->authenticate(cred, socket().peerAddress());
     }
     else

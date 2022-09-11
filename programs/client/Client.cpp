@@ -211,10 +211,6 @@ void Client::initialize(Poco::Util::Application & self)
     if (env_password)
         config().setString("password", env_password);
 
-    const char * env_ssh_key_file = getenv("CLICKHOUSE_SSH_PRIVATE_KEY_FILE");
-    if (env_ssh_key_file)
-        config().setString("ssh-string-file", env_ssh_key_file);
-
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 
