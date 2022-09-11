@@ -81,8 +81,9 @@ set (CAPNPC_SRCS
 add_library(_capnpc ${CAPNPC_SRCS})
 target_link_libraries(_capnpc PUBLIC _capnp)
 
+set (CAPNP_PRIVATE_CXX_FLAGS -DKJ_NO_EXCEPTIONS=1)
 if (COMPILER_CLANG)
-    set (CAPNP_PRIVATE_CXX_FLAGS -fno-char8_t)
+    set (CAPNP_PRIVATE_CXX_FLAGS "${CAPNP_PRIVATE_CXX_FLAGS} -fno-char8_t")
 endif ()
 
 target_compile_options(_kj PRIVATE ${CAPNP_PRIVATE_CXX_FLAGS})
