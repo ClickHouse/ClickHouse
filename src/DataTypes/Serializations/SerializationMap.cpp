@@ -38,7 +38,7 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const auto & map = get<const Map &>(field);
+    const auto & map = field.get<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
