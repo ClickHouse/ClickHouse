@@ -1878,14 +1878,14 @@ void Server::createServers(
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
 
-    auto createFactory = [&](const std::string & type) -> Poco::SharedPtr<TCPServerConnectionFactory> //TCPServerConnectionFactory::Ptr
+    auto createFactory = [&](const std::string & type, const std::string & conf_name) -> Poco::SharedPtr<TCPServerConnectionFactory> //TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
             return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
         if (type == "tls")
-            return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this));
+            return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this, conf_name));
         if (type == "proxy1")
-            return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this));
+            return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
             return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
         if (type == "postgres")
@@ -1903,12 +1903,12 @@ void Server::createServers(
                 new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
-
         throw Exception("LOGICAL ERROR: Unknown protocol name.", ErrorCodes::LOGICAL_ERROR);
     };
 
     for (const auto & protocol : protocols)
     {
+        std::string conf_name = protocol;
         std::string prefix = protocol + ".";
         std::unordered_set<std::string> pset {prefix};
 
@@ -1917,10 +1917,10 @@ void Server::createServers(
             std::string port_name = prefix + "port";
             std::string listen_host = prefix + "host";
             bool is_secure = false;
-            auto stack = std::make_unique<TCPProtocolStackFactory>(*this);
+            auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
             while (true)
             {
-                // if there is no "type" - it's a reference to another protocol and this is just another endpoint
+                // if there is no "type" - it's a reference to another protocol and this is just an endpoint
                 if (config.has(prefix + "type"))
                 {
                     std::string type = config.getString(prefix + "type");
@@ -1935,7 +1935,7 @@ void Server::createServers(
                         is_secure = true;
                     }
 
-                    TCPServerConnectionFactory::Ptr factory = createFactory(type);
+                    TCPServerConnectionFactory::Ptr factory = createFactory(type, conf_name);
                     if (!factory)
                     {
                         // misconfigured - protocol type doesn't exist
@@ -1949,7 +1949,8 @@ void Server::createServers(
                         break;
                 }
 
-                prefix = "protocols." + config.getString(prefix + "impl") + ".";
+                conf_name = "protocols." + config.getString(prefix + "impl");
+                prefix = conf_name + ".";
 
                 if (!pset.insert(prefix).second)
                 {
@@ -2095,7 +2096,7 @@ void Server::createServers(
                 port_name,
                 "secure native protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
-                    new TCPProtocolStackFactory(*this, new TLSHandlerFactory(*this), new TCPHandlerFactory(*this, false, false)),
+                    new TCPProtocolStackFactory(*this, "", new TLSHandlerFactory(*this, ""), new TCPHandlerFactory(*this, false, false)),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));

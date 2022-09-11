@@ -47,10 +47,11 @@ class TCPProtocolStack : public Poco::Net::TCPServerConnection
 private:
     TCPServer & tcp_server;
     std::list<TCPServerConnectionFactory::Ptr> stack;
+    std::string conf_name;
 
 public:
-    TCPProtocolStack(TCPServer & tcp_server_, const StreamSocket & socket, const std::list<TCPServerConnectionFactory::Ptr> & stack_)
-        : TCPServerConnection(socket), tcp_server(tcp_server_), stack(stack_)
+    TCPProtocolStack(TCPServer & tcp_server_, const StreamSocket & socket, const std::list<TCPServerConnectionFactory::Ptr> & stack_, const std::string & conf_name_)
+        : TCPServerConnection(socket), tcp_server(tcp_server_), stack(stack_), conf_name(conf_name_)
     {}
 
     void run() override
@@ -73,9 +74,9 @@ public:
 class TCPProtocolStackFactory : public TCPServerConnectionFactory
 {
 private:
-    IServer & server;
+    IServer & server [[maybe_unused]];
     Poco::Logger * log;
-    std::string server_display_name;
+    std::string conf_name;
     std::list<TCPServerConnectionFactory::Ptr> stack;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
@@ -87,10 +88,9 @@ private:
 
 public:
     template <typename... T>
-    explicit TCPProtocolStackFactory(IServer & server_, T... factory)
-        : server(server_), log(&Poco::Logger::get("TCPProtocolStackFactory")), stack({factory...})
+    explicit TCPProtocolStackFactory(IServer & server_, const std::string & conf_name_, T... factory)
+        : server(server_), log(&Poco::Logger::get("TCPProtocolStackFactory")), conf_name(conf_name_), stack({factory...})
     {
-        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
@@ -98,7 +98,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPProtocolStack(tcp_server, socket, stack);
+            return new TCPProtocolStack(tcp_server, socket, stack, conf_name);
         }
         catch (const Poco::Net::NetException &)
         {
@@ -120,8 +120,9 @@ class TLSHandler : public Poco::Net::TCPServerConnection //TCPConnectionAccessor
     using StreamSocket = Poco::Net::StreamSocket;
     using SecureStreamSocket = Poco::Net::SecureStreamSocket;
 public:
-    explicit TLSHandler(const StreamSocket & socket, TCPProtocolStackData & stack_data_)
+    explicit TLSHandler(const StreamSocket & socket, const std::string & conf_name_, TCPProtocolStackData & stack_data_)
         : Poco::Net::TCPServerConnection(socket) //TCPConnectionAccessor(socket)
+        , conf_name(conf_name_)
         , stack_data(stack_data_)
     {}
 
@@ -131,6 +132,7 @@ public:
         stack_data.socket = socket();
     }
 private:
+    std::string conf_name;
     TCPProtocolStackData & stack_data;
 };
 
@@ -138,9 +140,9 @@ private:
 class TLSHandlerFactory : public TCPServerConnectionFactory
 {
 private:
-    IServer & server;
+    IServer & server [[maybe_unused]];
     Poco::Logger * log;
-    std::string server_display_name;
+    std::string conf_name;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
@@ -150,10 +152,9 @@ private:
     };
 
 public:
-    explicit TLSHandlerFactory(IServer & server_)
-        : server(server_), log(&Poco::Logger::get("TLSHandlerFactory"))
+    explicit TLSHandlerFactory(IServer & server_, const std::string & conf_name_)
+        : server(server_), log(&Poco::Logger::get("TLSHandlerFactory")), conf_name(conf_name_)
     {
-        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
@@ -167,7 +168,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TLSHandler(socket, stack_data);
+            return new TLSHandler(socket, conf_name, stack_data);
         }
         catch (const Poco::Net::NetException &)
         {
@@ -182,8 +183,8 @@ class ProxyV1Handler : public Poco::Net::TCPServerConnection
 {
     using StreamSocket = Poco::Net::StreamSocket;
 public:
-    explicit ProxyV1Handler(const StreamSocket & socket, IServer & server_, TCPProtocolStackData & stack_data_)
-        : Poco::Net::TCPServerConnection(socket), server(server_), stack_data(stack_data_) {}
+    explicit ProxyV1Handler(const StreamSocket & socket, IServer & server_, const std::string & conf_name_, TCPProtocolStackData & stack_data_)
+        : Poco::Net::TCPServerConnection(socket), server(server_), conf_name(conf_name_), stack_data(stack_data_) {}
 
     void run() override
     {
@@ -293,6 +294,7 @@ protected:
 
 private:
     IServer & server;
+    std::string conf_name;
     TCPProtocolStackData & stack_data;
 };
 
@@ -301,7 +303,7 @@ class ProxyV1HandlerFactory : public TCPServerConnectionFactory
 private:
     IServer & server;
     Poco::Logger * log;
-    std::string server_display_name;
+    std::string conf_name;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
@@ -311,10 +313,9 @@ private:
     };
 
 public:
-    explicit ProxyV1HandlerFactory(IServer & server_)
-        : server(server_), log(&Poco::Logger::get("ProxyV1HandlerFactory"))
+    explicit ProxyV1HandlerFactory(IServer & server_, const std::string & conf_name_)
+        : server(server_), log(&Poco::Logger::get("ProxyV1HandlerFactory")), conf_name(conf_name_)
     {
-        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
@@ -328,7 +329,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new ProxyV1Handler(socket, server, stack_data);
+            return new ProxyV1Handler(socket, server, conf_name, stack_data);
         }
         catch (const Poco::Net::NetException &)
         {
