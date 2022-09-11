@@ -47,9 +47,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 {
-    /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
-
     factory.registerFunction(NameQuantileBFloat16Weighted::name, createAggregateFunctionQuantile<FuncQuantileBFloat16Weighted>);
     factory.registerFunction(NameQuantilesBFloat16Weighted::name, createAggregateFunctionQuantile<FuncQuantilesBFloat16Weighted>);
 
