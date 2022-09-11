@@ -111,6 +111,8 @@ public:
     {
         stack.push_back(factory);
     }
+
+    size_t size() { return stack.size(); }
 };
 
 

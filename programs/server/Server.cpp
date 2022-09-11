@@ -1903,7 +1903,7 @@ void Server::createServers(
                 new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
-        throw Exception("LOGICAL ERROR: Unknown protocol name.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
     };
 
     for (const auto & protocol : protocols)
@@ -1927,40 +1927,27 @@ void Server::createServers(
                     if (type == "tls")
                     {
                         if (is_secure)
-                        {
-                            // misconfigured - only one tls layer is allowed
-                            stack.reset();
-                            break;
-                        }
+                            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                         is_secure = true;
                     }
 
-                    TCPServerConnectionFactory::Ptr factory = createFactory(type, conf_name);
-                    if (!factory)
-                    {
-                        // misconfigured - protocol type doesn't exist
-                        stack.reset();
-                        break;
-                    }
-
-                    stack->append(factory);
-
-                    if (!config.has(prefix + "impl"))
-                        break;
+                    stack->append(createFactory(type, conf_name));
                 }
+
+                if (!config.has(prefix + "impl"))
+                    break;
 
                 conf_name = "protocols." + config.getString(prefix + "impl");
                 prefix = conf_name + ".";
 
-                if (!pset.insert(prefix).second)
+                if (!pset.insert(conf_name).second)
                 {
                     // misconfigured - loop is detected
-                    stack.reset();
-                    break;
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
                 }
             }
 
-            if (!stack)
+            if (!stack || stack->size() == 0)
                 continue;
 
             createServer(config, listen_host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
