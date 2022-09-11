@@ -395,7 +395,7 @@ private:
         if (!out)
             return false;
 
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
         return true;
     }
 
@@ -870,7 +870,7 @@ private:
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
-                dst[i] = dst_default[i]; // NOLINT
+                dst[i] = static_cast<U>(dst_default[i]);
         }
     }
 
