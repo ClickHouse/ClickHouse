@@ -103,8 +103,8 @@ class QuantileTDigest
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
         /// Symmetric interpolation for better results with infinities.
-        Value k = (x - x1) / (x2 - x1);
-        return (1 - k) * y1 + k * y2;
+        double k = (x - x1) / (x2 - x1);
+        return static_cast<Value>((1 - k) * y1 + k * y2);
     }
 
     struct RadixSortTraits
