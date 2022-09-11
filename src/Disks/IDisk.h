@@ -239,7 +239,16 @@ public:
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
+    struct LocalPathWithObjectStoragePaths
+     {
+         std::string local_path;
+         std::string common_prefix_for_objects;
+         StoredObjects objects;
+
+         LocalPathWithObjectStoragePaths(
+             const std::string & local_path_, const std::string & common_prefix_for_objects_, StoredObjects && objects_)
+             : local_path(local_path_), common_prefix_for_objects(common_prefix_for_objects_), objects(std::move(objects_)) {}
+     };
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
