@@ -15,12 +15,11 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
-
 void ProxyV1Handler::run()
 {
     const auto & settings = server.context()->getSettingsRef();
     socket().setReceiveTimeout(settings.receive_timeout);
-    
+
     std::string word;
     bool eol;
 
@@ -57,7 +56,7 @@ void ProxyV1Handler::run()
     // read port
     if (!readWord(5, word, eol) || eol)
         throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
-    
+
     // read port and "\r\n"
     if (!readWord(5, word, eol) || !eol)
         throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
@@ -120,7 +119,5 @@ bool ProxyV1Handler::readWord(int max_len, std::string & word, bool & eol)
 
     return false;
 }
-
-
 
 }
