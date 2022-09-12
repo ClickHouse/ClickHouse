@@ -183,8 +183,11 @@ void SerializationSparse::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
-    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
-    nested->serializeBinaryBulkStatePrefix(column_sparse.getValuesColumn(), settings, state);
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
+        nested->serializeBinaryBulkStatePrefix(column_sparse->getValuesColumn(), settings, state);
+    else
+        nested->serializeBinaryBulkStatePrefix(column, settings, state);
+
     settings.path.pop_back();
 }
 
