@@ -302,12 +302,12 @@ def test_settings_from_granted_role():
 
 def test_inheritance():
     instance.query(
-        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 READONLY"
+        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 CONST"
     )
     instance.query("CREATE SETTINGS PROFILE alpha SETTINGS PROFILE xyz TO robin")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 READONLY\n"
+        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 CONST\n"
     )
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE alpha")
