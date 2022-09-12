@@ -747,7 +747,7 @@ public:
         return column_sizes;
     }
 
-    const ColumnsDescription & getObjectColumns() const { return object_columns; }
+    ColumnsDescription getObjectColumns() const;
 
     /// Creates description of columns of data type Object from the range of data parts.
     static ColumnsDescription getObjectColumns(

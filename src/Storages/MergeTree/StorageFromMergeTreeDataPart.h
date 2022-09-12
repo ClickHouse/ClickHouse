@@ -53,6 +53,10 @@ public:
         /// Here we obtain object columns from storage, because query
         /// can include subcolumns that are missing in current part,
         /// but which exist in other parts.
+        /// NOTE: There may be a race in types of subcolumns, because mutations
+        /// are executed asynchronously and new parts, which can extend types of some subcolumns,
+        /// may be added during execution. Currently there is no place to get and save StorageSnapshot
+        /// for the execution of whole mutation to avoid this race. TODO: fix it.
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, storage.getObjectColumns());
     }
 

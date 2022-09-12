@@ -6968,6 +6968,12 @@ ColumnsDescription MergeTreeData::getObjectColumns(
         storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 }
 
+ColumnsDescription MergeTreeData::getObjectColumns() const
+{
+    auto lock = lockParts();
+    return object_columns;
+}
+
 void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lock*/)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
