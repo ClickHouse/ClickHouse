@@ -11,9 +11,9 @@ using FunctionTan = FunctionMathUnary<UnaryFunctionVectorized<TanName, tan>>;
 
 }
 
-REGISTER_FUNCTION(Tan)
+void registerFunctionTan(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionTan>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTan>(FunctionFactory::CaseInsensitive);
 }
 
 }

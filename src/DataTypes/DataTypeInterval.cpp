@@ -13,9 +13,6 @@ bool DataTypeInterval::equals(const IDataType & rhs) const
 
 void registerDataTypeInterval(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("IntervalNanosecond", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Nanosecond)); });
-    factory.registerSimpleDataType("IntervalMicrosecond", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Microsecond)); });
-    factory.registerSimpleDataType("IntervalMillisecond", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Millisecond)); });
     factory.registerSimpleDataType("IntervalSecond", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Second)); });
     factory.registerSimpleDataType("IntervalMinute", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Minute)); });
     factory.registerSimpleDataType("IntervalHour", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Hour)); });

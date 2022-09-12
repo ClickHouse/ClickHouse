@@ -1,11 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialmovingaverage
-sidebar_position: 108
+toc_priority: 108
 ---
 
-## exponentialMovingAverage
+## exponentialMovingAverage {#exponential-moving-average}
 
-Сalculates the exponential moving average of values for the determined time.
+Сalculates the exponential moving average of values for the determined time. 
 
 **Syntax**
 
@@ -59,7 +58,7 @@ Input table:
 └──────────────┴────────────┘
 ```
 
-Query:
+Query: 
 
 ```sql
 SELECT exponentialMovingAverage(5)(temperature, timestamp);
@@ -73,7 +72,7 @@ Result:
 └───────────────────────────────────────────────────────┘
 ```
 
-Query:
+Query: 
 
 ```sql
 SELECT

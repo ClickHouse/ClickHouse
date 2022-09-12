@@ -54,7 +54,7 @@ struct ExtractWWW
 struct NameCutWWW { static constexpr auto name = "cutWWW"; };
 using FunctionCutWWW = FunctionStringToString<CutSubstringImpl<ExtractWWW>, NameCutWWW>;
 
-REGISTER_FUNCTION(CutWWW)
+void registerFunctionCutWWW(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutWWW>();
 }

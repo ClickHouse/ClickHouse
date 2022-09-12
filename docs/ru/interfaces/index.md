@@ -1,7 +1,7 @@
 ---
-slug: /ru/interfaces/
-sidebar_label: "Интерфейсы"
-sidebar_position: 14
+toc_folder_title: "Интерфейсы"
+toc_priority: 14
+toc_title: "Введение"
 ---
 
 # Интерфейсы {#interfaces}

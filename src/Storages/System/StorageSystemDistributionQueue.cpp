@@ -57,7 +57,7 @@ std::string maskDataPath(const std::string & path)
         size_t user_pw_end = masked_path.find('@', node_pos);
         if (user_pw_end == std::string::npos)
         {
-            /// Likely new format (use_compact_format_in_distributed_parts_names=1)
+            /// Likey new format (use_compact_format_in_distributed_parts_names=1)
             return path;
         }
 

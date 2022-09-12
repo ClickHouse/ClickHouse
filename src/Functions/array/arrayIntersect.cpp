@@ -585,7 +585,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 }
 
 
-REGISTER_FUNCTION(ArrayIntersect)
+void registerFunctionArrayIntersect(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayIntersect>();
 }

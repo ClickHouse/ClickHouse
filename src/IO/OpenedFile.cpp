@@ -1,4 +1,3 @@
-#include <mutex>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -23,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-void OpenedFile::open() const
+void OpenedFile::open(int flags)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -34,13 +33,6 @@ void OpenedFile::open() const
             errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 }
 
-int OpenedFile::getFD() const
-{
-    std::lock_guard l(mutex);
-    if (fd == -1)
-        open();
-    return fd;
-}
 
 std::string OpenedFile::getFileName() const
 {
@@ -48,24 +40,22 @@ std::string OpenedFile::getFileName() const
 }
 
 
-OpenedFile::OpenedFile(const std::string & file_name_, int flags_)
-    : file_name(file_name_), flags(flags_)
+OpenedFile::OpenedFile(const std::string & file_name_, int flags)
+    : file_name(file_name_)
 {
+    open(flags);
 }
 
 
 OpenedFile::~OpenedFile()
 {
-    close();    /// Exceptions will lead to std::terminate and that's Ok.
+    if (fd != -1)
+        close();    /// Exceptions will lead to std::terminate and that's Ok.
 }
 
 
 void OpenedFile::close()
 {
-    std::lock_guard l(mutex);
-    if (fd == -1)
-        return;
-
     if (0 != ::close(fd))
         throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 

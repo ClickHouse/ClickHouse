@@ -1,4 +1,8 @@
 <test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(substring(URL, 10, 20))</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(substring(PageCharset, 1, 2))</query>
 </test>

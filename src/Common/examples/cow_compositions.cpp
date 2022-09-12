@@ -52,7 +52,7 @@ private:
     {
         std::cerr << "Mutating\n";
         auto res = shallowMutate();
-        res->wrapped = IColumn::mutate(std::move(res->wrapped).detach());
+        res->wrapped = IColumn::mutate(wrapped);
         return res;
     }
 

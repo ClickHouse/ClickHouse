@@ -8,9 +8,11 @@ namespace DB
 {
 
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
+    NamesAndTypesList columns(sample.getNamesAndTypesList());
+    fields.assign(columns.begin(), columns.end());
     field_tag_names.resize(sample.columns());
 
     bool need_validate_utf8 = false;
@@ -198,6 +200,7 @@ void XMLRowOutputFormat::onProgress(const Progress & value)
 
 void XMLRowOutputFormat::finalizeImpl()
 {
+
     writeCString("\t<rows>", *ostr);
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);

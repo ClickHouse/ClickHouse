@@ -1,7 +1,7 @@
 ---
-slug: /ru/operations/server-configuration-parameters/
-sidebar_label: "Конфигурационные параметры сервера"
-sidebar_position: 54
+toc_folder_title: "Конфигурационные параметры сервера"
+toc_priority: 54
+toc_title: "Введение"
 ---
 
 # Конфигурационные параметры сервера {#server-settings}

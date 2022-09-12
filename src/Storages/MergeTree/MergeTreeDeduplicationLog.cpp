@@ -3,11 +3,9 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <Disks/WriteMode.h>
-#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -76,27 +74,27 @@ size_t getLogNumber(const std::string & path_str)
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
     const std::string & logs_dir_,
     size_t deduplication_window_,
-    const MergeTreeDataFormatVersion & format_version_,
-    DiskPtr disk_)
+    const MergeTreeDataFormatVersion & format_version_)
     : logs_dir(logs_dir_)
     , deduplication_window(deduplication_window_)
     , rotate_interval(deduplication_window_ * 2) /// actually it doesn't matter
     , format_version(format_version_)
     , deduplication_map(deduplication_window)
-    , disk(disk_)
 {
-    if (deduplication_window != 0 && !disk->exists(logs_dir))
-        disk->createDirectories(logs_dir);
+    namespace fs = std::filesystem;
+    if (deduplication_window != 0 && !fs::exists(logs_dir))
+        fs::create_directories(logs_dir);
 }
 
 void MergeTreeDeduplicationLog::load()
 {
-    if (!disk->exists(logs_dir))
+    namespace fs = std::filesystem;
+    if (!fs::exists(logs_dir))
         return;
 
-    for (auto it = disk->iterateDirectory(logs_dir); it->isValid(); it->next())
+    for (const auto & p : fs::directory_iterator(logs_dir))
     {
-        const auto & path = it->path();
+        const auto & path = p.path();
         auto log_number = getLogNumber(path);
         existing_logs[log_number] = {path, 0};
     }
@@ -126,19 +124,19 @@ void MergeTreeDeduplicationLog::load()
 
         /// Can happen in case we have unfinished log
         if (!current_writer)
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+            current_writer = std::make_unique<WriteBufferFromFile>(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     }
 }
 
 size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
 {
-    auto read_buf = disk->readFile(path);
+    ReadBufferFromFile read_buf(path);
 
     size_t total_entries = 0;
-    while (!read_buf->eof())
+    while (!read_buf.eof())
     {
         MergeTreeDeduplicationLogRecord record;
-        readRecord(record, *read_buf);
+        readRecord(record, read_buf);
         if (record.operation == MergeTreeDeduplicationOp::DROP)
             deduplication_map.erase(record.block_id);
         else
@@ -162,7 +160,7 @@ void MergeTreeDeduplicationLog::rotate()
     if (current_writer)
         current_writer->sync();
 
-    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    current_writer = std::make_unique<WriteBufferFromFile>(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
@@ -190,7 +188,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
-            disk->removeFile(itr->second.path);
+            std::filesystem::remove(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
                 break;
@@ -299,42 +297,15 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     rotate_interval = deduplication_window * 2;
 
     /// If settings was set for the first time with ALTER MODIFY SETTING query
-    if (deduplication_window != 0 && !disk->exists(logs_dir))
-        disk->createDirectories(logs_dir);
+    if (deduplication_window != 0 && !std::filesystem::exists(logs_dir))
+        std::filesystem::create_directories(logs_dir);
 
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();
 
     /// Can happen in case we have unfinished log
     if (!current_writer)
-        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-}
-
-
-void MergeTreeDeduplicationLog::shutdown()
-{
-    std::lock_guard lock(state_mutex);
-    if (stopped)
-        return;
-
-    stopped = true;
-    if (current_writer)
-    {
-        current_writer->finalize();
-        current_writer.reset();
-    }
-}
-
-MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
-{
-    try
-    {
-        shutdown();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+        current_writer = std::make_unique<WriteBufferFromFile>(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
 }
 
 }

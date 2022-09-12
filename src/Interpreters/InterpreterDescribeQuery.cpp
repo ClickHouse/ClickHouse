@@ -89,7 +89,7 @@ BlockIO InterpreterDescribeQuery::execute()
         auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
 
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
-        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+        storage_snapshot = table->getStorageSnapshot(metadata_snapshot);
         columns = metadata_snapshot->getColumns();
     }
 

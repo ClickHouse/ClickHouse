@@ -2,7 +2,6 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Columns/ColumnArray.h>
-#include <IO/WriteSettings.h>
 
 
 namespace DB
@@ -16,15 +15,12 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 public:
     MergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec_,
-        const MergeTreeTransactionPtr & txn,
         bool reset_columns_ = false,
-        bool blocks_are_granules_size = false,
-        const WriteSettings & write_settings = {});
+        bool blocks_are_granules_size = false);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
@@ -81,7 +77,6 @@ private:
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
-    WriteSettings write_settings;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

@@ -14,7 +14,7 @@ public:
     FunctionArrayHasAll() : FunctionArrayHasAllAny(GatherUtils::ArraySearchType::All, name) {}
 };
 
-REGISTER_FUNCTION(HasAll)
+void registerFunctionHasAll(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayHasAll>();
 }

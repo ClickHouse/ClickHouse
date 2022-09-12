@@ -1,7 +1,6 @@
 ---
-slug: /ru/operations/quotas
-sidebar_position: 51
-sidebar_label: "Квоты"
+toc_priority: 51
+toc_title: "Квоты"
 ---
 
 # Квоты {#quotas}

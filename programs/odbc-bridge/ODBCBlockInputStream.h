@@ -4,7 +4,7 @@
 #include <Core/Block.h>
 #include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
-#include "ODBCPooledConnectionFactory.h"
+#include "ODBCConnectionFactory.h"
 
 
 namespace DB

@@ -30,14 +30,11 @@ struct CompactStringRef
     union
     {
         const char * data_mixed = nullptr;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wnested-anon-types"
         struct
         {
             char dummy[6];
             UInt16 size;
         };
-#pragma clang diagnostic pop
     };
 
     CompactStringRef(const char * data_, size_t size_)

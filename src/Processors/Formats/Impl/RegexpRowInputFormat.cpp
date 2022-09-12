@@ -1,4 +1,4 @@
-#include <cstdlib>
+#include <stdlib.h>
 #include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -128,13 +128,15 @@ void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(*buf);
 }
 
-RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ContextPtr context_)
     : IRowSchemaReader(
         buf,
-        format_settings_,
+        format_settings_.max_rows_to_read_for_schema_inference,
         getDefaultDataTypeForEscapingRule(format_settings_.regexp.escaping_rule))
+    , format_settings(format_settings_)
     , field_extractor(format_settings)
     , buf(in_)
+    , context(context_)
 {
 }
 
@@ -150,17 +152,11 @@ DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != field_extractor.getMatchedFieldsSize(); ++i)
     {
         String field(field_extractor.getField(i));
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule));
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule, context));
     }
 
     return data_types;
 }
-
-void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule);
-}
-
 
 void registerInputFormatRegexp(FormatFactory & factory)
 {
@@ -207,14 +203,9 @@ void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 
 void registerRegexpSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings)
+    factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
     {
-        return std::make_shared<RegexpSchemaReader>(buf, settings);
-    });
-    factory.registerAdditionalInfoForSchemaCacheGetter("Regexp", [](const FormatSettings & settings)
-    {
-        auto result = getAdditionalFormatInfoByEscapingRule(settings, settings.regexp.escaping_rule);
-        return result + fmt::format(", regexp={}", settings.regexp.regexp);
+        return std::make_shared<RegexpSchemaReader>(buf, settings, context);
     });
 }
 
