@@ -496,9 +496,15 @@ public:
             for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
-                {
                     final_flags[i] |= nullable_filters[filter][i];
-                    found_one |= !final_flags[i];
+            }
+
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (!final_flags_ptr[i])
+                {
+                    found_one = true;
+                    break;
                 }
             }
         }
