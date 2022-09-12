@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Extract sort description from query order by node
+/// Extract sort description from order by node
 SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, const PlannerContext & planner_context);
 
 }

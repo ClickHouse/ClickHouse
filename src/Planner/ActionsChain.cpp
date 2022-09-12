@@ -33,6 +33,8 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         actions->addOrReplaceInOutputs(*required_output_node);
 
     actions->removeUnusedActions();
+    /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
+    actions->projectInput();
     initialize();
 }
 
@@ -69,15 +71,30 @@ void ActionsChainStep::initialize()
 
     available_output_columns.clear();
 
+    /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
+    std::unordered_set<std::string_view> available_output_columns_names;
+
     if (available_output_columns_strategy == AvailableOutputColumnsStrategy::ALL_NODES)
     {
         for (const auto & node : actions->getNodes())
+        {
+            if (available_output_columns_names.contains(node.result_name))
+                continue;
+
             available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
+            available_output_columns_names.insert(node.result_name);
+        }
     }
     else if (available_output_columns_strategy == AvailableOutputColumnsStrategy::OUTPUT_NODES)
     {
         for (const auto & node : actions->getOutputs())
+        {
+            if (available_output_columns_names.contains(node->result_name))
+                continue;
+
             available_output_columns.emplace_back(node->column, node->result_type, node->result_name);
+            available_output_columns_names.insert(node->result_name);
+        }
     }
 
     available_output_columns.insert(available_output_columns.end(), additional_output_columns.begin(), additional_output_columns.end());

@@ -65,10 +65,10 @@ public:
 
     explicit ActionsChainStep(ActionsDAGPtr actions_,
         AvailableOutputColumnsStrategy available_output_columns_stategy_,
-        const ColumnsWithTypeAndName & additional_output_columns_)
+        ColumnsWithTypeAndName additional_output_columns_)
         : actions(std::move(actions_))
         , available_output_columns_strategy(available_output_columns_stategy_)
-        , additional_output_columns(additional_output_columns_)
+        , additional_output_columns(std::move(additional_output_columns_))
     {
         initialize();
     }

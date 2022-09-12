@@ -6,6 +6,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/SortColumnNode.h>
+#include <Analyzer/WindowNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantValue.h>
@@ -419,7 +421,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto function_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
 
-    if (function_node.isAggregateFunction())
+    if (function_node.isAggregateFunction() || function_node.isWindowFunction())
     {
         size_t actions_stack_size = actions_stack.size();
 
@@ -573,6 +575,13 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
 
                 buffer << ')';
 
+                if (function_node.isWindowFunction())
+                {
+                    buffer << " OVER (";
+                    buffer << calculateWindowNodeActionName(function_node.getWindowNode(), planner_context, node_to_name);
+                    buffer << ')';
+                }
+
                 result = buffer.str();
             }
             break;
@@ -625,6 +634,121 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
 String calculateConstantActionNodeName(const Field & constant_literal)
 {
     return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
+}
+
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name)
+{
+    auto & window_node = node->as<WindowNode &>();
+    WriteBufferFromOwnString buffer;
+
+    if (window_node.hasPartitionBy())
+    {
+        buffer << "PARTITION BY ";
+
+        auto & partition_by_nodes = window_node.getPartitionBy().getNodes();
+        size_t partition_by_nodes_size = partition_by_nodes.size();
+
+        for (size_t i = 0; i < partition_by_nodes_size; ++i)
+        {
+            auto & partition_by_node = partition_by_nodes[i];
+            buffer << calculateActionNodeName(partition_by_node, planner_context, node_to_name);
+            if (i + 1 != partition_by_nodes_size)
+                buffer << ", ";
+        }
+    }
+
+    if (window_node.hasOrderBy())
+    {
+        if (window_node.hasPartitionBy())
+            buffer << ' ';
+
+        buffer << "ORDER BY ";
+
+        auto & order_by_nodes = window_node.getOrderBy().getNodes();
+        size_t order_by_nodes_size = order_by_nodes.size();
+
+        for (size_t i = 0; i < order_by_nodes_size; ++i)
+        {
+            auto & sort_column_node = order_by_nodes[i]->as<SortColumnNode &>();
+
+            buffer << calculateActionNodeName(sort_column_node.getExpression(), planner_context, node_to_name);
+            auto sort_direction = sort_column_node.getSortDirection();
+            buffer << (sort_direction == SortDirection::ASCENDING ? " ASC" : " DESC");
+
+            auto nulls_sort_direction = sort_column_node.getNullsSortDirection();
+
+            if (nulls_sort_direction)
+                buffer << " NULLS " << (nulls_sort_direction == sort_direction ? "LAST" : "FIRST");
+
+            if (auto collator = sort_column_node.getCollator())
+                buffer << " COLLATE " << collator->getLocale();
+
+            if (sort_column_node.withFill())
+            {
+                buffer << " WITH FILL";
+
+                if (sort_column_node.hasFillFrom())
+                    buffer << " FROM " << calculateActionNodeName(sort_column_node.getFillFrom(), planner_context, node_to_name);
+
+                if (sort_column_node.hasFillTo())
+                    buffer << " TO " << calculateActionNodeName(sort_column_node.getFillTo(), planner_context, node_to_name);
+
+                if (sort_column_node.hasFillStep())
+                    buffer << " STEP " << calculateActionNodeName(sort_column_node.getFillStep(), planner_context, node_to_name);
+            }
+
+            if (i + 1 != order_by_nodes_size)
+                buffer << ", ";
+        }
+    }
+
+    auto & window_frame = window_node.getWindowFrame();
+    if (!window_frame.is_default)
+    {
+        if (window_node.hasPartitionBy() || window_node.hasOrderBy())
+            buffer << ' ';
+
+        buffer << window_frame.type << " BETWEEN ";
+        if (window_frame.begin_type == WindowFrame::BoundaryType::Current)
+        {
+            buffer << "CURRENT ROW";
+        }
+        else if (window_frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            buffer << "UNBOUNDED";
+            buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+        else
+        {
+            buffer << calculateActionNodeName(window_node.getFrameBeginOffsetNode(), planner_context, node_to_name);
+            buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+
+        buffer << " AND ";
+
+        if (window_frame.end_type == WindowFrame::BoundaryType::Current)
+        {
+            buffer << "CURRENT ROW";
+        }
+        else if (window_frame.end_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            buffer << "UNBOUNDED";
+            buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+        else
+        {
+            buffer << calculateActionNodeName(window_node.getFrameEndOffsetNode(), planner_context, node_to_name);
+            buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+    }
+
+    return buffer.str();
+}
+
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+{
+    QueryTreeNodeToName empty_map;
+    return calculateWindowNodeActionName(node, planner_context, empty_map);
 }
 
 }

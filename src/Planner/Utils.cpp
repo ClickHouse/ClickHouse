@@ -180,4 +180,19 @@ ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & express
     return action_dag;
 }
 
+bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)
+{
+    if (prefix.size() > full.size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if (full[i] != prefix[i])
+            return false;
+    }
+
+    return true;
+}
+
+
 }

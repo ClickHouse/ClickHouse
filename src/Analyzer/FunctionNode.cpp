@@ -6,10 +6,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <Parsers/ASTFunction.h>
+
 #include <Functions/IFunction.h>
+
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Parsers/ASTFunction.h>
+#include <Analyzer/IdentifierNode.h>
 
 namespace DB
 {
@@ -17,7 +20,7 @@ namespace DB
 FunctionNode::FunctionNode(String function_name_)
     : function_name(function_name_)
 {
-    children.resize(2);
+    children.resize(children_size);
     children[parameters_child_index] = std::make_shared<ListNode>();
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
@@ -38,6 +41,11 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
     function_name = aggregate_function->getName();
 }
 
+void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value, DataTypePtr result_type_value)
+{
+    resolveAsAggregateFunction(window_function_value, result_type_value);
+}
+
 void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "FUNCTION id: " << format_state.getNodeId(this);
@@ -46,7 +54,14 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", function_name: " << function_name;
-    buffer << ", is_aggregate_function: " << isAggregateFunction();
+
+    std::string function_type = "ordinary";
+    if (isAggregateFunction())
+        function_type = "aggregate";
+    else if (isWindowFunction())
+        function_type = "window";
+
+    buffer << ", function_type: " << function_type;
 
     if (result_type)
         buffer << ", result_type: " + result_type->getName();
@@ -69,6 +84,12 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
         arguments.dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasWindow())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "WINDOW\n";
+        getWindowNode()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }
 
@@ -123,6 +144,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(function_name.size());
     hash_state.update(function_name);
     hash_state.update(isAggregateFunction());
+    hash_state.update(isWindowFunction());
 
     if (result_type)
     {
@@ -148,6 +170,16 @@ ASTPtr FunctionNode::toASTImpl() const
     auto function_ast = std::make_shared<ASTFunction>();
 
     function_ast->name = function_name;
+    function_ast->is_window_function = isWindowFunction();
+
+    auto window_node = getWindowNode();
+    if (window_node)
+    {
+        if (auto * identifier_node = window_node->as<IdentifierNode>())
+            function_ast->window_name = identifier_node->getIdentifier().getFullName();
+        else
+            function_ast->window_definition = window_node->toAST();
+    }
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -166,6 +198,7 @@ ASTPtr FunctionNode::toASTImpl() const
 QueryTreeNodePtr FunctionNode::cloneImpl() const
 {
     auto result_function = std::make_shared<FunctionNode>(function_name);
+
     /// This is valid for clone method function or aggregate function must be stateless
     result_function->function = function;
     result_function->aggregate_function = aggregate_function;

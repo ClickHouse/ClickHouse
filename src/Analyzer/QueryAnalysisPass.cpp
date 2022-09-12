@@ -42,6 +42,7 @@
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortColumnNode.h>
 #include <Analyzer/InterpolateColumnNode.h>
+#include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -50,7 +51,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/CollectAggregateFunctionVisitor.h>
+#include <Analyzer/CollectAggregateFunctionNodes.h>
+#include <Analyzer/CollectWindowFunctionNodes.h>
 
 #include <Databases/IDatabase.h>
 
@@ -94,6 +96,7 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int TOO_DEEP_SUBQUERIES;
+    extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NOT_AN_AGGREGATE;
     extern const int ILLEGAL_AGGREGATION;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -190,7 +193,6 @@ namespace ErrorCodes
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
   * TODO: JOIN support SELF JOIN with MergeTree. JOIN support matchers.
-  * TODO: WINDOW functions
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
   * TODO: Support group_by_use_nulls
   */
@@ -529,6 +531,9 @@ struct IdentifierResolveScope
     /// CTE name to query node
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
 
+    /// Window name to window node
+    std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;
+
     /// Nodes with duplicated aliases
     std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
 
@@ -564,6 +569,33 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtr expression_join_tree_node;
 
+    [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
+    {
+        const IdentifierResolveScope * scope_to_check = this;
+        while (scope_to_check != nullptr)
+        {
+            if (scope_to_check->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+                break;
+
+            scope_to_check = scope_to_check->parent_scope;
+        }
+
+        return scope_to_check;
+    }
+
+    IdentifierResolveScope * getNearestQueryScope()
+    {
+        IdentifierResolveScope * scope_to_check = this;
+        while (scope_to_check != nullptr)
+        {
+            if (scope_to_check->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+                break;
+
+            scope_to_check = scope_to_check->parent_scope;
+        }
+
+        return scope_to_check;
+    }
 
     TableExpressionData & getTableExpressionDataOrThrow(QueryTreeNodePtr table_expression_node)
     {
@@ -851,6 +883,8 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
+    static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
+
     /// Resolve identifier functions
 
     QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier);
@@ -889,6 +923,8 @@ private:
 
     QueryTreeNodePtr resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
+    void resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
+
     void resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope);
 
     void resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
@@ -900,6 +936,8 @@ private:
     void resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope);
 
     void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope);
+
+    void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
     String calculateProjectionNodeDisplayName(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 
@@ -1155,6 +1193,52 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                     storage->getStorageID().getFullNameNotQuoted());
         }
     }
+}
+
+void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope)
+{
+    auto & window_node_typed = window_node->as<WindowNode &>();
+    auto parent_window_name = window_node_typed.getParentWindowName();
+
+    auto & parent_window_node_typed = parent_window_node->as<WindowNode &>();
+
+    // If an existing_window_name is specified it must refer to an earlier
+    // entry in the WINDOW list; the new window copies its partitioning clause
+    // from that entry, as well as its ordering clause if any. In this case
+    // the new window cannot specify its own PARTITION BY clause, and it can
+    // specify ORDER BY only if the copied window does not have one. The new
+    // window always uses its own frame clause; the copied window must not
+    // specify a frame clause.
+    // -- https://www.postgresql.org/docs/current/sql-select.html
+    if (window_node_typed.hasPartitionBy())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Derived window definition '{}' is not allowed to override PARTITION BY. In scope {}",
+            window_node_typed.formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
+
+    if (window_node_typed.hasOrderBy() && parent_window_node_typed.hasOrderBy())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Derived window definition '{}' is not allowed to override a non-empty ORDER BY. In scope {}",
+            window_node_typed.formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
+
+    if (!parent_window_node_typed.getWindowFrame().is_default)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Parent window '{}' is not allowed to define a frame: while processing derived window definition '{}'. In scope {}",
+            parent_window_name,
+            window_node_typed.formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
+
+    window_node_typed.getPartitionByNode() = parent_window_node_typed.getPartitionBy().clone();
+
+    if (parent_window_node_typed.hasOrderBy())
+        window_node_typed.getOrderByNode() = parent_window_node_typed.getOrderBy().clone();
 }
 
 /// Resolve identifier functions implementation
@@ -2581,6 +2665,92 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
     return list;
 }
 
+/** Resolve window function window node.
+  *
+  * Node can be identifier or window node.
+  * Example: SELECT count(*) OVER w FROM test_table WINDOW w AS (PARTITION BY id);
+  * Example: SELECT count(*) OVER (PARTITION BY id);
+  *
+  * If node has parent window name specified, then parent window definition is searched in nearest query scope WINDOW section.
+  * If node is identifier, than node is replaced with window definition.
+  * If node is window, that window node is merged with parent window node.
+  *
+  * Window node PARTITION BY and ORDER BY parts are resolved.
+  * If window node has frame begin OFFSET or frame end OFFSET specified, they are resolved, and window node frame constants are updated.
+  * Window node frame is validated.
+  */
+void QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    std::string parent_window_name;
+    auto * identifier_node = node->as<IdentifierNode>();
+
+    if (identifier_node)
+    {
+        parent_window_name = identifier_node->getIdentifier().getFullName();
+    }
+    else if (auto * window_node = node->as<WindowNode>())
+    {
+        parent_window_name = window_node->getParentWindowName();
+    }
+
+    if (!parent_window_name.empty())
+    {
+        auto * nearest_query_scope = scope.getNearestQueryScope();
+
+        if (!nearest_query_scope)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window '{}' does not exists.", parent_window_name);
+
+        auto & scope_window_name_to_window_node = nearest_query_scope->window_name_to_window_node;
+
+        auto window_node_it = scope_window_name_to_window_node.find(parent_window_name);
+        if (window_node_it == scope_window_name_to_window_node.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window '{}' does not exists. In scope {}",
+                parent_window_name,
+                nearest_query_scope->scope_node->formatASTForErrorMessage());
+
+        if (identifier_node)
+            node = window_node_it->second->clone();
+        else
+            mergeWindowWithParentWindow(node, window_node_it->second, scope);
+    }
+
+    auto & window_node = node->as<WindowNode &>();
+
+    window_node.setParentWindowName({});
+    resolveExpressionNodeList(window_node.getPartitionByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    resolveSortColumnsNodeList(window_node.getOrderByNode(), scope);
+
+    if (window_node.hasFrameBeginOffset())
+    {
+        resolveExpressionNode(window_node.getFrameBeginOffsetNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        const auto window_frame_begin_constant_value = window_node.getFrameBeginOffsetNode()->getConstantValueOrNull();
+        if (!window_frame_begin_constant_value || !isNativeNumber(removeNullable(window_frame_begin_constant_value->getType())))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window frame begin OFFSET expression must be constant with numeric type. Actual {}. In scope {}",
+                window_node.getFrameBeginOffsetNode()->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        window_node.getWindowFrame().begin_offset = window_frame_begin_constant_value->getValue();
+    }
+
+    if (window_node.hasFrameEndOffset())
+    {
+        resolveExpressionNode(window_node.getFrameEndOffsetNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        const auto window_frame_end_constant_value = window_node.getFrameEndOffsetNode()->getConstantValueOrNull();
+        if (!window_frame_end_constant_value || !isNativeNumber(removeNullable(window_frame_end_constant_value->getType())))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window frame begin OFFSET expression must be constant with numeric type. Actual {}. In scope {}",
+                window_node.getFrameEndOffsetNode()->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        window_node.getWindowFrame().end_offset = window_frame_end_constant_value->getValue();
+    }
+
+    window_node.getWindowFrame().checkValid();
+}
 
 /** Resolve lambda function.
   * This function modified lambda_node during resolve. It is caller responsibility to clone lambda before resolve
@@ -2673,25 +2843,24 @@ void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const Qu
   *
   * Steps:
   * 1. Resolve function parameters. Validate that each function parameter must be constant node.
-  * 2. Resolve function arguments list, lambda expressions are allowed as function arguments.
-  * 3. Initialize argument_columns, argument_types, function_lambda_arguments_indexes arrays from function arguments.
-  * 4. Try to resolve function node name identifier as function.
-  * 5. If function name identifier was not resolved as function, try to lookup lambda from sql user defined functions factory.
-  * 6. If function was resolve as lambda from step 4, or 5, then resolve lambda using function arguments and replace function node with lambda result.
+  * 2. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 3. If function is count function, that take unqualified ASTERISK matcher, remove it from its arguments. Example: SELECT count(*) FROM test_table;
+  * 4. If function is `IN` function, then right part of `IN` function is replaced as subquery.
+  * 5. Resolve function arguments list, lambda expressions are allowed as function arguments.
+  * For `IN` function table expressions are allowed as function arguments.
+  * 6. Initialize argument_columns, argument_types, function_lambda_arguments_indexes arrays from function arguments.
+  * 7. If function name identifier was not resolved as function in current scope, try to lookup lambda from sql user defined functions factory.
+  * 8. If function was resolve as lambda from step 2 or 7, then resolve lambda using function arguments and replace function node with lambda result.
   * After than function node is resolved.
-  * 7. If function was not resolved during step 6 as lambda, then try to resolve function as executable user defined function or aggregate function or
-  * non aggregate function.
+  * 9. If function was not resolved during step 6 as lambda, then try to resolve function as window function or executable user defined function
+  * or ordinary function or aggregate function.
   *
-  * Special case is `untuple` function that takes single compound argument expression. If argument is not compound expression throw exception.
-  * Wrap compound expression subcolumns into `tupleElement` and replace function node with them. After that `untuple` function node is resolved.
-  *
-  * If function is resolved as executable user defined function or aggregate function, function node is resolved
+  * If function is resolved as window function or executable user defined function or aggregate function, function node is resolved
   * no additional special handling is required.
   *
-  * 8. If function was resolved as non aggregate function. Then if on step 3 there were lambdas, their result types need to be initialized and
+  * 8. If function was resolved as non aggregate function. Then if some of function arguments are lambda expressions, their result types need to be initialized and
   * they must be resolved.
-  * 9. If function is suitable for constant folding, try to replace function node with constant result.
-  *
+  * 9. If function is suitable for constant folding, try to perform constant folding for function node.
   */
 void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
@@ -2726,7 +2895,23 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         parameters.push_back(constant_value->getValue());
     }
 
-    bool is_special_function_in = isNameOfInFunction(function_name);
+    //// If function node is not window function try to lookup function node name as lambda identifier.
+    QueryTreeNodePtr lambda_expression_untyped;
+    if (!function_node.isWindowFunction())
+    {
+        auto function_lookup_result = tryResolveIdentifier({Identifier{function_node.getFunctionName()}, IdentifierLookupContext::FUNCTION}, scope);
+        lambda_expression_untyped = function_lookup_result.resolved_identifier;
+    }
+
+    bool is_special_function_in = false;
+    if (!lambda_expression_untyped)
+    {
+        is_special_function_in = isNameOfInFunction(function_name);
+
+        /// Handle SELECT count(*) FROM test_table
+        if (function_name == "count")
+            function_node.getArguments().getNodes().clear();
+    }
 
     /// Resolve function arguments
 
@@ -2844,105 +3029,125 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         argument_columns.emplace_back(std::move(argument_column));
     }
 
-    /** Lookup function node name as lambda identifier.
-      * If no lambda node exists with function node name identifier, try to resolve it as lambda from sql user defined functions.
+    /** Try to resolve function as
+      * 1. Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);
+      * 2. Lambda function from sql user defined functions.
+      * 3. Special `untuple` function.
+      * 4. Special `grouping` function.
+      * 5. Window function.
+      * 6. Executable user defined function.
+      * 7. Ordinary function.
+      * 8. Aggregate function.
+      *
+      * TODO: Provide better error hints.
       */
-    auto function_lookup_result = tryResolveIdentifier({Identifier{function_node.getFunctionName()}, IdentifierLookupContext::FUNCTION}, scope);
-    auto lambda_expression_untyped = function_lookup_result.resolved_identifier;
-    if (!lambda_expression_untyped)
-        lambda_expression_untyped = tryGetLambdaFromSQLUserDefinedFunction(function_node.getFunctionName());
-
-    /** If function is resolved as lambda.
-      * Clone lambda before resolve.
-      * Initialize lambda arguments as function arguments
-      * Resolve lambda and then replace function node with resolved lambda expression body.
-      * Example: WITH (x -> x + 1) AS lambda SELECT lambda(value) FROM test_table;
-      * Result: SELECT value + 1 FROM test_table;
-      */
-    if (lambda_expression_untyped)
+    if (!function_node.isWindowFunction())
     {
-        auto * lambda_expression = lambda_expression_untyped->as<LambdaNode>();
-        if (!lambda_expression)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Function identifier {} must be resolved as lambda. Actual {}. In scope {}",
-                function_node.getFunctionName(),
-                lambda_expression_untyped->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
+        if (!lambda_expression_untyped)
+            lambda_expression_untyped = tryGetLambdaFromSQLUserDefinedFunction(function_node.getFunctionName());
 
-        auto lambda_expression_clone = lambda_expression_untyped->clone();
-
-        IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
-        resolveLambda(lambda_expression_clone, function_arguments, lambda_scope);
-
-        auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
-        node = resolved_lambda.getExpression();
-        return;
-    }
-
-    if (function_name == "untuple")
-    {
-        /// Special handling of `untuple` function
-
-        if (function_arguments.size() != 1)
-             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function 'untuple' must have 1 argument. In scope {}",
-                scope.scope_node->formatASTForErrorMessage());
-
-        const auto & tuple_argument = function_arguments[0];
-        auto result_type = tuple_argument->getResultType();
-        const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
-        if (!tuple_data_type)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function untuple argument must be have compound type. Actual type {}. In scope {}",
-                result_type->getName(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        const auto & element_names = tuple_data_type->getElementNames();
-
-        auto result_list = std::make_shared<ListNode>();
-        result_list->getNodes().reserve(element_names.size());
-
-        for (const auto & element_name : element_names)
+        /** If function is resolved as lambda.
+          * Clone lambda before resolve.
+          * Initialize lambda arguments as function arguments.
+          * Resolve lambda and then replace function node with resolved lambda expression body.
+          * Example: WITH (x -> x + 1) AS lambda SELECT lambda(value) FROM test_table;
+          * Result: SELECT value + 1 FROM test_table;
+          */
+        if (lambda_expression_untyped)
         {
-            auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
-            tuple_element_function->getArguments().getNodes().push_back(tuple_argument);
-            tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+            auto * lambda_expression = lambda_expression_untyped->as<LambdaNode>();
+            if (!lambda_expression)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function identifier {} must be resolved as lambda. Actual {}. In scope {}",
+                    function_node.getFunctionName(),
+                    lambda_expression_untyped->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
 
-            QueryTreeNodePtr function_query_node = tuple_element_function;
-            resolveFunction(function_query_node, scope);
+            auto lambda_expression_clone = lambda_expression_untyped->clone();
 
-            if (scope.projection_names_calculation_stage && node->hasAlias())
-                scope.node_to_projection_name.emplace(function_query_node, node->getAlias() + '.' + element_name);
+            IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
+            resolveLambda(lambda_expression_clone, function_arguments, lambda_scope);
 
-            result_list->getNodes().push_back(std::move(function_query_node));
+            auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
+            node = resolved_lambda.getExpression();
+            return;
         }
 
-        node = result_list;
-        return;
+        if (function_name == "untuple")
+        {
+            /// Special handling of `untuple` function
+
+            if (function_arguments.size() != 1)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Function 'untuple' must have 1 argument. In scope {}",
+                    scope.scope_node->formatASTForErrorMessage());
+
+            const auto & tuple_argument = function_arguments[0];
+            auto result_type = tuple_argument->getResultType();
+            const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
+            if (!tuple_data_type)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Function untuple argument must be have compound type. Actual type {}. In scope {}",
+                    result_type->getName(),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            const auto & element_names = tuple_data_type->getElementNames();
+
+            auto result_list = std::make_shared<ListNode>();
+            result_list->getNodes().reserve(element_names.size());
+
+            for (const auto & element_name : element_names)
+            {
+                auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
+                tuple_element_function->getArguments().getNodes().push_back(tuple_argument);
+                tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+
+                QueryTreeNodePtr function_query_node = tuple_element_function;
+                resolveFunction(function_query_node, scope);
+
+                if (scope.projection_names_calculation_stage && node->hasAlias())
+                    scope.node_to_projection_name.emplace(function_query_node, node->getAlias() + '.' + element_name);
+
+                result_list->getNodes().push_back(std::move(function_query_node));
+            }
+
+            node = result_list;
+            return;
+        }
+        else if (function_name == "grouping")
+        {
+            /// It is responsibility of planner to perform additional handling of grouping function
+            if (function_arguments_size == 0)
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    "Function GROUPING expects at least one argument");
+            else if (function_arguments_size > 64)
+                throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                    "Function GROUPING can have up to 64 arguments, but {} provided",
+                    function_arguments_size);
+
+            auto grouping_function = std::make_shared<FunctionGrouping>();
+            auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
+            function_node.resolveAsFunction(std::move(grouping_function_adaptor), std::make_shared<DataTypeUInt64>());
+            return;
+        }
     }
-    else if (function_name == "grouping")
+
+    if (function_node.isWindowFunction())
     {
-        /// It is responsibility of planner to perform additional handling of grouping function
-        if (function_arguments_size == 0)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Function GROUPING expects at least one argument");
-        else if (function_arguments_size > 64)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Function GROUPING can have up to 64 arguments, but {} provided",
-                function_arguments_size);
+        if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
+           throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+               "Aggregate function with name {} does not exists. In scope {}",
+               function_name,
+               scope.scope_node->formatASTForErrorMessage());
 
-        auto grouping_function = std::make_shared<FunctionGrouping>();
-        auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
-        function_node.resolveAsFunction(std::move(grouping_function_adaptor), std::make_shared<DataTypeUInt64>());
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+
+        function_node.resolveAsWindowFunction(aggregate_function, aggregate_function->getReturnType());
+        resolveWindow(function_node.getWindowNode(), scope);
         return;
     }
 
-    /** Try to resolve function as
-      * 1. Executable user defined function.
-      * 2. Aggregate function.
-      * 3. Non aggregate function.
-      * TODO: Provide better hints.
-      */
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, context, parameters);
 
     if (!function)
@@ -2951,7 +3156,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     if (!function)
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
-           throw Exception(ErrorCodes::BAD_ARGUMENTS,
+           throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                "Function with name {} does not exists. In scope {}",
                function_name,
                scope.scope_node->formatASTForErrorMessage());
@@ -3287,6 +3492,13 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
+        case QueryTreeNodeType::WINDOW:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Window {} is not allowed in expression. In scope {}",
+                node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
         case QueryTreeNodeType::TABLE:
         {
             if (!allow_table_expression)
@@ -3465,6 +3677,15 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & sort_co
         resolveExpressionNode(interpolate_column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         resolveExpressionNode(interpolate_column_node.getInterpolateExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
+}
+
+/** Resolve window nodes list.
+  */
+void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope)
+{
+    auto & window_node_list_typed = window_node_list->as<ListNode &>();
+    for (auto & node : window_node_list_typed.getNodes())
+        resolveWindow(node, scope);
 }
 
 class SubqueryToProjectionNameMatcher
@@ -4436,10 +4657,10 @@ void assertNoGroupingFunction(const QueryTreeNodePtr & node, const String & asse
   * 3. Resolve FROM section.
   * 4. Resolve projection columns.
   * 5. Resolve expressions in other query parts.
-  * 6. Remove WITH section from query.
-  * 7. Validate nodes with duplicate aliases.
-  * 8. Remove aliases from expression and lambda nodes.
-  * 9. Validate aggregates.
+  * 6. Validate nodes with duplicate aliases.
+  * 7. Validate aggregates, aggregate functions, GROUPING function, window functions.
+  * 8. Remove WITH and WINDOW sections from query.
+  * 9. Remove aliases from expression and lambda nodes.
   * 10. Resolve query tree node with projection columns.
   */
 void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
@@ -4474,6 +4695,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasHaving())
         visitor.visit(query_node_typed.getHaving());
+
+    if (query_node_typed.hasWindow())
+        visitor.visit(query_node_typed.getWindowNode());
 
     if (query_node_typed.hasOrderBy())
         visitor.visit(query_node_typed.getOrderByNode());
@@ -4520,6 +4744,26 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto * subquery_node = node->as<QueryNode>();
         return subquery_node && subquery_node->isCTE();
     });
+
+    for (auto & window_node : query_node_typed.getWindow().getNodes())
+    {
+        auto & window_node_typed = window_node->as<WindowNode &>();
+        auto parent_window_name = window_node_typed.getParentWindowName();
+        if (!parent_window_name.empty())
+        {
+            auto window_node_it = scope.window_name_to_window_node.find(parent_window_name);
+            if (window_node_it == scope.window_name_to_window_node.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window '{}' does not exists. In scope {}",
+                    parent_window_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            mergeWindowWithParentWindow(window_node, window_node_it->second, scope);
+            window_node_typed.setParentWindowName({});
+        }
+
+        scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
+    }
 
     /** Disable identifier cache during JOIN TREE resolve.
       * Depending on JOIN expression section, identifier with same name
@@ -4579,6 +4823,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
+    if (query_node_typed.hasWindow())
+        resolveWindowNodeList(query_node_typed.getWindowNode(), scope);
+
     if (query_node_typed.hasOrderBy())
         resolveSortColumnsNodeList(query_node_typed.getOrderByNode(), scope);
 
@@ -4611,13 +4858,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         validateLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
     }
-
-    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
-      * and CTE for other sections to use.
-      *
-      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
-      */
-    query_node_typed.getWithNode() = std::make_shared<ListNode>();
 
     /** Resolve nodes with duplicate aliases.
       * Table expressions cannot have duplicate aliases.
@@ -4672,51 +4912,56 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
-    /// Remove aliases from expression and lambda nodes
-
-    for (auto & [_, node] : scope.alias_name_to_expression_node)
-        node->removeAlias();
-
-    for (auto & [_, node] : scope.alias_name_to_lambda_node)
-        node->removeAlias();
-
     /** Validate aggregates
       *
-      * 1. Check that there are no aggregate functions in WHERE.
-      * 2. Check that there are no aggregate functions in PREWHERE.
-      * 3. Check that there are no aggregate functions in another aggregate functions.
-      * 4. Check that there are no columns that are not specified in GROUP BY keys.
-      * 5. Validate GROUP BY modifiers.
+      * 1. Check that there are no aggregate functions and GROUPING function in WHERE, in PREWHERE, in another aggregate functions.
+      * 2. Check that there are no window functions in WHERE, in PREWHERE, in HAVING, in WINDOW, inside another aggregate function,
+      * inside window function arguments, inside window function window definition.
+      * 3. Check that there are no columns that are not specified in GROUP BY keys.
+      * 4. Validate GROUP BY modifiers.
       */
     if (query_node_typed.hasWhere())
     {
         assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
         assertNoGroupingFunction(query_node_typed.getWhere(), "in WHERE");
+        assertNoWindowFunctionNodes(query_node_typed.getWhere(), "in WHERE");
     }
 
     if (query_node_typed.hasPrewhere())
     {
         assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
         assertNoGroupingFunction(query_node_typed.getPrewhere(), "in PREWHERE");
+        assertNoWindowFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
     }
 
-    QueryTreeNodes aggregate_function_nodes;
-
     if (query_node_typed.hasHaving())
-        collectAggregateFunctionNodes(query_node_typed.getHaving(), aggregate_function_nodes);
+        assertNoWindowFunctionNodes(query_node_typed.getHaving(), "in HAVING");
 
-    if (query_node_typed.hasOrderBy())
-        collectAggregateFunctionNodes(query_node_typed.getOrderByNode(), aggregate_function_nodes);
+    if (query_node_typed.hasWindow())
+        assertNoWindowFunctionNodes(query_node_typed.getWindowNode(), "in WINDOW");
 
-    collectAggregateFunctionNodes(query_node_typed.getProjectionNode(), aggregate_function_nodes);
+    QueryTreeNodes aggregate_function_nodes;
+    QueryTreeNodes window_function_nodes;
+
+    collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
+    collectWindowFunctionNodes(query_node, window_function_nodes);
 
     for (auto & aggregate_function_node : aggregate_function_nodes)
     {
-        for (auto & aggregate_function_node_child : aggregate_function_node->getChildren())
-        {
-            assertNoAggregateFunctionNodes(aggregate_function_node_child, "inside another aggregate function");
-            assertNoGroupingFunction(aggregate_function_node_child, "inside another aggregate function");
-        }
+        auto & aggregate_function_node_typed = aggregate_function_node->as<FunctionNode &>();
+
+        assertNoAggregateFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside another aggregate function");
+        assertNoGroupingFunction(aggregate_function_node_typed.getArgumentsNode(), "inside another aggregate function");
+        assertNoWindowFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside an aggregate function");
+    }
+
+    for (auto & window_function_node : window_function_nodes)
+    {
+        auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
+        assertNoWindowFunctionNodes(window_function_node_typed.getArgumentsNode(), "inside another window function");
+
+        if (query_node_typed.hasWindow())
+            assertNoWindowFunctionNodes(window_function_node_typed.getWindowNode(), "inside window definition");
     }
 
     QueryTreeNodes group_by_keys_nodes;
@@ -4792,6 +5037,27 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
+
+    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
+      * and CTE for other sections to use.
+      *
+      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
+      */
+    query_node_typed.getWith().getNodes().clear();
+
+    /** WINDOW section can be safely removed, because WINDOW section can only provide window definition to window functions.
+      *
+      * Example: SELECT count(*) OVER w FROM test_table WINDOW w AS (PARTITION BY id);
+      */
+    query_node_typed.getWindow().getNodes().clear();
+
+    /// Remove aliases from expression and lambda nodes
+
+    for (auto & [_, node] : scope.alias_name_to_expression_node)
+        node->removeAlias();
+
+    for (auto & [_, node] : scope.alias_name_to_lambda_node)
+        node->removeAlias();
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 }

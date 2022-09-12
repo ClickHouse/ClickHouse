@@ -1,4 +1,4 @@
-#include <Analyzer/CollectAggregateFunctionVisitor.h>
+#include <Analyzer/CollectAggregateFunctionNodes.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
@@ -30,10 +30,7 @@ public:
     static void visit(const QueryTreeNodePtr & node, Data & data)
     {
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            return;
-
-        if (!function_node->isAggregateFunction())
+        if (!function_node || !function_node->isAggregateFunction())
             return;
 
         if (!data.assert_no_aggregates_place_message.empty())

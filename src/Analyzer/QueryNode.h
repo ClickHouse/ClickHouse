@@ -189,6 +189,31 @@ public:
         return children[join_tree_child_index];
     }
 
+    bool hasWindow() const
+    {
+        return !getWindow().getNodes().empty();
+    }
+
+    const ListNode & getWindow() const
+    {
+        return children[window_child_index]->as<const ListNode &>();
+    }
+
+    ListNode & getWindow()
+    {
+        return children[window_child_index]->as<ListNode &>();
+    }
+
+    const QueryTreeNodePtr & getWindowNode() const
+    {
+        return children[window_child_index];
+    }
+
+    QueryTreeNodePtr & getWindowNode()
+    {
+        return children[window_child_index];
+    }
+
     bool hasPrewhere() const
     {
         return children[prewhere_child_index] != nullptr;
@@ -453,13 +478,14 @@ private:
     static constexpr size_t where_child_index = 4;
     static constexpr size_t group_by_child_index = 5;
     static constexpr size_t having_child_index = 6;
-    static constexpr size_t order_by_child_index = 7;
-    static constexpr size_t interpolate_child_index = 8;
-    static constexpr size_t limit_by_limit_child_index = 9;
-    static constexpr size_t limit_by_offset_child_index = 10;
-    static constexpr size_t limit_by_child_index = 11;
-    static constexpr size_t limit_child_index = 12;
-    static constexpr size_t offset_child_index = 13;
+    static constexpr size_t window_child_index = 7;
+    static constexpr size_t order_by_child_index = 8;
+    static constexpr size_t interpolate_child_index = 9;
+    static constexpr size_t limit_by_limit_child_index = 10;
+    static constexpr size_t limit_by_offset_child_index = 11;
+    static constexpr size_t limit_by_child_index = 12;
+    static constexpr size_t limit_child_index = 13;
+    static constexpr size_t offset_child_index = 14;
     static constexpr size_t children_size = offset_child_index + 1;
 };
 

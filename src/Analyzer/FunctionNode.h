@@ -23,9 +23,12 @@ using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
   * Function can be:
   * 1. Aggregate function. Example: quantile(0.5)(x), sum(x).
   * 2. Non aggregate function. Example: plus(x, x).
+  * 3. Window function. Example: sum(x) OVER (PARTITION BY expr ORDER BY expr).
   *
   * Initially function node is initialize with function name.
-  * During query analysis pass function must be resolved using `resolveAsFunction` or `resolveAsAggregateFunction` methods.
+  * For window function client must initialize function window node.
+  *
+  * During query analysis pass function must be resolved using `resolveAsFunction`, `resolveAsAggregateFunction`, `resolveAsWindowFunction` methods.
   * Resolved function is function that has result type and is initialized with concrete aggregate or non aggregate function.
   */
 class FunctionNode;
@@ -35,7 +38,7 @@ class FunctionNode final : public IQueryTreeNode
 {
 public:
     /** Initialize function node with function name.
-      * Later during query analysis path function must be resolved.
+      * Later during query analysis pass function must be resolved.
       */
     explicit FunctionNode(String function_name_);
 
@@ -93,6 +96,30 @@ public:
         return children[arguments_child_index];
     }
 
+    /// Has window
+    bool hasWindow() const
+    {
+        return children[window_child_index] != nullptr;
+    }
+
+    /** Get window node.
+      * Valid only for window function node.
+      * Can be identifier if window function is defined as expr OVER window_name.
+      * Or can be window node if window function is defined as expr OVER (window_name ...).
+      */
+    const QueryTreeNodePtr & getWindowNode() const
+    {
+        return children[window_child_index];
+    }
+
+    /** Get window node.
+      * Valid only for window function node.
+      */
+    QueryTreeNodePtr & getWindowNode()
+    {
+        return children[window_child_index];
+    }
+
     /** Get non aggregate function.
       * If function is not resolved nullptr returned.
       */
@@ -116,10 +143,16 @@ public:
         return result_type != nullptr && (function != nullptr || aggregate_function != nullptr);
     }
 
+    /// Is window function
+    bool isWindowFunction() const
+    {
+        return getWindowNode() != nullptr;
+    }
+
     /// Is function node resolved as aggregate function
     bool isAggregateFunction() const
     {
-        return aggregate_function != nullptr;
+        return aggregate_function != nullptr && !isWindowFunction();
     }
 
     /// Is function node resolved as non aggregate function
@@ -141,6 +174,12 @@ public:
       * Main motivation for this is query tree optimizations.
       */
     void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, DataTypePtr result_type_value);
+
+    /** Resolve function node as window function.
+      * It is important that function name is update with resolved function name.
+      * Main motivation for this is query tree optimizations.
+      */
+    void resolveAsWindowFunction(AggregateFunctionPtr window_function_value, DataTypePtr result_type_value);
 
     /// Perform constant folding for function node
     void performConstantFolding(ConstantValuePtr constant_folded_value)
@@ -179,6 +218,8 @@ protected:
 private:
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
+    static constexpr size_t window_child_index = 2;
+    static constexpr size_t children_size = window_child_index + 1;
 
     String function_name;
     FunctionOverloadResolverPtr function;

@@ -53,7 +53,7 @@ private:
 using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
 String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name);
 
-/** Calculate query tree expression node name action dag name.
+/** Calculate query tree expression node action dag name.
   *
   * For column node column node identifier from planner context is used.
   */
@@ -64,5 +64,15 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
 
 /// Calculate action node name for constant, data type will be derived from constant literal value
 String calculateConstantActionNodeName(const Field & constant_literal);
+
+/** Calculate action node name for window node.
+  * Window node action name can only be part of window function action name.
+  */
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name);
+
+/** Calculate action node name for window node.
+  * Window node action name can only be part of window function action name.
+  */
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context);
 
 }
