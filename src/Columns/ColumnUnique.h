@@ -145,7 +145,7 @@ public:
         const IColumn & nested = *getNestedColumn();
 
         for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
+            if (!nested.isNullAt(i) && nested.getDataAt(i) == value)
                 return i;
 
         return {};

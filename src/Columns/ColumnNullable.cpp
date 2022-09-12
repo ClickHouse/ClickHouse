@@ -41,9 +41,12 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
 }
 
-StringRef ColumnNullable::getDataAt(size_t) const
+StringRef ColumnNullable::getDataAt(size_t n) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
+    if (!isNullAt(n))
+        return getNestedColumn().getDataAt(n);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {} in case if value is NULL", getName());
 }
 
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
