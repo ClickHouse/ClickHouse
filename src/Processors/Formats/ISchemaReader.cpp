@@ -113,7 +113,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
 
     DataTypes data_types = readRowAndGetDataTypes();
-    
+
     /// Check that we read at list one column.
     if (data_types.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
@@ -132,7 +132,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             ErrorCodes::INCORRECT_DATA,
             "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
     }
-    
+
     for (size_t i = 0; i != column_names.size(); ++i)
     {
         auto hint_it = hints.find(column_names[i]);
