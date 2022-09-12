@@ -88,8 +88,8 @@ void JSONEachRowRowOutputFormat::writeSuffix()
 {
     if (settings.json.array_of_rows)
         writeCString("\n]", out);
-
-    writeChar('\n', out);
+    if (!haveWrittenData())
+        writeChar('\n', out);
 }
 
 

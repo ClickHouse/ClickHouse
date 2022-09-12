@@ -114,7 +114,7 @@ void XMLRowOutputFormat::writeRowBetweenDelimiter()
 
 void XMLRowOutputFormat::writeSuffix()
 {
-    writeCString("\t</data>\n", *ostr);
+    writeCString("\n\t</data>\n", *ostr);
 }
 
 
@@ -164,7 +164,7 @@ void XMLRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t row_num
 
 void XMLRowOutputFormat::writeAfterExtremes()
 {
-    writeCString("\t</extremes>\n", *ostr);
+    writeCString("\n\t</extremes>\n", *ostr);
 }
 
 void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
@@ -191,7 +191,7 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
 
     writeCString("\t\t</", *ostr);
     writeCString(title, *ostr);
-    writeCString(">\n", *ostr);
+    writeCString(">", *ostr);
 }
 
 

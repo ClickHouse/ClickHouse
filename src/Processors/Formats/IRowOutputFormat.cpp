@@ -26,7 +26,7 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (!first_row || getRowsReadBefore() != 0)
+        if (haveWrittenData())
             writeRowBetweenDelimiter();
 
         write(columns, row);

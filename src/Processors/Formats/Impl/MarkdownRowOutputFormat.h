@@ -21,6 +21,7 @@ private:
     /// |columnName1|columnName2|...|columnNameN|
     /// |:-:|:-:|...|:-:|
     void writePrefix() override;
+    void writeSuffix() override;
 
     /// Write '|' before each row
     void writeRowStartDelimiter() override;

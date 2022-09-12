@@ -35,7 +35,9 @@ private:
     void writeFieldDelimiter() override;
     void writeRowBetweenDelimiter() override;
     void writeBeforeTotals() override;
+    void writeAfterTotals() override;
     void writeBeforeExtremes() override;
+    void writeAfterExtremes() override;
 
     void writePrefix() override;
     void writeSuffix() override;
