@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/string-functions
 sidebar_position: 40
 sidebar_label: Strings
 ---
@@ -495,23 +494,26 @@ If the ‘s’ string is non-empty and does not contain the ‘c’ character at
 
 Returns the string ‘s’ that was converted from the encoding in ‘from’ to the encoding in ‘to’.
 
-## base58Encode(plaintext)
+## Base58Encode(plaintext[, alphabet_name]), Base58Decode(encoded_text[, alphabet_name])
 
-Accepts a String and encodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
+Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using specified alphabet.
 
 **Syntax**
 
 ```sql
-base58Encode(plaintext)
+base58Encode(decoded[, alphabet_name])
+base58Decode(encoded[, alphabet_name])
 ```
 
 **Arguments**
 
-- `plaintext` — [String](../../sql-reference/data-types/string.md) column or constant.
+- `decoded` — [String](../../sql-reference/data-types/string.md) column or constant.
+- `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
+- `alphabet_name` — String constant. Specifies alphabet used for encoding. Possible values: `gmp`, `bitcoin`, `ripple`, `flickr`. Default: `bitcoin`.
 
 **Returned value**
 
--   A string containing encoded value of 1st argument.
+-   A string containing encoded/decoded value of 1st argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -520,49 +522,18 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
-SELECT base58Encode('Encoded');
+SELECT base58Encode('encode', 'flickr');
+SELECT base58Decode('izCFiDUY', 'ripple');
 ```
 
 Result:
 ```text
-┌─base58Encode('Encoded')─┐
-│ 3dc8KtHrwM              │
-└─────────────────────────┘
-```
-
-## base58Decode(encoded_text)
-
-Accepts a String and decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
-
-**Syntax**
-
-```sql
-base58Decode(encoded_text)
-```
-
-**Arguments**
-
-- `encoded_text` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
-
-**Returned value**
-
--   A string containing decoded value of 1st argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT base58Decode('3dc8KtHrwM');
-```
-
-Result:
-```text
-┌─base58Decode('3dc8KtHrwM')─┐
-│ Encoded                    │
-└────────────────────────────┘
+┌─base58Encode('encode', 'flickr')─┐
+│ SvyTHb1D                         │
+└──────────────────────────────────┘
+┌─base58Decode('izCFiDUY', 'ripple')─┐
+│ decode                             │
+└────────────────────────────────────┘
 ```
 
 ## base64Encode(s)

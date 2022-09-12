@@ -24,23 +24,6 @@ option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
 option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
 option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
 
-# X86: Allow compilation for a SSE2-only target machine. Done by a special build in CI for embedded or very old hardware.
-option (NO_SSE3_OR_HIGHER "Disable SSE3 or higher on x86_64" 0)
-if (NO_SSE3_OR_HIGHER)
-    SET(ENABLE_SSSE3 0)
-    SET(ENABLE_SSE41 0)
-    SET(ENABLE_SSE42 0)
-    SET(ENABLE_PCLMULQDQ 0)
-    SET(ENABLE_POPCNT 0)
-    SET(ENABLE_AVX 0)
-    SET(ENABLE_AVX2 0)
-    SET(ENABLE_AVX512 0)
-    SET(ENABLE_AVX512_VBMI 0)
-    SET(ENABLE_BMI 0)
-    SET(ENABLE_AVX2_FOR_SPEC_OP 0)
-    SET(ENABLE_AVX512_FOR_SPEC_OP 0)
-endif()
-
 option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
 
 if (ARCH_NATIVE)

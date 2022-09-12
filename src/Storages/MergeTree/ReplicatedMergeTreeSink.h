@@ -17,8 +17,6 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 
 class ReplicatedMergeTreeSink : public SinkToStorage
@@ -32,7 +30,6 @@ public:
         size_t max_parts_per_block_,
         bool quorum_parallel_,
         bool deduplicate_,
-        bool majority_quorum_,
         ContextPtr context_,
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
@@ -69,34 +66,24 @@ private:
     };
 
     QuorumInfo quorum_info;
-
-    /// Checks active replicas.
-    /// Returns total number of replicas.
-    size_t checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
+    void checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(
         zkutil::ZooKeeperPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id,
-        DataPartStorageBuilderPtr part_builder,
-        size_t replicas_num);
+        DataPartStorageBuilderPtr part_builder);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(
         zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
-        const std::string & quorum_path, const std::string & is_active_node_value, size_t replicas_num) const;
+        const std::string & quorum_path, const std::string & is_active_node_value) const;
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
-
-    /// Empty means use majority quorum.
-    std::optional<size_t> required_quorum_size;
-
-    size_t getQuorumSize(size_t replicas_num) const;
-    bool isQuorumEnabled() const;
-
+    size_t quorum;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
@@ -109,8 +96,6 @@ private:
     Poco::Logger * log;
 
     ContextPtr context;
-    StorageSnapshotPtr storage_snapshot;
-
     UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 
     /// We can delay processing for previous chunk and start writing a new one.

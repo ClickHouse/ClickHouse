@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -23,7 +22,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
-#include <fmt/format.h>
 
 namespace DB::ErrorCodes
 {
@@ -44,50 +42,37 @@ static bool filterColumnIsNotAmongAggregatesArguments(const AggregateDescription
     return true;
 }
 
-/// Assert that `node->children` has at least `child_num` elements
-static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
-{
-    auto & child = node->step;
-    if (child_num > child->getInputStreams().size() || child_num > node->children.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of children: expected at least {}, got {} children and {} streams",
-                        child_num, child->getInputStreams().size(), node->children.size());
-}
-
-static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
+static size_t
+tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
+                    bool can_remove_filter = true, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
-    checkChildrenSize(child_node, child_idx + 1);
 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
 
-    auto * filter = assert_cast<FilterStep *>(parent.get());
+    auto * filter = static_cast<FilterStep *>(parent.get());
     const auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
     bool removes_filter = filter->removesFilterColumn();
 
+    // std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
+
+    if (child_idx >= child->getInputStreams().size() || child_idx >= child_node->children.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Child index {} is out of range (streams: {}, children: {})",
+                        child_idx, child->getInputStreams().size(), child_node->children.size());
+
     const auto & all_inputs = child->getInputStreams()[child_idx].header.getColumnsWithTypeAndName();
 
     auto split_filter = expression->cloneActionsForFilterPushDown(filter_column_name, removes_filter, allowed_inputs, all_inputs);
-    return split_filter;
-}
+    if (!split_filter)
+        return 0;
 
-static size_t
-tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const ActionsDAGPtr & split_filter,
-                    bool can_remove_filter = true, size_t child_idx = 0)
-{
-    QueryPlan::Node * child_node = parent_node->children.front();
-    checkChildrenSize(child_node, child_idx + 1);
+    // std::cerr << "===============\n" << expression->dumpDAG() << std::endl;
+    // std::cerr << "---------------\n" << split_filter->dumpDAG() << std::endl;
 
-    auto & parent = parent_node->step;
-    auto & child = child_node->step;
-
-    auto * filter = assert_cast<FilterStep *>(parent.get());
-    const auto & expression = filter->getExpression();
-    const auto & filter_column_name = filter->getFilterColumnName();
-
-    const auto * filter_node = expression->tryFindInOutputs(filter_column_name);
-    if (!filter_node && !filter->removesFilterColumn())
+    const auto * filter_node = expression->tryFindInIndex(filter_column_name);
+    if (!filter_node && !removes_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
                         filter_column_name, expression->dumpDAG());
@@ -104,10 +89,9 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
     /// Expression/Filter -> Aggregating -> Filter -> Something
 
     /// New filter column is the first one.
-    String split_filter_column_name = split_filter->getOutputs().front()->result_name;
-
+    auto split_filter_column_name = (*split_filter->getIndex().begin())->result_name;
     node.step = std::make_unique<FilterStep>(
-        node.children.at(0)->step->getOutputStream(), split_filter, std::move(split_filter_column_name), can_remove_filter);
+        node.children.at(0)->step->getOutputStream(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
 
     if (auto * transforming_step = dynamic_cast<ITransformingStep *>(child.get()))
     {
@@ -132,29 +116,6 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
         filter->updateInputStream(child->getOutputStream());
 
     return 3;
-}
-
-static size_t
-tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
-                    bool can_remove_filter = true, size_t child_idx = 0)
-{
-    if (auto split_filter = splitFilter(parent_node, allowed_inputs, child_idx))
-        return tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
-    return 0;
-}
-
-
-/// Push down filter through specified type of step
-template <typename Step>
-static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
-{
-    if (typeid_cast<Step *>(child.get()))
-    {
-        Names allowed_inputs = child->getOutputStream().header.getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
-            return updated_steps;
-    }
-    return 0;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
@@ -250,21 +211,25 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
-    if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
+    {
+        Names allowed_inputs = distinct->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+            return updated_steps;
+    }
 
     if (auto * join = typeid_cast<JoinStep *>(child.get()))
     {
-        auto join_push_down = [&](JoinKind kind) -> size_t
+        auto join_push_down = [&](ASTTableJoin::Kind kind) -> size_t
         {
             const auto & table_join = join->getJoin()->getTableJoin();
 
             /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
             /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-            if (table_join.kind() != JoinKind::Inner && table_join.kind() != kind)
+            if (table_join.kind() != ASTTableJoin::Kind::Inner && table_join.kind() != kind)
                 return 0;
 
-            bool is_left = kind == JoinKind::Left;
+            bool is_left = kind == ASTTableJoin::Kind::Left;
             const auto & input_header = is_left ? join->getInputStreams().front().header : join->getInputStreams().back().header;
             const auto & res_header = join->getOutputStream().header;
             Names allowed_keys;
@@ -283,37 +248,23 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 allowed_keys.push_back(name);
             }
 
-            /// For left JOIN, push down to the first child; for right - to the second one.
-            const auto child_idx = is_left ? 0 : 1;
-            ActionsDAGPtr split_filter = splitFilter(parent_node, allowed_keys, child_idx);
-            if (!split_filter)
-                return 0;
-            /*
-             * We should check the presence of a split filter column name in `source_columns` to avoid removing the required column.
-             *
-             * Example:
-             * A filter expression is `a AND b = c`, but `b` and `c` belong to another side of the join and not in `allowed_keys`, so the final split filter is just `a`.
-             * In this case `a` can be in `source_columns` but not `and(a, equals(b, c))`.
-             *
-             * New filter column is the first one.
-             */
-            const String & split_filter_column_name = split_filter->getOutputs().front()->result_name;
-            bool can_remove_filter = source_columns.end() == std::find(source_columns.begin(), source_columns.end(), split_filter_column_name);
-            const size_t updated_steps = tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
+            const bool can_remove_filter
+                = std::find(source_columns.begin(), source_columns.end(), filter->getFilterColumnName()) == source_columns.end();
+            size_t updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys, can_remove_filter, is_left ? 0 : 1);
             if (updated_steps > 0)
             {
-                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join", split_filter_column_name, kind);
+                LOG_DEBUG(&Poco::Logger::get("tryPushDownFilter"), "Pushed down filter to {} side of join", kind);
             }
             return updated_steps;
         };
 
-        if (size_t updated_steps = join_push_down(JoinKind::Left))
+        if (size_t updated_steps = join_push_down(ASTTableJoin::Kind::Left))
             return updated_steps;
 
         /// For full sorting merge join we push down both to the left and right tables, because left and right streams are not independent.
         if (join->allowPushDownToRight())
         {
-            if (size_t updated_steps = join_push_down(JoinKind::Right))
+            if (size_t updated_steps = join_push_down(ASTTableJoin::Kind::Right))
                 return updated_steps;
         }
     }
@@ -333,11 +284,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
-        return updated_steps;
-
-    if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (typeid_cast<SortingStep *>(child.get()))
+    {
+        Names allowed_inputs = child->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+            return updated_steps;
+    }
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {

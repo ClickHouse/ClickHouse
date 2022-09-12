@@ -10,16 +10,18 @@ from commit_status_helper import (
     get_commit,
     post_labels,
     remove_labels,
-    reset_mergeable_check,
+    create_simple_check,
 )
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 
-NAME = "Run Check"
+NAME = "Run Check (actions)"
 
 TRUSTED_ORG_IDS = {
+    7409213,  # yandex
+    28471076,  # altinity
     54801242,  # clickhouse
 }
 
@@ -87,19 +89,14 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
     if FORCE_TESTS_LABEL in pr_info.labels:
-        print(f"Label '{FORCE_TESTS_LABEL}' set, forcing remaining checks")
         return True, f"Labeled '{FORCE_TESTS_LABEL}'", "pending"
 
     if DO_NOT_TEST_LABEL in pr_info.labels:
-        print(f"Label '{DO_NOT_TEST_LABEL}' set, skipping remaining checks")
         return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
-        print(
-            f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
-        )
         return False, "Needs 'can be tested' label", "failure"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
@@ -199,7 +196,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
     description_error, category = check_pr_description(pr_info)
@@ -224,14 +221,14 @@ if __name__ == "__main__":
     elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
         pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
 
-    print(f"Change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
+    print(f"change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
     if pr_labels_to_add:
         post_labels(gh, pr_info, pr_labels_to_add)
 
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    reset_mergeable_check(commit, "skipped")
+    create_simple_check(gh, pr_info)
 
     if description_error:
         print(

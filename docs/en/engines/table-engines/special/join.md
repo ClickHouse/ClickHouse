@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/special/join
 sidebar_position: 70
 sidebar_label: Join
 ---

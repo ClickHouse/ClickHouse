@@ -65,4 +65,3 @@ std::unique_ptr <DB::ICommand> makeCommandMove();
 std::unique_ptr <DB::ICommand> makeCommandRead();
 std::unique_ptr <DB::ICommand> makeCommandRemove();
 std::unique_ptr <DB::ICommand> makeCommandWrite();
-std::unique_ptr <DB::ICommand> makeCommandMkDir();

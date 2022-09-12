@@ -554,13 +554,4 @@ private:
     ZooKeeperRequestFactory();
 };
 
-enum class PathMatchResult
-{
-    NOT_MATCH,
-    EXACT,
-    IS_CHILD
-};
-
-PathMatchResult matchPath(std::string_view path, std::string_view match_to);
-
 }

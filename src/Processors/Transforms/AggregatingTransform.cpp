@@ -203,7 +203,7 @@ public:
     {
         auto & output = outputs.front();
 
-        if (finished && single_level_chunks.empty())
+        if (finished && !has_input)
         {
             output.finish();
             return Status::Finished;
@@ -230,7 +230,7 @@ public:
         if (!processors.empty())
             return Status::ExpandPipeline;
 
-        if (!single_level_chunks.empty())
+        if (has_input)
             return preparePushToOutput();
 
         /// Single level case.
@@ -244,14 +244,11 @@ public:
 private:
     IProcessor::Status preparePushToOutput()
     {
-        if (single_level_chunks.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Some ready chunks expected");
-
         auto & output = outputs.front();
-        output.push(std::move(single_level_chunks.back()));
-        single_level_chunks.pop_back();
+        output.push(std::move(current_chunk));
+        has_input = false;
 
-        if (finished && single_level_chunks.empty())
+        if (finished)
         {
             output.finish();
             return Status::Finished;
@@ -271,17 +268,17 @@ private:
             {
                 auto chunk = input.pull();
                 auto bucket = getInfoFromChunk(chunk)->bucket_num;
-                two_level_chunks[bucket] = std::move(chunk);
+                chunks[bucket] = std::move(chunk);
             }
         }
 
         if (!shared_data->is_bucket_processed[current_bucket_num])
             return Status::NeedData;
 
-        if (!two_level_chunks[current_bucket_num])
+        if (!chunks[current_bucket_num])
             return Status::NeedData;
 
-        output.push(std::move(two_level_chunks[current_bucket_num]));
+        output.push(std::move(chunks[current_bucket_num]));
 
         ++current_bucket_num;
         if (current_bucket_num == NUM_BUCKETS)
@@ -301,15 +298,26 @@ private:
     size_t num_threads;
 
     bool is_initialized = false;
+    bool has_input = false;
     bool finished = false;
 
-    Chunks single_level_chunks;
+    Chunk current_chunk;
 
     UInt32 current_bucket_num = 0;
     static constexpr Int32 NUM_BUCKETS = 256;
-    std::array<Chunk, NUM_BUCKETS> two_level_chunks;
+    std::array<Chunk, NUM_BUCKETS> chunks;
 
     Processors processors;
+
+    void setCurrentChunk(Chunk chunk)
+    {
+        if (has_input)
+            throw Exception("Current chunk was already set in "
+                            "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
+
+        has_input = true;
+        current_chunk = std::move(chunk);
+    }
 
     void initialize()
     {
@@ -331,7 +339,7 @@ private:
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
-            single_level_chunks.emplace_back(convertToChunk(block));
+            setCurrentChunk(convertToChunk(block));
         }
     }
 
@@ -356,10 +364,9 @@ private:
         else
             throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
-        auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
-        for (auto & block : blocks)
-            single_level_chunks.emplace_back(convertToChunk(block));
+        auto block = params->aggregator.prepareBlockAndFillSingleLevel(*first, params->final);
 
+        setCurrentChunk(convertToChunk(block));
         finished = true;
     }
 

@@ -64,8 +64,6 @@ public:
 
         std::vector<Stream> streams;
 
-        scope_guard temporary_directory_lock;
-
         void finalize();
     };
 

@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/utilities/clickhouse-copier
 sidebar_position: 59
 sidebar_label: clickhouse-copier
 ---

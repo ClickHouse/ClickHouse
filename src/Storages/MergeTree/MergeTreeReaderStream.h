@@ -76,5 +76,4 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 };
-
 }

@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/integrations/
 sidebar_label: "Движки таблиц для интеграции"
 sidebar_position: 30
 ---

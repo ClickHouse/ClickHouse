@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/cli
 sidebar_position: 17
 sidebar_label: "Клиент командной строки"
 ---
@@ -83,13 +82,6 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 ``` bash
 clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
-```
-
-Также возможно устанавливать значения параметров, находясь внутри интерактивной сессии:
-``` bash
-$ clickhouse-client -nq "
-  SET param_parName='[1, 2]';
-  SELECT {parName:Array(UInt16)}"
 ```
 
 #### Синтаксис запроса {#cli-queries-with-parameters-syntax}

@@ -50,7 +50,6 @@ public:
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);
-    void createFromSingleObject(const std::string & relative_path, size_t bytes_size, size_t ref_count_, bool is_read_only_);
 
     void serialize(WriteBuffer & buf, bool sync) const;
     std::string serializeToString() const;

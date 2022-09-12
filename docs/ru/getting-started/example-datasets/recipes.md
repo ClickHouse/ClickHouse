@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/recipes
 sidebar_position: 16
 sidebar_label: Набор данных кулинарных рецептов
 ---

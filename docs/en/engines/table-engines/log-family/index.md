@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/log-family/
 sidebar_position: 20
 sidebar_label:  Log Family
 ---

@@ -236,9 +236,9 @@ void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & c
     delegate->applyNewSettings(config, context, config_prefix, map);
 }
 
-DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage()
+DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage(const String & name)
 {
-    return delegate->createDiskObjectStorage();
+    return delegate->createDiskObjectStorage(name);
 }
 
 }

@@ -3,7 +3,7 @@
 #include <memory>
 #include <shared_mutex>
 #include <Storages/IStorage.h>
-#include <Interpreters/IKeyValueEntity.h>
+#include <Storages/IKVStorage.h>
 #include <rocksdb/status.h>
 
 
@@ -23,7 +23,7 @@ class Context;
 /// Operates with rocksdb data structures via rocksdb API (holds pointer to rocksdb::DB inside for that).
 /// Storage have one primary key.
 /// Values are serialized into raw strings to store in rocksdb.
-class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
+class StorageEmbeddedRocksDB final : public IKeyValueStorage, WithContext
 {
     friend class EmbeddedRocksDBSink;
 public:
@@ -32,10 +32,7 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         ContextPtr context_,
-        const String & primary_key_,
-        Int32 ttl_ = 0,
-        String rocksdb_dir_ = "",
-        bool read_only_ = false);
+        const String & primary_key_);
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
@@ -50,9 +47,6 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
-
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands &, ContextPtr) override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
@@ -69,9 +63,7 @@ public:
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
     Names getPrimaryKey() const override { return {primary_key}; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
-
-    Block getSampleBlock(const Names &) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const override;
 
     /// Return chunk with data for given serialized keys.
     /// If out_null_map is passed, fill it with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
@@ -86,8 +78,6 @@ private:
     RocksDBPtr rocksdb_ptr;
     mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
-    Int32 ttl;
-    bool read_only;
 
     void initDB();
 };

@@ -76,7 +76,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(GetSizeOfEnumType)
+void registerFunctionGetSizeOfEnumType(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGetSizeOfEnumType>();
 }

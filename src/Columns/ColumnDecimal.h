@@ -71,9 +71,9 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    std::string_view getRawData() const override
+    StringRef getRawData() const override
     {
-        return {reinterpret_cast<const char*>(data.data()), byteSize()};
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override

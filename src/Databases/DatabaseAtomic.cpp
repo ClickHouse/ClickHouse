@@ -118,19 +118,13 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
     if (table)
         table->dropInnerTableIfAny(sync, local_context);
     else
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(table_name));
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                        backQuote(getDatabaseName()), backQuote(table_name));
 
-    dropTableImpl(local_context, table_name, sync);
-}
-
-void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & table_name, bool sync)
-{
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
-    StoragePtr table;
     {
         std::lock_guard lock(mutex);
-        table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -423,9 +417,9 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, LoadingStrictnessLevel mode)
+void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool force_restore, bool /*force_attach*/)
 {
-    if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
+    if (!force_restore)
         return;
 
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
@@ -442,17 +436,17 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 }
 
 void DatabaseAtomic::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
 {
-    beforeLoadingMetadata(local_context, mode);
-    DatabaseOrdinary::loadStoredObjects(local_context, mode, skip_startup_tables);
+    beforeLoadingMetadata(local_context, force_restore, force_attach);
+    DatabaseOrdinary::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
 }
 
-void DatabaseAtomic::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+void DatabaseAtomic::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
 {
-    DatabaseOrdinary::startupTables(thread_pool, mode);
+    DatabaseOrdinary::startupTables(thread_pool, force_restore, force_attach);
 
-    if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
+    if (!force_restore)
         return;
 
     NameToPathMap table_names;

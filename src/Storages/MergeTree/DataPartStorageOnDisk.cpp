@@ -208,8 +208,6 @@ void DataPartStorageOnDisk::remove(
     const NameSet & names_not_to_remove,
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
-    bool is_temp,
-    MergeTreeDataPartState state,
     Poco::Logger * log) const
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
@@ -278,7 +276,7 @@ void DataPartStorageOnDisk::remove(
 
         clearDirectory(
             fs::path(to) / proj_dir_name,
-            can_remove_shared_data, names_not_to_remove, projection.checksums, {}, is_temp, state, log, true);
+            can_remove_shared_data, names_not_to_remove, projection.checksums, {}, log, true);
     }
 
     /// It is possible that we are removing the part which have a written but not loaded projection.
@@ -305,7 +303,7 @@ void DataPartStorageOnDisk::remove(
 
                     clearDirectory(
                         fs::path(to) / name,
-                        can_remove_shared_data, names_not_to_remove, tmp_checksums, {}, is_temp, state, log, true);
+                        can_remove_shared_data, names_not_to_remove, tmp_checksums, {}, log, true);
                 }
                 catch (...)
                 {
@@ -315,7 +313,7 @@ void DataPartStorageOnDisk::remove(
         }
     }
 
-    clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, is_temp, state, log, false);
+    clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, log, false);
 }
 
 void DataPartStorageOnDisk::clearDirectory(
@@ -324,22 +322,24 @@ void DataPartStorageOnDisk::clearDirectory(
     const NameSet & names_not_to_remove,
     const MergeTreeDataPartChecksums & checksums,
     const std::unordered_set<String> & skip_directories,
-    bool is_temp,
-    MergeTreeDataPartState state,
     Poco::Logger * log,
     bool is_projection) const
 {
     auto disk = volume->getDisk();
 
-    /// It does not make sense to try fast path for incomplete temporary parts, because some files are probably absent.
-    /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
-    /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
-    bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
-    bool incomplete_temporary_part = is_temporary_part && (!disk->exists(fs::path(dir) / "checksums.txt") || !disk->exists(fs::path(dir) / "columns.txt"));
-    if (checksums.empty() || incomplete_temporary_part)
+    if (checksums.empty())
     {
+        if (is_projection)
+        {
+            LOG_ERROR(
+                log,
+                "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
+                fullPath(disk, dir));
+        }
+
         /// If the part is not completely written, we cannot use fast path by listing files.
         disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+
         return;
     }
 
@@ -415,7 +415,7 @@ std::string DataPartStorageOnDisk::getDiskName() const
 
 std::string DataPartStorageOnDisk::getDiskType() const
 {
-    return toString(volume->getDisk()->getDataSourceDescription().type);
+    return toString(volume->getDisk()->getType());
 }
 
 bool DataPartStorageOnDisk::isStoredOnRemoteDisk() const
@@ -650,31 +650,23 @@ bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & stor
 }
 
 void DataPartStorageOnDisk::backup(
+    TemporaryFilesOnDisks & temp_dirs,
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
     const String & path_in_backup,
-    BackupEntries & backup_entries,
-    bool make_temporary_hard_links,
-    TemporaryFilesOnDisks * temp_dirs) const
+    BackupEntries & backup_entries) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
     fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
 
     auto disk = volume->getDisk();
-
-    fs::path temp_part_dir;
-    std::shared_ptr<TemporaryFileOnDisk> temp_dir_owner;
-    if (make_temporary_hard_links)
-    {
-        assert(temp_dirs);
-        auto temp_dir_it = temp_dirs->find(disk);
-        if (temp_dir_it == temp_dirs->end())
-            temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
-        temp_dir_owner = temp_dir_it->second;
-        fs::path temp_dir = temp_dir_owner->getPath();
-        temp_part_dir = temp_dir / part_path_in_backup.relative_path();
-        disk->createDirectories(temp_part_dir);
-    }
+    auto temp_dir_it = temp_dirs.find(disk);
+    if (temp_dir_it == temp_dirs.end())
+        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
+    auto temp_dir_owner = temp_dir_it->second;
+    fs::path temp_dir = temp_dir_owner->getPath();
+    fs::path temp_part_dir = temp_dir / part_path_in_backup.relative_path();
+    disk->createDirectories(temp_part_dir);
 
     /// For example,
     /// part_path_in_backup = /data/test/table/0_1_1_0
@@ -691,18 +683,13 @@ void DataPartStorageOnDisk::backup(
             continue; /// Skip *.proj files - they're actually directories and will be handled.
         String filepath_on_disk = part_path_on_disk / filepath;
         String filepath_in_backup = part_path_in_backup / filepath;
+        String hardlink_filepath = temp_part_dir / filepath;
 
-        if (make_temporary_hard_links)
-        {
-            String hardlink_filepath = temp_part_dir / filepath;
-            disk->createHardLink(filepath_on_disk, hardlink_filepath);
-            filepath_on_disk = hardlink_filepath;
-        }
-
+        disk->createHardLink(filepath_on_disk, hardlink_filepath);
         UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
         backup_entries.emplace_back(
             filepath_in_backup,
-            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, checksum.file_size, file_hash, temp_dir_owner));
+            std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
     }
 
     for (const auto & filepath : files_without_checksums)

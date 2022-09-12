@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/other-functions
 sidebar_position: 67
 sidebar_label: Other
 ---
@@ -1823,13 +1822,10 @@ Result:
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x\[, message\[, error_code\]\])
+## throwIf(x\[, custom_message\])
 
 Throw an exception if the argument is non zero.
-`message` - is an optional parameter: a constant string providing a custom error message
-`error_code` - is an optional parameter: a constant integer providing a custom error code
-
-To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throwif` must be enabled.
+custom_message - is an optional parameter: a constant string, provides an error message
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);

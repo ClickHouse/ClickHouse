@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/third-party/integrations
 sidebar_position: 27
 sidebar_label: "Библиотеки для интеграции от сторонних разработчиков"
 ---

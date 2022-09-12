@@ -31,18 +31,17 @@ public:
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
-    /// Sorting scope
-    enum class SortScope
+    /// How data is sorted.
+    enum class SortMode
     {
-        None,
         Chunk, /// Separate chunks are sorted
-        Stream, /// Each data steam is sorted
-        Global, /// Data is globally sorted
+        Port, /// Data from each port is sorted
+        Stream, /// Data is globally sorted
     };
 
     /// It is not guaranteed that header has columns from sort_description.
     SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::None;
+    SortMode sort_mode = SortMode::Chunk;
 
     /// Things which may be added:
     /// * limit
@@ -54,7 +53,7 @@ public:
         return distinct_columns == other.distinct_columns
             && has_single_port == other.has_single_port
             && sort_description == other.sort_description
-            && (sort_description.empty() || sort_scope == other.sort_scope);
+            && (sort_description.empty() || sort_mode == other.sort_mode);
     }
 
     bool hasEqualHeaderWith(const DataStream & other) const

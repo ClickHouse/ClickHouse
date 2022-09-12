@@ -272,19 +272,6 @@ private:
             writeNumber2(target + 6, ToSecondImpl::execute(source, timezone));
         }
 
-        static void timezoneOffset(char * target, Time source, const DateLUTImpl & timezone)
-        {
-            auto offset = TimezoneOffsetImpl::execute(source, timezone);
-            if (offset < 0)
-            {
-                *target = '-';
-                offset = -offset;
-            }
-
-            writeNumber2(target + 1, offset / 3600);
-            writeNumber2(target + 3, offset % 3600 / 60);
-        }
-
         static void quarter(char * target, Time source, const DateLUTImpl & timezone)
         {
             *target += ToQuarterImpl::execute(source, timezone);
@@ -645,12 +632,6 @@ public:
                         result.append("0");
                         break;
 
-                    // Offset from UTC timezone as +hhmm or -hhmm
-                    case 'z':
-                        instructions.emplace_back(&Action<T>::timezoneOffset, 5);
-                        result.append("+0000");
-                        break;
-
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
 
                     // Minute (00-59)
@@ -741,19 +722,19 @@ struct NameFormatDateTime
 
 struct NameFromUnixTime
 {
-    static constexpr auto name = "fromUnixTimestamp";
+    static constexpr auto name = "FROM_UNIXTIME";
 };
 
 using FunctionFormatDateTime = FunctionFormatDateTimeImpl<NameFormatDateTime, false>;
-using FunctionFromUnixTimestamp = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
+using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
 
 }
 
-REGISTER_FUNCTION(FormatDateTime)
+void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatDateTime>();
-    factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", "fromUnixTimestamp");
+    factory.registerFunction<FunctionFROM_UNIXTIME>();
+    factory.registerAlias("fromUnixTimestamp", "FROM_UNIXTIME");
 }
 
 }
