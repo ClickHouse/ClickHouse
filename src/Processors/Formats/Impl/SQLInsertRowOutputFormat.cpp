@@ -84,7 +84,8 @@ void SQLInsertRowOutputFormat::writeSuffix()
 {
     if (rows_in_line != 0)
         writeChar(';', out);
-    writeChar('\n', out);
+    if (haveWrittenData())
+        writeChar('\n', out);
 }
 
 

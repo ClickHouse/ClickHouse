@@ -38,7 +38,9 @@ protected:
     void writeFieldDelimiter() override final;
     void writeRowBetweenDelimiter() override;
     void writeBeforeTotals() override final;
+    void writeAfterTotals() override final;
     void writeBeforeExtremes() override final;
+    void writeAfterExtremes() override final;
 
     void writePrefix() override;
     void writeSuffix() override;

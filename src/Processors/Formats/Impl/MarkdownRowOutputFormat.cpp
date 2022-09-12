@@ -55,6 +55,12 @@ void MarkdownRowOutputFormat::writeRowBetweenDelimiter()
     writeChar('\n', out);
 }
 
+void MarkdownRowOutputFormat::writeSuffix()
+{
+    if (haveWrittenData())
+        writeChar('\n', out);
+}
+
 void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     serialization.serializeTextEscaped(column, row_num, out, format_settings);

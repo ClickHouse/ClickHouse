@@ -99,7 +99,8 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
 
 void JSONCompactEachRowRowOutputFormat::writeSuffix()
 {
-    writeChar('\n', out);
+    if (haveWrittenData())
+        writeChar('\n', out);
 }
 
 void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)

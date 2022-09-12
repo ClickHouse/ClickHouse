@@ -64,18 +64,29 @@ void CSVRowOutputFormat::writeRowBetweenDelimiter()
 
 void CSVRowOutputFormat::writeSuffix()
 {
-    /// Write '\n' after data.
-    writeRowBetweenDelimiter();
+    /// Write '\n' after data if we had any data.
+    if (haveWrittenData())
+        writeRowBetweenDelimiter();
 }
 
 void CSVRowOutputFormat::writeBeforeTotals()
 {
-    writeChar('\n', out);
+    writeRowBetweenDelimiter();
 }
 
 void CSVRowOutputFormat::writeBeforeExtremes()
 {
-    writeChar('\n', out);
+    writeRowBetweenDelimiter();
+}
+
+void CSVRowOutputFormat::writeAfterTotals()
+{
+    writeRowBetweenDelimiter();
+}
+
+void CSVRowOutputFormat::writeAfterExtremes()
+{
+    writeRowBetweenDelimiter();
 }
 
 

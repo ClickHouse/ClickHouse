@@ -58,6 +58,8 @@ protected:
     virtual void writeAfterExtremes() {}
     virtual void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
+    bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
+
     size_t num_columns;
     DataTypes types;
     Serializations serializations;

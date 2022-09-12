@@ -69,17 +69,29 @@ void TabSeparatedRowOutputFormat::writeRowBetweenDelimiter()
 
 void TabSeparatedRowOutputFormat::writeSuffix()
 {
-    writeRowBetweenDelimiter();
+    /// Output '\n' an the end of data if we had any data.
+    if (haveWrittenData())
+        writeRowBetweenDelimiter();
 }
 
 void TabSeparatedRowOutputFormat::writeBeforeTotals()
 {
-    writeChar('\n', out);
+    writeRowBetweenDelimiter();
 }
 
 void TabSeparatedRowOutputFormat::writeBeforeExtremes()
 {
-    writeChar('\n', out);
+    writeRowBetweenDelimiter();
+}
+
+void TabSeparatedRowOutputFormat::writeAfterTotals()
+{
+    writeRowBetweenDelimiter();
+}
+
+void TabSeparatedRowOutputFormat::writeAfterExtremes()
+{
+    writeRowBetweenDelimiter();
 }
 
 void registerOutputFormatTabSeparated(FormatFactory & factory)
