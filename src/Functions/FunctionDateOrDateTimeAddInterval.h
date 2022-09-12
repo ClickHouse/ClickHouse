@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -716,13 +717,8 @@ public:
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
             }
         }
-        else
-        {
-            static_assert(false, "Failed to resolve return type.");
-        }
 
-        // To make PVS-Studio and GCC happy.
-        return nullptr;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
