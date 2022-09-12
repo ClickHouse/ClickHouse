@@ -33,9 +33,10 @@ list (APPEND PRIVATE_LIBS
         divide_impl
 )
 
-if (USE_BLAKE3)
+
+if (TARGET ch_rust::blake3)
     list (APPEND PUBLIC_LIBS
-        ch_contrib::blake3
+        ch_rust::blake3
     )
 endif()
 
