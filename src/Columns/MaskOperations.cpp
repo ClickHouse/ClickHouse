@@ -119,7 +119,7 @@ size_t extractMaskNumericImpl(
                 (*nulls)[i] = 1;
         }
         else
-            value = !!data[index];
+            value = static_cast<bool>(data[index]);
 
         if constexpr (inverted)
             value = !value;
@@ -335,4 +335,3 @@ void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
 }
 
 }
-

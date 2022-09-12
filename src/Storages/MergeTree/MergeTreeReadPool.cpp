@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/formatReadable.h>
 #include <base/range.h>
 
@@ -22,7 +23,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     size_t sum_marks_,
     size_t min_marks_for_concurrent_read_,
     RangesInDataParts && parts_,
-    const MergeTreeData & data_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const Names & column_names_,
@@ -32,7 +32,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     bool do_not_steal_tasks_)
     : backoff_settings{backoff_settings_}
     , backoff_state{threads_}
-    , data{data_}
     , storage_snapshot{storage_snapshot_}
     , column_names{column_names_}
     , virtual_column_names{virtual_column_names_}
@@ -214,7 +213,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
         per_part_sum_marks.push_back(sum_marks);
 
         auto task_columns = getReadTaskColumns(
-            data, storage_snapshot, part.data_part,
+            LoadedMergeTreeDataPartInfoForReader(part.data_part), storage_snapshot,
             column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
