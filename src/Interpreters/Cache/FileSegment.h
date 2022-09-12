@@ -223,7 +223,6 @@ private:
     size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     size_t getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    size_t getAvailableSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     String getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
