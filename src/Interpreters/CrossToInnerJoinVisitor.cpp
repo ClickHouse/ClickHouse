@@ -115,7 +115,7 @@ std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
     const Aliases & aliases)
 {
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-    for (const auto & node : collectConjunctions(ast))
+    for (const auto & node : splitConjunctionsAst(ast))
     {
         if (const auto * func = node->as<ASTFunction>(); func && func->name == NameEquals::name)
         {

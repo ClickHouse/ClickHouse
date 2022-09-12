@@ -4,6 +4,7 @@
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -51,42 +52,14 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     return false;
 }
 
-static ASTs splitConjunctionPredicate(const std::initializer_list<const ASTPtr> & predicates)
-{
-    std::vector<ASTPtr> res;
-
-    for (const auto & predicate : predicates)
-    {
-        if (!predicate)
-            continue;
-
-        res.emplace_back(predicate);
-
-        for (size_t idx = 0; idx < res.size();)
-        {
-            ASTPtr expression = res.at(idx);
-
-            if (const auto * function = expression->as<ASTFunction>(); function && function->name == "and")
-            {
-                res.erase(res.begin() + idx);
-
-                for (auto & child : function->arguments->children)
-                    res.emplace_back(child);
-
-                continue;
-            }
-            ++idx;
-        }
-    }
-
-    return res;
-}
-
 std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const ASTPtr & where, const ASTPtr & prewhere)
 {
     std::vector<ASTs> tables_predicates(tables_with_columns.size());
 
-    for (const auto & predicate_expression : splitConjunctionPredicate({where, prewhere}))
+    ASTs predicate_expressions;
+    splitConjunctionsAst(where, predicate_expressions);
+    splitConjunctionsAst(prewhere, predicate_expressions);
+    for (const auto & predicate_expression : predicate_expressions)
     {
         ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables_with_columns};
         ExpressionInfoVisitor(expression_info).visit(predicate_expression);
@@ -186,7 +159,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
         return res;
     };
 
-    for (const auto & moving_predicate: splitConjunctionPredicate({select_query.having()}))
+    for (const auto & moving_predicate : splitConjunctionsAst(select_query.having()))
     {
         TablesWithColumns tables;
         ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables};
