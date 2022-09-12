@@ -1047,7 +1047,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = aggregates_pool->alloc(0);
         for (size_t i = row_begin; i < row_end; ++i)
         {
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder> && Method::State::has_cheap_key_calculation)
             {
                 if (i == row_begin + prefetching.iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
@@ -1113,7 +1113,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         if constexpr (!no_more_keys)
         {
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder> && Method::State::has_cheap_key_calculation)
             {
                 if (i == row_begin + prefetching.iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
