@@ -41,23 +41,24 @@ struct Base58Encode
 
         const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
-        auto * dst_pos = dst;
 
-        size_t src_offset_prev = 0;
+        size_t prev_src_offset = 0;
+        size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t srclen = src_offsets[row] - src_offset_prev;
-            auto encoded_size = encodeBase58(src, srclen, dst_pos);
+            size_t current_src_offset = src_offsets[row];
+            size_t src_length = current_src_offset - prev_src_offset - 1;
+            size_t encoded_size = encodeBase58(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
+            prev_src_offset = current_src_offset;
+            current_dst_offset += encoded_size;
+            dst[current_dst_offset] = 0;
+            ++current_dst_offset;
 
-            src += srclen;
-            dst_pos += encoded_size;
-
-            dst_offsets[row] = dst_pos - dst;
-            src_offset_prev = src_offsets[row];
+            dst_offsets[row] = current_dst_offset;
         }
 
-        dst_data.resize(dst_pos - dst);
+        dst_data.resize(current_dst_offset);
     }
 };
 
@@ -82,26 +83,27 @@ struct Base58Decode
 
         const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
-        auto * dst_pos = dst;
 
-        size_t src_offset_prev = 0;
+        size_t prev_src_offset = 0;
+        size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t srclen = src_offsets[row] - src_offset_prev;
-
-            auto decoded_size = decodeBase58(src, srclen, dst_pos);
+            size_t current_src_offset = src_offsets[row];
+            size_t src_length = current_src_offset - prev_src_offset - 1;
+            std::optional<size_t> decoded_size = decodeBase58(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
             if (!decoded_size)
                 throw Exception("Invalid Base58 value, cannot be decoded", ErrorCodes::BAD_ARGUMENTS);
 
-            src += srclen;
-            dst_pos += decoded_size;
+            prev_src_offset = current_src_offset;
+            current_dst_offset += *decoded_size;
+            dst[current_dst_offset] = 0;
+            ++current_dst_offset;
 
-            dst_offsets[row] = dst_pos - dst;
-            src_offset_prev = src_offsets[row];
+            dst_offsets[row] = current_dst_offset;
         }
 
-        dst_data.resize(dst_pos - dst);
+        dst_data.resize(current_dst_offset);
     }
 };
 
