@@ -1007,13 +1007,12 @@ public:
     }
 };
 
-/// General function layer
-class FunctionLayer : public Layer
+
+class OrdinaryFunctionLayer : public Layer
 {
 public:
-    explicit FunctionLayer(String function_name_) : function_name(function_name_)
-    {
-    }
+    explicit OrdinaryFunctionLayer(String function_name_, bool allow_function_parameters_ = true)
+        : function_name(function_name_), allow_function_parameters(allow_function_parameters_){}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1102,7 +1101,7 @@ public:
                         , ErrorCodes::SYNTAX_ERROR);
                 }
 
-                if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+                if (allow_function_parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
                     parameters = std::make_shared<ASTExpressionList>();
                     std::swap(parameters->children, elements);
@@ -1206,6 +1205,8 @@ private:
 
     String function_name;
     ASTPtr parameters;
+
+    bool allow_function_parameters;
 };
 
 /// Layer for priority brackets and tuple function
@@ -2048,6 +2049,67 @@ private:
 };
 
 
+std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool allow_function_parameters_ = true)
+{
+    /// Special cases for expressions that look like functions but contain some syntax sugar:
+
+    /// CAST, EXTRACT, POSITION, EXISTS
+    /// DATE_ADD, DATEADD, TIMESTAMPADD, DATE_SUB, DATESUB, TIMESTAMPSUB,
+    /// DATE_DIFF, DATEDIFF, TIMESTAMPDIFF, TIMESTAMP_DIFF,
+    /// SUBSTRING, TRIM, LTRIM, RTRIM, POSITION
+
+    /// Can be parsed as a composition of functions, but the contents must be unwrapped:
+    /// POSITION(x IN y) -> POSITION(in(x, y)) -> POSITION(y, x)
+
+    /// Can be parsed as a function, but not always:
+    /// CAST(x AS type) - alias has to be unwrapped
+    /// CAST(x AS type(params))
+
+    /// Can be parsed as a function, but some identifier arguments have special meanings.
+    /// DATE_ADD(MINUTE, x, y) -> addMinutes(x, y)
+    /// DATE_DIFF(MINUTE, x, y)
+
+    /// Have keywords that have to processed explicitly:
+    /// EXTRACT(x FROM y)
+    /// TRIM(BOTH|LEADING|TRAILING x FROM y)
+    /// SUBSTRING(x FROM a)
+    /// SUBSTRING(x FROM a FOR b)
+
+    String function_name = getIdentifierName(identifier);
+    String function_name_lowercase = Poco::toLower(function_name);
+
+    if (function_name_lowercase == "cast")
+        return std::make_unique<CastLayer>();
+    else if (function_name_lowercase == "extract")
+        return std::make_unique<ExtractLayer>();
+    else if (function_name_lowercase == "substring")
+        return std::make_unique<SubstringLayer>();
+    else if (function_name_lowercase == "position")
+        return std::make_unique<PositionLayer>();
+    else if (function_name_lowercase == "exists")
+        return std::make_unique<ExistsLayer>();
+    else if (function_name_lowercase == "trim")
+        return std::make_unique<TrimLayer>(false, false);
+    else if (function_name_lowercase == "ltrim")
+        return std::make_unique<TrimLayer>(true, false);
+    else if (function_name_lowercase == "rtrim")
+        return std::make_unique<TrimLayer>(false, true);
+    else if (function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
+        || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
+        return std::make_unique<DateAddLayer>("plus");
+    else if (function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
+        || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
+        return std::make_unique<DateAddLayer>("minus");
+    else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
+        || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
+        return std::make_unique<DateDiffLayer>();
+    else if (function_name_lowercase == "grouping")
+        return std::make_unique<OrdinaryFunctionLayer>(function_name_lowercase, allow_function_parameters_);
+    else
+        return std::make_unique<OrdinaryFunctionLayer>(function_name, allow_function_parameters_);
+}
+
+
 bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     IParser::Pos begin = pos;
@@ -2105,7 +2167,6 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
-template<class Type>
 struct ParserExpressionImpl
 {
     static std::vector<std::pair<const char *, Operator>> operators_table;
@@ -2131,7 +2192,7 @@ struct ParserExpressionImpl
     ParserColumnsMatcher columns_matcher_parser;
     ParserSubquery subquery_parser;
 
-    bool parse(IParser::Pos & pos, ASTPtr & node, Expected & expected);
+    bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
 
     enum class ParseResult
     {
@@ -2149,23 +2210,47 @@ struct ParserExpressionImpl
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserExpressionImpl<SingleElementLayer>().parse(pos, node, expected);
+    auto start = std::make_unique<SingleElementLayer>();
+    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    auto start = std::make_unique<IntervalLayer>();
     return ParserKeyword("INTERVAL").parse(pos, node, expected)
-        && ParserExpressionImpl<IntervalLayer>().parse(pos, node, expected);
+        && ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
 bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    auto start = std::make_unique<ArrayLayer>();
     return ParserToken(TokenType::OpeningSquareBracket).ignore(pos, expected)
-        && ParserExpressionImpl<ArrayLayer>().parse(pos, node, expected);
+        && ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
-template<class Type>
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type>::operators_table({
+bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (is_table_function)
+    {
+        if (ParserTableFunctionView().parse(pos, node, expected))
+            return true;
+    }
+
+    ASTPtr identifier;
+
+    if (ParserIdentifier(true).parse(pos, identifier, expected)
+        && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+    {
+        auto start = getFunctionLayer(identifier, allow_function_parameters);
+        return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+    }
+    else
+    {
+        return false;
+    }
+}
+
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_table({
         {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
         {"?",             Operator("",                2,  0, OperatorType::StartIf)},
         {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
@@ -2204,29 +2289,25 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type>::opera
         {"::",            Operator("CAST",            14, 2, OperatorType::Cast)},
     });
 
-template<class Type>
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl<Type>::unary_operators_table({
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::unary_operators_table({
         {"NOT",           Operator("not",             5,  1)},
         {"-",             Operator("negate",          13, 1)}
     });
 
-template<class Type>
-Operator ParserExpressionImpl<Type>::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
+Operator ParserExpressionImpl::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
 
-template<class Type>
-const char * ParserExpressionImpl<Type>::overlapping_operators_to_skip[] =
+const char * ParserExpressionImpl::overlapping_operators_to_skip[] =
 {
     "IN PARTITION",
     nullptr
 };
 
-template<class Type>
-bool ParserExpressionImpl<Type>::parse(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     Action next = Action::OPERAND;
 
     std::vector<std::unique_ptr<Layer>> layers;
-    layers.push_back(std::make_unique<Type>());
+    layers.push_back(std::move(start));
 
     while (true)
     {
@@ -2292,8 +2373,7 @@ bool ParserExpressionImpl<Type>::parse(IParser::Pos & pos, ASTPtr & node, Expect
     }
 }
 
-template<class Type>
-typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
+typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2382,40 +2462,7 @@ typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::try
         if (pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-
-            String function_name = getIdentifierName(tmp);
-            String function_name_lowercase = Poco::toLower(function_name);
-
-            if (function_name_lowercase == "cast")
-                layers.push_back(std::make_unique<CastLayer>());
-            else if (function_name_lowercase == "extract")
-                layers.push_back(std::make_unique<ExtractLayer>());
-            else if (function_name_lowercase == "substring")
-                layers.push_back(std::make_unique<SubstringLayer>());
-            else if (function_name_lowercase == "position")
-                layers.push_back(std::make_unique<PositionLayer>());
-            else if (function_name_lowercase == "exists")
-                layers.push_back(std::make_unique<ExistsLayer>());
-            else if (function_name_lowercase == "trim")
-                layers.push_back(std::make_unique<TrimLayer>(false, false));
-            else if (function_name_lowercase == "ltrim")
-                layers.push_back(std::make_unique<TrimLayer>(true, false));
-            else if (function_name_lowercase == "rtrim")
-                layers.push_back(std::make_unique<TrimLayer>(false, true));
-            else if (function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
-                || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
-                layers.push_back(std::make_unique<DateAddLayer>("plus"));
-            else if (function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
-                || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
-                layers.push_back(std::make_unique<DateAddLayer>("minus"));
-            else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
-                || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
-                layers.push_back(std::make_unique<DateDiffLayer>());
-            else if (function_name_lowercase == "grouping")
-                layers.push_back(std::make_unique<FunctionLayer>(function_name_lowercase));
-            else
-                layers.push_back(std::make_unique<FunctionLayer>(function_name));
-
+            layers.push_back(getFunctionLayer(tmp));
             return ParseResult::OPERAND;
         }
         else
@@ -2457,8 +2504,7 @@ typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::try
     return ParseResult::OPERATOR;
 }
 
-template<class Type>
-typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
+typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2486,9 +2532,8 @@ typename ParserExpressionImpl<Type>::ParseResult ParserExpressionImpl<Type>::try
             if (!layers.back()->insertAlias(tmp))
                 return ParseResult::ERROR;
 
-            return ParseResult::OPERAND;
+            return ParseResult::OPERATOR;
         }
-
         return ParseResult::END;
     }
 
