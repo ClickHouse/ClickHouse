@@ -37,6 +37,10 @@ protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override final;
     void writeRowEndDelimiter() override;
+
+    bool supportTotals() const override { return true; }
+    bool supportExtremes() const override { return true; }
+
     void writeBeforeTotals() override final;
     void writeBeforeExtremes() override final;
 
