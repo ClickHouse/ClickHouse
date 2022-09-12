@@ -54,7 +54,7 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
         column = cloneEmpty();
 
     {
-        size_t reserve_size = num_rows * 1.1 / num_columns;    /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = static_cast<size_t>(num_rows * 1.1 / num_columns);    /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)

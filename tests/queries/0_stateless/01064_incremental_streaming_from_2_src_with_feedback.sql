@@ -1,4 +1,5 @@
 SET joined_subquery_requires_alias = 0;
+SET max_threads = 1;
 
 -- incremental streaming usecase
 -- that has sense only if data filling order has guarantees of chronological order
