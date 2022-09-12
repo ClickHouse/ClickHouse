@@ -61,7 +61,12 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         return 0;
     }
 
-    const auto context = read_from_merge_tree->getContext();
+    auto context = read_from_merge_tree->getContext();
+    if (!context->getSettings().optimize_read_in_window_order)
+    {
+        return 0;
+    }
+
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
 
