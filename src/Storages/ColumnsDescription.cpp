@@ -780,7 +780,7 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
                 "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
 
         subcolumns.get<0>().insert(std::move(subcolumn));
-    }, {type_in_storage->getDefaultSerialization(), type_in_storage, nullptr, nullptr});
+    }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
