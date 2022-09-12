@@ -547,48 +547,41 @@ bool Translate::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool Trim::convertImpl(String & out,IParser::Pos & pos)
+bool Trim::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
-    ++pos;
-    String regex = getConvertedArgument(fn_name, pos);
-    ++pos;
-    String  source = getConvertedArgument(fn_name, pos);
-    String ltrim = std::format("if ((replaceRegexpOne(concat('start_random_str_', {0}) as srcl, concat('start_random_str_', {1}),'') as dstl) = srcl, {0}, dstl)", source, regex);
-    out = std::format("if ((replaceRegexpOne(concat({0}, '_end_random_str') as srcr, concat({1}, '_end_random_str'),'') as dstr) = srcr, {0}, dstr)", ltrim, regex);
+    const auto regex = getArgument(fn_name, pos);
+    const auto source = getArgument(fn_name, pos);
+    out = kqlCallToExpression("trim_start", {regex, std::format("trim_end({0}, {1})", regex, source)}, pos.max_depth);
 
     return true;
 }
 
-bool TrimEnd::convertImpl(String & out,IParser::Pos & pos)
+bool TrimEnd::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
-    ++pos;
-    String regex = getConvertedArgument(fn_name, pos);
-    ++pos;
-    String  source = getConvertedArgument(fn_name, pos);
-    out = std::format("if ((replaceRegexpOne(concat({0}, '_end_random_str') as src, concat({1},'_end_random_str'),'') as dst) = src, {0}, dst)", source, regex);
+    const auto regex = getArgument(fn_name, pos);
+    const auto source = getArgument(fn_name, pos);
+    out = std::format("replaceRegexpOne({0}, concat({1}, '$'), '')", source, regex);
 
     return true;
 }
 
-bool TrimStart::convertImpl(String & out,IParser::Pos & pos)
+bool TrimStart::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
-    ++pos;
-    String regex = getConvertedArgument(fn_name, pos);
-    ++pos;
-    String  source = getConvertedArgument(fn_name, pos);
-    out = std::format("if ((replaceRegexpOne(concat('start_random_str_', {0}) as src, concat('start_random_str_', {1}),'') as dst) = src, {0}, dst)", source, regex);
+    const auto regex = getArgument(fn_name, pos);
+    const auto source = getArgument(fn_name, pos);
+    out = std::format("replaceRegexpOne({0}, concat('^', {1}), '')", source, regex);
 
     return true;
 }
