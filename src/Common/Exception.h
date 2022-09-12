@@ -127,7 +127,7 @@ public:
 #endif
     ;
 
-    int getLineNumber() const { return line_number; }
+    ssize_t getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
 
     String getFileName() const { return file_name; }

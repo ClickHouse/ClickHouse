@@ -24,6 +24,7 @@
 #include <Common/randomSeed.h>
 #include "Core/Block.h"
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -483,6 +484,22 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()");
+    span.addAttribute("clickhouse.query_id", query_id_);
+    span.addAttribute("clickhouse.query", query);
+    span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
+
+    ClientInfo new_client_info;
+    const auto &current_trace_context = OpenTelemetry::CurrentContext();
+    if (client_info && current_trace_context.isTraceEnabled())
+    {
+        // use current span as the parent of remote span
+        new_client_info = *client_info;
+        new_client_info.client_trace_context = current_trace_context;
+
+        client_info = &new_client_info;
+    }
+
     if (!connected)
         connect(timeouts);
 
@@ -540,7 +557,7 @@ void Connection::sendQuery(
         /// Send correct hash only for !INITIAL_QUERY, due to:
         /// - this will avoid extra protocol complexity for simplest cases
         /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/unsecure changes)
+        ///   (since there is no secure/non-secure changes)
         if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         {
 #if USE_SSL
