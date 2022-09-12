@@ -3,6 +3,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -1989,10 +1990,11 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
 
     renamed_parts.tryRenameAll();
 
-    for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
+    for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
         LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
+        old_name.clear();
     }
 
     return renamed_parts.old_and_new_names.size();
@@ -4109,29 +4111,74 @@ void MergeTreeData::backupData(BackupEntriesCollector & backup_entries_collector
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup));
+    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, local_context));
 }
 
-BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup)
+BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context)
 {
     BackupEntries backup_entries;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
+    TableLockHolder table_lock;
 
     for (const auto & part : data_parts)
     {
+        /// Hard links is the default way to ensure that we'll be keeping access to the files of parts.
+        bool make_temporary_hard_links = true;
+        bool hold_storage_and_part_ptrs = false;
+        bool hold_table_lock = false;
+
+        if (getStorageID().hasUUID())
+        {
+            /// Tables in atomic databases have UUIDs. When using atomic database we don't have to create hard links to make a backup,
+            /// we can just hold smart pointers to a storage and to data parts instead. That's enough to protect those files from deleting
+            /// until the backup is done (see the calls `part.unique()` in grabOldParts() and table.unique() in DatabaseCatalog).
+            make_temporary_hard_links = false;
+            hold_storage_and_part_ptrs = true;
+        }
+        else if (supportsReplication() && part->data_part_storage->supportZeroCopyReplication() && getSettings()->allow_remote_fs_zero_copy_replication)
+        {
+            /// Hard links don't work correctly with zero copy replication.
+            make_temporary_hard_links = false;
+            hold_storage_and_part_ptrs = true;
+            hold_table_lock = true;
+        }
+
+        if (hold_table_lock && !table_lock)
+            table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+
+        BackupEntries backup_entries_from_part;
         part->data_part_storage->backup(
-            temp_dirs, part->checksums, part->getFileNamesWithoutChecksums(), data_path_in_backup, backup_entries);
+            part->checksums,
+            part->getFileNamesWithoutChecksums(),
+            data_path_in_backup,
+            backup_entries_from_part,
+            make_temporary_hard_links,
+            &temp_dirs);
 
         auto projection_parts = part->getProjectionParts();
         for (const auto & [projection_name, projection_part] : projection_parts)
         {
             projection_part->data_part_storage->backup(
-                temp_dirs,
                 projection_part->checksums,
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
-                backup_entries);
+                backup_entries_from_part,
+                make_temporary_hard_links,
+                &temp_dirs);
         }
+
+        if (hold_storage_and_part_ptrs)
+        {
+            /// Wrap backup entries with smart pointers to data parts and to the storage itself
+            /// (we'll be holding those smart pointers for as long as we'll be using the backup entries).
+            auto storage_and_part = std::make_pair(shared_from_this(), part);
+            if (hold_table_lock)
+                wrapBackupEntriesWith(backup_entries_from_part, std::make_pair(storage_and_part, table_lock));
+            else
+                wrapBackupEntriesWith(backup_entries_from_part, storage_and_part);
+        }
+
+        insertAtEnd(backup_entries, std::move(backup_entries_from_part));
     }
 
     return backup_entries;

@@ -476,10 +476,10 @@ ColumnPtr FunctionArrayElement::executeNumberConst(
     auto col_res = ColumnVector<DataType>::create();
 
     if (index.getType() == Field::Types::UInt64
-        || (index.getType() == Field::Types::Int64 && get<Int64>(index) >= 0))
+        || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
     {
         ArrayElementNumImpl<DataType>::template vectorConst<false>(
-            col_nested->getData(), col_array->getOffsets(), get<UInt64>(index) - 1, col_res->getData(), builder);
+            col_nested->getData(), col_array->getOffsets(), index.get<UInt64>() - 1, col_res->getData(), builder);
     }
     else if (index.getType() == Field::Types::Int64)
     {
@@ -493,7 +493,7 @@ ColumnPtr FunctionArrayElement::executeNumberConst(
         /// arr[-2] is the element at offset 1 from the last and so on.
 
         ArrayElementNumImpl<DataType>::template vectorConst<true>(
-            col_nested->getData(), col_array->getOffsets(), -(static_cast<UInt64>(safeGet<Int64>(index)) + 1), col_res->getData(), builder);
+            col_nested->getData(), col_array->getOffsets(), -(static_cast<UInt64>(index.safeGet<Int64>()) + 1), col_res->getData(), builder);
     }
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
@@ -539,12 +539,12 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
     auto col_res = ColumnString::create();
 
     if (index.getType() == Field::Types::UInt64
-        || (index.getType() == Field::Types::Int64 && get<Int64>(index) >= 0))
+        || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
         ArrayElementStringImpl::vectorConst<false>(
             col_nested->getChars(),
             col_array->getOffsets(),
             col_nested->getOffsets(),
-            get<UInt64>(index) - 1,
+            index.get<UInt64>() - 1,
             col_res->getChars(),
             col_res->getOffsets(),
             builder);
@@ -553,7 +553,7 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
             col_nested->getChars(),
             col_array->getOffsets(),
             col_nested->getOffsets(),
-            -(UInt64(get<Int64>(index)) + 1),
+            -(UInt64(index.get<Int64>()) + 1),
             col_res->getChars(),
             col_res->getOffsets(),
             builder);
@@ -603,12 +603,12 @@ ColumnPtr FunctionArrayElement::executeGenericConst(
     auto col_res = col_nested.cloneEmpty();
 
     if (index.getType() == Field::Types::UInt64
-        || (index.getType() == Field::Types::Int64 && get<Int64>(index) >= 0))
+        || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
         ArrayElementGenericImpl::vectorConst<false>(
-            col_nested, col_array->getOffsets(), get<UInt64>(index) - 1, *col_res, builder);
+            col_nested, col_array->getOffsets(), index.get<UInt64>() - 1, *col_res, builder);
     else if (index.getType() == Field::Types::Int64)
         ArrayElementGenericImpl::vectorConst<true>(
-            col_nested, col_array->getOffsets(), -(static_cast<UInt64>(get<Int64>(index) + 1)), *col_res, builder);
+            col_nested, col_array->getOffsets(), -(static_cast<UInt64>(index.get<Int64>() + 1)), *col_res, builder);
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
@@ -877,7 +877,7 @@ bool FunctionArrayElement::matchKeyToIndexStringConst(
         using DataColumn = std::decay_t<decltype(data_column)>;
         if (index.getType() != Field::Types::String)
             return false;
-        MatcherStringConst<DataColumn> matcher{data_column, get<const String &>(index)};
+        MatcherStringConst<DataColumn> matcher{data_column, index.get<const String &>()};
         executeMatchKeyToIndex(offsets, matched_idxs, matcher);
         return true;
     });
