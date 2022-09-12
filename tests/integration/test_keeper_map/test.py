@@ -52,29 +52,41 @@ def test_create_keeper_map(started_cluster):
     )
     zk_client = get_genuine_zk()
 
-    def assert_children_size(expected_size):
-        assert len(zk_client.get_children("/test_keeper_map/test1")) == expected_size
+    def assert_children_size(path, expected_size):
+        assert len(zk_client.get_children(path)) == expected_size
 
-    assert_children_size(1)
+    def assert_root_children_size(expected_size):
+        assert_children_size("/test_keeper_map/test1", expected_size)
+
+    def assert_data_children_size(expected_size):
+        assert_children_size("/test_keeper_map/test1/data", expected_size)
+
+    assert_root_children_size(2)
+    assert_data_children_size(0)
 
     node.query("INSERT INTO test_keeper_map VALUES (1, 11)")
-    assert_children_size(2)
+    assert_data_children_size(1)
 
     node.query(
         "CREATE TABLE test_keeper_map_another (key UInt64, value UInt64) ENGINE = KeeperMap('/test1') PRIMARY KEY(key);"
     )
-    assert_children_size(2)
+    assert_root_children_size(2)
+    assert_data_children_size(1)
+
     node.query("INSERT INTO test_keeper_map_another VALUES (1, 11)")
-    assert_children_size(2)
+    assert_root_children_size(2)
+    assert_data_children_size(1)
 
     node.query("INSERT INTO test_keeper_map_another VALUES (2, 22)")
-    assert_children_size(3)
+    assert_root_children_size(2)
+    assert_data_children_size(2)
 
     node.query("DROP TABLE test_keeper_map SYNC")
-    assert_children_size(3)
+    assert_root_children_size(2)
+    assert_data_children_size(2)
 
     node.query("DROP TABLE test_keeper_map_another SYNC")
-    assert_children_size(0)
+    assert_root_children_size(0)
 
     zk_client.stop()
 

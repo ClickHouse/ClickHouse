@@ -55,22 +55,11 @@ namespace ErrorCodes
 namespace
 {
 
-std::string_view getBaseName(const std::string_view path)
-{
-    auto last_slash = path.find_last_of('/');
-    if (last_slash == std::string_view::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get basename of path '{}'", path);
-
-    return path.substr(last_slash + 1);
-}
-
 std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, false, true);
-    return buf.str();
+    return serializeAST(*ast);
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -126,7 +115,7 @@ public:
                 ++idx;
             }
 
-            auto key = base64Encode(wb_key.str(), true);
+            auto key = base64Encode(wb_key.str(), /* url_encoding */ true);
             new_values[std::move(key)] = std::move(wb_value.str());
         }
     }
@@ -146,10 +135,9 @@ public:
         // (e.g if parallel insert queries are being run)
         if (keys_limit != 0)
         {
-            Coordination::Stat root_stat;
-            zookeeper->get(storage.rootKeeperPath(), &root_stat);
-            // exclude metadata node
-            current_keys_num = root_stat.numChildren - 1;
+            Coordination::Stat data_stat;
+            zookeeper->get(storage.dataPath(), &data_stat);
+            current_keys_num = data_stat.numChildren;
         }
 
         std::vector<std::pair<const std::string *, std::future<Coordination::ExistsResponse>>> exist_responses;
@@ -231,7 +219,7 @@ public:
             auto raw_keys = serializeKeysToRawString(it, end, key_column_type, max_block_size);
 
             for (auto & raw_key : raw_keys)
-                raw_key = base64Encode(raw_key, true);
+                raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
             return storage.getBySerializedKeys(raw_keys, nullptr);
         }
@@ -298,6 +286,8 @@ StorageKeeperMap::StorageKeeperMap(
 
     auto root_path_fs = fs::path(path_prefix) / std::string_view{root_path}.substr(1);
     root_path = root_path_fs.generic_string();
+
+    data_path = root_path_fs / "data";
 
     auto metadata_path_fs = root_path_fs / "metadata";
     metadata_path = metadata_path_fs;
@@ -381,6 +371,8 @@ StorageKeeperMap::StorageKeeperMap(
 
         if (code == Coordination::Error::ZOK)
         {
+            // metadata now should be guaranteed to exist because we added our UUID to the tables_path
+            client->createIfNotExists(data_path, "");
             table_is_valid = true;
             return;
         }
@@ -444,15 +436,7 @@ Pipe StorageKeeperMap::read(
 
     auto client = getClient();
     if (all_scan)
-    {
-        auto children = std::make_shared<std::vector<std::string>>(client->getChildren(root_path));
-        std::erase_if(*children, [&](const std::string_view key)
-        {
-            return fullPathForKey(key) == metadata_path;
-        });
-
-        return process_keys(std::move(children));
-    }
+        return process_keys(std::make_shared<std::vector<std::string>>(client->getChildren(data_path)));
 
     return process_keys(std::move(filtered_keys));
 }
@@ -467,17 +451,18 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 {
     checkTable<true>();
     auto client = getClient();
-    client->tryRemoveChildrenRecursive(root_path, true, zkutil::RemoveException{getBaseName(metadata_path), /*remove_subtree_*/ false});
+    client->tryRemoveChildrenRecursive(data_path, true);
 }
 
 bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
 {
-    zookeeper->removeChildrenRecursive(root_path, zkutil::RemoveException{getBaseName(metadata_path), /*remove_subtree_*/ false});
+    zookeeper->removeChildrenRecursive(data_path);
 
     bool completely_removed = false;
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(dropped_path, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(data_path, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_path, -1));
 
     Coordination::Responses responses;
@@ -489,7 +474,7 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
         {
             metadata_drop_lock->setAlreadyRemoved();
             completely_removed = true;
-            LOG_INFO(log, "Metadata in {} was successfully removed from ZooKeeper", metadata_path);
+            LOG_INFO(log, "Metadata ({}) and data ({}) was successfully removed from ZooKeeper", metadata_path, data_path);
             break;
         }
         case ZNONODE:
@@ -551,20 +536,20 @@ zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
         else
             zookeeper_client = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
 
-        zookeeper_client->sync(rootKeeperPath());
+        zookeeper_client->sync(root_path);
     }
 
     return zookeeper_client;
 }
 
-const std::string & StorageKeeperMap::rootKeeperPath() const
+const std::string & StorageKeeperMap::dataPath() const
 {
-    return root_path;
+    return data_path;
 }
 
 std::string StorageKeeperMap::fullPathForKey(const std::string_view key) const
 {
-    return fmt::format("{}/{}", root_path, key);
+    return fs::path(data_path) / key;
 }
 
 UInt64 StorageKeeperMap::keysLimit() const
@@ -605,15 +590,35 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
                 return;
             }
 
-            // validate all metadata nodes are present
+            // validate all metadata and data nodes are present
             Coordination::Requests requests;
             requests.push_back(zkutil::makeCheckRequest(table_path, -1));
+            requests.push_back(zkutil::makeCheckRequest(data_path, -1));
             requests.push_back(zkutil::makeCheckRequest(dropped_path, -1));
 
             Coordination::Responses responses;
             client->tryMulti(requests, responses);
 
-            table_is_valid = responses[0]->error == Coordination::Error::ZOK && responses[1]->error == Coordination::Error::ZNONODE;
+            table_is_valid = false;
+            if (responses[0]->error != Coordination::Error::ZOK)
+            {
+                LOG_ERROR(log, "Table node ({}) is missing", table_path);
+                return;
+            }
+
+            if (responses[1]->error != Coordination::Error::ZOK)
+            {
+                LOG_ERROR(log, "Data node ({}) is missing", data_path);
+                return;
+            }
+
+            if (responses[2]->error == Coordination::Error::ZOK)
+            {
+                LOG_ERROR(log, "Tables with root node {} are being dropped", root_path);
+                return;
+            }
+
+            table_is_valid = true;
         }
         catch (const Coordination::Exception & e)
         {
@@ -711,6 +716,7 @@ void StorageKeeperMap::checkTableCanBeRenamed(const StorageID & new_name) const
 void StorageKeeperMap::rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)
 {
     checkTableCanBeRenamed(new_table_id);
+    renameInMemory(new_table_id);
 }
 
 namespace
