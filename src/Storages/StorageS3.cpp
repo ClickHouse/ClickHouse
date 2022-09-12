@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include <Common/ProfileEvents.h>
 #include "IO/ParallelReadBuffer.h"
 #include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
@@ -62,6 +63,12 @@ namespace fs = std::filesystem;
 
 
 static const String PARTITION_ID_WILDCARD = "{_partition_id}";
+
+namespace ProfileEvents
+{
+    extern const Event DeleteS3Objects;
+    extern const Event ListS3Objects;
+}
 
 namespace DB
 {
@@ -164,6 +171,7 @@ private:
     {
         buffer.clear();
 
+        ProfileEvents::increment(ProfileEvents::ListS3Objects);
         outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
             throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
@@ -552,6 +560,7 @@ Chunk StorageS3Source::generate()
 static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
 {
     bool is_finished = false;
+
     Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
@@ -559,6 +568,8 @@ static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> &
     request.SetPrefix(key);
     while (!is_finished)
     {
+
+        ProfileEvents::increment(ProfileEvents::ListS3Objects);
         outcome = client->ListObjectsV2(request);
         if (!outcome.IsSuccess())
             throw Exception(
@@ -1036,6 +1047,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
         delkeys.AddObjects(std::move(obj));
     }
 
+    ProfileEvents::increment(ProfileEvents::DeleteS3Objects);
     Aws::S3::Model::DeleteObjectsRequest request;
     request.SetBucket(s3_configuration.uri.bucket);
     request.SetDelete(delkeys);

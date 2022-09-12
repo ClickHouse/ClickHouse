@@ -24,7 +24,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
-    extern const Event HeadS3Object;
     extern const Event GetS3ObjectRequest;
 }
 
@@ -250,7 +249,6 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    ProfileEvents::increment(ProfileEvents::HeadS3Object);
     auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
     file_size = object_size;
     return *file_size;
