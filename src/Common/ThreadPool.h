@@ -270,7 +270,7 @@ protected:
 /// you need to use class, or you need to use ThreadFromGlobalPool below.
 ///
 /// See the comments of ThreadPool below to know how it works.
-using ThreadFromGlobalPoolWithoutTracingContext = ThreadFromGlobalPoolImpl<false>;
+using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
 
 /// An alias of thread that execute jobs/tasks on global thread pool by implicit passing tracing context on current thread to underlying worker as parent tracing context.
 /// If jobs/tasks are directly scheduled by using APIs of this class, you need to use this class or you need to use class above.
@@ -288,5 +288,5 @@ using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 ///
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
 ///
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolWithoutTracingContext>;
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
 
