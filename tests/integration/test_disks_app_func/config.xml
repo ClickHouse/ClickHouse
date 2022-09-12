@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <path>/var/lib/clickhouse/</path>
     <storage_configuration>

@@ -74,12 +74,15 @@ Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is ena
 
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime`.
-XFS should be avoided. It works mostly fine but there are some reports about lower performance.
+Ext4 is the most reliable option. Set the mount options `noatime`. XFS works well too.
 Most other file systems should also work fine.
+
+FAT-32 and exFAT are not supported due to lack of hard links.
 
 Do not use compressed filesystems, because ClickHouse does compression on its own and better.
 It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
+
+While ClickHouse can work over NFS, it is not the best idea.
 
 ## Linux Kernel {#linux-kernel}
 
