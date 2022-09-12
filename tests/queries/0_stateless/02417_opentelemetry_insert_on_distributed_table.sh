@@ -22,15 +22,17 @@ function check_span()
 ${CLICKHOUSE_CLIENT} -nq "
     SYSTEM FLUSH LOGS;
 
-    SELECT count() FROM system.opentelemetry_span_log
-    WHERE lower(hex(trace_id))                = '${1}'
-    AND   operation_name                      like '${2}'
-    AND   attribute['clickhouse.shard_num']   = '${3}'
-    AND   attribute['clickhouse.cluster']     = 'test_cluster_two_shards'
+    SELECT operation_name,
+           attribute['clickhouse.cluster'] AS cluster,
+           attribute['clickhouse.shard_num'] AS shard,
+           attribute['clickhouse.rows'] AS rows,
+           attribute['clickhouse.bytes'] AS bytes
+    FROM system.opentelemetry_span_log
+    WHERE finish_date >= yesterday()
+    AND   lower(hex(trace_id))                = '${1}'
     AND   attribute['clickhouse.distributed'] = '${CLICKHOUSE_DATABASE}.dist_opentelemetry'
     AND   attribute['clickhouse.remote']      = '${CLICKHOUSE_DATABASE}.local_opentelemetry'
-    AND   attribute['clickhouse.rows']        = '1'
-    AND   attribute['clickhouse.bytes']       = '8'
+    Format JSONEachRow
     ;"
 }
 
@@ -51,17 +53,14 @@ CREATE TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry (key UInt64) Engine=Merg
 #
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 insert $trace_id 0
-check_span $trace_id '%writeToLocal%' '1'
-check_span $trace_id '%processFile%'  '2'
-
+check_span $trace_id
 
 #
 # SYNC INSERT SYNC test with opentelemetry enabled
 #
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 insert $trace_id 1
-check_span $trace_id '%runWritingJob%' '1'
-check_span $trace_id '%runWritingJob%' '2'
+check_span $trace_id
 
 #
 # Cleanup
