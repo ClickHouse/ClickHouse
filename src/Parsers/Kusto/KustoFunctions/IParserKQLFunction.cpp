@@ -225,33 +225,24 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
     return arg;
 }
 
-int IParserKQLFunction::getNullCounts(String arg)
-{
-    int nullCount = 0;
-    size_t i;
-    String temp;
-    for(i = 0; i < arg.size(); i++)
-        if(arg[i] != ' ')
-            temp += arg[i];
-    arg = temp;
-    temp = "";
-    for(i = 0; i < arg.size(); i++)
-        if(arg[i] == '(')
-            break;
-
-    while(i < arg.size())
+int IParserKQLFunction::getNullCounts(String arg){
+    size_t index = 0;
+    int nullCounts = 0;
+    for(size_t i = 0; i < arg.size(); i++)
     {
-        if(arg[i] != ',' && arg[i] != ')')
-            temp += arg[i];
-        else
-        {
-            if(temp == "NULL" || temp == "null")
-                nullCount += 1;
-            temp = "";    
-        }
-        i += 1;
+        if(arg[i] == 'n')
+            arg[i] = 'N';
+        if(arg[i] == 'u')
+            arg[i] = 'U';
+        if(arg[i] == 'l')
+            arg[i] = 'L';
     }
-    return nullCount;
+    while ((index = arg.find("NULL", index)) != std::string::npos)
+    {
+        index += 4;
+        nullCounts += 1;
+    }
+    return nullCounts;
 }
 
 int IParserKQLFunction::IParserKQLFunction::getArrayLength(String arg)
@@ -336,7 +327,7 @@ String IParserKQLFunction::ArraySortHelper(String & out,IParser::Pos & pos, bool
             if(first_arg_length != getArrayLength(argument_list[i]))
                 out += "array(NULL)";
             else if(nullCount > 0)
-                out +=  "If ( " + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + "), arrayConcat( arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , 1, length( " + temp_first_arg + ") - " + std::to_string(nullCount) + ") ) )"; // + "AS array" + std::to_string(i + 1)+ "_sorted";
+                out +=  "If ( " + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + "), arrayConcat( arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , length(" + temp_first_arg + ") - " + std::to_string(nullCount) + " + 1) , arraySlice( " + "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ") , 1, length( " + temp_first_arg + ") - " + std::to_string(nullCount) + ") ) )";
             else
                 out += "array" + reverse + "Sort((x, y) -> y, " + argument_list[i] + "," + temp_first_arg + ")";
         }
