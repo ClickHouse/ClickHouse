@@ -26,7 +26,6 @@ namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
     extern const Event S3WriteBytes;
-    extern const Event CreateS3MultipartUpload;
     extern const Event CompleteS3MultipartUpload;
     extern const Event UploadS3Part;
     extern const Event PutS3ObjectRequest;
@@ -188,7 +187,6 @@ void WriteBufferFromS3::finalizeImpl()
 
 void WriteBufferFromS3::createMultipartUpload()
 {
-    ProfileEvents::increment(ProfileEvents::CreateS3MultipartUpload);
     Aws::S3::Model::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
@@ -262,7 +260,6 @@ void WriteBufferFromS3::writePart()
 
         try
         {
-            ProfileEvents::increment(ProfileEvents::UploadS3Part);
             fillUploadRequest(task->req, part_number);
 
             schedule([this, task, task_finish_notify]()
@@ -290,7 +287,6 @@ void WriteBufferFromS3::writePart()
         UploadPartTask task;
         auto & tags = TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags); /// Suppress warning because schedule == false.
 
-        ProfileEvents::increment(ProfileEvents::UploadS3Part);
         fillUploadRequest(task.req, tags.size() + 1);
         processUploadRequest(task);
         tags.push_back(task.tag);
@@ -312,6 +308,7 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 {
+    ProfileEvents::increment(ProfileEvents::UploadS3Part);
     auto outcome = client_ptr->UploadPart(task.req);
 
     if (outcome.IsSuccess())
@@ -420,7 +417,6 @@ void WriteBufferFromS3::makeSinglepartUpload()
     else
     {
         PutObjectTask task;
-        ProfileEvents::increment(ProfileEvents::PutS3ObjectRequest);
         fillPutRequest(task.req);
         processPutRequest(task);
     }
@@ -441,6 +437,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 {
+    ProfileEvents::increment(ProfileEvents::PutS3ObjectRequest);
     auto outcome = client_ptr->PutObject(task.req);
     bool with_pool = static_cast<bool>(schedule);
     if (outcome.IsSuccess())
