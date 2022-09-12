@@ -395,14 +395,14 @@ void KeeperDispatcher::shutdown()
         {
             LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
             const auto raft_result = server->putRequestBatch(close_requests);
-            Poco::Event sessions_closing_done;
-            raft_result->when_ready([&](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/, nuraft::ptr<std::exception> & /*exception*/)
+            auto sessions_closing_done = std::make_shared<Poco::Event>();
+            raft_result->when_ready([sessions_closing_done](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/, nuraft::ptr<std::exception> & /*exception*/)
             {
-                sessions_closing_done.set();
+                sessions_closing_done->set();
             });
 
             auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
-            if (!sessions_closing_done.tryWait(session_shutdown_timeout))
+            if (!sessions_closing_done->tryWait(session_shutdown_timeout))
                 LOG_WARNING(log, "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.", session_shutdown_timeout);
         }
 
