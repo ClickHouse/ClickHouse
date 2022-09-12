@@ -391,7 +391,6 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
         try
         {
-            ProfileEvents::increment(ProfileEvents::PutS3ObjectRequest);
             fillPutRequest(put_object_task->req);
 
             schedule([this, task_notify_finish]()

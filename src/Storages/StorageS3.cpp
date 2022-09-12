@@ -560,7 +560,6 @@ Chunk StorageS3Source::generate()
 static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
 {
     bool is_finished = false;
-
     Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
@@ -568,7 +567,6 @@ static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> &
     request.SetPrefix(key);
     while (!is_finished)
     {
-
         ProfileEvents::increment(ProfileEvents::ListS3Objects);
         outcome = client->ListObjectsV2(request);
         if (!outcome.IsSuccess())

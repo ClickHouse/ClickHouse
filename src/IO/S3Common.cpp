@@ -63,7 +63,6 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
     {"AWSAuthV4Signer", "AWSClient (AWSAuthV4Signer)"},
 };
 
-
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
