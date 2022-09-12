@@ -7,8 +7,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Common/typeid_cast.h>
-#include "Processors/QueryPlan/IQueryPlanStep.h"
-#include "Storages/SelectQueryInfo.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -50,11 +48,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     /// check if reading in order is already there
     const DataStream & output = read_from_merge_tree->getOutputStream();
-    if (output.sort_mode != DataStream::SortMode::Chunk)
+    if (output.sort_scope != DataStream::SortScope::Chunk)
         return 0;
 
     const SortDescription & sort_desc = output.sort_description;
-    const auto & distinct_columns = pre_distinct->getOutputStream().distinct_columns;
+    const auto & distinct_columns = pre_distinct->getOutputStream().header.getNames();
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be benefitial sorting key is prefix of columns in DISTINCT
     if (sort_desc.size() < distinct_columns.size())
@@ -70,8 +68,10 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         distinct_sort_desc.push_back(column_desc);
     }
-    if (!distinct_sort_desc.empty())
+    if (distinct_sort_desc.empty())
         return 0;
+
+    LOG_ERROR(&Poco::Logger::get("DistinctOptimization"), "DISTINCT sort description: {}", dumpSortDescription(distinct_sort_desc));
 
     InputOrderInfoPtr order_info
         = std::make_shared<const InputOrderInfo>(distinct_sort_desc, distinct_sort_desc.size(), 1, pre_distinct->getLimitHint());
