@@ -675,7 +675,7 @@ namespace ErrorCodes
 
     ErrorCode getErrorCodeByName(std::string_view error_name)
     {
-        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+        for (int i = 0, end = ErrorCodes::end(); i < end; ++i)
         {
             std::string_view name = ErrorCodes::getName(i);
 
