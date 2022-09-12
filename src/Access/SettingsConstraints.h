@@ -65,8 +65,8 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintType type);
-    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintType & type) const;
+    void set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability);
+    void get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -88,30 +88,38 @@ private:
         CLAMP_ON_VIOLATION,
     };
 
-    struct Range
+    struct Constraint
     {
-        SettingConstraintType type = SettingConstraintType::NONE;
+        SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
         Field min_value;
         Field max_value;
 
+        bool operator ==(const Constraint & other) const;
+        bool operator !=(const Constraint & other) const { return !(*this == other); }
+    };
+
+    struct Checker {
+        Constraint constraint;
         String explain;
-        int code;
+        int code = 0;
 
-        bool operator ==(const Range & other) const;
-        bool operator !=(const Range & other) const { return !(*this == other); }
+        // Allows everything
+        Checker() = default;
 
+        // Forbidden with explanation
+        Checker(const String & explain_, int code_)
+            : constraint{.writability = SettingConstraintWritability::CONST}
+            , explain(explain_)
+            , code(code_)
+        {}
+
+        // Allow of forbid depending on range defined by constraint, also used to return stored constraint
+        Checker(const Constraint & constraint_)
+            : constraint(constraint_)
+        {}
+
+        // Perform checking
         bool check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const;
-
-        static const Range & allowed()
-        {
-            static Range res;
-            return res;
-        }
-
-        static Range forbidden(const String & explain, int code)
-        {
-            return Range{.type = SettingConstraintType::CONST, .explain = explain, .code = code};
-        }
     };
 
     struct StringHash
@@ -129,11 +137,11 @@ private:
 
     bool checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Range getRange(const Settings & current_settings, std::string_view setting_name) const;
+    Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
 
     // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
-    using RangeMap = std::unordered_map<String, Range, StringHash, std::equal_to<>>;
-    RangeMap constraints;
+    using Constraints = std::unordered_map<String, Constraint, StringHash, std::equal_to<>>;
+    Constraints constraints;
 
     const AccessControl * access_control;
 };

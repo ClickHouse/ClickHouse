@@ -4,10 +4,10 @@
 namespace DB
 {
 
-enum class SettingConstraintType
+enum class SettingConstraintWritability
 {
     // Default. Behave in the same way as WRITABLE, but is not inherited unless `settings_constraints_replace_previous` is set.
-    NONE,
+    DEFAULT,
 
     // Setting can be change within specified range only in `readonly=0` or `readonly=2` mode.
     WRITABLE,

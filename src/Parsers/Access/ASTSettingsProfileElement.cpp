@@ -52,19 +52,19 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
                       << applyVisitor(FieldVisitorToString{}, max_value);
     }
 
-    switch (type)
+    switch (writability)
     {
-        case SettingConstraintType::NONE:
+        case SettingConstraintWritability::DEFAULT:
             break;
-        case SettingConstraintType::WRITABLE:
+        case SettingConstraintWritability::WRITABLE:
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
                           << (settings.hilite ? IAST::hilite_none : "");
             break;
-        case SettingConstraintType::CONST:
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " READONLY"
+        case SettingConstraintWritability::CONST:
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CONST"
                           << (settings.hilite ? IAST::hilite_none : "");
             break;
-        case SettingConstraintType::CHANGEABLE_IN_READONLY:
+        case SettingConstraintWritability::CHANGEABLE_IN_READONLY:
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
                           << (settings.hilite ? IAST::hilite_none : "");
             break;

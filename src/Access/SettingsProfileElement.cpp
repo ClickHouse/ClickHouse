@@ -56,14 +56,14 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
             if (setting_name != ALLOW_BACKUP_SETTING_NAME)
                 access_control->checkSettingNameIsAllowed(setting_name);
             /// Check if a CHANGEABLE_IN_READONLY is allowed.
-            if (ast.type == SettingConstraintType::CHANGEABLE_IN_READONLY && !access_control->doesSettingsConstraintsReplacePrevious())
+            if (ast.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY && !access_control->doesSettingsConstraintsReplacePrevious())
                 throw Exception("CHANGEABLE_IN_READONLY for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
         }
 
         value = ast.value;
         min_value = ast.min_value;
         max_value = ast.max_value;
-        type = ast.type;
+        writability = ast.writability;
 
         if (!value.isNull())
             value = Settings::castValueUtil(setting_name, value);
@@ -87,7 +87,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->type = type;
+    ast->writability = writability;
 
     return ast;
 }
@@ -108,7 +108,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithName
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->type = type;
+    ast->writability = writability;
 
     return ast;
 }
@@ -213,7 +213,7 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     SettingsConstraints res{access_control};
     for (const auto & elem : *this)
         if (!elem.setting_name.empty() && elem.setting_name != ALLOW_BACKUP_SETTING_NAME)
-            res.set(elem.setting_name, elem.min_value, elem.max_value, elem.type);
+            res.set(elem.setting_name, elem.min_value, elem.max_value, elem.writability);
     return res;
 }
 
