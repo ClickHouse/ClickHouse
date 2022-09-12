@@ -56,6 +56,17 @@ init_list = {
     "DiskS3WriteRequestsErrorsTotal": 0,
     "DiskS3WriteRequestsErrors503": 0,
     "DiskS3WriteRequestsRedirects": 0,
+    "DeleteS3Objects": 0,
+    "CopyS3Object": 0,
+    "ListS3Objects": 0,
+    "HeadS3Object": 0,
+    "CreateS3MultipartUpload": 0,
+    "UploadS3PartCopy": 0,
+    "UploadS3Part": 0,
+    "AbortS3MultipartUpload": 0,
+    "CompleteS3MultipartUpload": 0,
+    "PutS3ObjectRequest": 0,
+    "GetS3ObjectRequest" 0,
 }
 
 
