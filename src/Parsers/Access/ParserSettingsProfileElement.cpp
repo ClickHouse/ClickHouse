@@ -139,7 +139,7 @@ namespace
             Field res_value;
             Field res_min_value;
             Field res_max_value;
-            SettingConstraintType res_type;
+            SettingConstraintType res_type = SettingConstraintType::NONE;
 
             bool has_value_or_constraint = false;
             while (parseValue(pos, expected, res_value) || parseMinMaxValue(pos, expected, res_min_value, res_max_value)
