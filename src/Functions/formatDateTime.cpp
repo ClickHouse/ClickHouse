@@ -291,14 +291,14 @@ private:
         }
     };
 
-    std::string & default_user_timezone = "";
+    std::string default_user_timezone = "";
 
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context->getSettingsRef().default_user_timezone); }
 
-    explicit FunctionFormatDateTimeImpl(std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    explicit FunctionFormatDateTimeImpl(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
 
     String getName() const override
     {
@@ -444,10 +444,10 @@ public:
         const DateLUTImpl * time_zone_tmp = nullptr;
         if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
         {
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0, default_user_timezone);
         }
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0, default_user_timezone);
         else
             time_zone_tmp = &DateLUT::instance();
 
