@@ -40,8 +40,8 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[3]->insert(setting.getDescription());
 
         Field min, max;
-        SettingConstraintType type = SettingConstraintType::NONE;
-        constraints.get(settings, setting_name, min, max, type);
+        SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
+        constraints.get(settings, setting_name, min, max, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -51,7 +51,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
 
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(type == SettingConstraintType::CONST);
+        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
     }
 }

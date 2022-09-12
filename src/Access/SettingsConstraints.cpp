@@ -35,24 +35,24 @@ void SettingsConstraints::clear()
     constraints.clear();
 }
 
-void SettingsConstraints::set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintType type)
+void SettingsConstraints::set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability)
 {
-    if (min_value.isNull() && max_value.isNull() && type == SettingConstraintType::NONE)
+    if (min_value.isNull() && max_value.isNull() && writability == SettingConstraintWritability::DEFAULT)
         return; // Do not even create entry to avoid issues during profile inheritance
     auto & constraint = constraints[setting_name];
     if (!min_value.isNull())
         constraint.min_value = Settings::castValueUtil(setting_name, min_value);
     if (!max_value.isNull())
         constraint.max_value = Settings::castValueUtil(setting_name, max_value);
-    constraint.type = type;
+    constraint.writability = writability;
 }
 
-void SettingsConstraints::get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintType & type) const
+void SettingsConstraints::get(const Settings & current_settings, std::string_view setting_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const
 {
-    auto range = getRange(current_settings, setting_name);
-    min_value = range.min_value;
-    max_value = range.max_value;
-    type = range.type;
+    auto checker = getChecker(current_settings, setting_name);
+    min_value = checker.constraint.min_value;
+    max_value = checker.constraint.max_value;
+    writability = checker.constraint.writability;
 }
 
 void SettingsConstraints::merge(const SettingsConstraints & other)
@@ -71,8 +71,8 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
                 constraint.min_value = other_constraint.min_value;
             if (!other_constraint.max_value.isNull())
                 constraint.max_value = other_constraint.max_value;
-            if (other_constraint.type == SettingConstraintType::CONST)
-                constraint.type = SettingConstraintType::CONST; // NOTE: In this mode <readonly/> flag cannot be overridden to be false
+            if (other_constraint.writability == SettingConstraintWritability::CONST)
+                constraint.writability = SettingConstraintWritability::CONST; // NOTE: In this mode <readonly/> flag cannot be overridden to be false
         }
     }
 }
@@ -176,10 +176,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
             return false;
     }
 
-    return getRange(current_settings, setting_name).check(change, new_value, reaction);
+    return getChecker(current_settings, setting_name).check(change, new_value, reaction);
 }
 
-bool SettingsConstraints::Range::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
+bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
 {
     const String & setting_name = change.name;
 
@@ -208,13 +208,16 @@ bool SettingsConstraints::Range::check(SettingChange & change, const Field & new
             return false;
     }
 
-    if (type == SettingConstraintType::CONST)
+    if (constraint.writability == SettingConstraintWritability::CONST)
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception("Setting " + setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
         else
             return false;
     }
+
+    const auto & min_value = constraint.min_value;
+    const auto & max_value = constraint.max_value;
 
     if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
     {
@@ -251,10 +254,10 @@ bool SettingsConstraints::Range::check(SettingChange & change, const Field & new
     return true;
 }
 
-SettingsConstraints::Range SettingsConstraints::getRange(const Settings & current_settings, std::string_view setting_name) const
+SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
 {
     if (!current_settings.allow_ddl && setting_name == "allow_ddl")
-        return Range::forbidden("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+        return Checker("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
     /** The `readonly` value is understood as follows:
       * 0 - no read-only restrictions.
@@ -263,25 +266,25 @@ SettingsConstraints::Range SettingsConstraints::getRange(const Settings & curren
       */
 
     if (current_settings.readonly > 1 && setting_name == "readonly")
-        return Range::forbidden("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
+        return Checker("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
 
     auto it = constraints.find(setting_name);
     if (current_settings.readonly == 1)
     {
-        if (it == constraints.end() || it->second.type != SettingConstraintType::CHANGEABLE_IN_READONLY)
-            return Range::forbidden("Cannot modify '" + String(setting_name) + "' setting in readonly mode", ErrorCodes::READONLY);
+        if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+            return Checker("Cannot modify '" + String(setting_name) + "' setting in readonly mode", ErrorCodes::READONLY);
     }
     else // For both readonly=0 and readonly=2
     {
         if (it == constraints.end())
-            return Range::allowed();
+            return Checker(); // Allowed
     }
     return it->second;
 }
 
-bool SettingsConstraints::Range::operator==(const Range & other) const
+bool SettingsConstraints::Constraint::operator==(const Constraint & other) const
 {
-    return type == other.type && min_value == other.min_value && max_value == other.max_value;
+    return writability == other.writability && min_value == other.min_value && max_value == other.max_value;
 }
 
 bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right)

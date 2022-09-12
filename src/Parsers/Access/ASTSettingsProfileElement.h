@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Core/Field.h>
-#include <Common/SettingConstraintType.h>
+#include <Common/SettingConstraintWritability.h>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ public:
     Field value;
     Field min_value;
     Field max_value;
-    SettingConstraintType type = SettingConstraintType::NONE;
+    SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
     bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.
 
