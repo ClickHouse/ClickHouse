@@ -22,3 +22,4 @@
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_REPLXX
 #cmakedefine01 USE_JEMALLOC
+#cmakedefine01 USE_BORINGSSL
