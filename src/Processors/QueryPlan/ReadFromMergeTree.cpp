@@ -149,7 +149,6 @@ ReadFromMergeTree::ReadFromMergeTree(
         }
 
         output_stream->sort_description = std::move(sort_description);
-
     }
 }
 
@@ -1038,6 +1037,15 @@ void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
     {
         query_info.input_order_info = order_info;
     }
+
+    /// update sort info for output stream
+    SortDescription & current_sort_desc = output_stream->sort_description;
+    size_t prefix_size = current_sort_desc.hasPrefix(order_info->sort_description_for_merging);
+    if (!prefix_size)
+        return;
+
+    current_sort_desc.resize(prefix_size);
+    output_stream->sort_mode = DataStream::SortMode::Port;
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const

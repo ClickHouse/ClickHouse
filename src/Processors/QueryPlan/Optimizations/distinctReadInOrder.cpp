@@ -1,3 +1,4 @@
+#include <memory>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -6,6 +7,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Common/typeid_cast.h>
+#include "Processors/QueryPlan/IQueryPlanStep.h"
+#include "Storages/SelectQueryInfo.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -17,13 +20,13 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     /// (1) check if there is preliminary distinct node
     /// (2) check if nodes below preliminary distinct preserve sorting
     QueryPlan::Node * node = parent_node;
-    DistinctStep const * pre_distinct = nullptr;
+    DistinctStep * pre_distinct = nullptr;
     while (!node->children.empty())
     {
         if (pre_distinct)
         {
             /// check if nodes below DISTINCT preserve sorting
-            const auto * step = typeid_cast<const ITransformingStep *>(node->step.get());
+            auto * step = typeid_cast<ITransformingStep *>(node->step.get());
             if (step)
             {
                 const ITransformingStep::DataStreamTraits & traits = step->getDataStreamTraits();
@@ -31,7 +34,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
                     return 0;
             }
         }
-        if (auto const * tmp = typeid_cast<const DistinctStep *>(node->step.get()); tmp)
+        if (auto * tmp = typeid_cast<DistinctStep *>(node->step.get()); tmp)
         {
             if (tmp->isPreliminary())
                 pre_distinct = tmp;
@@ -70,7 +73,12 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (!distinct_sort_desc.empty())
         return 0;
 
-    // TODO: provide input order info to read_from_merge_tree 
+    InputOrderInfoPtr order_info
+        = std::make_shared<const InputOrderInfo>(distinct_sort_desc, distinct_sort_desc.size(), 1, pre_distinct->getLimitHint());
+    read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
+
+    /// update data stream's sorting properties
+    pre_distinct->updateInputStream(read_from_merge_tree->getOutputStream());
 
     return 0;
 }

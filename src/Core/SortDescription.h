@@ -48,6 +48,7 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
+    SortColumnDescription() = default;
     explicit SortColumnDescription(
         const std::string & column_name_,
         int direction_ = 1,
@@ -120,7 +121,7 @@ public:
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
 
-    bool hasPrefix(const SortDescription & prefix) const;
+    size_t hasPrefix(const SortDescription & prefix) const;
 };
 
 /** Compile sort description for header_types.
