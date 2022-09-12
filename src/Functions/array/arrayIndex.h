@@ -748,7 +748,7 @@ private:
             const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
 
             ColumnPtr col_arg_cloned = castColumn(
-                {col_arg_const->getDataColumnPtr(), arguments[0].type, arguments[0].name}, target_type_ptr);
+                {col_arg_const->getDataColumnPtr(), arguments[1].type, arguments[1].name}, target_type_ptr);
 
             ResultColumnPtr col_result = ResultColumnType::create();
             UInt64 index = 0;
