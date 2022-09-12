@@ -66,7 +66,7 @@ void Throttler::add(size_t amount)
     if (max_speed && current_speed > max_speed)
     {
         /// If we was too fast then we have to sleep until our smoothed speed became <= max_speed
-        int64_t sleep_time = -window_ns * std::log2(max_speed / current_speed);
+        int64_t sleep_time = static_cast<int64_t>(-window_ns * std::log2(max_speed / current_speed));
 
         if (sleep_time > 0)
         {

@@ -453,7 +453,7 @@ private:
             if constexpr (sizeof(T) <= sizeof(base_type))
             {
                 if (0 == idx)
-                    return x;
+                    return static_cast<base_type>(x);
             }
             else if (idx * sizeof(base_type) < sizeof(T))
                 return x >> (idx * base_bits); // & std::numeric_limits<base_type>::max()
@@ -1239,13 +1239,13 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
-    return static_cast<long double>(*this);
+    return static_cast<double>(static_cast<long double>(*this));
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
-    return static_cast<long double>(*this);
+    return static_cast<float>(static_cast<long double>(*this));
 }
 
 // Unary operators
