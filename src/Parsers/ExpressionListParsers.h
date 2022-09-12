@@ -248,6 +248,27 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** A function, for example, f(x, y + 1, g(z)).
+  * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.
+  * Or a parametric aggregate function: quantile(0.9)(x + y).
+  *  Syntax - two pairs of parentheses instead of one. The first is for parameters, the second for arguments.
+  * For functions, the DISTINCT modifier can be specified, for example, count(DISTINCT x, y).
+  */
+class ParserFunction : public IParserBase
+{
+public:
+    explicit ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
+        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
+    {
+    }
+
+protected:
+    const char * getName() const override { return "function"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool allow_function_parameters;
+    bool is_table_function;
+};
+
 
 // It's used to parse expressions in table function.
 class ParserTableFunctionExpression : public IParserBase
