@@ -291,11 +291,16 @@ concept HasPrefetchMemberFunc = requires
 
 size_t getL2CacheSize()
 {
+    size_t l2_size = 0;
+
 #ifdef OS_LINUX
-    return sysconf(_SC_LEVEL2_CACHE_SIZE);
-#else
-    return 8 * 1024 * 1024; /// 8MB looks like a reasonable default
+    if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+        l2_size = ret;
 #endif
+
+    /// 1MB looks like a reasonable default.
+    /// max() is needed because sysconf() may return 0 instead of the actual value (at least on ARM).
+    return std::max<size_t>(l2_size, 1 * 1024 * 1024);
 }
 
 }
@@ -2613,7 +2618,8 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
 
-    const bool prefetch = getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getL2CacheSize();
+    const bool prefetch
+        = Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > getL2CacheSize();
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {

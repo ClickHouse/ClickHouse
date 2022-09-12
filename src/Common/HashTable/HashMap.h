@@ -219,7 +219,7 @@ public:
                     prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - prefetching.getInitialLookAheadValue());
                 }
 
-                if (likely(prefetch_it != end))
+                if (prefetch_it != end)
                 {
                     that.prefetchByHash(prefetch_it.getHash());
                     ++prefetch_it;

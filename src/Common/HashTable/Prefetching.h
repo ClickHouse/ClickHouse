@@ -7,7 +7,6 @@
 namespace DB
 {
 
-
 class PrefetchingHelper
 {
 public:
@@ -15,7 +14,7 @@ public:
     {
         static constexpr size_t assumed_load_latency_ns = 100;
         static constexpr size_t just_coefficient = 4;
-        const size_t single_iteration_latency = watch.elapsedNanoseconds() / iterations_to_measure;
+        const double single_iteration_latency = std::max<double>(1.0 * watch.elapsedNanoseconds() / iterations_to_measure, 1);
         return std::clamp<size_t>(
             just_coefficient * assumed_load_latency_ns / single_iteration_latency, min_look_ahead_value, max_look_ahead_value);
     }
@@ -31,6 +30,5 @@ private:
 
     Stopwatch watch;
 };
-
 
 }
