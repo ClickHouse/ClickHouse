@@ -379,7 +379,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
         /// Notify waiting thread when put object task finished
         auto task_notify_finish = [&]()
-       {
+        {
             std::lock_guard lock(bg_tasks_mutex);
             put_object_task->is_finished = true;
 
