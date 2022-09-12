@@ -715,9 +715,17 @@ private:
         return true;
     }
 
-    /** Catches arguments of type LowCardinality(T) (left) and U (right).
-      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
-      */
+    /**
+     * Catches arguments of type LowCardinality(T) (left) and U (right).
+     *
+     * The perftests showed that the amount of action needed to convert the non-constant right argument to the index column
+     * (similar to the left one's) is significantly higher than converting the array itself to an ordinary column.
+     *
+     * So, in terms of performance it's more optimal to fall back to default implementation and catch only constant
+     * right arguments.
+     *
+     * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
+     */
     static ColumnPtr executeLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
         const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
@@ -732,26 +740,68 @@ private:
 
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
-        ColumnPtr column_argument = arguments[1].column->convertToFullColumnIfConst();
-        const IColumn & col_arg = *column_argument;
+        if (const ColumnConst * col_arg_const = checkAndGetColumn<ColumnConst>(*arguments[1].column))
+        {
+            const IColumnUnique & col_lc_dict = col_lc->getDictionary();
 
-        if (col_lc->nestedIsNullable()) // LowCardinality(Nullable(T)) and U
+            const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+            const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
+
+            ColumnPtr col_arg_cloned = castColumn(
+                {col_arg_const->getDataColumnPtr(), arguments[0].type, arguments[0].name}, target_type_ptr);
+
+            ResultColumnPtr col_result = ResultColumnType::create();
+            UInt64 index = 0;
+
+            if (!col_arg_cloned->isNullAt(0))
+            {
+                if (col_arg_cloned->isNullable())
+                    col_arg_cloned = checkAndGetColumn<ColumnNullable>(*col_arg_cloned)->getNestedColumnPtr();
+
+                StringRef elem = col_arg_cloned->getDataAt(0);
+
+                if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
+                {
+                    index = *maybe_index;
+                }
+                else
+                {
+                    const size_t offsets_size = col_array->getOffsets().size();
+                    auto & data = col_result->getData();
+
+                    data.resize_fill(offsets_size);
+
+                    return col_result;
+                }
+            }
+
+            Impl::Main<ConcreteAction, true>::vector(
+                col_lc->getIndexes(),
+                col_array->getOffsets(),
+                index, /** Assuming LowCardinality has index of NULL always as zero. */
+                col_result->getData(),
+                null_map_data,
+                null_map_item);
+
+            return col_result;
+        }
+        else if (col_lc->nestedIsNullable()) // LowCardinality(Nullable(T)) and U
         {
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality(); // Nullable(T)
-            const ColumnNullable & left_nullable = *checkAndGetColumn<ColumnNullable>(left_casted.get());
+            const ColumnNullable& left_nullable = *checkAndGetColumn<ColumnNullable>(left_casted.get());
 
             const NullMap * const null_map_left_casted = &left_nullable.getNullMapColumn().getData();
 
             const IColumn & left_ptr = left_nullable.getNestedColumn();
 
-            const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
+            const ColumnPtr right_casted = arguments[1].column->convertToFullColumnIfLowCardinality();
             const ColumnNullable * const right_nullable = checkAndGetColumn<ColumnNullable>(right_casted.get());
 
             const NullMap * const null_map_right_casted = right_nullable
                 ? &right_nullable->getNullMapColumn().getData()
                 : null_map_item;
 
-            const IColumn & right_ptr = right_nullable
+            const IColumn& right_ptr = right_nullable
                 ? right_nullable->getNestedColumn()
                 : *right_casted.get();
 
@@ -767,17 +817,17 @@ private:
         }
         else // LowCardinality(T) and U, T not Nullable
         {
-            if (col_arg.isNullable())
+            if (arguments[1].column->isNullable())
                 return nullptr;
 
-            if (const auto* const arg_lc = checkAndGetColumn<ColumnLowCardinality>(&col_arg);
+            if (const auto* const arg_lc = checkAndGetColumn<ColumnLowCardinality>(arguments[1].column.get());
                 arg_lc && arg_lc->isNullable())
                 return nullptr;
 
             // LowCardinality(T) and U (possibly LowCardinality(V))
 
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality();
-            const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
+            const ColumnPtr right_casted = arguments[1].column->convertToFullColumnIfLowCardinality();
 
             ExecutionData data =
             {
