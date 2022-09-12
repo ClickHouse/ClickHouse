@@ -364,9 +364,6 @@ private:
     bool apply_deleted_mask = true;
 
 public:
-    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
-    OpenTelemetryTraceContext query_trace_context;
-
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
     struct KitchenSink
@@ -939,7 +936,7 @@ public:
     bool applyDeletedMask() const { return apply_deleted_mask; }
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
-    ActionLocksManagerPtr getActionLocksManager();
+    ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType
     {

@@ -101,7 +101,7 @@
 #endif
 
 /*
- * The pcg_extras namespace contains some support code that is likley to
+ * The pcg_extras namespace contains some support code that is likely to
  * be useful for a variety of RNGs, including:
  *      - 128-bit int support for platforms where it isn't available natively
  *      - bit twiddling operations
