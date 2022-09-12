@@ -462,17 +462,16 @@ def test_show_profiles():
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
-        == "CREATE SETTINGS PROFILE default SETTINGS load_balancing = \\'random\\'\n"
+        == "CREATE SETTINGS PROFILE default\n"
     )
     assert (
-        instance.query("SHOW CREATE PROFILES")
-        == "CREATE SETTINGS PROFILE default SETTINGS load_balancing = \\'random\\'\n"
+        instance.query("SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )
 
     expected_access = (
-        "CREATE SETTINGS PROFILE default SETTINGS load_balancing = \\'random\\'\n"
+        "CREATE SETTINGS PROFILE default\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )

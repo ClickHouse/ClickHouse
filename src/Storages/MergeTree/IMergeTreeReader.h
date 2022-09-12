@@ -92,7 +92,9 @@ protected:
     MarkRanges all_mark_ranges;
 
     using ColumnPosition = std::optional<size_t>;
-    ColumnPosition findColumnForOffsets(const String & column_name) const;
+    ColumnPosition findColumnForOffsets(const NameAndTypePair & column) const;
+
+    NameSet partially_read_columns;
 
 private:
     /// Alter conversions, which must be applied on fly if required
