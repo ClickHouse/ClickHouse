@@ -17,6 +17,8 @@
 2	5	bb
 3	6	qq
 3	7	ww
+1_1_1_1	InMemory
+2_2_2_1	InMemory
 2_4_4_0	Compact
 3_3_3_0	InMemory
 ==================

@@ -6,7 +6,8 @@ CREATE TABLE table_with_single_pk
   value String
 )
 ENGINE = MergeTree
-ORDER BY key;
+ORDER BY key
+SETTINGS old_parts_lifetime = 1;
 
 INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(1000000);
 
@@ -23,6 +24,7 @@ SELECT if(dateDiff('second', toDateTime(time.2), toDateTime(time.1)) = 0, 'ok', 
 
 -- Now let's check RemovePart
 TRUNCATE TABLE table_with_single_pk;
+SELECT sleepEachRow(1) from numbers(3);
 SYSTEM FLUSH LOGS;
 WITH (
          SELECT (event_time, event_time_microseconds)

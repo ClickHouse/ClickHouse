@@ -33,7 +33,7 @@ SELECT count(), _state FROM system.parts WHERE database = currentDatabase() AND 
 -- TRUNCATE does not remove parts instantly
 SELECT '# truncate';
 TRUNCATE data_01660;
-SELECT _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660';
+SELECT count(), _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660' GROUP BY _state;
 
 -- But DROP does
 SELECT '# drop';
