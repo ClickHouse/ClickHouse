@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/random-functions
 sidebar_position: 51
 sidebar_label: "Функции генерации псевдослучайных чисел"
 ---

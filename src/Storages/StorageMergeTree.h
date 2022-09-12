@@ -87,15 +87,10 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    bool hasLightweightDeletedMask() const override;
-
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
     CancellationCode killMutation(const String & mutation_id) override;
-
-    /// Makes backup entries to backup the data of the storage.
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -109,6 +104,8 @@ public:
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
@@ -147,6 +144,11 @@ private:
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
+    /// We store information about mutations which are not applicable to the partition of each part.
+    /// The value is a maximum version for a part which will be the same as his current version,
+    /// that is, to which version it can be upgraded without any change.
+    std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
+
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
 
@@ -181,11 +183,21 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version);
     void waitForMutation(const String & mutation_id) override;
-    void waitForMutation(Int64 version, const String & mutation_id);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
 
     friend struct CurrentlyMergingPartsTagger;
+
+    struct PartVersionWithName
+    {
+        Int64 version;
+        String name;
+
+        bool operator <(const PartVersionWithName & s) const
+        {
+            return version < s.version;
+        }
+    };
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
@@ -200,9 +212,7 @@ private:
         SelectPartsDecision * select_decision_out = nullptr);
 
 
-    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(
-        const StorageMetadataPtr & metadata_snapshot, String * disable_reason,
-        TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
+    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock, bool & were_some_mutations_for_some_parts_skipped);
 
     /// For current mutations queue, returns maximum version of mutation for a part,
     /// with respect of mutations which would not change it.
@@ -211,7 +221,14 @@ private:
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// Returns maximum version of a part, with respect of mutations which would not change it.
+    Int64 getUpdatedDataVersion(
+        const DataPartPtr & part,
+        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+
     size_t clearOldMutations(bool truncate = false);
+
+    std::vector<PartVersionWithName> getSortedPartVersionsWithNames(std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;
@@ -236,14 +253,7 @@ private:
     /// return any ids.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr) const;
 
-    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
-
     void startBackgroundMovesIfNeeded() override;
-
-    BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
-
-    /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

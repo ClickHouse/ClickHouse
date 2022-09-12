@@ -20,7 +20,8 @@ class QueryPlan;
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
-class SubqueryForSet;
+struct SubqueryForSet;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct SizeLimits;
 
@@ -28,10 +29,6 @@ struct ExpressionActionsSettings;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
-class TableJoin;
-
-class QueryPipelineBuilder;
-using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 class QueryPipelineBuilder
 {
@@ -69,7 +66,7 @@ public:
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
-    void transform(const Transformer & transformer, bool check_ports = true);
+    void transform(const Transformer & transformer);
 
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
@@ -93,11 +90,6 @@ public:
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
-    /// Concat some ports to have no more then size outputs.
-    /// This method is needed for Merge table engine in case of reading from many tables.
-    /// It prevents opening too many files at the same time.
-    void narrow(size_t size);
-
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipelineBuilder unitePipelines(
@@ -105,32 +97,15 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
-    static QueryPipelineBuilderPtr mergePipelines(
-        QueryPipelineBuilderPtr left,
-        QueryPipelineBuilderPtr right,
-        ProcessorPtr transform,
-        Processors * collected_processors);
-
     /// Join two pipelines together using JoinPtr.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
-    /// Process right stream to fill JoinPtr and then process left pipeline using it
-    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesRightLeft(
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelines(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
-        const Block & output_header,
         size_t max_block_size,
         size_t max_streams,
         bool keep_left_read_in_order,
-        Processors * collected_processors = nullptr);
-
-    /// Join two independent pipelines, processing them simultaneously.
-    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShaped(
-        std::unique_ptr<QueryPipelineBuilder> left,
-        std::unique_ptr<QueryPipelineBuilder> right,
-        JoinPtr table_join,
-        const Block & out_header,
-        size_t max_block_size,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.

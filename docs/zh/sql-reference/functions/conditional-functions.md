@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/conditional-functions
----
 # 条件函数 {#tiao-jian-han-shu}
 
 ## if {#if}

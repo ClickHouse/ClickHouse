@@ -1,7 +1,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <ctime>
 #include <csignal>
 
 #include <Common/logger_useful.h>
@@ -11,7 +13,6 @@
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <Common/waitForPid.h>
 
 
 namespace
@@ -76,7 +77,7 @@ ShellCommand::~ShellCommand()
 
         int retcode = kill(pid, SIGTERM);
         if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString());
+            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
     }
     else
     {
@@ -93,15 +94,53 @@ ShellCommand::~ShellCommand()
 
 bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
 {
+    int status = 0;
+
     LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {}", pid, timeout_in_seconds);
 
     wait_called = true;
+    struct timespec interval {.tv_sec = 1, .tv_nsec = 0};
 
     in.close();
     out.close();
     err.close();
 
-    return waitForPid(pid, timeout_in_seconds);
+    if (timeout_in_seconds == 0)
+    {
+        /// If there is no timeout before signal try to waitpid 1 time without block so we can avoid sending
+        /// signal if process is already normally terminated.
+
+        int waitpid_res = waitpid(pid, &status, WNOHANG);
+        bool process_terminated_normally = (waitpid_res == pid);
+        return process_terminated_normally;
+    }
+
+    /// If timeout is positive try waitpid without block in loop until
+    /// process is normally terminated or waitpid return error
+
+    while (timeout_in_seconds != 0)
+    {
+        int waitpid_res = waitpid(pid, &status, WNOHANG);
+        bool process_terminated_normally = (waitpid_res == pid);
+
+        if (process_terminated_normally)
+        {
+            return true;
+        }
+        else if (waitpid_res == 0)
+        {
+            --timeout_in_seconds;
+            nanosleep(&interval, nullptr);
+
+            continue;
+        }
+        else if (waitpid_res == -1 && errno != EINTR)
+        {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
@@ -201,8 +240,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         // by the child process, which might not expect this.
         sigset_t mask;
         sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe)
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
+        sigprocmask(0, nullptr, &mask);
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
 
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.

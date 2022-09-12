@@ -126,6 +126,7 @@ void RemoteSource::onCancel()
 {
     was_query_canceled = true;
     query_executor->cancel(&read_context);
+    // is_async_state = false;
 }
 
 void RemoteSource::onUpdatePorts()
@@ -134,6 +135,7 @@ void RemoteSource::onUpdatePorts()
     {
         was_query_canceled = true;
         query_executor->finish(&read_context);
+        // is_async_state = false;
     }
 }
 

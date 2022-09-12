@@ -33,8 +33,6 @@ namespace JSONBuilder
     using ItemPtr = std::unique_ptr<IItem>;
 }
 
-class SortDescription;
-
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -75,7 +73,7 @@ public:
         DataTypePtr result_type;
 
         FunctionOverloadResolverPtr function_builder;
-        /// Can be used to get function signature or properties like monotonicity.
+        /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
         ExecutableFunctionPtr function;
@@ -98,8 +96,8 @@ public:
 
 private:
     Nodes nodes;
+    NodeRawConstPtrs index;
     NodeRawConstPtrs inputs;
-    NodeRawConstPtrs outputs;
 
     bool project_input = false;
     bool projected_output = false;
@@ -113,12 +111,7 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /** Output nodes can contain any column returned from DAG.
-      * You may manually change it if needed.
-      */
-    NodeRawConstPtrs & getOutputs() { return outputs; }
-
+    const NodeRawConstPtrs & getIndex() const { return index; }
     const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
@@ -140,26 +133,25 @@ public:
             NodeRawConstPtrs children,
             std::string result_name);
 
-    /// Find first column by name in output nodes. This search is linear.
-    const Node & findInOutputs(const std::string & name) const;
-
+    /// Index can contain any column returned from DAG.
+    /// You may manually change it if needed.
+    NodeRawConstPtrs & getIndex() { return index; }
+    /// Find first column by name in index. This search is linear.
+    const Node & findInIndex(const std::string & name) const;
     /// Same, but return nullptr if node not found.
-    const Node * tryFindInOutputs(const std::string & name) const;
-
-    /// Find first node with the same name in output nodes and replace it.
-    /// If was not found, add node to outputs end.
-    void addOrReplaceInOutputs(const Node & node);
+    const Node * tryFindInIndex(const std::string & name) const;
+    /// Find first node with the same name in index and replace it.
+    /// If was not found, add node to index end.
+    void addOrReplaceInIndex(const Node & node);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
-
-    /// Add alias actions and remove unused columns from outputs. Also specify result columns order in outputs.
+    /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
     void project(const NamesWithAliases & projection);
 
-    /// If column is not in outputs, try to find it in nodes and insert back into outputs.
+    /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
-
-    /// Find column in result. Remove it from outputs.
+    /// Find column in result. Remove it from index.
     /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
@@ -168,13 +160,7 @@ public:
     bool isInputProjected() const { return project_input; }
     bool isOutputProjected() const { return projected_output; }
 
-    /// Remove actions that are not needed to compute output nodes
-    void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
-
-    /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
-
-    /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
@@ -210,10 +196,10 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
-    /// Reorder the output nodes using given position mapping.
+    /// Reorder the index nodes using given position mapping.
     void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
 
-    /// Add aggregate columns to output nodes from projection
+    /// Add aggregate columns to index nodes from projection
     void addAggregatesViaProjection(const Block & aggregates);
 
     bool hasArrayJoin() const;
@@ -277,7 +263,7 @@ public:
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
-    /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal outputs.
+    /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal index (outputs).
     /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
     SplitResult split(std::unordered_set<const Node *> split_nodes) const;
 
@@ -285,7 +271,7 @@ public:
     SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
-    /// Outputs of initial actions must contain column_name.
+    /// Index of initial actions must contain column_name.
     SplitResult splitActionsForFilter(const std::string & column_name) const;
 
     /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
@@ -315,23 +301,16 @@ public:
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
 
-    bool
-    isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
-
 private:
     Node & addNode(Node node);
+
+    void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
-};
-
-/// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
-struct ActionDAGNodes
-{
-    ActionsDAG::NodeRawConstPtrs nodes;
 };
 
 }

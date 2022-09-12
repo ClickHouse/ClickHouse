@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/quotas_usage
----
 # system.quotas_usage {#system_tables-quotas_usage}
 
 Использование квот всеми пользователями.

@@ -84,7 +84,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3GetBaseCell)
+void registerFunctionH3GetBaseCell(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3GetBaseCell>();
 }

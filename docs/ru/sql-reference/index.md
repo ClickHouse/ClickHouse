@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/
 sidebar_label: "Справка по SQL"
 sidebar_position: 28
 ---

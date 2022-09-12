@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/alter/sample-by
 sidebar_position: 41
 sidebar_label: SAMPLE BY
 ---

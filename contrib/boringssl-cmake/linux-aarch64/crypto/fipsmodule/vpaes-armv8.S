@@ -13,8 +13,6 @@
 #if defined(BORINGSSL_PREFIX)
 #include <boringssl_prefix_symbols_asm.h>
 #endif
-#include <openssl/arm_arch.h>
-
 .section	.rodata
 
 .type	_vpaes_consts,%object
@@ -217,7 +215,6 @@ _vpaes_encrypt_core:
 .type	vpaes_encrypt,%function
 .align	4
 vpaes_encrypt:
-	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -227,7 +224,6 @@ vpaes_encrypt:
 	st1	{v0.16b}, [x1]
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	vpaes_encrypt,.-vpaes_encrypt
 
@@ -456,7 +452,6 @@ _vpaes_decrypt_core:
 .type	vpaes_decrypt,%function
 .align	4
 vpaes_decrypt:
-	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -466,7 +461,6 @@ vpaes_decrypt:
 	st1	{v0.16b}, [x1]
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	vpaes_decrypt,.-vpaes_decrypt
 
@@ -636,7 +630,6 @@ _vpaes_key_preheat:
 .type	_vpaes_schedule_core,%function
 .align	4
 _vpaes_schedule_core:
-	AARCH64_SIGN_LINK_REGISTER
 	stp	x29, x30, [sp,#-16]!
 	add	x29,sp,#0
 
@@ -806,7 +799,6 @@ _vpaes_schedule_core:
 	eor	v6.16b, v6.16b, v6.16b		// vpxor	%xmm6,	%xmm6,	%xmm6
 	eor	v7.16b, v7.16b, v7.16b		// vpxor	%xmm7,	%xmm7,	%xmm7
 	ldp	x29, x30, [sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	_vpaes_schedule_core,.-_vpaes_schedule_core
 
@@ -1020,7 +1012,6 @@ _vpaes_schedule_mangle:
 .type	vpaes_set_encrypt_key,%function
 .align	4
 vpaes_set_encrypt_key:
-	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 	stp	d8,d9,[sp,#-16]!	// ABI spec says so
@@ -1036,7 +1027,6 @@ vpaes_set_encrypt_key:
 
 	ldp	d8,d9,[sp],#16
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	vpaes_set_encrypt_key,.-vpaes_set_encrypt_key
 
@@ -1045,7 +1035,6 @@ vpaes_set_encrypt_key:
 .type	vpaes_set_decrypt_key,%function
 .align	4
 vpaes_set_decrypt_key:
-	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 	stp	d8,d9,[sp,#-16]!	// ABI spec says so
@@ -1065,7 +1054,6 @@ vpaes_set_decrypt_key:
 
 	ldp	d8,d9,[sp],#16
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	vpaes_set_decrypt_key,.-vpaes_set_decrypt_key
 .globl	vpaes_cbc_encrypt
@@ -1073,7 +1061,6 @@ vpaes_set_decrypt_key:
 .type	vpaes_cbc_encrypt,%function
 .align	4
 vpaes_cbc_encrypt:
-	AARCH64_SIGN_LINK_REGISTER
 	cbz	x2, .Lcbc_abort
 	cmp	w5, #0			// check direction
 	b.eq	vpaes_cbc_decrypt
@@ -1100,7 +1087,6 @@ vpaes_cbc_encrypt:
 	st1	{v0.16b}, [x4]	// write ivec
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 .Lcbc_abort:
 	ret
 .size	vpaes_cbc_encrypt,.-vpaes_cbc_encrypt
@@ -1108,8 +1094,6 @@ vpaes_cbc_encrypt:
 .type	vpaes_cbc_decrypt,%function
 .align	4
 vpaes_cbc_decrypt:
-	// Not adding AARCH64_SIGN_LINK_REGISTER here because vpaes_cbc_decrypt is jumped to
-	// only from vpaes_cbc_encrypt which has already signed the return address.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 	stp	d8,d9,[sp,#-16]!	// ABI spec says so
@@ -1151,7 +1135,6 @@ vpaes_cbc_decrypt:
 	ldp	d10,d11,[sp],#16
 	ldp	d8,d9,[sp],#16
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	vpaes_cbc_decrypt,.-vpaes_cbc_decrypt
 .globl	vpaes_ctr32_encrypt_blocks
@@ -1159,7 +1142,6 @@ vpaes_cbc_decrypt:
 .type	vpaes_ctr32_encrypt_blocks,%function
 .align	4
 vpaes_ctr32_encrypt_blocks:
-	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 	stp	d8,d9,[sp,#-16]!	// ABI spec says so
@@ -1227,9 +1209,7 @@ vpaes_ctr32_encrypt_blocks:
 	ldp	d10,d11,[sp],#16
 	ldp	d8,d9,[sp],#16
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	vpaes_ctr32_encrypt_blocks,.-vpaes_ctr32_encrypt_blocks
 #endif
 #endif  // !OPENSSL_NO_ASM
-.section	.note.GNU-stack,"",%progbits

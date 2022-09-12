@@ -1,7 +1,6 @@
 #include <string_view>
 
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -10,7 +9,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -139,38 +137,36 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     };
 
-    /// Parse UNION / INTERSECT / EXCEPT mode
-    /// The mode can be DEFAULT (unspecified) / DISTINCT / ALL
+    /// Parse UNION type
     auto parse_separator = [&]
     {
         if (s_union_parser.ignore(pos, expected))
         {
+            // SELECT ... UNION ALL SELECT ...
             if (s_all_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::UNION_ALL);
+            {
+                union_modes.push_back(SelectUnionMode::ALL);
+            }
+            // SELECT ... UNION DISTINCT SELECT ...
             else if (s_distinct_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::UNION_DISTINCT);
+            {
+                union_modes.push_back(SelectUnionMode::DISTINCT);
+            }
+            // SELECT ... UNION SELECT ...
             else
-                union_modes.push_back(SelectUnionMode::UNION_DEFAULT);
+            {
+                union_modes.push_back(SelectUnionMode::Unspecified);
+            }
             return true;
         }
         else if (s_except_parser.check(pos, expected))
         {
-            if (s_all_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::EXCEPT_ALL);
-            else if (s_distinct_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::EXCEPT_DISTINCT);
-            else
-                union_modes.push_back(SelectUnionMode::EXCEPT_DEFAULT);
+            union_modes.push_back(SelectUnionMode::EXCEPT);
             return true;
         }
         else if (s_intersect_parser.check(pos, expected))
         {
-            if (s_all_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::INTERSECT_ALL);
-            else if (s_distinct_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::INTERSECT_DISTINCT);
-            else
-                union_modes.push_back(SelectUnionMode::INTERSECT_DEFAULT);
+            union_modes.push_back(SelectUnionMode::INTERSECT);
             return true;
         }
         return false;
@@ -607,13 +603,6 @@ bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected
 {
     if (ParserTableFunctionView().parse(pos, node, expected))
         return true;
-    ParserKeyword s_settings("SETTINGS");
-    if (s_settings.ignore(pos, expected))
-    {
-        ParserSetQuery parser_settings(true);
-        if (parser_settings.parse(pos, node, expected))
-            return true;
-    }
     return elem_parser.parse(pos, node, expected);
 }
 

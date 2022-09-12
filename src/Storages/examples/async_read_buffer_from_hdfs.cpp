@@ -23,8 +23,7 @@ int main()
 
     String hdfs_namenode_url = "hdfs://namenode:port/";
     String path = "/path/to/hdfs/file";
-    ReadSettings settings = {};
-    auto in = std::make_unique<ReadBufferFromHDFS>(hdfs_namenode_url, path, *config, settings);
+    auto in = std::make_unique<ReadBufferFromHDFS>(hdfs_namenode_url, path, *config);
     auto reader = IObjectStorage::getThreadPoolReader();
     AsynchronousReadBufferFromHDFS buf(reader, {}, std::move(in));
 

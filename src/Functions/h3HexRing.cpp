@@ -143,7 +143,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3HexRing)
+void registerFunctionH3HexRing(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3HexRing>();
 }

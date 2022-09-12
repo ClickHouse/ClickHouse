@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/random-functions
 sidebar_position: 51
 sidebar_label: Pseudo-Random Numbers
 ---

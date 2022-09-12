@@ -23,7 +23,7 @@ class IMetadataStorage;
 /// interface. This transaction is more like "batch operation" than real "transaction".
 ///
 /// But for better usability we can get MetadataStorage interface and use some read methods.
-class IMetadataTransaction : private boost::noncopyable
+struct IMetadataTransaction : private boost::noncopyable
 {
 public:
     virtual void commit() = 0;
@@ -37,16 +37,13 @@ public:
 
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;
 
-    virtual bool supportsChmod() const = 0;
-    virtual void chmod(const String & path, mode_t mode) = 0;
-
     virtual void setReadOnly(const std::string & path) = 0;
 
     virtual void unlinkFile(const std::string & path) = 0;
 
     virtual void createDirectory(const std::string & path) = 0;
 
-    virtual void createDirectoryRecursive(const std::string & path) = 0;
+    virtual void createDicrectoryRecursive(const std::string & path) = 0;
 
     virtual void removeDirectory(const std::string & path) = 0;
 
@@ -91,10 +88,8 @@ class IMetadataStorage : private boost::noncopyable
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
-    /// Get metadata root path.
+    /// General purpose functions (similar to Disk)
     virtual const std::string & getPath() const = 0;
-
-    /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool exists(const std::string & path) const = 0;
 
@@ -108,11 +103,6 @@ public:
 
     virtual time_t getLastChanged(const std::string & path) const = 0;
 
-    virtual bool supportsChmod() const = 0;
-
-    virtual bool supportsStat() const = 0;
-    virtual struct stat stat(const String & path) const = 0;
-
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
     virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
@@ -124,16 +114,16 @@ public:
 
     virtual ~IMetadataStorage() = default;
 
-    /// ==== More specific methods. Previous were almost general purpose. ====
+    /// ==== More specefic methods. Previous were almost general purpose. ====
 
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
 
-    /// Return object information (absolute_path, bytes_size, ...) for metadata path.
-    /// object_storage_path is absolute.
-    virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
+    /// Return list of paths corresponding to metadata stored in local path
+    virtual std::vector<std::string> getRemotePaths(const std::string & path) const = 0;
 
-    virtual std::string getObjectStorageRootPath() const = 0;
+    /// Return [(remote_path, size_in_bytes), ...] for metadata path
+    virtual BlobsPathToSize getBlobs(const std::string & path) const = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

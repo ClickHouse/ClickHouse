@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: "Клиентские библиотеки от сторонних разработчиков"
 ---
@@ -46,6 +45,7 @@ sidebar_label: "Клиентские библиотеки от сторонни�
     -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
     -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
+    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)

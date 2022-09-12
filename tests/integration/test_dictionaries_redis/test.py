@@ -1,14 +1,14 @@
 import os
 import shutil
 import pytest
-import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceRedis
 
-cluster = ClickHouseCluster(__file__)
+cluster = None
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
+node = None
 
 KEY_FIELDS = {
     "simple": [Field("KeyField", "UInt64", is_key=True, default_value_for_get=9999999)],
@@ -70,6 +70,8 @@ DICTIONARIES = []
 
 
 def get_dict(source, layout, fields, suffix_name=""):
+    global dict_configs_path
+
     structure = DictionaryStructure(layout, fields)
     dict_name = source.name + "_" + layout.name + "_" + suffix_name
     dict_path = os.path.join(dict_configs_path, dict_name + ".xml")
@@ -80,9 +82,13 @@ def get_dict(source, layout, fields, suffix_name=""):
     return dictionary
 
 
-def generate_dict_configs():
+def setup_module(module):
     global DICTIONARIES
     global cluster
+    global node
+    global dict_configs_path
+
+    cluster = ClickHouseCluster(__file__)
 
     if os.path.exists(dict_configs_path):
         shutil.rmtree(dict_configs_path)
@@ -120,8 +126,8 @@ def generate_dict_configs():
         for source in sources:
             for layout in LAYOUTS:
                 if not source.compatible_with_layout(layout):
-                    logging.debug(
-                        f"Source {source.name} incompatible with layout {layout.name}"
+                    print(
+                        "Source", source.name, "incompatible with layout", layout.name
                     )
                     continue
 
@@ -131,9 +137,7 @@ def generate_dict_configs():
     main_configs = []
     dictionaries = []
     for fname in os.listdir(dict_configs_path):
-        path = os.path.join(dict_configs_path, fname)
-        logging.debug(f"Found dictionary {path}")
-        dictionaries.append(path)
+        dictionaries.append(os.path.join(dict_configs_path, fname))
 
     node = cluster.add_instance(
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
@@ -143,15 +147,13 @@ def generate_dict_configs():
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
-        generate_dict_configs()
-
         cluster.start()
         assert len(FIELDS) == len(VALUES)
         for dicts in DICTIONARIES:
             for dictionary in dicts:
-                logging.debug(f"Preparing {dictionary.name}")
+                print("Preparing", dictionary.name)
                 dictionary.prepare_source(cluster)
-                logging.debug(f"Prepared {dictionary.name}")
+                print("Prepared")
 
         yield cluster
 
@@ -159,19 +161,14 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_entity_id(entity):
-    return FIELDS[entity].name
-
-
-@pytest.mark.parametrize("id", list(range(len(FIELDS))), ids=get_entity_id)
+@pytest.mark.parametrize("id", list(range(len(FIELDS))))
 def test_redis_dictionaries(started_cluster, id):
-    logging.debug(f"Run test with id: {id}")
+    print("id:", id)
 
     dicts = DICTIONARIES[id]
     values = VALUES[id]
     field = FIELDS[id]
 
-    node = started_cluster.instances["node"]
     node.query("system reload dictionaries")
 
     for dct in dicts:
@@ -196,9 +193,10 @@ def test_redis_dictionaries(started_cluster, id):
             for query in dct.get_select_get_or_default_queries(field, row):
                 queries_with_answers.append((query, field.default_value_for_get))
 
-        node.query(f"system reload dictionary {dct.name}")
+        node.query("system reload dictionary {}".format(dct.name))
 
         for query, answer in queries_with_answers:
+            print(query)
             assert node.query(query) == str(answer) + "\n"
 
     # Checks, that dictionaries can be reloaded.

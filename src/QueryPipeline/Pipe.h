@@ -85,13 +85,13 @@ public:
     /// Add chain to every output port.
     void addChains(std::vector<Chain> chains);
 
-    /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
+    /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
     /// Transform Pipe in general way.
-    void transform(const Transformer & transformer, bool check_ports = true);
+    void transform(const Transformer & transformer);
 
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);

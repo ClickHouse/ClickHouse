@@ -3,16 +3,13 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
-#include <Interpreters/Context.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
-#include "Storages/MergeTree/DataPartStorageOnDisk.h"
 #include <sys/time.h>
 
 namespace DB
@@ -123,22 +120,18 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
     init();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    std::unique_lock<std::mutex> & parts_lock)
+MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path);
+    auto in = disk->readFile(path, {});
     NativeReader block_in(*in, 0);
     NameSet dropped_parts;
 
     while (!in->eof())
     {
         MergeTreeData::MutableDataPartPtr part;
-        DataPartStorageBuilderPtr data_part_storage_builder;
         UInt8 version;
         String part_name;
         Block block;
@@ -164,21 +157,17 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             else if (action_type == ActionType::ADD_PART)
             {
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
-                auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
-                data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
 
                 part = storage.createPart(
                     part_name,
                     MergeTreeDataPartType::InMemory,
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
-                    data_part_storage);
+                    single_disk_volume,
+                    part_name);
 
                 part->uuid = metadata.part_uuid;
 
                 block = block_in.read();
-
-                if (storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock))
-                    continue;
             }
             else
             {
@@ -210,7 +199,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
         {
             MergedBlockOutputStream part_out(
                 part,
-                data_part_storage_builder,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
                 {},
@@ -219,7 +207,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
 
             part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
-            part->setColumns(block.getNamesAndTypesList(), {});
+            part->setColumns(block.getNamesAndTypesList());
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
@@ -228,7 +216,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             for (const auto & projection : metadata_snapshot->getProjections())
             {
                 auto projection_block = projection.calculate(block, context);
-                auto temp_part = MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, data_part_storage_builder, part.get());
+                auto temp_part = MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get());
                 temp_part.finalize();
                 if (projection_block.rows())
                     part->addProjectionPart(projection.name, std::move(temp_part.part));
@@ -244,15 +232,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     MergeTreeData::MutableDataPartsVector result;
     std::copy_if(parts.begin(), parts.end(), std::back_inserter(result),
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
-
-    /// All parts in WAL had been already committed into the disk -> clear the WAL
-    if (result.empty())
-    {
-        LOG_DEBUG(log, "WAL file '{}' had been completely processed. Removing.", path);
-        disk->removeFile(path);
-        init();
-        return {};
-    }
 
     return result;
 }

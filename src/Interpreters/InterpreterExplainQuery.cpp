@@ -146,14 +146,12 @@ namespace
 struct QueryASTSettings
 {
     bool graph = false;
-    bool optimize = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
-        {"optimize", optimize}
     };
 };
 
@@ -174,8 +172,7 @@ struct QueryPlanSettings
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
             {"optimize", optimize},
-            {"json", json},
-            {"sorting", query_plan_options.sorting},
+            {"json", json}
     };
 };
 
@@ -281,12 +278,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
-            if (settings.optimize)
-            {
-                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
-                ExplainAnalyzedSyntaxVisitor(data).visit(query);
-            }
-
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
@@ -316,7 +307,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             interpreter.buildQueryPlan(plan);
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(interpreter.getContext()));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
 
             if (settings.json)
             {
@@ -326,7 +317,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
                 plan_array->add(std::move(plan_map));
 
-                auto format_settings = getFormatSettings(interpreter.getContext());
+                auto format_settings = getFormatSettings(getContext());
                 format_settings.json.quote_64bit_integers = false;
 
                 JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};

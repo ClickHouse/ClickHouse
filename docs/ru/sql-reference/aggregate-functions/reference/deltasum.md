@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/deltasum
 sidebar_position: 141
 ---
 
@@ -9,7 +8,6 @@ sidebar_position: 141
 
 :::info "Примечание"
     Чтобы эта функция работала должным образом, исходные данные должны быть отсортированы. В [материализованном представлении](../../../sql-reference/statements/create/view.md#materialized) вместо нее рекомендуется использовать [deltaSumTimestamp](../../../sql-reference/aggregate-functions/reference/deltasumtimestamp.md#agg_functions-deltasumtimestamp).
-:::
 
 **Синтаксис**
 

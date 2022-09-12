@@ -150,7 +150,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(S2RectIntersection)
+void registerFunctionS2RectIntersection(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionS2RectIntersection>();
 }

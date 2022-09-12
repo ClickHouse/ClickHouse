@@ -63,7 +63,8 @@
                 "Argument Types": ["UInt64"],
                 "Result Type": "Float64"
               },
-              "Arguments": ["number"]
+              "Arguments": ["number"],
+              "Argument Positions": [0]
             },
             {
               "Name": "sumIf(number, greater(number, 0))",
@@ -72,7 +73,8 @@
                 "Argument Types": ["UInt64", "UInt8"],
                 "Result Type": "UInt64"
               },
-              "Arguments": ["number", "greater(number, 0)"]
+              "Arguments": ["number", "greater(number, 0)"],
+              "Argument Positions": [0, 2]
             }
           ],
 --------

@@ -217,7 +217,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ZTest)
+void registerFunctionZTest(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTwoSampleProportionsZTest>();
 }

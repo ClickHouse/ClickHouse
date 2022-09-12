@@ -7,7 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="string")
 
 dictionary_node = cluster.add_instance("dictionary_node", stay_alive=True)
 main_node = cluster.add_instance(

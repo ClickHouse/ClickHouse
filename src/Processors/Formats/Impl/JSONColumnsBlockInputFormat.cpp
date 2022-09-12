@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
 
 namespace DB
 {
@@ -67,10 +66,6 @@ void registerJSONColumnsSchemaReader(FormatFactory & factory)
             return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONColumnsReader>(buf));
         }
     );
-    factory.registerAdditionalInfoForSchemaCacheGetter("JSONColumns", [](const FormatSettings & settings)
-    {
-        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
-    });
 }
 
 }

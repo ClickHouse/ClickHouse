@@ -7,8 +7,6 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/ASTCreateIndexQuery.h>
-#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -112,8 +110,6 @@ DDLWorker::DDLWorker(
 
 void DDLWorker::startup()
 {
-    [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
-    chassert(true);
     main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
@@ -253,7 +249,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             auto & task = *task_it;
             if (task->completely_processed)
             {
-                chassert(task->was_executed);
+                assert(task->was_executed);
                 /// Status must be written (but finished/ node may not exist if entry was deleted).
                 /// If someone is deleting entry concurrently, then /active status dir must not exist.
                 assert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
@@ -269,13 +265,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 /// but we lost connection while waiting for the response.
                 /// Yeah, distributed systems is a zoo.
                 if (status_written)
-                {
-                    /// TODO We cannot guarantee that query was actually executed synchronously if connection was lost.
-                    /// Let's simple create synced/ node for now, but it would be better to pass UNFINISHED status to initiator
-                    /// or wait for query to actually finish (requires https://github.com/ClickHouse/ClickHouse/issues/23513)
-                    task->createSyncedNodeIfNeed(zookeeper);
                     task->completely_processed = true;
-                }
                 else
                     processTask(*task, zookeeper);
                 ++task_it;
@@ -320,7 +310,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     if (first_failed_task_name)
     {
         /// If we had failed tasks, then we should start from the first failed task.
-        chassert(reinitialized);
+        assert(reinitialized);
         begin_node = std::lower_bound(queue_nodes.begin(), queue_nodes.end(), first_failed_task_name);
     }
     else
@@ -513,7 +503,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
-    chassert(!task.completely_processed);
+    assert(!task.completely_processed);
 
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
@@ -531,14 +521,14 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     {
         if (create_active_res != Coordination::Error::ZNONODE && create_active_res != Coordination::Error::ZNODEEXISTS)
         {
-            chassert(Coordination::isHardwareError(create_active_res));
+            assert(Coordination::isHardwareError(create_active_res));
             throw Coordination::Exception(create_active_res, active_node_path);
         }
 
         /// Status dirs were not created in enqueueQuery(...) or someone is removing entry
         if (create_active_res == Coordination::Error::ZNONODE)
         {
-            chassert(dynamic_cast<DatabaseReplicatedTask *>(&task) == nullptr);
+            assert(dynamic_cast<DatabaseReplicatedTask *>(&task) == nullptr);
             if (task.was_executed)
             {
                 /// Special case:
@@ -651,7 +641,6 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     /// Active node was removed in multi ops
     active_node->setAlreadyRemoved();
 
-    task.createSyncedNodeIfNeed(zookeeper);
     task.completely_processed = true;
     updateMaxDDLEntryID(task.entry_name);
 }
@@ -663,11 +652,7 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
         return false;
 
-    if (!ast_ddl->as<ASTAlterQuery>() &&
-        !ast_ddl->as<ASTOptimizeQuery>() &&
-        !ast_ddl->as<ASTDropQuery>() &&
-        !ast_ddl->as<ASTCreateIndexQuery>() &&
-        !ast_ddl->as<ASTDropIndexQuery>())
+    if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
@@ -819,7 +804,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         }
     }
 
-    chassert(!(executed_by_us && executed_by_other_leader));
+    assert(!(executed_by_us && executed_by_other_leader));
 
     /// Not executed by leader so was not executed at all
     if (!executed_by_us && !executed_by_other_leader)
@@ -910,9 +895,9 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 /// Possible rare case: initiator node has lost connection after enqueueing entry and failed to create status dirs.
                 /// No one has started to process the entry, so node_path/active and node_path/finished nodes were never created, node_path has no children.
                 /// Entry became outdated, but we cannot remove remove it in a transaction with node_path/finished.
-                chassert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
+                assert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
                 rm_entry_res = zookeeper->tryRemove(node_path);
-                chassert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
+                assert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
                 continue;
             }
             zkutil::KeeperMultiException::check(rm_entry_res, ops, res);
@@ -1013,7 +998,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 
 bool DDLWorker::initializeMainThread()
 {
-    chassert(!initialized);
+    assert(!initialized);
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Initializing DDLWorker thread");
 
@@ -1032,7 +1017,7 @@ bool DDLWorker::initializeMainThread()
             {
                 /// A logical error.
                 LOG_ERROR(log, "ZooKeeper error: {}. Failed to start DDLWorker.", getCurrentExceptionMessage(true));
-                chassert(false);  /// Catch such failures in tests with debug build
+                assert(false);  /// Catch such failures in tests with debug build
             }
 
             tryLogCurrentException(__PRETTY_FUNCTION__);

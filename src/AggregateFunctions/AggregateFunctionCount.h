@@ -5,11 +5,9 @@
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/assert_cast.h>
 
 #include <Common/config.h>
@@ -67,7 +65,7 @@ public:
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena *,
         ssize_t if_argument_pos) const override
@@ -86,7 +84,7 @@ public:
     void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena *,
@@ -102,19 +100,6 @@ public:
             size_t rows = row_end - row_begin;
             data(place).count += rows - countBytesInFilter(null_map, row_begin, row_end);
         }
-    }
-
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
-    {
-        return this->getName() == rhs.getName();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        /// Return normalized state type: count()
-        AggregateFunctionProperties properties;
-        return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -237,7 +222,7 @@ public:
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena *,
         ssize_t if_argument_pos) const override
@@ -253,19 +238,6 @@ public:
             size_t rows = row_end - row_begin;
             data(place).count += rows - countBytesInFilter(nc.getNullMapData().data(), row_begin, row_end);
         }
-    }
-
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
-    {
-        return this->getName() == rhs.getName();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        /// Return normalized state type: count()
-        AggregateFunctionProperties properties;
-        return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

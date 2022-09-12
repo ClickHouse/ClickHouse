@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToYYYYMM = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToYYYYMMImpl>;
 
-REGISTER_FUNCTION(ToYYYYMM)
+void registerFunctionToYYYYMM(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToYYYYMM>();
 }

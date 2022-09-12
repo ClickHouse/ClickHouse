@@ -54,7 +54,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(DumpColumnStructure)
+void registerFunctionDumpColumnStructure(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDumpColumnStructure>();
 }

@@ -8,9 +8,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Progress.h>
-#include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
-#include <Interpreters/Context.h>
 
 
 #ifdef HAS_RESERVED_IDENTIFIER
@@ -40,6 +38,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_ADVISE;
 }
 
@@ -57,7 +56,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
-         return false;
+        return false;
 
     size_t bytes_read = 0;
     while (!bytes_read)
@@ -81,7 +80,8 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrnoWithPath("Cannot read from file: " + getFileName(), getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throwFromErrnoWithPath("Cannot read from file " + getFileName(), getFileName(),
+                                   ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -249,9 +249,13 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 }
 
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+off_t ReadBufferFromFileDescriptor::size()
 {
-    return getSizeFromFileDescriptor(fd, getFileName());
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+    return buf.st_size;
 }
 
 
