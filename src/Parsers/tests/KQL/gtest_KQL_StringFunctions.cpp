@@ -2,7 +2,7 @@
 
 #include <Parsers/Kusto/ParserKQLQuery.h>
 
-INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
+INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<DB::ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
@@ -36,15 +36,15 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "print trim_start('[^\\w]+', strcat('-  ','Te st1','// $'))",
-            "SELECT if((replaceRegexpOne(concat('start_random_str_', concat('-  ', 'Te st1', '// $')) AS src, concat('start_random_str_', '[^\\\\w]+'), '') AS dst) = src, concat('-  ', 'Te st1', '// $'), dst)"
+            "SELECT replaceRegexpOne(concat('-  ', 'Te st1', '// $'), concat('^', '[^\\\\w]+'), '')"
         },
         {
             "print trim_end('.com', 'bing.com')",
-            "SELECT if((replaceRegexpOne(concat('bing.com', '_end_random_str') AS src, concat('.com', '_end_random_str'), '') AS dst) = src, 'bing.com', dst)"
+            "SELECT replaceRegexpOne('bing.com', concat('.com', '$'), '')"
         },
         {
             "print trim('--', '--https://bing.com--')",
-            "SELECT if((replaceRegexpOne(concat(if((replaceRegexpOne(concat('start_random_str_', '--https://bing.com--') AS srcl, concat('start_random_str_', '--'), '') AS dstl) = srcl, '--https://bing.com--', dstl), '_end_random_str') AS srcr, concat('--', '_end_random_str'), '') AS dstr) = srcr, if(dstl = srcl, '--https://bing.com--', dstl), dstr)"
+            "SELECT replaceRegexpOne(replaceRegexpOne('--https://bing.com--', concat('--', '$'), ''), concat('^', '--'), '')"
         },
         {
             "print bool(1)",
