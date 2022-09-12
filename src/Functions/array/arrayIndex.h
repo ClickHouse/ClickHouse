@@ -716,13 +716,6 @@ private:
     }
 
     /** Catches arguments of type LowCardinality(T) (left) and U (right).
-      *
-      * The perftests showed that the amount of action needed to convert the non-constant right argument to the index column
-      * (similar to the left one's) is significantly higher than converting the array itself to an ordinary column.
-      *
-      * So, in terms of performance it's more optimal to fall back to default implementation and catch only constant
-      * right arguments.
-      *
       * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
       */
     static ColumnPtr executeLowCardinality(const ColumnsWithTypeAndName & arguments)
@@ -739,45 +732,10 @@ private:
 
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
-        const IColumn & col_arg = *arguments[1].column.get();
+        ColumnPtr column_argument = arguments[1].column->convertToFullColumnIfConst();
+        const IColumn & col_arg = *column_argument;
 
-        if (const ColumnConst * const col_arg_const = checkAndGetColumn<ColumnConst>(col_arg))
-        {
-            const IColumnUnique & col_lc_dict = col_lc->getDictionary();
-
-            const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
-            const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
-
-            const ColumnPtr col_arg_cloned = castColumn(arguments[1], target_type_ptr);
-
-            const StringRef elem = col_arg_cloned->getDataAt(0);
-            ResultColumnPtr col_result = ResultColumnType::create();
-
-            UInt64 index = 0;
-
-            if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
-            {
-                index = *maybe_index;
-            }
-            else
-            {
-                const size_t offsets_size = col_array->getOffsets().size();
-                auto & data = col_result->getData();
-                data.resize_fill(offsets_size);
-                return col_result;
-            }
-
-            Impl::Main<ConcreteAction, true>::vector(
-                col_lc->getIndexes(),
-                col_array->getOffsets(),
-                index,
-                col_result->getData(),
-                null_map_data,
-                null_map_item);
-
-            return col_result;
-        }
-        else if (col_lc->nestedIsNullable()) // LowCardinality(Nullable(T)) and U
+        if (col_lc->nestedIsNullable()) // LowCardinality(Nullable(T)) and U
         {
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality(); // Nullable(T)
             const ColumnNullable & left_nullable = *checkAndGetColumn<ColumnNullable>(left_casted.get());
