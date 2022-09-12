@@ -66,7 +66,7 @@ public:
     }
 
     zkutil::ZooKeeperPtr getClient() const;
-    const std::string & rootKeeperPath() const;
+    const std::string & dataPath() const;
     std::string fullPathForKey(std::string_view key) const;
 
     UInt64 keysLimit() const;
@@ -109,6 +109,8 @@ private:
 
     std::string root_path;
     std::string primary_key;
+
+    std::string data_path;
 
     std::string metadata_path;
 
