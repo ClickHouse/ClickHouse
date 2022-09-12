@@ -822,6 +822,18 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
     } while (code == Coordination::Error::ZBADVERSION);
 }
 
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperIfTableShutDown() const
+{
+    zkutil::ZooKeeperPtr maybe_new_zookeeper;
+    if (zookeeper_name == default_zookeeper_name)
+        maybe_new_zookeeper = getContext()->getZooKeeper();
+    else
+        maybe_new_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+    maybe_new_zookeeper->sync(zookeeper_path);
+    return maybe_new_zookeeper;
+}
+
 void StorageReplicatedMergeTree::drop()
 {
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
@@ -833,11 +845,7 @@ void StorageReplicatedMergeTree::drop()
     {
         /// Table can be shut down, restarting thread is not active
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
-        zkutil::ZooKeeperPtr zookeeper;
-        if (zookeeper_name == default_zookeeper_name)
-            zookeeper = getContext()->getZooKeeper();
-        else
-            zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+        zkutil::ZooKeeperPtr zookeeper = getZooKeeperIfTableShutDown();
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
@@ -2180,7 +2188,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
-            part_desc->res_part = fetcher.fetchPart(
+            part_desc->res_part = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
                 interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
@@ -2299,7 +2307,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                                 + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                                 ErrorCodes::LOGICAL_ERROR);
 
-            return fetcher.fetchPart(
+            return fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), entry.new_part_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
@@ -3934,7 +3942,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                     ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
-            return fetcher.fetchPart(
+            return fetcher.fetchSelectedPart(
                 metadata_snapshot,
                 getContext(),
                 part_name,
@@ -4071,7 +4079,7 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
         currently_fetching_parts.erase(part_name);
     });
 
-    LOG_DEBUG(log, "Fetching part {} from {}", part_name, source_replica_path);
+    LOG_DEBUG(log, "Fetching already known part {} from {}", part_name, source_replica_path);
 
     TableLockHolder table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
@@ -4101,7 +4109,7 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
                 + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                 ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
-        return fetcher.fetchPart(
+        return fetcher.fetchSelectedPart(
             metadata_snapshot, getContext(), part_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
@@ -7336,6 +7344,21 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
 }
 
 
+bool StorageReplicatedMergeTree::canUseZeroCopyReplication() const
+{
+    auto settings_ptr = getSettings();
+    if (!settings_ptr->allow_remote_fs_zero_copy_replication)
+        return false;
+
+    auto disks = getStoragePolicy()->getDisks();
+    for (const auto & disk : disks)
+    {
+        if (disk->supportZeroCopyReplication())
+            return true;
+    }
+    return false;
+}
+
 void StorageReplicatedMergeTree::checkBrokenDisks()
 {
     auto disks = getStoragePolicy()->getDisks();
@@ -7554,7 +7577,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
 
     if (!part.data_part_storage || !part.data_part_storage->supportZeroCopyReplication())
     {
-        LOG_TRACE(log, "Part {} is not stored on zero-copy replicaed disk, blobs can be removed", part.name);
+        LOG_TRACE(log, "Part {} is not stored on zero-copy replicated disk, blobs can be removed", part.name);
         return std::make_pair(true, NameSet{});
     }
 
@@ -7579,7 +7602,16 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         return std::make_pair(true, NameSet{});
     }
 
-    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), getZooKeeper(), *getSettings(), log,
+    /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
+    /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
+    /// context.
+    zkutil::ZooKeeperPtr zookeeper;
+    if (shutdown_called.load())
+        zookeeper = getZooKeeperIfTableShutDown();
+    else
+        zookeeper = getZooKeeper();
+
+    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log,
         zookeeper_path);
 }
 
@@ -8290,7 +8322,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto backup_entries = backupParts(data_parts, "");
+    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();

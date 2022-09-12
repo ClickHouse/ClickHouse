@@ -46,35 +46,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 {
     try
     {
-        size_t columns_num = columns_to_read.size();
-
-        column_positions.resize(columns_num);
-        read_only_offsets.resize(columns_num);
-
-        for (size_t i = 0; i < columns_num; ++i)
-        {
-            const auto & column_to_read = columns_to_read[i];
-
-            if (column_to_read.isSubcolumn())
-            {
-                auto storage_column_from_part = getColumnInPart(
-                    {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
-
-                if (!storage_column_from_part.type->tryGetSubcolumnType(column_to_read.getSubcolumnName()))
-                    continue;
-            }
-
-            auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
-            if (!position && typeid_cast<const DataTypeArray *>(column_to_read.type.get()))
-            {
-                /// If array of Nested column is missing in part,
-                /// we have to read its offsets if they exist.
-                position = findColumnForOffsets(column_to_read.name);
-                read_only_offsets[i] = (position != std::nullopt);
-            }
-
-            column_positions[i] = std::move(position);
-        }
+        fillColumnPositions();
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
         auto buffer_size = getReadBufferSize(*data_part_info_for_read, marks_loader, column_positions, all_mark_ranges);
@@ -134,6 +106,44 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     {
         data_part_info_for_read->reportBroken();
         throw;
+    }
+}
+
+void MergeTreeReaderCompact::fillColumnPositions()
+{
+    size_t columns_num = columns_to_read.size();
+
+    column_positions.resize(columns_num);
+    read_only_offsets.resize(columns_num);
+
+    for (size_t i = 0; i < columns_num; ++i)
+    {
+        const auto & column_to_read = columns_to_read[i];
+
+        auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
+        bool is_array = isArray(column_to_read.type);
+
+        if (column_to_read.isSubcolumn())
+        {
+            auto storage_column_from_part = getColumnInPart(
+                {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
+
+            auto subcolumn_name = column_to_read.getSubcolumnName();
+            if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
+                position.reset();
+        }
+
+        if (!position && is_array)
+        {
+            /// If array of Nested column is missing in part,
+            /// we have to read its offsets if they exist.
+            position = findColumnForOffsets(column_to_read);
+            read_only_offsets[i] = (position != std::nullopt);
+        }
+
+        column_positions[i] = std::move(position);
+        if (read_only_offsets[i])
+            partially_read_columns.insert(column_to_read.name);
     }
 }
 
@@ -214,7 +224,8 @@ void MergeTreeReaderCompact::readData(
 
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
     {
-        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
+        bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
+        if (only_offsets && !is_offsets)
             return nullptr;
 
         return data_buffer;
