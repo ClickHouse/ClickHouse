@@ -6,13 +6,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
+# This function takes 4 arguments:
+# $1 - OpenTelemetry Trace Id
+# $2 - value of insert_distributed_sync
+# $3 - value of prefer_localhost_replica
+# $4 - a String that helps to debug
 function insert()
 {
-    echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS insert_distributed_sync=$2 VALUES(1),(2)" |
+    echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS insert_distributed_sync=$2, prefer_localhost_replica=$3 VALUES(1),(2)" |
         ${CLICKHOUSE_CURL} \
             -X POST \
             -H "traceparent: 00-$1-5150000000000515-01" \
-            -H "tracestate: some custom state" \
+            -H "tracestate: $4" \
             "${CLICKHOUSE_URL}" \
             --data @-
 }
@@ -32,6 +37,7 @@ ${CLICKHOUSE_CLIENT} -nq "
     AND   lower(hex(trace_id))                = '${1}'
     AND   attribute['clickhouse.distributed'] = '${CLICKHOUSE_DATABASE}.dist_opentelemetry'
     AND   attribute['clickhouse.remote']      = '${CLICKHOUSE_DATABASE}.local_opentelemetry'
+    ORDER BY attribute['clickhouse.shard_num']
     Format JSONEachRow
     ;"
 }
@@ -44,22 +50,36 @@ ${CLICKHOUSE_CLIENT} -nq "
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 
-CREATE TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry  (key UInt64) Engine=Distributed('test_cluster_two_shards', ${CLICKHOUSE_DATABASE}, local_opentelemetry, key % 2);
+CREATE TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry  (key UInt64) Engine=Distributed('test_cluster_two_shards_localhost', ${CLICKHOUSE_DATABASE}, local_opentelemetry, key % 2);
 CREATE TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry (key UInt64) Engine=MergeTree ORDER BY key;
 "
 
 #
-# ASYNC INSERT test with opentelemetry enabled
+# test1
 #
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-insert $trace_id 0
+insert $trace_id 0 1 "async-insert-writeToLocal"
 check_span $trace_id
 
 #
-# SYNC INSERT SYNC test with opentelemetry enabled
+# test2
 #
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-insert $trace_id 1
+insert $trace_id 0 0 "async-insert-writeToRemote"
+check_span $trace_id
+
+#
+# test3
+#
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
+insert $trace_id 1 1  "sync-insert-writeToLocal"
+check_span $trace_id
+
+#
+# test4
+#
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
+insert $trace_id 1 0  "sync-insert-writeToRemote"
 check_span $trace_id
 
 #
