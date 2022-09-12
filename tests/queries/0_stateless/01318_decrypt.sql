@@ -141,7 +141,9 @@ INSERT INTO decrypt_null VALUES ('2022-08-02 00:00:00', 1, encrypt('aes-256-gcm'
 
 SELECT dt, user_id FROM decrypt_null WHERE (user_id > 0) AND (decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) = 'value2'); --{serverError 454}
 
-SELECT dt, user_id FROM decrypt_null WHERE (user_id > 0) AND (decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) = 'value2') SETTINGS aes_decryption_use_null_on_fail = 1;
+SELECT dt, user_id FROM decrypt_null WHERE (user_id > 0) AND (decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) = 'value2') SETTINGS aes_decryption_use_null_when_fail = 1;
+
+SELECT dt, user_id, (decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv)) as value FROM decrypt_null ORDER BY user_id SETTINGS aes_decryption_use_null_when_fail = 1;
 
 
 DROP TABLE encryption_test;
