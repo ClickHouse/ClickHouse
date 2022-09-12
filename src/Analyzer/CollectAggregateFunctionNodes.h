@@ -15,7 +15,7 @@ QueryTreeNodes collectAggregateFunctionNodes(const QueryTreeNodePtr & node);
   */
 void collectAggregateFunctionNodes(const QueryTreeNodePtr & node, QueryTreeNodes & result);
 
-/** Assert that there are not aggregate function nodes in node children.
+/** Assert that there are no aggregate function nodes in node children.
   * Do not visit subqueries.
   */
 void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message);

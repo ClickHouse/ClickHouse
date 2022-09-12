@@ -24,6 +24,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ASTWindowDefinition.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -34,6 +35,7 @@
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortColumnNode.h>
 #include <Analyzer/InterpolateColumnNode.h>
+#include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -84,9 +86,13 @@ private:
 
     QueryTreeNodePtr buildInterpolateColumnList(const ASTPtr & interpolate_expression_list) const;
 
+    QueryTreeNodePtr buildWindowList(const ASTPtr & window_definition_list) const;
+
     QueryTreeNodePtr buildExpressionList(const ASTPtr & expression_list) const;
 
     QueryTreeNodePtr buildExpression(const ASTPtr & expression) const;
+
+    QueryTreeNodePtr buildWindow(const ASTPtr & window_definition) const;
 
     QueryTreeNodePtr buildJoinTree(const ASTPtr & tables_in_select_query) const;
 
@@ -250,6 +256,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (having_expression)
         current_query_tree->getHaving() = buildExpression(having_expression);
 
+    auto window_list = select_query_typed.window();
+    if (window_list)
+        current_query_tree->getWindowNode() = buildWindowList(window_list);
+
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
         current_query_tree->getOrderByNode() = buildSortColumnList(select_order_by_list);
@@ -337,6 +347,26 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateColumnList(const ASTPtr & int
         auto interpolate_column_node = std::make_shared<InterpolateColumnNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 
         list_node->getNodes().push_back(std::move(interpolate_column_node));
+    }
+
+    return list_node;
+}
+
+QueryTreeNodePtr QueryTreeBuilder::buildWindowList(const ASTPtr & window_definition_list) const
+{
+    auto list_node = std::make_shared<ListNode>();
+
+    auto & expression_list_typed = window_definition_list->as<ASTExpressionList &>();
+    list_node->getNodes().reserve(expression_list_typed.children.size());
+
+    for (auto & window_list_element : expression_list_typed.children)
+    {
+        const auto & window_list_element_typed = window_list_element->as<const ASTWindowListElement &>();
+
+        auto window_node = buildWindow(window_list_element_typed.definition);
+        window_node->setAlias(window_list_element_typed.name);
+
+        list_node->getNodes().push_back(std::move(window_node));
     }
 
     return list_node;
@@ -451,6 +481,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
                     function_node->getArguments().getNodes().push_back(buildExpression(argument));
             }
 
+            if (function->is_window_function)
+            {
+                if (function->window_definition)
+                    function_node->getWindowNode() = buildWindow(function->window_definition);
+                else
+                    function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
+            }
+
             result = function_node;
         }
     }
@@ -520,6 +558,41 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
     result->setOriginalAST(expression);
 
     return result;
+}
+
+QueryTreeNodePtr QueryTreeBuilder::buildWindow(const ASTPtr & window_definition) const
+{
+    const auto & window_definition_typed = window_definition->as<const ASTWindowDefinition &>();
+    WindowFrame window_frame;
+
+    if (!window_definition_typed.frame_is_default)
+    {
+        window_frame.is_default = false;
+        window_frame.type = window_definition_typed.frame_type;
+        window_frame.begin_type = window_definition_typed.frame_begin_type;
+        window_frame.begin_preceding = window_definition_typed.frame_begin_preceding;
+        window_frame.end_type = window_definition_typed.frame_end_type;
+        window_frame.end_preceding = window_definition_typed.frame_end_preceding;
+    }
+
+    auto window_node = std::make_shared<WindowNode>(window_frame);
+    window_node->setParentWindowName(window_definition_typed.parent_window_name);
+
+    if (window_definition_typed.partition_by)
+        window_node->getPartitionByNode() = buildExpressionList(window_definition_typed.partition_by);
+
+    if (window_definition_typed.order_by)
+        window_node->getOrderByNode() = buildSortColumnList(window_definition_typed.order_by);
+
+    if (window_definition_typed.frame_begin_offset)
+        window_node->getFrameBeginOffsetNode() = buildExpression(window_definition_typed.frame_begin_offset);
+
+    if (window_definition_typed.frame_end_offset)
+        window_node->getFrameEndOffsetNode() = buildExpression(window_definition_typed.frame_end_offset);
+
+    window_node->setOriginalAST(window_definition);
+
+    return window_node;
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select_query) const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 
 #include <Parsers/IAST.h>
 
@@ -43,5 +44,8 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
 ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context);
+
+/// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
+bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
 
 }

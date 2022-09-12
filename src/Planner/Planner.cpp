@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -47,6 +48,7 @@
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortColumnNode.h>
 #include <Analyzer/InterpolateColumnNode.h>
+#include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -56,7 +58,8 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/CollectAggregateFunctionVisitor.h>
+#include <Analyzer/CollectAggregateFunctionNodes.h>
+#include <Analyzer/CollectWindowFunctionNodes.h>
 
 #include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
@@ -64,6 +67,7 @@
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
+#include <Planner/PlannerWindowFunctions.h>
 #include <Planner/ActionsChain.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -87,7 +91,6 @@ namespace ErrorCodes
   * TODO: Support distributed query processing
   * TODO: Support PREWHERE
   * TODO: Support ORDER BY
-  * TODO: Support WINDOW FUNCTIONS
   * TODO: Support DISTINCT
   * TODO: Support trivial count optimization
   * TODO: Support projections
@@ -473,18 +476,22 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     auto result_plan = QueryPlan();
     result_plan.unitePlans(std::move(join_step), {std::move(plans)});
 
-    auto drop_unused_columns_after_join = std::make_shared<ActionsDAG>(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    auto drop_unused_columns_after_join_actions_dag = std::make_shared<ActionsDAG>(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs updated_outputs;
+    std::unordered_set<std::string_view> updated_outputs_names;
 
-    for (auto & output : drop_unused_columns_after_join->getOutputs())
+    for (auto & output : drop_unused_columns_after_join_actions_dag->getOutputs())
     {
-        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output->result_name))
-            updated_outputs.push_back(output);
+        if (updated_outputs_names.contains(output->result_name) || !planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output->result_name))
+            continue;
+
+        updated_outputs.push_back(output);
+        updated_outputs_names.insert(output->result_name);
     }
 
-    drop_unused_columns_after_join->getOutputs() = std::move(updated_outputs);
+    drop_unused_columns_after_join_actions_dag->getOutputs() = std::move(updated_outputs);
 
-    auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentDataStream(), std::move(drop_unused_columns_after_join));
+    auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentDataStream(), std::move(drop_unused_columns_after_join_actions_dag));
     drop_unused_columns_after_join_transform_step->setStepDescription("DROP unused columns after JOIN");
     result_plan.addStep(std::move(drop_unused_columns_after_join_transform_step));
 
@@ -783,7 +790,7 @@ void Planner::buildQueryPlanIfNeeded()
         where_action_step_index = actions_chain.getLastStepIndex();
     }
 
-    auto aggregate_function_nodes = extractAggregateFunctionNodes(query_tree);
+    auto aggregate_function_nodes = collectAggregateFunctionNodes(query_tree);
     AggregateDescriptions aggregates_descriptions = extractAggregateDescriptions(aggregate_function_nodes, *planner_context);
     ColumnsWithTypeAndName aggregates_columns;
     aggregates_columns.reserve(aggregates_descriptions.size());
@@ -933,6 +940,83 @@ void Planner::buildQueryPlanIfNeeded()
         having_filter_action_node_name = having_actions->getOutputs().at(0)->result_name;
         actions_chain.addStep(std::make_unique<ActionsChainStep>(std::move(having_actions)));
         having_action_step_index = actions_chain.getLastStepIndex();
+    }
+
+    auto window_function_nodes = collectWindowFunctionNodes(query_tree);
+    auto window_descriptions = extractWindowDescriptions(window_function_nodes, *planner_context);
+    std::optional<size_t> before_window_step_index;
+
+    if (!window_function_nodes.empty())
+    {
+        chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+        const auto & window_input = chain_available_output_columns ? *chain_available_output_columns
+                                                                 : query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+        ActionsDAGPtr before_window_actions_dag = std::make_shared<ActionsDAG>(window_input);
+        before_window_actions_dag->getOutputs().clear();
+
+        std::unordered_set<std::string_view> before_window_actions_dag_output_nodes_names;
+
+        for (auto & window_function_node : window_function_nodes)
+        {
+            auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
+            auto & window_node = window_function_node_typed.getWindowNode()->as<WindowNode &>();
+
+            auto expression_dag_nodes = actions_visitor.visit(before_window_actions_dag, window_function_node_typed.getArgumentsNode());
+            aggregation_keys.reserve(expression_dag_nodes.size());
+
+            for (auto & expression_dag_node : expression_dag_nodes)
+            {
+                if (before_window_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
+                    continue;
+
+                before_window_actions_dag->getOutputs().push_back(expression_dag_node);
+                before_window_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
+            }
+
+            expression_dag_nodes = actions_visitor.visit(before_window_actions_dag, window_node.getPartitionByNode());
+            aggregation_keys.reserve(expression_dag_nodes.size());
+
+            for (auto & expression_dag_node : expression_dag_nodes)
+            {
+                if (before_window_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
+                    continue;
+
+                before_window_actions_dag->getOutputs().push_back(expression_dag_node);
+                before_window_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
+            }
+
+            /** We add only sort column sort expression in before WINDOW actions DAG.
+              * WITH fill expressions must be constant nodes.
+              */
+            auto & order_by_node_list = window_node.getOrderBy();
+            for (auto & sort_column_node : order_by_node_list.getNodes())
+            {
+                auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
+                expression_dag_nodes = actions_visitor.visit(before_window_actions_dag, sort_column_node_typed.getExpression());
+
+                for (auto & expression_dag_node : expression_dag_nodes)
+                {
+                    if (before_window_actions_dag_output_nodes_names.contains(expression_dag_node->result_name))
+                        continue;
+
+                    before_window_actions_dag->getOutputs().push_back(expression_dag_node);
+                    before_window_actions_dag_output_nodes_names.insert(expression_dag_node->result_name);
+                }
+            }
+        }
+
+        ColumnsWithTypeAndName window_functions_additional_columns;
+
+        for (auto & window_description : window_descriptions)
+            for (auto & window_function : window_description.window_functions)
+                window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getReturnType(), window_function.column_name);
+
+        auto before_window_step = std::make_unique<ActionsChainStep>(std::move(before_window_actions_dag),
+            ActionsChainStep::AvailableOutputColumnsStrategy::ALL_NODES,
+            window_functions_additional_columns);
+        actions_chain.addStep(std::move(before_window_step));
+        before_window_step_index = actions_chain.getLastStepIndex();
     }
 
     chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
@@ -1194,6 +1278,53 @@ void Planner::buildQueryPlanIfNeeded()
             remove_filter);
         having_step->setStepDescription("HAVING");
         query_plan.addStep(std::move(having_step));
+    }
+
+    if (before_window_step_index)
+    {
+        auto & before_window_actions_chain_node = actions_chain.at(*before_window_step_index);
+        auto expression_step_before_window = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(),
+            before_window_actions_chain_node->getActions());
+        expression_step_before_window->setStepDescription("Before WINDOW");
+        query_plan.addStep(std::move(expression_step_before_window));
+
+        sortWindowDescriptions(window_descriptions);
+        size_t window_descriptions_size = window_descriptions.size();
+
+        const auto & settings = query_context->getSettingsRef();
+        for (size_t i = 0; i < window_descriptions_size; ++i)
+        {
+            const auto & window_description = window_descriptions[i];
+
+            /** We don't need to sort again if the input from previous window already
+              * has suitable sorting. Also don't create sort steps when there are no
+              * columns to sort by, because the sort nodes are confused by this. It
+              * happens in case of `over ()`.
+              */
+            if (!window_description.full_sort_description.empty() &&
+                (i == 0 || !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)))
+            {
+                auto sorting_step = std::make_unique<SortingStep>(
+                    query_plan.getCurrentDataStream(),
+                    window_description.full_sort_description,
+                    settings.max_block_size,
+                    0 /* LIMIT */,
+                    SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
+                    settings.max_bytes_before_remerge_sort,
+                    settings.remerge_sort_lowered_memory_bytes_ratio,
+                    settings.max_bytes_before_external_sort,
+                    query_context->getTemporaryVolume(),
+                    settings.min_free_disk_space_for_temporary_data,
+                    settings.optimize_sorting_by_input_stream_properties);
+
+                sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'");
+                query_plan.addStep(std::move(sorting_step));
+            }
+
+            auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions);
+            window_step->setStepDescription("Window step for window '" + window_description.window_name + "'");
+            query_plan.addStep(std::move(window_step));
+        }
     }
 
     auto & projection_actions_chain_node = actions_chain.at(projection_step_index);

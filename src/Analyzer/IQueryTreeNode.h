@@ -39,6 +39,7 @@ enum class QueryTreeNodeType
     LAMBDA,
     SORT_COLUMN,
     INTERPOLATE_COLUMN,
+    WINDOW,
     TABLE,
     TABLE_FUNCTION,
     QUERY,

@@ -33,6 +33,7 @@ namespace DB
   *
   * Constness of function parameters.
   * Constness of LIMIT and OFFSET.
+  * Window functions frame. Constness of window functions frame begin OFFSET, end OFFSET.
   * In SELECT, ORDER BY only columns that are specified in GROUP BY keys after GROUP BY are used.
   * GROUPING function arguments are specified in GROUP BY keys.
   * No GROUPING function if there is no GROUP BY.

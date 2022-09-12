@@ -20,9 +20,6 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node,
     const GroupingSetsParamsList & grouping_sets_parameters_list,
     const PlannerContext & planner_context);
 
-/// Extract aggregate function nodes from query node
-QueryTreeNodes extractAggregateFunctionNodes(const QueryTreeNodePtr & query_node);
-
 /// Extract aggregate descriptions from aggregate function nodes
 AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context);
 

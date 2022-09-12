@@ -28,6 +28,7 @@ QueryNode::QueryNode()
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
     children[group_by_child_index] = std::make_shared<ListNode>();
+    children[window_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
 }
@@ -73,6 +74,12 @@ String QueryNode::getName() const
     {
         buffer << " HAVING ";
         buffer << getHaving()->getName();
+    }
+
+    if (hasWindow())
+    {
+        buffer << " WINDOW ";
+        buffer << getWindow().getName();
     }
 
     if (hasOrderBy())
@@ -132,9 +139,16 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     buffer << ", is_distinct: " << is_distinct;
     buffer << ", is_limit_with_ties: " << is_limit_with_ties;
     buffer << ", is_group_by_with_totals: " << is_group_by_with_totals;
-    buffer << ", is_group_by_with_rollup: " << is_group_by_with_rollup;
-    buffer << ", is_group_by_with_cube: " << is_group_by_with_cube;
-    buffer << ", is_group_by_with_grouping_sets: " << is_group_by_with_grouping_sets;
+
+    std::string group_by_type = "ordinary";
+    if (is_group_by_with_rollup)
+        group_by_type = "rollup";
+    else if (is_group_by_with_cube)
+        group_by_type = "cube";
+    else if (is_group_by_with_grouping_sets)
+        group_by_type = "grouping_sets";
+
+    buffer << ", group_by_type: " << group_by_type;
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
@@ -204,6 +218,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "HAVING\n";
         getHaving()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasWindow())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "WINDOW\n";
+        getWindow().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (hasOrderBy())
@@ -338,6 +358,9 @@ ASTPtr QueryNode::toASTImpl() const
 
     if (hasHaving())
         select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST());
+
+    if (hasWindow())
+        select_query->setExpression(ASTSelectQuery::Expression::WINDOW, getWindow().toAST());
 
     if (hasOrderBy())
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST());
