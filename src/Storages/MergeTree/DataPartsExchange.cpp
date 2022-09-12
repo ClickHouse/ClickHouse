@@ -425,8 +425,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     const auto data_settings = data.getSettings();
 
-    if (data_settings->allow_remote_fs_zero_copy_replication && !try_zero_copy)
-        LOG_WARNING(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
+    if (data.canUseZeroCopyReplication() && !try_zero_copy)
+        LOG_INFO(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
 
     /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
     /// but detached part name prefix should not contain underscore.
@@ -482,8 +482,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     }
     else
     {
-        if (data_settings->allow_remote_fs_zero_copy_replication)
-            LOG_WARNING(log, "Cannot select any zero-copy disk for {}", part_name);
+        if (data.canUseZeroCopyReplication())
+            LOG_INFO(log, "Cannot select any zero-copy disk for {}", part_name);
 
         try_zero_copy = false;
     }

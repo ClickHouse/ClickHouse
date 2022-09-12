@@ -7344,6 +7344,21 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
 }
 
 
+bool StorageReplicatedMergeTree::canUseZeroCopyReplication() const
+{
+    auto settings_ptr = getSettings();
+    if (!settings_ptr->allow_remote_fs_zero_copy_replication)
+        return false;
+
+    auto disks = getStoragePolicy()->getDisks();
+    for (const auto & disk : disks)
+    {
+        if (disk->supportZeroCopyReplication())
+            return true;
+    }
+    return false;
+}
+
 void StorageReplicatedMergeTree::checkBrokenDisks()
 {
     auto disks = getStoragePolicy()->getDisks();
@@ -8307,7 +8322,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto backup_entries = backupParts(data_parts, "");
+    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();

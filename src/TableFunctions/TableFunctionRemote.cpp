@@ -107,7 +107,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (lit->value.getType() != Field::Types::String)
                 return false;
 
-            res = safeGet<const String &>(lit->value);
+            res = lit->value.safeGet<const String &>();
             return true;
         };
 
