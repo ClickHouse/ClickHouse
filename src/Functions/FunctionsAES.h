@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Common/config.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #if USE_SSL
 #include <DataTypes/DataTypeString.h>
@@ -20,6 +23,8 @@
 
 #include <string.h>
 
+
+bool NO_INLINE getParamsFromContext(DB::ContextPtr context);
 
 namespace DB
 {
@@ -409,12 +414,14 @@ template <typename Impl>
 class FunctionDecrypt : public IFunction
 {
 public:
+    explicit FunctionDecrypt(const ContextPtr & context) : decrypt_use_null(getParamsFromContext(context)) { }
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDecrypt>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDecrypt>(context); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
+    bool decrypt_use_null = false;
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -445,6 +452,9 @@ private:
             optional_args
         );
 
+        if (decrypt_use_null)
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -468,7 +478,7 @@ private:
         ColumnPtr result_column;
         if (arguments.size() <= 3)
         {
-            result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
+            result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr, decrypt_use_null);
         }
         else
         {
@@ -478,7 +488,7 @@ private:
 
             if (arguments.size() <= 4)
             {
-                result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, nullptr);
+                result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, nullptr, decrypt_use_null);
             }
             else
             {
@@ -486,7 +496,7 @@ private:
                     throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
 
                 const auto aad_column = arguments[4].column;
-                result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+                result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column, decrypt_use_null);
             }
         }
 
@@ -499,22 +509,23 @@ private:
         const ColumnPtr & input_column,
         const ColumnPtr & key_column,
         const ColumnPtr & iv_column,
-        const ColumnPtr & aad_column)
+        const ColumnPtr & aad_column,
+        bool decrypt_use_null = false)
     {
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::MySQL)
         {
-            return doDecryptImpl<CipherMode::MySQLCompatibility>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+            return doDecryptImpl<CipherMode::MySQLCompatibility>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column, decrypt_use_null);
         }
         else
         {
             const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
             if (cipher_mode == EVP_CIPH_GCM_MODE)
             {
-                return doDecryptImpl<CipherMode::RFC5116_AEAD_AES_GCM>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+                return doDecryptImpl<CipherMode::RFC5116_AEAD_AES_GCM>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column, decrypt_use_null);
             }
             else
             {
-                return doDecryptImpl<CipherMode::OpenSSLCompatibility>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+                return doDecryptImpl<CipherMode::OpenSSLCompatibility>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column, decrypt_use_null);
             }
         }
 
@@ -527,7 +538,8 @@ private:
         const ColumnPtr & input_column,
         const ColumnPtr & key_column,
         [[maybe_unused]] const ColumnPtr & iv_column,
-        [[maybe_unused]] const ColumnPtr & aad_column)
+        [[maybe_unused]] const ColumnPtr & aad_column,
+        bool decrypt_use_null = false)
     {
         using namespace OpenSSLDetails;
 
@@ -541,6 +553,7 @@ private:
         static constexpr size_t tag_size = 16; // https://tools.ietf.org/html/rfc5116#section-5.1
 
         auto decrypted_result_column = ColumnString::create();
+        auto null_map = ColumnUInt8::create();
         auto & decrypted_result_column_data = decrypted_result_column->getChars();
         auto & decrypted_result_column_offsets = decrypted_result_column->getOffsets();
 
@@ -616,6 +629,7 @@ private:
                 }
             }
 
+            bool decrypt_fail = false;
             /// Avoid extra work on empty ciphertext/plaintext. Always decrypt empty to empty.
             /// This makes sense for default implementation for NULLs.
             if (input_value.size > 0)
@@ -662,8 +676,13 @@ private:
                 if (EVP_DecryptUpdate(evp_ctx,
                         reinterpret_cast<unsigned char*>(decrypted), &output_len,
                         reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
-                    onError("Failed to decrypt");
-                decrypted += output_len;
+                {
+                    if (!decrypt_use_null)
+                        onError("Failed to decrypt");
+                    decrypt_fail = true;
+                }
+                else
+                    decrypted += output_len;
 
                 // 3: optionally get tag from the ciphertext (RFC5116) and feed it to the context
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -676,14 +695,26 @@ private:
                 // 4: retrieve encrypted data (ciphertext)
                 if (EVP_DecryptFinal_ex(evp_ctx,
                         reinterpret_cast<unsigned char*>(decrypted), &output_len) != 1)
-                    onError("Failed to decrypt");
-                decrypted += output_len;
+                {
+                    if (!decrypt_use_null)
+                        onError("Failed to decrypt");
+                    decrypt_fail = true;
+                }
+                else
+                    decrypted += output_len;
             }
 
             *decrypted = '\0';
             ++decrypted;
 
             decrypted_result_column_offsets.push_back(decrypted - decrypted_result_column_data.data());
+            if (decrypt_use_null)
+            {
+                if (decrypt_fail)
+                    null_map->insertValue(1);
+                else
+                    null_map->insertValue(0);
+            }
 
         }
 
@@ -694,7 +725,10 @@ private:
         }
 
         decrypted_result_column->validate();
-        return decrypted_result_column;
+        if (decrypt_use_null)
+            return ColumnNullable::create(std::move(decrypted_result_column), std::move(null_map));
+        else
+            return decrypted_result_column;
     }
 };
 

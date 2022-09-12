@@ -1,4 +1,5 @@
 #include <Functions/FunctionsAES.h>
+#include <Interpreters/Context.h>
 
 #if USE_SSL
 
@@ -8,6 +9,12 @@
 #include <string>
 #include <cassert>
 
+
+
+bool getParamsFromContext(DB::ContextPtr context)
+{
+    return context->getSettingsRef().aes_decryption_use_null_on_fail;
+}
 
 namespace DB
 {
