@@ -553,8 +553,8 @@ bool Trim::convertImpl(String & out, IParser::Pos & pos)
     if (fn_name.empty())
         return false;
 
-    const auto regex = getArgument(fn_name, pos);
-    const auto source = getArgument(fn_name, pos);
+    const auto regex = getArgument(fn_name, pos, ArgumentState::Raw);
+    const auto source = getArgument(fn_name, pos, ArgumentState::Raw);
     out = kqlCallToExpression("trim_start", {regex, std::format("trim_end({0}, {1})", regex, source)}, pos.max_depth);
 
     return true;

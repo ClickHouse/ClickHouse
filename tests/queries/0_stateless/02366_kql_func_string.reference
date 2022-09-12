@@ -277,12 +277,21 @@ kusto		xxx
 -- trim()
 https://www.ibm.com
 Te st1
+ asd 
+asd
+sd
 -- trim_start()
 www.ibm.com
 Te st1// $
+asdw
+
+asd
 -- trim_end()
 https
 - Te st1
+wasd
+
+asd
 -- replace_regex
 Number was: 1
 -- has_any_index()

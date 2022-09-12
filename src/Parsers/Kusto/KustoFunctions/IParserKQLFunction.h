@@ -43,14 +43,21 @@ public:
     static String getExpression(IParser::Pos & pos);
 
 protected:
+    enum class ArgumentState
+    {
+        Parsed,
+        Raw
+    };
+
     virtual bool convertImpl(String & out, IParser::Pos & pos) = 0;
 
     static bool directMapping(String & out, IParser::Pos & pos, const String & ch_fn);
     static String generateUniqueIdentifier();
-    static String getArgument(const String & function_name, DB::IParser::Pos & pos);
+    static String getArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
     static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
-    static std::optional<String> getOptionalArgument(const String & function_name, DB::IParser::Pos & pos);
-    static String kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth);
+    static std::optional<String> getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
+    static String
+    kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth);
     static String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth);
     static void validateEndOfFunction(const String & fn_name, IParser::Pos & pos);
     static String getKQLFunctionName(IParser::Pos & pos);

@@ -22,14 +22,42 @@
 
 #include <format>
 
-namespace DB
+namespace DB::ErrorCodes
 {
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SYNTAX_ERROR;
 }
 
+namespace
+{
+constexpr DB::TokenType determineClosingPair(const DB::TokenType token_type)
+{
+    if (token_type == DB::TokenType::OpeningCurlyBrace)
+        return DB::TokenType::ClosingCurlyBrace;
+    else if (token_type == DB::TokenType::OpeningRoundBracket)
+        return DB::TokenType::ClosingRoundBracket;
+    else if (token_type == DB::TokenType::OpeningSquareBracket)
+        return DB::TokenType::ClosingSquareBracket;
+
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unhandled token: {}", magic_enum::enum_name(token_type));
+}
+
+constexpr bool isClosingBracket(const DB::TokenType token_type)
+{
+    return token_type == DB::TokenType::ClosingCurlyBrace || token_type == DB::TokenType::ClosingRoundBracket
+        || token_type == DB::TokenType::ClosingSquareBracket;
+}
+
+constexpr bool isOpeningBracket(const DB::TokenType token_type)
+{
+    return token_type == DB::TokenType::OpeningCurlyBrace || token_type == DB::TokenType::OpeningRoundBracket
+        || token_type == DB::TokenType::OpeningSquareBracket;
+}
+}
+
+namespace DB
+{
 bool IParserKQLFunction::convert(String & out, IParser::Pos & pos)
 {
     return wrapConvertImpl(
@@ -88,9 +116,9 @@ String IParserKQLFunction::generateUniqueIdentifier()
     return std::to_string(unique_random_generator());
 }
 
-String IParserKQLFunction::getArgument(const String & function_name, DB::IParser::Pos & pos)
+String IParserKQLFunction::getArgument(const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state)
 {
-    if (auto optionalArgument = getOptionalArgument(function_name, pos))
+    if (auto optionalArgument = getOptionalArgument(function_name, pos, argument_state))
         return std::move(*optionalArgument);
 
     throw Exception(std::format("Required argument was not provided in {}", function_name), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -142,13 +170,42 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
     return converted_arg;
 }
 
-std::optional<String> IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParser::Pos & pos)
+std::optional<String>
+IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state)
 {
     if (const auto & type = pos->type; type != DB::TokenType::Comma && type != DB::TokenType::OpeningRoundBracket)
         return {};
 
     ++pos;
-    return getConvertedArgument(function_name, pos);
+    if (argument_state == ArgumentState::Parsed)
+        return getConvertedArgument(function_name, pos);
+
+    if (argument_state != ArgumentState::Raw)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Argument extraction is not implemented for {}::{}",
+            magic_enum::enum_type_name<ArgumentState>(),
+            magic_enum::enum_name(argument_state));
+    
+    String expression;
+    std::vector<DB::TokenType> scopes;
+    while (!pos->isEnd() && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
+    {
+        if (const auto token_type = pos->type; isOpeningBracket(token_type))
+            scopes.push_back(token_type);
+        else if (isClosingBracket(token_type))
+        {
+            if (scopes.empty() || determineClosingPair(scopes.back()) != token_type)
+                throw Exception(DB::ErrorCodes::SYNTAX_ERROR, "Unmatched token: {} when parsing {}", magic_enum::enum_name(token_type), function_name);
+             
+            scopes.pop_back();
+        }
+        
+        expression.append(pos->begin, pos->end);
+        ++pos;
+    }
+
+    return expression;
 }
 
 String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
