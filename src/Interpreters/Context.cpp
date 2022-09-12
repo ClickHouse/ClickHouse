@@ -2232,19 +2232,19 @@ void Context::reconnectZookeeper(const size_t index)
     if (shared->zookeeper)
     {
         zkutil::ZooKeeperArgs args = shared->zookeeper->getZookeeperArgs();
-        zkutil::ZooKeeperArgs new_args = new zkutil::ZooKeeperArgs();
-        new_args.hosts = args.hosts;
-        new_args.identity = args.identity;
-        new_args.session_timeout_ms = args.session_timeout_ms;
-        new_args.operation_timeout_ms = args.operation_timeout_ms;
-        new_args.chroot = args.chroot;
-        new_args.implementation = args.implementation;
+        zkutil::ZooKeeperArgs *new_args = new zkutil::ZooKeeperArgs();
+        new_args->hosts = args.hosts;
+        new_args->identity = args.identity;
+        new_args->session_timeout_ms = args.session_timeout_ms;
+        new_args->operation_timeout_ms = args.operation_timeout_ms;
+        new_args->chroot = args.chroot;
+        new_args->implementation = args.implementation;
 
         std::lock_guard lock(shared->zookeeper_mutex);
 
         shared->zookeeper->finalize("Create new connection based on specified index");
 
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(new_args, index, getZooKeeperLog()); 
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*new_args, index, getZooKeeperLog());
     } else {
         throw Exception("zookeeper doest not exist", ErrorCodes::LOGICAL_ERROR);
     }

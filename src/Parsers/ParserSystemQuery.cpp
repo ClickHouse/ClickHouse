@@ -399,7 +399,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr index;
             if (!(ParserKeyword{"INDEX"}.ignore(pos,expected)
                 && ParserUnsignedInteger().parse(pos, index, expected)
-                && ParserKeyword{"KEEPER"}.ignore(pos, expected)))
+                && ParserKeyword{"ZK"}.ignore(pos, expected)))
             {
                 return false;
             }

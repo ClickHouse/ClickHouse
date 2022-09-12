@@ -114,7 +114,7 @@ public:
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    ZooKeeper(const ZooKeeperArgs & args_, const size_t zk_index_, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    ZooKeeper(ZooKeeperArgs & args_, const size_t zk_index_, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
