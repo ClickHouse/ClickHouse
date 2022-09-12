@@ -129,4 +129,19 @@ SELECT
     hex(decrypt('aes-256-gcm', concat(ciphertext, tag), key, iv, aad)) as plaintext_actual,
     plaintext_actual = hex(plaintext);
 
+-- decrypt with null when fail
+CREATE TABLE decrypt_null (
+  dt DateTime,
+  user_id UInt32,
+  encrypted String,
+  iv String
+) ENGINE = Memory;
+
+INSERT INTO decrypt_null VALUES ('2022-08-02 00:00:00', 1, encrypt('aes-256-gcm', 'value1', 'keykeykeykeykeykeykeykeykeykey01', 'iv1'), 'iv1'), ('2022-09-02 00:00:00', 2, encrypt('aes-256-gcm', 'value2', 'keykeykeykeykeykeykeykeykeykey02', 'iv2'), 'iv2'), ('2022-09-02 00:00:01', 3, encrypt('aes-256-gcm', 'value3', 'keykeykeykeykeykeykeykeykeykey03', 'iv3'), 'iv3');
+
+SELECT dt, user_id FROM decrypt_null WHERE (user_id > 0) AND (decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) = 'value2'); --{serverError 454}
+
+SELECT dt, user_id FROM decrypt_null WHERE (user_id > 0) AND (decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) = 'value2') SETTINGS aes_decryption_use_null_on_fail = 1;
+
+
 DROP TABLE encryption_test;
