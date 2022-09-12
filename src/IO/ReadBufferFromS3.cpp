@@ -142,7 +142,7 @@ bool ReadBufferFromS3::nextImpl()
                 /// It doesn't make sense to retry Access Denied or No Such Key
                 if (!s3_exception->isRetryableError())
                 {
-                    tryLogCurrentException(log);
+                    tryLogCurrentException(log, fmt::format("while reading key: {}, from bucket: {}", key, bucket));
                     throw;
                 }
             }
