@@ -48,7 +48,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DataType, ParserTest,
         },
         {
             "print dynamic([1, 'a', true, false])",
-            "SELECT [1, 'a']"
+            "SELECT [1, 'a', true, false]"
         },
         {
             "print dynamic([date(1), time(1d), 1, 2])",

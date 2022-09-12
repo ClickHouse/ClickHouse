@@ -278,8 +278,8 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
    `print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2)`  
    `print t = array_sort_asc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)`  
    `print t = array_sort_asc( dynamic([null, null, null]) , false)`  
-   `print t = array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 > 2)`  
-   `print t = array_sort_asc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50, 3]), 1 > 2)`  
+   `print t = array_sort_asc(dynamic([2, 1, null,3]), dynamic([20, 10, 40, 30]), 1 > 2)`  
+   `print t = array_sort_asc(dynamic([2, 1, null,3]), dynamic([20, 10, 40, 30, 50, 3]), 1 > 2)`  
 
 - [array_sort_desc](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysortdescfunction) **(only support the constant dynamic array)**  
    
@@ -291,7 +291,7 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
    `print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , 1 > 2)`  
    `print t = array_sort_desc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)`  
    `print t = array_sort_desc( dynamic([null, null, null]) , false)`  
-   `print t = array_sort_desc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50]), 1 > 2)`  
+   `print t = array_sort_desc(dynamic([2, 1, null, 3]), dynamic([20, 10, 40, 30]), 1 > 2)`  
    `print t = array_sort_desc(dynamic([2, 1, null,3, null]), dynamic([20, 10, 40, 30, 50, 3]), 1 > 2)`  
 
 - [array_concat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayconcatfunction)  
