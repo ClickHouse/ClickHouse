@@ -26,6 +26,8 @@ public:
 
     bool isPreliminary() const { return pre_distinct; }
 
+    UInt64 getLimitHint() const { return limit_hint; }
+
 private:
     void updateOutputStream() override;
 
