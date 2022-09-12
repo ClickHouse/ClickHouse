@@ -2180,7 +2180,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
-            part_desc->res_part = fetcher.fetchPart(
+            part_desc->res_part = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
                 interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
@@ -2299,7 +2299,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                                 + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                                 ErrorCodes::LOGICAL_ERROR);
 
-            return fetcher.fetchPart(
+            return fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), entry.new_part_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
@@ -3934,7 +3934,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                     ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
-            return fetcher.fetchPart(
+            return fetcher.fetchSelectedPart(
                 metadata_snapshot,
                 getContext(),
                 part_name,
@@ -4071,7 +4071,7 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
         currently_fetching_parts.erase(part_name);
     });
 
-    LOG_DEBUG(log, "Fetching part {} from {}", part_name, source_replica_path);
+    LOG_DEBUG(log, "Fetching already known part {} from {}", part_name, source_replica_path);
 
     TableLockHolder table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
@@ -4101,7 +4101,7 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
                 + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                 ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
-        return fetcher.fetchPart(
+        return fetcher.fetchSelectedPart(
             metadata_snapshot, getContext(), part_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
@@ -7336,6 +7336,21 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
 }
 
 
+bool StorageReplicatedMergeTree::canUseZeroCopyReplication() const
+{
+    auto settings_ptr = getSettings();
+    if (!settings_ptr->allow_remote_fs_zero_copy_replication)
+        return false;
+
+    auto disks = getStoragePolicy()->getDisks();
+    for (const auto & disk : disks)
+    {
+        if (disk->supportZeroCopyReplication())
+            return true;
+    }
+    return false;
+}
+
 void StorageReplicatedMergeTree::checkBrokenDisks()
 {
     auto disks = getStoragePolicy()->getDisks();
@@ -7542,6 +7557,9 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     auto settings = getSettings();
     if (!settings->allow_remote_fs_zero_copy_replication)
         return std::make_pair(true, NameSet{});
+
+    if (!part.data_part_storage)
+        LOG_WARNING(log, "Datapart storage for part {} (temp: {}) is not initialzied", part.name, part.is_temp);
 
     if (!part.data_part_storage || !part.isStoredOnDisk())
     {
@@ -8287,7 +8305,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto backup_entries = backupParts(data_parts, "");
+    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();
