@@ -825,10 +825,13 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
 
 zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperIfTableShutDown() const
 {
+    zkutil::ZooKeeperPtr maybe_new_zookeeper;
     if (zookeeper_name == default_zookeeper_name)
-        return getContext()->getZooKeeper();
+        maybe_new_zookeeper = getContext()->getZooKeeper();
     else
-        return getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+        maybe_new_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+    maybe_new_zookeeper->sync(zookeeper_path);
+    return maybe_new_zookeeper;
 }
 
 void StorageReplicatedMergeTree::drop()
