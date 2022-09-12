@@ -354,9 +354,6 @@ void KeeperDispatcher::shutdown()
                 update_configuration_thread.join();
         }
 
-        if (server)
-            server->shutdown();
-
         KeeperStorage::RequestForSession request_for_session;
 
         /// Set session expired for all pending requests
@@ -368,10 +365,52 @@ void KeeperDispatcher::shutdown()
             setResponse(request_for_session.session_id, response);
         }
 
-        /// Clear all registered sessions
-        std::lock_guard lock(session_to_response_callback_mutex);
-        session_to_response_callback.clear();
+        KeeperStorage::RequestsForSessions close_requests;
+        {
+            /// Clear all registered sessions
+            std::lock_guard lock(session_to_response_callback_mutex);
+
+            if (hasLeader())
+            {
+                // send to leader CLOSE requests for active sessions
+                for (const auto & [session, response] : session_to_response_callback)
+                {
+                    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    request->xid = Coordination::CLOSE_XID;
+                    KeeperStorage::RequestForSession request_info;
+                    request_info.request = request;
+                    using namespace std::chrono;
+                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                    request_info.session_id = session;
+
+                    close_requests.push_back(std::move(request_info));
+                }
+            }
+
+            session_to_response_callback.clear();
+        }
+
+        // if there is no leader, there is no reason to do CLOSE because it's a write request
+        if (hasLeader() && !close_requests.empty())
+        {
+            LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
+            const auto raft_result = server->putRequestBatch(close_requests);
+            Poco::Event sessions_closing_done;
+            raft_result->when_ready([&](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/, nuraft::ptr<std::exception> & /*exception*/)
+            {
+                sessions_closing_done.set();
+            });
+
+            auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
+            if (!sessions_closing_done.tryWait(session_shutdown_timeout))
+                LOG_WARNING(log, "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.", session_shutdown_timeout);
+        }
+
+        if (server)
+            server->shutdown();
+
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
+
     }
     catch (...)
     {
