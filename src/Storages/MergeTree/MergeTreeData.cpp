@@ -2137,12 +2137,7 @@ void MergeTreeData::dropAllData()
 
     auto lock = lockParts();
 
-    LOG_TRACE(log, "dropAllData: removing data from memory.");
-
     DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
-
-    data_parts_indexes.clear();
-    column_sizes.clear();
 
     {
         std::lock_guard wal_lock(write_ahead_log_mutex);
@@ -2155,10 +2150,33 @@ void MergeTreeData::dropAllData()
     if (!getStorageID().hasUUID())
         getContext()->dropCaches();
 
-    LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
-    clearPartsFromFilesystem(all_parts);
+    NameSet part_names_failed;
+    try
+    {
+        LOG_TRACE(log, "dropAllData: removing data parts (count {}) from filesystem.", all_parts.size());
+        clearPartsFromFilesystem(all_parts, true, &part_names_failed);
+
+        LOG_TRACE(log, "dropAllData: removing all data parts from memory.");
+        data_parts_indexes.clear();
+    }
+    catch (...)
+    {
+        /// Removing from memory only successfully removed parts from disk
+        /// Parts removal process can be important and on the next try it's better to try to remove
+        /// them instead of remove recursive call.
+        LOG_WARNING(log, "dropAllData: got exception removing parts from disk, removing successfully removed parts from memory.");
+        for (const auto & part : all_parts)
+        {
+            if (!part_names_failed.contains(part->name))
+                data_parts_indexes.erase(part->info);
+        }
+
+        throw;
+    }
+
+    column_sizes.clear();
 
     for (const auto & disk : getDisks())
     {
@@ -2167,6 +2185,7 @@ void MergeTreeData::dropAllData()
 
         try
         {
+            LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
             disk->removeRecursive(relative_data_path);
         }
         catch (const fs::filesystem_error & e)
