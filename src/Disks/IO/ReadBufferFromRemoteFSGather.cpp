@@ -256,7 +256,7 @@ size_t ReadBufferFromRemoteFSGather::getFileSize() const
 String ReadBufferFromRemoteFSGather::getInfoForLog()
 {
     if (!current_buf)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get info: buffer not initialized");
+        return "";
 
     return current_buf->getInfoForLog();
 }
