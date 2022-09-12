@@ -579,6 +579,7 @@ add_subdirectory (src)
 add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
+add_subdirectory (rust)
 
 include (cmake/sanitize_target_link_libraries.cmake)
 
