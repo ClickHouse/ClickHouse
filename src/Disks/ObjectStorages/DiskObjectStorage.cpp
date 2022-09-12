@@ -520,11 +520,16 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    return object_storage->readObjects(
+    auto result = object_storage->readObjects(
         metadata_storage->getStorageObjects(path),
         object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
         read_hint,
         file_size);
+
+    if (read_hint)
+        result->setReadUntilPosition(*read_hint);
+
+    return result;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(

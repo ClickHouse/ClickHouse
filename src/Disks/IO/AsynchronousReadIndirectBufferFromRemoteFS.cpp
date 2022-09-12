@@ -164,6 +164,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
+    assert(file_offset_of_buffer_end <= impl->getFileSize());
+
     Stopwatch watch;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
@@ -291,6 +293,15 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
 
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
+
+    if (read_until_position && new_pos > *read_until_position)
+    {
+        ProfileEvents::increment(ProfileEvents::RemoteFSSeeksWithReset);
+        impl->reset();
+
+        file_offset_of_buffer_end = new_pos = *read_until_position; /// read_until_position is a non-included boundary.
+        return new_pos;
+    }
 
     /**
     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
