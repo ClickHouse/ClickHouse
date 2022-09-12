@@ -19,7 +19,7 @@ class MergeTreeReaderCompact : public IMergeTreeReader
 {
 public:
     MergeTreeReaderCompact(
-        DataPartCompactPtr data_part_,
+        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         NamesAndTypesList columns_,
         const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
@@ -39,6 +39,7 @@ public:
 
 private:
     bool isContinuousReading(size_t mark, size_t column_position);
+    void fillColumnPositions();
 
     ReadBuffer * data_buffer;
     CompressedReadBufferBase * compressed_data_buffer;
@@ -67,7 +68,7 @@ private:
     /// Returns maximal value of granule size in compressed file from @mark_ranges.
     /// This value is used as size of read buffer.
     static size_t getReadBufferSize(
-        const DataPartPtr & part,
+        const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
         MergeTreeMarksLoader & marks_loader,
         const ColumnPositions & column_positions,
         const MarkRanges & mark_ranges);

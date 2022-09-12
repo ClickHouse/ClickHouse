@@ -91,10 +91,10 @@ template <size_t N>
 using DivisionBy10PowN = typename SelectType
 <
     N,
-    Division<uint8_t, 0, 205U, 11>,                           /// divide by 10
-    Division<uint16_t, 1, 41943U, 22>,                        /// divide by 100
-    Division<uint32_t, 0, 3518437209U, 45>,                   /// divide by 10000
-    Division<uint64_t, 0, 12379400392853802749ULL, 90>        /// divide by 100000000
+    Division<uint8_t, false, 205U, 11>,                           /// divide by 10
+    Division<uint16_t, true, 41943U, 22>,                         /// divide by 100
+    Division<uint32_t, false, 3518437209U, 45>,                   /// divide by 10000
+    Division<uint64_t, false, 12379400392853802749ULL, 90>        /// divide by 100000000
 >::Result;
 
 template <size_t N>
@@ -352,7 +352,7 @@ static inline char * writeUIntText(T x, char * p)
     static_assert(is_unsigned_v<T>);
 
     int len = digits10(x);
-    auto pp = p + len;
+    auto * pp = p + len;
     while (x >= 100)
     {
         const auto i = x % 100;
