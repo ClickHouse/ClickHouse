@@ -22,6 +22,10 @@ private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowEndDelimiter() override;
 
+    /// Disable totals and extremes, because they are enabled in TSV.
+    bool supportTotals() const override { return false; }
+    bool supportExtremes() const override { return false; }
+
     NamesAndTypes fields;
     size_t field_number = 0;
 };
