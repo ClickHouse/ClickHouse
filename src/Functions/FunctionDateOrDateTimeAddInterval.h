@@ -718,7 +718,7 @@ public:
         }
         else
         {
-            static_assert(sizeof(FromDataType) == 0, "Failed to resolve return type.");
+            static_assert(false, "Failed to resolve return type.");
         }
 
         // To make PVS-Studio and GCC happy.
