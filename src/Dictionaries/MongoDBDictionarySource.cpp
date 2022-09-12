@@ -232,7 +232,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
                 }
                 case AttributeUnderlyingType::String:
                 {
-                    String loaded_str(get<String>((*key_columns[attribute_index])[row_idx]));
+                    String loaded_str((*key_columns[attribute_index])[row_idx].get<String>());
                     /// Convert string to ObjectID
                     if (key_attribute.is_object_id)
                     {
@@ -259,7 +259,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return "MongoDB: " + db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + host + ':' + DB::toString(port);
+    return fmt::format("MongoDB: {}.{},{}{}:{}", db, collection, (user.empty() ? " " : " " + user + '@'), host, port);
 }
 
 }

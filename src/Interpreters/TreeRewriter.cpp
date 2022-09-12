@@ -1025,7 +1025,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     has_explicit_columns = !required.empty();
     if (is_select && !has_explicit_columns)
     {
-        optimize_trivial_count = true;
+        optimize_trivial_count = !columns_context.has_array_join;
 
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -1258,9 +1258,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
-
-
     if (getContext()->getSettingsRef().enable_positional_arguments)
     {
         if (select_query->groupBy())
@@ -1279,6 +1276,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
         }
     }
+
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
