@@ -372,6 +372,7 @@ void KeeperDispatcher::shutdown()
 
             if (hasLeader())
             {
+                close_requests.reserve(session_to_response_callback.size());
                 // send to leader CLOSE requests for active sessions
                 for (const auto & [session, response] : session_to_response_callback)
                 {
@@ -395,15 +396,18 @@ void KeeperDispatcher::shutdown()
         {
             LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
             const auto raft_result = server->putRequestBatch(close_requests);
-            auto sessions_closing_done = std::make_shared<Poco::Event>();
-            raft_result->when_ready([sessions_closing_done](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/, nuraft::ptr<std::exception> & /*exception*/)
-            {
-                sessions_closing_done->set();
-            });
+            auto sessions_closing_done_promise = std::make_shared<std::promise<void>>();
+            auto sessions_closing_done = sessions_closing_done_promise->get_future();
+            raft_result->when_ready([sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
+                                        nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
+                                        nuraft::ptr<std::exception> & /*exception*/) { sessions_closing_done_promise->set_value(); });
 
             auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
-            if (!sessions_closing_done->tryWait(session_shutdown_timeout))
-                LOG_WARNING(log, "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.", session_shutdown_timeout);
+            if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
+                LOG_WARNING(
+                    log,
+                    "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
+                    session_shutdown_timeout);
         }
 
         if (server)
