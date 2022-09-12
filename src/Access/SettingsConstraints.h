@@ -98,7 +98,8 @@ private:
         bool operator !=(const Constraint & other) const { return !(*this == other); }
     };
 
-    struct Checker {
+    struct Checker
+    {
         Constraint constraint;
         String explain;
         int code = 0;
