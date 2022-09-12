@@ -10,7 +10,11 @@ all_2_2_0
 -- drop part --
 0
 2
+all_1_1_0
+all_2_2_1
+all_3_3_0
+all_4_4_1
 -- resume merges --
 0
 2
-all_1_3_1
+all_1_4_2
