@@ -266,7 +266,7 @@ protected:
 
 /// Schedule jobs/tasks on global thread pool without implicit passing tracing context on current thread to underlying worker as parent tracing context.
 ///
-/// If you implement your own job/task scheduling upon global thread pool or schedules a long time running job in a infinite loop way, 
+/// If you implement your own job/task scheduling upon global thread pool or schedules a long time running job in a infinite loop way,
 /// you need to use class, or you need to use ThreadFromGlobalPool below.
 ///
 /// See the comments of ThreadPool below to know how it works.
@@ -289,4 +289,3 @@ using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
 ///
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
-
