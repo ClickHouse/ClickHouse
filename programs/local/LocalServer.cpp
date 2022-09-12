@@ -228,8 +228,6 @@ void LocalServer::cleanup()
         }
 
         /// thread status should be destructed before shared context because it relies on process list.
-        thread_status.reset();
-        shared_context.reset();
 
         status.reset();
 
