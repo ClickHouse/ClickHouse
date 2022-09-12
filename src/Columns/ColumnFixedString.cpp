@@ -59,7 +59,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = DB::get<const String &>(x);
+    const String & s = x.get<const String &>();
 
     if (s.size() > n)
         throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);

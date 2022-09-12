@@ -519,7 +519,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val > x)
         {
             x = val;
@@ -554,7 +554,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val < x)
         {
             x = val;
