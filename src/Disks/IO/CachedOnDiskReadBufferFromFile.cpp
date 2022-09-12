@@ -206,7 +206,7 @@ CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegment & file_segment
                 return remote_file_reader;
 
             auto remote_fs_segment_reader = file_segment.extractRemoteFileReader();
-            if (remote_fs_segment_reader && file_offset_of_buffer_end == implementation_buffer->getFileOffsetOfBufferEnd())
+            if (remote_fs_segment_reader && file_offset_of_buffer_end == remote_file_reader->getFileOffsetOfBufferEnd())
                 remote_file_reader = remote_fs_segment_reader;
             else
                 remote_file_reader = implementation_buffer_creator();
@@ -294,7 +294,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
             case FileSegment::State::EMPTY:
             case FileSegment::State::PARTIALLY_DOWNLOADED:
             {
-                if (file_segment->getFirstNonDownloadedOffset() > file_offset_of_buffer_end)
+                if (canStartFromCache(file_offset_of_buffer_end, *file_segment))
                 {
                     ///                      segment{k} state: PARTIALLY_DOWNLOADED
                     /// cache:           [______|___________
