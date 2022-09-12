@@ -76,8 +76,6 @@ else
     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 fi
 
-
-
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
     mkdir -p /workdir/cov-analysis
