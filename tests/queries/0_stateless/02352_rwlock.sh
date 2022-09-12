@@ -10,6 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+function auxiliar_random_str()
+{
+    local n=$1 && shift
+    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
+}
+
 function wait_query_by_id_started()
 {
     local query_id=$1 && shift
@@ -49,7 +56,7 @@ while :; do
         CREATE TABLE ${CLICKHOUSE_DATABASE}_ordinary.data_02352 (key Int) Engine=Null();
     "
 
-    insert_query_id="insert-$(random_str 10)"
+    insert_query_id="insert-$(auxiliar_random_str 10)"
     # 20 seconds sleep
     $CLICKHOUSE_CLIENT --query_id "$insert_query_id" -q "INSERT INTO ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SELECT sleepEachRow(1) FROM numbers(20) GROUP BY number" &
     if ! wait_query_by_id_started "$insert_query_id"; then
@@ -57,7 +64,7 @@ while :; do
         continue
     fi
 
-    drop_query_id="drop-$(random_str 10)"
+    drop_query_id="drop-$(auxiliar_random_str 10)"
     # 10 second wait
     $CLICKHOUSE_CLIENT --query_id "$drop_query_id" -q "DROP TABLE ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SYNC" --lock_acquire_timeout 10 > >(
         grep -m1 -o 'WRITE locking attempt on ".*" has timed out'
