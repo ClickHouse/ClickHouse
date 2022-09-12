@@ -1044,7 +1044,7 @@ void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
         return;
 
     current_sort_desc.resize(prefix_size);
-    output_stream->sort_mode = DataStream::SortMode::Port;
+    output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
