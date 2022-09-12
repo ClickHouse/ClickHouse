@@ -341,14 +341,17 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         /// on moving tables from Ordinary database. Server has not started to accept connections yet,
         /// so there are no user queries, only background operations
         LOG_INFO(log, "Will stop background operations to be able to rename tables in Ordinary database {}", database_name);
-        for (const auto & action : {ActionLocks::PartsMerge, ActionLocks::PartsFetch, ActionLocks::PartsSend, ActionLocks::DistributedSend})
+        static const auto actions_to_stop = {
+            ActionLocks::PartsMerge, ActionLocks::PartsFetch, ActionLocks::PartsSend, ActionLocks::DistributedSend
+        };
+        for (const auto & action : actions_to_stop)
             InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ false, database_name, database, context, log);
 
         local_context->setSetting("check_table_dependencies", false);
         convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
 
         LOG_INFO(log, "Will start background operations after renaming tables in database {}", database_name);
-        for (const auto & action : {ActionLocks::PartsMerge, ActionLocks::PartsFetch, ActionLocks::PartsSend, ActionLocks::DistributedSend})
+        for (const auto & action : actions_to_stop)
             InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ true, database_name, database, context, log);
 
         auto new_database = DatabaseCatalog::instance().getDatabase(database_name);
