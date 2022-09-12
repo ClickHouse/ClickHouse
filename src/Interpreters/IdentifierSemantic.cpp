@@ -322,22 +322,35 @@ std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr 
     return IdentifierSemantic::getIdentsMembership(ast, tables, aliases);
 }
 
-static void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
+void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
 {
-    if (const auto * func = node->as<ASTFunction>(); func && func->name == "and")
-    {
-        for (const auto & child : func->arguments->children)
-            collectConjunctions(child, members);
+    if (!node)
         return;
+
+    result.emplace_back(node);
+
+    for (size_t idx = 0; idx < result.size();)
+    {
+        ASTPtr expression = result.at(idx);
+
+        if (const auto * function = expression->as<ASTFunction>(); function && function->name == "and")
+        {
+            result.erase(result.begin() + idx);
+
+            for (auto & child : function->arguments->children)
+                result.emplace_back(child);
+
+            continue;
+        }
+        ++idx;
     }
-    members.push_back(node);
 }
 
-std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
+ASTs splitConjunctionsAst(const ASTPtr & node)
 {
-    std::vector<ASTPtr> members;
-    collectConjunctions(node, members);
-    return members;
+    std::vector<ASTPtr> result;
+    splitConjunctionsAst(node, result);
+    return result;
 }
 
 }
