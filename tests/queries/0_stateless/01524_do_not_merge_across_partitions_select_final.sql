@@ -33,6 +33,7 @@ OPTIMIZE TABLE select_final FINAL;
 
 SET remote_filesystem_read_method = 'read';
 SET local_filesystem_read_method = 'pread';
+set load_marks_asynchronously = 0;
 
 SELECT max(x) FROM select_final FINAL;
 

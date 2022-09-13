@@ -26,6 +26,7 @@
 #include <Common/config.h>
 #include <Common/config_version.h>
 
+#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -346,13 +347,29 @@ namespace detail
                 non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
         }
 
+        Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response)
+        {
+            auto location = response.get("Location");
+            auto location_uri = Poco::URI(location);
+            if (!location_uri.isRelative())
+                return location_uri;
+            /// Location header contains relative path. So we need to concatenate it
+            /// with path from the original URI and normalize it.
+            auto path = std::filesystem::weakly_canonical(std::filesystem::path(prev_uri.getPath()) / location);
+            location_uri = prev_uri;
+            location_uri.setPath(path);
+            return location_uri;
+        }
+
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
             call(response, method_, throw_on_all_errors);
+            Poco::URI prev_uri = uri;
 
             while (isRedirect(response.getStatus()))
             {
-                Poco::URI uri_redirect(response.get("Location"));
+                Poco::URI uri_redirect = getUriAfterRedirect(prev_uri, response);
+                prev_uri = uri_redirect;
                 if (remote_host_filter)
                     remote_host_filter->checkURL(uri_redirect);
 
@@ -408,7 +425,7 @@ namespace detail
 
             while (isRedirect(response.getStatus()))
             {
-                Poco::URI uri_redirect(response.get("Location"));
+                Poco::URI uri_redirect = getUriAfterRedirect(saved_uri_redirect.value_or(uri), response);
                 if (remote_host_filter)
                     remote_host_filter->checkURL(uri_redirect);
 
