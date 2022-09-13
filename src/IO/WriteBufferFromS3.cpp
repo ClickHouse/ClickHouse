@@ -8,6 +8,7 @@
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
+#include <IO/S3Common.h>
 #include <Interpreters/Context.h>
 
 #include <aws/s3/S3Client.h>
@@ -173,7 +174,9 @@ void WriteBufferFromS3::finalizeImpl()
         auto response = client_ptr->HeadObject(request);
 
         if (!response.IsSuccess())
-            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket);
+            throw S3Exception(fmt::format("Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket), response.GetError().GetErrorType());
+        else
+            LOG_TRACE(log, "Object {} exists after upload", key);
     }
 }
 
@@ -197,7 +200,7 @@ void WriteBufferFromS3::createMultipartUpload()
         LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", bucket, key, multipart_upload_id);
     }
     else
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
 }
 
 void WriteBufferFromS3::writePart()
@@ -309,7 +312,7 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
         LOG_TRACE(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, task.tag, part_tags.size());
     }
     else
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
 
     total_parts_uploaded++;
 }
@@ -343,9 +346,10 @@ void WriteBufferFromS3::completeMultipartUpload()
         LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
     else
     {
-        throw Exception(ErrorCodes::S3_ERROR, "{} Tags:{}",
-            outcome.GetError().GetMessage(),
-            fmt::join(tags.begin(), tags.end(), " "));
+        throw S3Exception(
+            outcome.GetError().GetErrorType(),
+            "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+            outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
     }
 }
 
@@ -430,7 +434,10 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        throw S3Exception(
+            outcome.GetError().GetErrorType(),
+            "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+            outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()

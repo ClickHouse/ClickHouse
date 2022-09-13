@@ -40,6 +40,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -550,8 +551,9 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        if (readString(filename).find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
+        String clocksource = readString(filename);
+        if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
@@ -1036,7 +1038,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         try
         {
             LOG_DEBUG(
-                log, "Initiailizing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+                log, "Initializing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
             global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
         }
         catch (...)
@@ -1089,7 +1091,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    LOG_DEBUG(log, "Initiailizing interserver credentials.");
+    LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
     if (config().has("macros"))
@@ -1269,6 +1271,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             CertificateReloader::instance().tryLoad(*config);
 #endif
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
+
+            /// Must be the last.
+            latest_config = config;
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -1886,7 +1891,7 @@ void Server::createServers(
                 port_name,
                 "http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
         });
 
         /// HTTPS
@@ -1903,7 +1908,7 @@ void Server::createServers(
                 port_name,
                 "https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
             UNUSED(port);
             throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -2028,7 +2033,7 @@ void Server::createServers(
                 port_name,
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 
@@ -2049,7 +2054,7 @@ void Server::createServers(
                 "replica communication (interserver): http://" + address.toString(),
                 std::make_unique<HTTPServer>(
                     context(),
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
+                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -2069,7 +2074,7 @@ void Server::createServers(
                 "secure replica communication (interserver): https://" + address.toString(),
                 std::make_unique<HTTPServer>(
                     context(),
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -2111,13 +2116,24 @@ void Server::updateServers(
 
     std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
 
+    Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
+
     for (auto & server : servers)
     {
         if (!server.isStopping())
         {
             bool has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(server.getPortName(), "").empty();
-            if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber())
+
+            /// NOTE: better to compare using getPortName() over using
+            /// dynamic_cast<> since HTTPServer is also used for prometheus and
+            /// internal replication communications.
+            bool is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+            bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
+            if (force_restart)
+                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server.getDescription());
+
+            if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber() || force_restart)
             {
                 server.stop();
                 LOG_INFO(log, "Stopped listening for {}", server.getDescription());

@@ -31,7 +31,7 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 
 
 template <typename T>
-inline size_t getLeadingZeroBitsUnsafe(T x)
+inline uint32_t getLeadingZeroBitsUnsafe(T x)
 {
     assert(x != 0);
 
