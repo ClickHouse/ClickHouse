@@ -971,7 +971,7 @@ KeyCondition::KeyCondition(
     {
         auto inverted_dag = cloneASTWithInversionPushDown(std::move(dag_nodes.nodes), context);
 
-        std::cerr << "========== inverted dag: " << inverted_dag->dumpDAG() << std::endl;
+        // std::cerr << "========== inverted dag: " << inverted_dag->dumpDAG() << std::endl;
 
         Block empty;
         for (const auto * node : inverted_dag->getOutputs())
