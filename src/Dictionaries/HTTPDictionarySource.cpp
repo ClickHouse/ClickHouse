@@ -245,8 +245,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             credentials.setPassword(named_collection->configuration.password);
 
             header_entries.reserve(named_collection->configuration.headers.size());
-            for (const auto & header : named_collection->configuration.headers)
-                header_entries.emplace_back(std::make_tuple(header.first, header.second.get<String>()));
+            for (const auto & [key, value] : named_collection->configuration.headers)
+                header_entries.emplace_back(std::make_tuple(key, value));
         }
         else
         {

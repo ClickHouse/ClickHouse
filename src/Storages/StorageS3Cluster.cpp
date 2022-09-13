@@ -46,22 +46,17 @@
 namespace DB
 {
 StorageS3Cluster::StorageS3Cluster(
-    const String & filename_,
-    const String & access_key_id_,
-    const String & secret_access_key_,
+    const StorageS3ClusterConfiguration & configuration_,
     const StorageID & table_id_,
-    String cluster_name_,
-    const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_,
-    const String & compression_method_)
+    ContextPtr context_)
     : IStorage(table_id_)
-    , s3_configuration{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, {}, {}, S3Settings::ReadWriteSettings(context_->getSettingsRef())}
-    , filename(filename_)
-    , cluster_name(cluster_name_)
-    , format_name(format_name_)
-    , compression_method(compression_method_)
+    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
+    , filename(configuration_.url)
+    , cluster_name(configuration_.cluster_name)
+    , format_name(configuration_.format)
+    , compression_method(configuration_.compression_method)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
     StorageInMemoryMetadata storage_metadata;

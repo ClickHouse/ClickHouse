@@ -103,10 +103,9 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     for (const auto & [header, value] : configuration.headers)
     {
-        auto value_literal = value.safeGet<String>();
         if (header == "Range")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-        headers.emplace_back(std::make_pair(header, value_literal));
+        headers.emplace_back(header, value);
     }
     return headers;
 }
