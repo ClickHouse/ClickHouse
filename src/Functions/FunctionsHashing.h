@@ -508,7 +508,6 @@ struct HiveHashImpl
 
     static Int32 apply(const char * data, const size_t size)
     {
-        String a(data, size);
         return static_cast<Int32>(0x7FFFFFFF & static_cast<UInt32>(JavaHashImpl::apply(data, size)));
     }
 
