@@ -20,7 +20,7 @@ public:
 
     InputFormatErrorsLogger(const ContextPtr & context);
 
-    virtual ~InputFormatErrorsLogger() = default;
+    virtual ~InputFormatErrorsLogger();
 
     virtual void logError(ErrorEntry entry);
     void logErrorImpl(ErrorEntry entry);
