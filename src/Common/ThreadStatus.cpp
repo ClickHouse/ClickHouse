@@ -92,8 +92,6 @@ std::vector<ThreadGroupStatus::ProfileEventsCountersAndMemory> ThreadGroupStatus
 ThreadStatus::ThreadStatus()
     : thread_id{getThreadId()}
 {
-    chassert(!current_thread);
-
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
@@ -147,7 +145,7 @@ ThreadStatus::ThreadStatus()
 
 ThreadStatus::~ThreadStatus()
 {
-    chassert(current_thread);
+    chassert(current_thread == this);
 
     memory_tracker.adjustWithUntrackedMemory(untracked_memory);
 
