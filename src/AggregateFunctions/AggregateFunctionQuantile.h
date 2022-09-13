@@ -2,24 +2,12 @@
 
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-
-/// These must be exposed in header for the purpose of dynamic compilation.
-#include <AggregateFunctions/QuantileReservoirSampler.h>
-#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
-#include <AggregateFunctions/QuantileExact.h>
-#include <AggregateFunctions/QuantileExactWeighted.h>
-#include <AggregateFunctions/QuantileTiming.h>
-#include <AggregateFunctions/QuantileTDigest.h>
-#include <AggregateFunctions/QuantileBFloat16Histogram.h>
-
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>

@@ -248,6 +248,7 @@ BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id,
         return {};
 
     std::vector<MutationInfo> res;
+    res.reserve(table_info.mutations.size());
     for (const auto & [mutation_id, mutation_entry] : table_info.mutations)
         res.emplace_back(MutationInfo{mutation_id, mutation_entry});
     return res;
