@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <Parsers/IParserBase.h>
@@ -9,10 +8,7 @@ namespace DB
 
 class ParserKQLMVExpand : public ParserKQLBase
 {
-public:
 
-    void setTableName(String table_name_) {table_name = table_name_;}
-    ASTPtr settings;
 protected:
     static std::unordered_map<String,String> type_cast;
 
@@ -31,16 +27,12 @@ protected:
         String with_itemindex;
         String limit;
     };
- 
-    bool parseColumnArrayExprs(ColumnArrayExprs & column_array_exprs, Pos & pos, Expected & expected);
-    bool parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, Expected & expected);
-    String genQuery(KQLMVExpand & kql_mv_expand, String input);
+
+    static bool parseColumnArrayExprs(ColumnArrayExprs & column_array_exprs, Pos & pos, Expected & expected);
+    static bool parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, Expected & expected);
+    static bool genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_node, int32_t max_depth);
+
     const char * getName() const override { return "KQL mv-expand"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-private:
-    String table_name;
 };
 }
-
-
-

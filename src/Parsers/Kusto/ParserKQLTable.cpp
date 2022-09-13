@@ -7,15 +7,6 @@
 namespace DB
 {
 
-bool ParserKQLTable :: parsePrepare(Pos & pos)
-{
-    if (!op_pos.empty())
-        return false;
-
-    op_pos.push_back(pos);
-    return true;
-}
-
 bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::unordered_set<String> sql_keywords
@@ -44,12 +35,7 @@ bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         "EXPLAIN"
     });
 
-    if (op_pos.empty())
-        return false;
-
-    auto begin = pos;
-    pos = op_pos.back();
-
+    ASTPtr tables;
     String table_name(pos->begin,pos->end);
     String table_name_upcase(table_name);
 
@@ -58,9 +44,10 @@ bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (sql_keywords.find(table_name_upcase) != sql_keywords.end())
         return false;
 
-    if (!ParserTablesInSelectQuery().parse(pos, node, expected))
+    if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
         return false;
-    pos = begin;
+
+    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
     return true;
 }
