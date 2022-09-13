@@ -406,10 +406,6 @@ void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexe
     size_t data_size = data.size();
     size_t pos = 0;
     size_t limit64 = limit & ~63;
-    if (data_size > 256) {
-        /// byte index will not exceed 256 boundary.
-        data_size = 256;
-    }
     if (data_size <= 64)
     {
         __mmask64 last_mask = MASK64 >> (64 - data_size);
@@ -453,6 +449,11 @@ void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexe
     }
     else
     {
+        if (data_size > 256)
+        {
+            /// byte index will not exceed 256 boundary.
+            data_size = 256;
+        }
 
         __m512i table1 = _mm512_loadu_epi8(data_pos);
         __m512i table2 = _mm512_loadu_epi8(data_pos + 64);
@@ -503,7 +504,8 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();
 #if USE_MULTITARGET_CODE
-    if constexpr (sizeof(T) == 1 && sizeof(Type) == 1) {
+    if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
+    {
         if (isArchSupported(TargetArch::AVX512VBMI))
         {
             TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
