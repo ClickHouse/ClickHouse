@@ -47,7 +47,9 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
 
 InputFormatErrorsLogger::~InputFormatErrorsLogger()
 {
-    write_buf->sync();
+    writer->finalize();
+    writer->flush();
+    write_buf->finalize();
 }
 
 void InputFormatErrorsLogger::logErrorImpl(ErrorEntry entry)
