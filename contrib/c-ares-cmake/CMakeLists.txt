@@ -85,13 +85,12 @@ target_include_directories(_c-ares SYSTEM PUBLIC
 # For the platform-specific compile definitions, see c-ares top-level CMakeLists.txt.
 if (OS_LINUX)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/linux")
-    target_compile_definitions(_c-ares PRIVATE "-D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600")
+    target_compile_definitions(_c-ares PRIVATE -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600)
 elseif (OS_DARWIN)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/darwin")
-    target_compile_definitions(_c-ares PRIVATE "-D_DARWIN_C_SOURCE")
+    target_compile_definitions(_c-ares PRIVATE -D_DARWIN_C_SOURCE)
 elseif (OS_FREEBSD)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/freebsd")
-    target_compile_definitions(_c-ares PRIVATE "")
 endif()
 
 add_library(ch_contrib::c-ares ALIAS _c-ares)
