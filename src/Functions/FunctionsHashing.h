@@ -80,46 +80,8 @@ namespace ErrorCodes
   * intHash32: number -> UInt32
   * intHash64: number -> UInt64
   *
-  * Non-cryptographic hash function from Java integer types (Byte, Short, Integer, Long)
-  * javaIntHash: number -> Int32
   */
 
-struct JavaIntHashImpl
-{
-    using ReturnType = Int32;
-
-#define IS_INT64 std::is_same_v<T, std::int64_t>
-#define IS_INTEGER  std::is_integral_v<T>
-#define SHORT_INT sizeof(T) <= sizeof(int32_t)
-
-    template <class T, typename std::enable_if_t<IS_INT64, T>* = nullptr>
-    static int32_t apply(T x)
-    {
-        T copy = x;
-        /// Implement Java >>> operation
-        copy = copy >> 32;
-        struct Long
-        {
-            int32_t low;
-            int32_t high;
-        } * l = reinterpret_cast<Long *>(&copy);
-        l->high = 0;
-        return static_cast<int32_t>(x ^ copy);
-    }
-
-    template <class T, typename std::enable_if<IS_INTEGER && SHORT_INT, T>::type* = nullptr>
-    static int32_t apply(T x)
-    {
-        return x;
-    }
-
-    template <class T, typename std::enable_if<!(IS_INT64 || (IS_INTEGER && SHORT_INT)), T>::type * = nullptr>
-    static int32_t apply(T /*x*/)
-    {
-        throw Exception("Not implemented type for Java int hash ", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-};
 
 struct IntHash32Impl
 {
@@ -452,7 +414,6 @@ struct MurmurHash3Impl128
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-/// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
 ///  but obtain the same result as it is done in signed integers with two's complement arithmetic.
 struct JavaHashImpl
@@ -460,7 +421,33 @@ struct JavaHashImpl
     static constexpr auto name = "javaHash";
     using ReturnType = Int32;
 
-    static Int32 apply(const char * data, const size_t size)
+    static ReturnType apply(int64_t x)
+    {
+        int64_t copy = x;
+        copy = copy >> 32;
+        return static_cast<int32_t>(x ^ (copy & 0x00000000FFFFFFFF));
+    }
+
+    template <class T, typename std::enable_if<std::is_same_v<T, int8_t>
+                                                   || std::is_same_v<T, int16_t>
+                                                   || std::is_same_v<T, int32_t>, T>::type * = nullptr>
+    static ReturnType apply(T x)
+    {
+        return x;
+    }
+
+    template <typename T, typename std::enable_if<!std::is_same_v<T, int8_t>
+                                                      && !std::is_same_v<T, int16_t>
+                                                      && !std::is_same_v<T, int32_t>
+                                                      && !std::is_same_v<T, int64_t>, T>::type * = nullptr>
+    static ReturnType apply(T x)
+    {
+        const size_t size = sizeof(T);
+        const char * data = reinterpret_cast<const char *>(&x);
+        return apply(data, size);
+    }
+
+    static ReturnType apply(const char * data, const size_t size)
     {
         UInt32 h = 0;
         for (size_t i = 0; i < size; ++i)
@@ -468,7 +455,7 @@ struct JavaHashImpl
         return static_cast<Int32>(h);
     }
 
-    static Int32 combineHashes(Int32, Int32)
+    static ReturnType combineHashes(Int32, Int32)
     {
         throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -521,6 +508,7 @@ struct HiveHashImpl
 
     static Int32 apply(const char * data, const size_t size)
     {
+        String a(data, size);
         return static_cast<Int32>(0x7FFFFFFF & static_cast<UInt32>(JavaHashImpl::apply(data, size)));
     }
 
@@ -863,7 +851,10 @@ private:
                 }
                 else
                 {
-                    h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+                    if (std::is_same_v<Impl, JavaHashImpl>)
+                        h = JavaHashImpl::apply(vec_from[i]);
+                    else
+                        h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
                 }
 
                 if constexpr (first)
@@ -1447,12 +1438,10 @@ struct ImplWyHash64
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
-struct NameJavaIntHash { static constexpr auto name = "javaIntHash"; };
 
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
-using FunctionJavaIntHash = FunctionIntHash<JavaIntHashImpl, NameJavaIntHash>;
 #if USE_SSL
 using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
