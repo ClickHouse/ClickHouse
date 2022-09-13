@@ -3,6 +3,10 @@
 #include <numeric>
 #include <Poco/Util/Application.h>
 
+#ifdef OS_LINUX
+#    include <unistd.h>
+#endif
+
 #include <base/sort.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
@@ -293,14 +297,14 @@ size_t getL2CacheSize()
 {
     size_t l2_size = 0;
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
     if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
         l2_size = ret;
 #endif
 
-    /// 1MB looks like a reasonable default.
+    /// 512KB looks like a reasonable default.
     /// max() is needed because sysconf() may return 0 instead of the actual value (at least on ARM).
-    return std::max<size_t>(l2_size, 1 * 1024 * 1024);
+    return std::max<size_t>(l2_size, 512 * 1024);
 }
 
 }
