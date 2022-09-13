@@ -4,6 +4,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 namespace DB
 {
@@ -20,7 +22,7 @@ public:
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
-        const MergeTreeData::DataPartPtr & data_part_,
+        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
         const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
@@ -57,7 +59,7 @@ public:
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
-    MergeTreeData::DataPartPtr data_part;
+    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
@@ -86,16 +88,17 @@ protected:
 
     MergeTreeReaderSettings settings;
 
-    const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
     using ColumnPosition = std::optional<size_t>;
-    ColumnPosition findColumnForOffsets(const String & column_name) const;
+    ColumnPosition findColumnForOffsets(const NameAndTypePair & column) const;
+
+    NameSet partially_read_columns;
 
 private:
     /// Alter conversions, which must be applied on fly if required
-    MergeTreeData::AlterConversions alter_conversions;
+    AlterConversions alter_conversions;
 
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;
