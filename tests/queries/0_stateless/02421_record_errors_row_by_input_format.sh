@@ -19,10 +19,12 @@ ${CLICKHOUSE_CLIENT} --query "create table data (A UInt8, B UInt8) engine=MergeT
 
 # Server side
 ${CLICKHOUSE_CLIENT} --input_format_allow_errors_num 4 --input_format_record_errors_file_path "errors_server" --query "insert into data select * from file('a.csv', 'CSV', 'c1 UInt8, c2 UInt8');"
+sleep 2
 ${CLICKHOUSE_CLIENT} --query "select * except (time) from file('errors_server', 'CSV', 'time DateTime, database Nullable(String), table Nullable(String), offset UInt32, reason String, raw_data String');"
 
 # Client side
 ${CLICKHOUSE_CLIENT} --input_format_allow_errors_num 4 --input_format_record_errors_file_path "${CLICKHOUSE_USER_FILES_PATH}/errors_client" --query "insert into data(A, B) format CSV" < ${CLICKHOUSE_USER_FILES_PATH}/a.csv
+sleep 2
 ${CLICKHOUSE_CLIENT} --query "select * except (time) from file('errors_client', 'CSV', 'time DateTime, database Nullable(String), table Nullable(String), offset UInt32, reason String, raw_data String');"
 
 # Restore
