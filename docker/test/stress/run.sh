@@ -8,6 +8,9 @@ dmesg --clear
 
 set -x
 
+# core.COMM.PID-TID
+sysctl kernel.core_pattern='core.%e.%p-%P'
+
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
 
@@ -105,6 +108,19 @@ EOL
     </profiles>
 </clickhouse>
 EOL
+
+    cat > /etc/clickhouse-server/config.d/core.xml <<EOL
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+         since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+EOL
 }
 
 function stop()
@@ -160,7 +176,6 @@ handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue
-gcore
 backtrace full
 thread apply all backtrace full
 info registers
@@ -355,6 +370,7 @@ else
 
     # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
     rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
+    rm -f /etc/clickhouse-server/users.d/marks.xml ||:
 
     # Remove s3 related configs to avoid "there is no disk type `cache`"
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
@@ -504,8 +520,7 @@ done
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%'), rowNumberInAllBlocks() LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
-# Core dumps (see gcore)
-# Default filename is 'core.PROCESS_ID'
+# Core dumps
 for core in core.*; do
     pigz $core
     mv $core.gz /test_output/
