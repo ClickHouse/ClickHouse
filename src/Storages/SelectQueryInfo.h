@@ -117,10 +117,10 @@ struct InputOrderInfo
      * sort_description_for_merging will be equal to (c, d) and
      * used_prefix_of_sorting_key_size will be equal to 4.
      */
-    const size_t used_prefix_of_sorting_key_size;
+    size_t used_prefix_of_sorting_key_size;
 
-    const int direction;
-    const UInt64 limit;
+    int direction;
+    UInt64 limit;
 
     InputOrderInfo(
         const SortDescription & sort_description_for_merging_,
