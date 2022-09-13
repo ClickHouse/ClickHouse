@@ -45,6 +45,11 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
     writer = context->getOutputFormat(output_format, *write_buf, header);
 }
 
+InputFormatErrorsLogger::~InputFormatErrorsLogger()
+{
+    write_buf->sync();
+}
+
 void InputFormatErrorsLogger::logErrorImpl(ErrorEntry entry)
 {
     auto error = header.cloneEmpty();
