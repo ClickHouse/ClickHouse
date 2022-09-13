@@ -187,7 +187,13 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             {
                 /// Send metadata if the receiver's capability covers the source disk type.
                 response.addCookie({"remote_fs_metadata", disk_type});
-                sendPartFromDiskRemoteMeta(part, out);
+                if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
+                {
+                    const auto & projections = part->getProjectionParts();
+                    writeBinary(projections.size(), out);
+                }
+
+                sendPartFromDiskRemoteMeta(part, out, true);
                 return;
             }
         }
@@ -331,6 +337,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
     const MergeTreeData::DataPartPtr & part,
     WriteBuffer & out,
+    bool send_part_id,
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections)
 {
     const auto * data_part_storage_on_disk = dynamic_cast<const DataPartStorageOnDisk *>(part->data_part_storage.get());
@@ -361,8 +368,11 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
     /// Serialized metadatadatas with zero ref counts.
     auto metadatas = data_part_storage_on_disk->getSerializedMetadata(paths);
 
-    String part_id = data_part_storage_on_disk->getUniqueId();
-    writeStringBinary(part_id, out);
+    if (send_part_id)
+    {
+        String part_id = data_part_storage_on_disk->getUniqueId();
+        writeStringBinary(part_id, out);
+    }
 
     MergeTreeData::DataPart::Checksums data_checksums;
     for (const auto & [name, projection] : part->getProjectionParts())
@@ -370,8 +380,9 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
         auto it = projections.find(name);
         if (it != projections.end())
         {
+
             writeStringBinary(name, out);
-            MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDiskRemoteMeta(it->second, out);
+            MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDiskRemoteMeta(it->second, out, false);
             data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
         else if (part->checksums.has(name + ".proj"))
