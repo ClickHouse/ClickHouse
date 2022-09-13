@@ -553,7 +553,7 @@ static void sanityChecks(Server & server)
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
         String clocksource = readString(filename);
         if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
+            server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
