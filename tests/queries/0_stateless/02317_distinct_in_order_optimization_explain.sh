@@ -56,8 +56,17 @@ $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, 1 as x from distinct_in_order_explain order by x" | eval $FIND_DISTINCT
 
 echo "-- Check reading in order for distinct"
-$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
+echo "-- disabled, distinct columns match sorting key"
 $CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+echo "-- enabled, distinct columns match sorting key"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
+echo "-- enabled, distinct columns form prefix of sorting key"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
+echo "-- enabled, distinct columns DON't form prefix of sorting key"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+echo "-- enabled, distinct columns contains constant columns, non-const columns form prefix of sorting key"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
+echo "-- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, b, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"

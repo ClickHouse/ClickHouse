@@ -56,10 +56,18 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         return 0;
 
     const SortDescription & sort_desc = output.sort_description;
-    const auto & distinct_columns = pre_distinct->getOutputStream().header.getNames();
+    const auto & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
+    std::vector<std::string_view> non_const_columns;
+    non_const_columns.reserve(distinct_columns.size());
+    for (const auto & column : distinct_columns)
+    {
+        if (!isColumnConst(*column.column))
+            non_const_columns.emplace_back(column.name);
+    }
+
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
-    if (sort_desc.size() < distinct_columns.size())
+    if (sort_desc.size() < non_const_columns.size())
         return 0;
 
     /// check if DISTINCT has the same columns as sorting key
@@ -67,7 +75,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     distinct_sort_desc.reserve(sort_desc.size());
     for (const auto & column_desc : sort_desc)
     {
-        if (distinct_columns.end() == std::find(begin(distinct_columns), end(distinct_columns), column_desc.column_name))
+        if (non_const_columns.end() == std::find(begin(non_const_columns), end(non_const_columns), column_desc.column_name))
             break;
 
         distinct_sort_desc.push_back(column_desc);
