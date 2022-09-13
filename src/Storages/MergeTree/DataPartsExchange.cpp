@@ -347,6 +347,12 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
     for (const auto & file_name : file_names_without_checksums)
         checksums.files[file_name] = {};
 
+    for (const auto & [name, projection] : part->getProjectionParts())
+    {
+        // Get rid of projection files
+        checksums.files.erase(name + ".proj");
+    }
+
     std::vector<std::string> paths;
     paths.reserve(checksums.files.size());
     for (const auto & it : checksums.files)
@@ -361,8 +367,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
     MergeTreeData::DataPart::Checksums data_checksums;
     for (const auto & [name, projection] : part->getProjectionParts())
     {
-        // Get rid of projection files
-        checksums.files.erase(name + ".proj");
         auto it = projections.find(name);
         if (it != projections.end())
         {
