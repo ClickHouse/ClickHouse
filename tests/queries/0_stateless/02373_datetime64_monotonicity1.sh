@@ -7,6 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for tz in Asia/Tehran UTC Canada/Atlantic Europe/Berlin
 do
     echo "$tz"
-    TZ=$tz $CLICKHOUSE_LOCAL -mn < ./02373_datetime64_monotonicity1.queries
+    TZ=$tz $CLICKHOUSE_LOCAL -mn < ${CUR_DIR}/02373_datetime64_monotonicity1.queries
     echo ""
 done
