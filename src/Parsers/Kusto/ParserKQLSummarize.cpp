@@ -23,214 +23,72 @@
 
 namespace DB
 {
-std::pair<String, String> ParserKQLSummarize::removeLastWord(String input)
+
+bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ReadBufferFromString in(input);
-    String token;
-    std::vector<String> temp;
+    ASTPtr select_expression_list;
+    ASTPtr group_expression_list;
 
-    while (!in.eof())
-    {
-        readStringUntilWhitespace(token, in);
-        if (in.eof())
-            break;
-        skipWhitespaceIfAny(in);
-        temp.push_back(token);
-    }
-
-    String first_part;
-    for (std::size_t i = 0; i < temp.size() - 1; i++)
-    {
-        first_part += temp[i];
-    }
-    if (!temp.empty())
-    {
-        return std::make_pair(first_part, temp[temp.size() - 1]);
-    }
-
-    return std::make_pair("", "");
-}
-
-String ParserKQLSummarize::getBinGroupbyString(String expr_bin)
-{
-    String column_name;
-    bool bracket_start = false;
-    bool comma_start = false;
-    String bin_duration;
-
-    for (char ch : expr_bin)
-    {
-        if (comma_start && ch != ')')
-            bin_duration += ch;
-        if (ch == ',')
-        {
-            comma_start = true;
-            bracket_start = false;
-        }
-        if (bracket_start)
-            column_name += ch;
-        if (ch == '(')
-            bracket_start = true;
-    }
-
-    std::size_t len = bin_duration.size();
-    char bin_type = bin_duration[len - 1]; // y, d, h, m, s
-    if ((bin_type != 'y') && (bin_type != 'd') && (bin_type != 'h') && (bin_type != 'm') && (bin_type != 's'))
-    {
-        return "toInt32(" + column_name + "/" + bin_duration + ") * " + bin_duration + " AS bin_int";
-    }
-    bin_duration = bin_duration.substr(0, len - 1);
-
-    switch (bin_type)
-    {
-        case 'y':
-            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / (12*30*86400)) / " + bin_duration + ") * ("
-                + bin_duration + " * (12*30*86400))) AS bin_year";
-        case 'd':
-            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / 86400) / " + bin_duration + ") * (" + bin_duration
-                + " * 86400)) AS bin_day";
-        case 'h':
-            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / 3600) / " + bin_duration + ") * (" + bin_duration
-                + " * 3600)) AS bin_hour";
-        case 'm':
-            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / 60) / " + bin_duration + ") * (" + bin_duration
-                + " * 60)) AS bin_minute";
-        case 's':
-            return "toDateTime(" + column_name + ") AS bin_sec";
-        default:
-            return "";
-    }
-}
-
-bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (op_pos.empty())
-        return true;
-    if (op_pos.size() > 2) // now only support max 2 summarize
-        return false;
-
-    auto begin = pos;
-    ASTPtr sub_qurery_table;
-
-    if (op_pos.size() == 2)
-    {
-        String sub_query = "kql("+ table_name +"|summarize ";
-        auto sub_pos = op_pos.front();
-
-        while (!sub_pos->isEnd() && sub_pos->type != TokenType::PipeMark && sub_pos->type != TokenType::Semicolon)
-        {
-            sub_query = sub_query + " " +String(sub_pos->begin,sub_pos->end);
-            ++sub_pos;
-        }
-        sub_query+=")";
-
-        Tokens token_subquery(sub_query.c_str(), sub_query.c_str()+sub_query.size());
-        IParser::Pos pos_subquery(token_subquery, pos.max_depth);
-
-         if (!ParserTablesInSelectQuery().parse(pos_subquery, sub_qurery_table, expected))
-            return false;
-
-        tables = sub_qurery_table;
-    }
-
-    pos = op_pos.back();
     String expr_aggregation;
     String expr_groupby;
     String expr_columns;
-    String expr_bin;
     bool groupby = false;
-    bool bin_function = false;
-    String bin_column;
-    String last_string;
-    String column_name;
-    int character_passed = 0;
+
+    auto begin = pos;
+    auto pos_groupby = pos;
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (String(pos->begin, pos->end) == "by")
-            groupby = true;
-        else
         {
-            if (groupby)
-            {
-                if (String(pos->begin, pos->end) == "bin" || bin_function)
-                {
-                    bin_function = true;
-                    expr_bin += String(pos->begin, pos->end);
-                    if (String(pos->begin, pos->end) == ")")
-                    {
-                        expr_bin = getBinGroupbyString(expr_bin);
-                        expr_groupby += expr_bin;
-                        bin_function = false;
-                    }
-                }
-
-                else
-                    expr_groupby = expr_groupby + String(pos->begin, pos->end) + " ";
-            }
-
-            else
-            {
-                    if (!column_name.empty())
-                    {
-                        expr_aggregation = expr_aggregation + String(pos->begin, pos->end);
-                        character_passed++;
-                        if (String(pos->begin, pos->end) == ")")
-                        {
-                            expr_aggregation = expr_aggregation + " AS " + column_name;
-                            column_name = "";
-                        }
-                    }
-                    else if (!bin_function)
-                    {
-                        expr_aggregation = expr_aggregation + String(pos->begin, pos->end) + " ";
-                    }
-                
-            }
+            groupby = true;
+            auto end = pos;
+            --end;
+            expr_aggregation = begin <= end ? String(begin->begin, end->end) : "";
+            pos_groupby = pos;
+            ++pos_groupby;
         }
         ++pos;
     }
-
-    if (expr_groupby.empty())
-        expr_columns = expr_aggregation;
+    --pos;
+    if (groupby)
+        expr_groupby = String(pos_groupby->begin, pos->end);
     else
+        expr_aggregation = begin <= pos ? String(begin->begin, pos->end) : "";
+
+    if (!expr_groupby.empty())
+        expr_columns = expr_groupby;
+
+    if (!expr_aggregation.empty())
     {
-        if (expr_aggregation.empty())
-            expr_columns = expr_groupby;
+        if (expr_columns.empty())
+            expr_columns = expr_aggregation;
         else
-            expr_columns = expr_groupby + "," + expr_aggregation;
+            expr_columns =  expr_columns + "," + expr_aggregation;
     }
 
-   // For function
-    Tokens token_columns(expr_columns.c_str(), expr_columns.c_str() + expr_columns.size());
-    IParser::Pos pos_columns(token_columns, pos.max_depth);
-
-    String converted_columns =  getExprFromToken(pos_columns);
+    String converted_columns =  getExprFromToken(expr_columns, pos.max_depth);
 
     Tokens token_converted_columns(converted_columns.c_str(), converted_columns.c_str() + converted_columns.size());
     IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth);
 
-    if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, node, expected))
+    if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, select_expression_list, expected))
         return false;
+
+    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
     if (groupby)
     {
-        Tokens token_groupby(expr_groupby.c_str(), expr_groupby.c_str() + expr_groupby.size());
-        IParser::Pos postoken_groupby(token_groupby, pos.max_depth);
-
-        String converted_groupby =  getExprFromToken(postoken_groupby);
+        String converted_groupby =  getExprFromToken(expr_groupby, pos.max_depth);
 
         Tokens token_converted_groupby(converted_groupby.c_str(), converted_groupby.c_str() + converted_groupby.size());
         IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth);
 
         if (!ParserNotEmptyExpressionList(false).parse(postoken_converted_groupby, group_expression_list, expected))
             return false;
+        node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     }
 
-
-
-    pos = begin;
     return true;
 }
-
 }

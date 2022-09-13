@@ -313,15 +313,15 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 1 | take 3",
-            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
+            "SELECT *\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 1\n)\nLIMIT 3"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | take 1",
-            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
+            "SELECT *\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 3\n)\nLIMIT 1"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName",
-            "SELECT\n    FirstName,\n    LastName\nFROM Customers\nLIMIT 3"
+            "SELECT\n    FirstName,\n    LastName\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 3\n)"
         },
         {
             "Customers | sort by FirstName desc",
@@ -329,7 +329,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | take 3 | order by FirstName desc",
-            "SELECT *\nFROM Customers\nORDER BY FirstName DESC\nLIMIT 3"
+            "SELECT *\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 3\n)\nORDER BY FirstName DESC"
         },
         {
             "Customers | sort by FirstName asc",
@@ -353,7 +353,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | sort by FirstName | order by Age ",
-            "SELECT *\nFROM Customers\nORDER BY Age DESC"
+            "SELECT *\nFROM Customers\nORDER BY\n    Age DESC,\n    FirstName DESC"
         },
         {
             "Customers | sort by FirstName nulls first",
@@ -401,7 +401,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | where Age > 30 | where Education == 'Bachelors'",
-            "SELECT *\nFROM Customers\nWHERE (Age > 30) AND (Education = 'Bachelors')"
+            "SELECT *\nFROM Customers\nWHERE (Education = 'Bachelors') AND (Age > 30)"
         },
         {
             "Customers |summarize count() by Occupation",
@@ -425,7 +425,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers |summarize count() by bin(Age, 10)",
-            "SELECT\n    toInt32(Age / 10) * 10 AS bin_int,\n    count()\nFROM Customers\nGROUP BY bin_int"
+            "SELECT\n    toInt64(toFloat64(Age) / 10) * 10,\n    count()\nFROM Customers\nGROUP BY toInt64(toFloat64(Age) / 10) * 10"
         },
         {
             "Customers | where FirstName contains 'pet'",
@@ -601,6 +601,14 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
          {
              "print output = dynamic(['a', 'b', 'c'])",
              "SELECT ['a', 'b', 'c'] AS output"
+         },
+         {
+             "T | extend T | extend duration = endTime - startTime",
+             "SELECT\n    *,\n    endTime - startTime AS duration\nFROM\n(\n    SELECT\n        *,\n        T\n    FROM T\n)"
+         },
+         {
+             "T |project endTime, startTime | extend duration = endTime - startTime",
+             "SELECT\n    *,\n    endTime - startTime AS duration\nFROM\n(\n    SELECT\n        endTime,\n        startTime\n    FROM T\n)"
          }
 })));
 

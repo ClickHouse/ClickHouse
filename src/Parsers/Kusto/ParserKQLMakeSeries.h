@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <Parsers/IParserBase.h>
@@ -9,10 +8,6 @@ namespace DB
 
 class ParserKQLMakeSeries : public ParserKQLBase
 {
-public:
-    ASTPtr group_expression_list;
-    ASTPtr tables;
-    void setTableName(String table_name_) {table_name = table_name_;}
 
 protected:
     struct AggregationColumn {
@@ -43,16 +38,13 @@ protected:
         String main_query;
     };
 
-    void makeSeries(KQLMakeSeries & kql_make_series, const uint32_t & max_depth);
+    bool makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const uint32_t & max_depth);
     bool parseAggregationColumns(AggregationColumns & aggregation_columns, Pos & pos);
     bool parseFromToStepClause(FromToStepClause & from_to_step, Pos & pos);
-    const char * getName() const override { return "KQL project"; }
+
+    const char * getName() const override { return "KQL make-series"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-private:
-    String table_name;
+
 };
 
 }
-
-
-

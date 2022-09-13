@@ -6,6 +6,7 @@
 #include <Parsers/Kusto/ParserKQLMakeSeries.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
+#include <Parsers/ParserSelectQuery.h>
 #include <format>
 
 namespace DB
@@ -148,7 +149,7 @@ bool ParserKQLMakeSeries :: parseFromToStepClause(FromToStepClause & from_to_ste
     return true;
 }
 
-void ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, const uint32_t & max_depth)
+bool ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const uint32_t & max_depth)
 {
     const uint64_t era_diff = 62135596800;  // this magic number is the differicen is second form 0001-01-01 (Azure start time ) and 1970-01-01 (CH start time)
 
@@ -168,7 +169,7 @@ void ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, const ui
     if (!kql_make_series.from_to_step.to_str.empty())
         end_str = getExprFromToken(from_to_step.to_str, max_depth);
 
-    auto date_type_cast = [&] (String &src)
+    auto date_type_cast = [&] (String & src) 
     {
         Tokens tokens(src.c_str(), src.c_str() + src.size());
         IParser::Pos pos(tokens, max_depth);
@@ -270,15 +271,21 @@ void ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, const ui
 
     String sub_sub_query;
     if (group_expression.empty())
-        sub_sub_query = std::format(" (Select {0}, {1} FROM {2} {4} GROUP BY  {3}_ali ORDER BY {3}_ali) ",  subquery_columns, bin_str, table_name, axis_column, condition);
+        sub_sub_query = std::format(" (Select {0}, {1} FROM {2} {4} GROUP BY  {3}_ali ORDER BY {3}_ali) ",  subquery_columns, bin_str, "table_name", axis_column, condition);
     else
-        sub_sub_query = std::format(" (Select {0}, {1}, {2} FROM {3} {5} GROUP BY {0}, {4}_ali ORDER BY {4}_ali) ", group_expression, subquery_columns, bin_str, table_name, axis_column, condition);
+        sub_sub_query = std::format(" (Select {0}, {1}, {2} FROM {3} {5} GROUP BY {0}, {4}_ali ORDER BY {4}_ali) ", group_expression, subquery_columns, bin_str, "table_name", axis_column, condition);
+
+    ASTPtr sub_query_node;
+
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, max_depth))
+        return false;
+    select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
     if (!group_expression.empty())
         main_query = std::format("{} ", group_expression_alias);
 
     auto axis_and_agg_alias_list = axis_column;
-    auto final_axis_agg_alias_list =std::format("tupleElement(zipped,1) AS {}",axis_column); //tupleElement(pp,2) as PriceAvg ,tupleElement(pp,1)
+    auto final_axis_agg_alias_list =std::format("tupleElement(zipped,1) AS {}", axis_column);
     int idx = 2;
     for (auto agg_column : aggregation_columns)
     {
@@ -286,7 +293,7 @@ void ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, const ui
         agg_column.alias, agg_column.default_value, range_len, range_len, agg_column.alias);
         main_query = main_query.empty() ? agg_group_column : main_query + ", " + agg_group_column;
 
-        axis_and_agg_alias_list +=", " + agg_column.alias;
+        axis_and_agg_alias_list += ", " + agg_column.alias;
         final_axis_agg_alias_list += std::format(", tupleElement(zipped,{}) AS {}", idx, agg_column.alias);
     }
 
@@ -298,7 +305,7 @@ void ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, const ui
             axis_column, range);
 
     main_query += ", " + axis_str;
-    auto sub_group_by = group_expression.empty()? "" : std::format("GROUP BY {}", group_expression_alias);
+    auto sub_group_by = group_expression.empty() ? "" : std::format("GROUP BY {}", group_expression_alias);
 
     sub_query = std::format("( SELECT toUInt64(min({}_ali)) AS low, toUInt64(max({}_ali))+ {} AS high, arraySort(arrayZip({})) as zipped, {} FROM {} {} )",
                             axis_column, axis_column,step, axis_and_agg_alias_list, main_query, sub_sub_query,  sub_group_by);
@@ -308,25 +315,26 @@ void ParserKQLMakeSeries :: makeSeries(KQLMakeSeries & kql_make_series, const ui
     else
         main_query = std::format("{},{}", group_expression_alias, final_axis_agg_alias_list);
 
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, max_depth))
+        return false;
+    select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
+
     kql_make_series.sub_query = std::move(sub_query);
     kql_make_series.main_query = std::move(main_query);
+
+    return true;
 }
 
 bool ParserKQLMakeSeries :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (op_pos.empty())
-        return true;
-
     auto begin = pos;
-    pos = op_pos.back();
-
     ParserKeyword s_on("on");
     ParserKeyword s_by("by");
 
     ParserToken equals(TokenType::Equals);
     ParserToken comma(TokenType::Comma);
 
-    ASTPtr sub_qurery_table;
+    ASTPtr select_expression_list;
 
     KQLMakeSeries kql_make_series;
     auto & aggregation_columns = kql_make_series.aggregation_columns;
@@ -367,22 +375,17 @@ bool ParserKQLMakeSeries :: parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             subquery_columns += ", "+ column_str;
     }
 
-    makeSeries(kql_make_series, pos.max_depth);
-
-    Tokens token_subquery(kql_make_series.sub_query.c_str(), kql_make_series.sub_query.c_str() + kql_make_series.sub_query.size());
-    IParser::Pos pos_subquery(token_subquery, pos.max_depth);
-
-    if (!ParserTablesInSelectQuery().parse(pos_subquery, sub_qurery_table, expected))
-        return false;
-    tables = std::move(sub_qurery_table);
+    makeSeries(kql_make_series, node, pos.max_depth);
 
     Tokens token_main_query(kql_make_series.main_query.c_str(), kql_make_series.main_query.c_str() + kql_make_series.main_query.size());
     IParser::Pos pos_main_query(token_main_query, pos.max_depth);
 
-    if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, node, expected))
+    if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))
         return false;
+    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
     pos = begin;
     return true;
 }
+
 }

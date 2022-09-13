@@ -1,6 +1,10 @@
 ## KQL implemented features
 
 # September 12, 2022
+## Extend operator
+https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extendoperator  
+`T | extend T | extend duration = endTime - startTime`  
+`T | project endTime, startTime | extend duration = endTime - startTime`
 
 ## Array functions
 - [array_reverse](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/array-reverse-function)  

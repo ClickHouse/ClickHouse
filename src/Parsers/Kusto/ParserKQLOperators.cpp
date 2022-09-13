@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-String KQLOperators::genHasAnyAllOpExpr(std::vector<String> &tokens,IParser::Pos &token_pos,String kql_op, String ch_op)
+String KQLOperators::genHasAnyAllOpExpr(std::vector<String> &tokens, IParser::Pos &token_pos,String kql_op, String ch_op)
 {
     String new_expr;
     Expected expected;
@@ -46,7 +46,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> &tokens,IParser::Pos
     return new_expr;
 }
 
-String KQLOperators::genInOpExpr(IParser::Pos &token_pos,String kql_op, String ch_op)
+String KQLOperators::genInOpExpr(IParser::Pos &token_pos, String kql_op, String ch_op)
 {
     ParserKQLTaleFunction kqlfun_p;
     String new_expr;
@@ -291,6 +291,7 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
 
             case KQLOperatorValue::not_equal:
                 break;
+
             case KQLOperatorValue::equal_cs:
                 new_expr = "==";
                 break;
@@ -381,6 +382,7 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
             case KQLOperatorValue::in_cs:
                 new_expr = genInOpExpr(pos,op,"in");
                 break;
+
             case KQLOperatorValue::not_in_cs:
                 new_expr = genInOpExpr(pos,op,"not in");
                 break;

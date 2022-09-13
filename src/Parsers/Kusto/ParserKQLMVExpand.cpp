@@ -7,6 +7,7 @@
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLMVExpand.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserSelectQuery.h>
 #include <format>
 #include <unordered_map>
 
@@ -43,7 +44,7 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
     String column_array_expr;
     String to_type;
     --expr_end_pos;
-    
+
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if(pos->type == TokenType::OpeningRoundBracket)
@@ -80,6 +81,8 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
             ++pos;
             ++pos;
 
+            column_array_expr = String(expr_begin_pos->begin, expr_end_pos->end);
+
             if (!s_type.ignore(pos, expected))
                 return false;
             if (!open_bracket.ignore(pos, expected))
@@ -93,8 +96,11 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
 
         if ((pos->type == TokenType::Comma && bracket_count == 0) || String(pos->begin, pos->end) == "limit")
         {
-            expr_end_pos = pos;
-            --expr_end_pos;
+            if (column_array_expr.empty())
+            {
+                expr_end_pos = pos;
+                --expr_end_pos;
+            }
             addColumns();
             expr_begin_pos = pos;
             expr_end_pos = pos;
@@ -107,9 +113,7 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
 
         if (String(pos->begin, pos->end) == "limit")
             break;
-
         ++pos;
-
         if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
         {
             if (expr_end_pos < expr_begin_pos)
@@ -118,11 +122,11 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
                 --expr_end_pos;
             }
             addColumns();
+            break;
         }
     }
     return true;
 }
-
 
 bool ParserKQLMVExpand::parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, Expected & expected)
 {
@@ -171,13 +175,14 @@ bool ParserKQLMVExpand::parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, E
     return true;
 }
 
-String ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, String input)
+bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_node, int32_t max_depth)
 {
     String expand_str;
     String cast_type_column_remove, cast_type_column_rename ;
     String cast_type_column_restore, cast_type_column_restore_name ;
     String row_count_str;
     String extra_columns;
+    String input = "dummy_input"; 
     for (auto column : kql_mv_expand.column_array_exprs)
     {
         if (column.alias == column.column_array_expr)
@@ -215,46 +220,61 @@ String ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, String input)
 
     auto query = std::format("(Select {} {} From {} {})", columns, extra_columns, input, expand_str);
 
-    if (!cast_type_column_remove.empty())
+    ASTPtr sub_query_node;
+    Expected expected;
+
+    if (cast_type_column_remove.empty())
     {
-        auto rename_query = std::format("(Select * {}, {} From {})", cast_type_column_remove, cast_type_column_rename, query);
-        query = std::format("(Select * {}, {} from {})", cast_type_column_restore, cast_type_column_restore_name, rename_query);
+        query = std::format("Select {} {} From {} {}", columns, extra_columns, input, expand_str);
+        if (!parseSQLQueryByString(std::make_unique<ParserSelectQuery>(), query, sub_query_node, max_depth))
+            return false;
+       setSubQuerySource(sub_query_node, select_node, false ,false);
+       select_node = std::move(sub_query_node);
     }
-    return query;
+    else
+    {
+        query = std::format("(Select {} {} From {} {})", columns, extra_columns, input, expand_str);
+        if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), query, sub_query_node, max_depth))
+            return false;
+        setSubQuerySource(sub_query_node, select_node, true, false);
+        select_node = std::move(sub_query_node);
+
+        auto rename_query = std::format("(Select * {}, {} From {})", cast_type_column_remove, cast_type_column_rename, "query");
+        if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), rename_query, sub_query_node, max_depth))
+            return false;
+        setSubQuerySource(sub_query_node, select_node, true, true);
+
+        select_node = std::move(sub_query_node);
+        query = std::format("Select * {}, {} from {}", cast_type_column_restore, cast_type_column_restore_name, "rename_query");
+
+        if (!parseSQLQueryByString(std::make_unique<ParserSelectQuery>(), query, sub_query_node, max_depth))
+            return false;
+        sub_query_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(select_node));
+        select_node = std::move(sub_query_node);
+    }
+    return true;
 }
 
 bool ParserKQLMVExpand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTPtr tmp_setting;
-    if (op_pos.empty())
-        return true;
-
+    ASTPtr setting;
+    ASTPtr select_expression_list;
     auto begin = pos;
-    String input = table_name;
 
-    for (auto npos : op_pos)
-    {
-        auto kql_mv_expand = std::make_unique<KQLMVExpand>();
-        if (parserMVExpand(*kql_mv_expand, npos, expected))
-            input = genQuery(*kql_mv_expand, input);
-        else
-            return false;
-    }
-
-    Tokens token_subquery(input.c_str(), input.c_str() + input.size());
-    IParser::Pos pos_subquery(token_subquery, pos.max_depth);
-
-    if (!ParserTablesInSelectQuery().parse(pos_subquery, node, expected))
+    KQLMVExpand kql_mv_expand;
+    if (!parserMVExpand(kql_mv_expand, pos, expected))
+        return false;
+    if (!genQuery(kql_mv_expand, node, pos.max_depth))
         return false;
 
     const String setting_str = "enable_unaligned_array_join = 1";
     Tokens token_settings(setting_str.c_str(), setting_str.c_str() + setting_str.size());
     IParser::Pos pos_settings(token_settings, pos.max_depth);
 
-    if (!ParserSetQuery(true).parse(pos_settings, tmp_setting, expected))
+    if (!ParserSetQuery(true).parse(pos_settings, setting, expected))
         return false;
+    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(setting));
 
-    settings = std::move(tmp_setting);
     pos = begin;
     return true;
 }
