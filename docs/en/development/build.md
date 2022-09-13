@@ -1,10 +1,11 @@
 ---
+slug: /en/development/build
 sidebar_position: 64
 sidebar_label: Build on Linux
+title: How to Build ClickHouse on Linux
 description: How to build ClickHouse on Linux
 ---
 
-# How to Build ClickHouse on Linux
 
 Supported platforms:
 
@@ -135,32 +136,10 @@ export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
 hash cmake
 ```
 
-## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
-
-### Install Git {#install-git}
-
-``` bash
-sudo apt-get update
-sudo apt-get install git python debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
-```
-
-### Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
-
-``` bash
-git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
-cd ClickHouse
-```
-
-### Run Release Script {#run-release-script}
-
-``` bash
-./release
-```
-
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
 
-They are built for stable, prestable and testing releases as long as for every commit to master and for every pull request.
+Binaries are built for stable and LTS releases and also every commit to `master` for each pull request.
 
 To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green check mark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.

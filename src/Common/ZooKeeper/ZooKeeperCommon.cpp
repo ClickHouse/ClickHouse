@@ -724,7 +724,10 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
     assert(!elem.xid || elem.xid == xid);
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
-    assert(!elem.op_num || elem.op_num == response_op || response_op < 0);
+
+    [[maybe_unused]] const bool is_filtered_list = elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredList)
+        && response_op == static_cast<int32_t>(Coordination::OpNum::List);
+    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
     elem.op_num = response_op;
 
     elem.zxid = zxid;
@@ -892,6 +895,28 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
+    registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
+}
+
+PathMatchResult matchPath(std::string_view path, std::string_view match_to)
+{
+    using enum PathMatchResult;
+
+    if (path.ends_with('/'))
+        path.remove_suffix(1);
+
+    if (match_to.ends_with('/'))
+        match_to.remove_suffix(1);
+
+    auto [first_it, second_it] = std::mismatch(path.begin(), path.end(), match_to.begin(), match_to.end());
+
+    if (second_it != match_to.end())
+        return NOT_MATCH;
+
+    if (first_it == path.end())
+        return EXACT;
+
+    return *first_it == '/' ? IS_CHILD : NOT_MATCH;
 }
 
 }

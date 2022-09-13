@@ -10,20 +10,23 @@
 #include <type_traits>
 
 
-#define DATE_LUT_MIN_YEAR 1925 /// 1925 since wast majority of timezones changed to 15-minute aligned offsets somewhere in 1924 or earlier.
-#define DATE_LUT_MAX_YEAR 2283 /// Last supported year (complete)
+#define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
+#define DATE_LUT_MAX_YEAR 2299 /// Last supported year (complete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
-#define DATE_LUT_SIZE 0x20000
+#define DATE_LUT_SIZE 0x23AB1
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM 0xFFFF
+
+#define DAYNUM_OFFSET_EPOCH 25567
+
 /// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
-#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - 16436)
+#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - DAYNUM_OFFSET_EPOCH)
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
-#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366 * 86400)
+#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
 
 
 #if defined(__PPC__)
@@ -64,62 +67,78 @@ private:
     // Same as above but select different function overloads for zero saturation.
     STRONG_TYPEDEF(UInt32, LUTIndexWithSaturation)
 
+    static inline LUTIndex normalizeLUTIndex(UInt32 index)
+    {
+        if (index >= DATE_LUT_SIZE)
+            return LUTIndex(DATE_LUT_SIZE - 1);
+        return LUTIndex{index};
+    }
+
+    static inline LUTIndex normalizeLUTIndex(Int64 index)
+    {
+        if (unlikely(index < 0))
+            return LUTIndex(0);
+        if (index >= DATE_LUT_SIZE)
+            return LUTIndex(DATE_LUT_SIZE - 1);
+        return LUTIndex{index};
+    }
+
     template <typename T>
     friend inline LUTIndex operator+(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() + UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(index.toUnderType() + UInt32(v));
     }
 
     template <typename T>
     friend inline LUTIndex operator+(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v + index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(v + index.toUnderType()));
     }
 
     friend inline LUTIndex operator+(const LUTIndex & index, const LUTIndex & v)
     {
-        return LUTIndex{(index.toUnderType() + v.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<UInt32>(index.toUnderType() + v.toUnderType()));
     }
 
     template <typename T>
     friend inline LUTIndex operator-(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() - UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - UInt32(v)));
     }
 
     template <typename T>
     friend inline LUTIndex operator-(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v - index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(v - index.toUnderType()));
     }
 
     friend inline LUTIndex operator-(const LUTIndex & index, const LUTIndex & v)
     {
-        return LUTIndex{(index.toUnderType() - v.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - v.toUnderType()));
     }
 
     template <typename T>
     friend inline LUTIndex operator*(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() * UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(index.toUnderType() * UInt32(v));
     }
 
     template <typename T>
     friend inline LUTIndex operator*(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v * index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(v * index.toUnderType());
     }
 
     template <typename T>
     friend inline LUTIndex operator/(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() / UInt32(v)) & date_lut_mask};
+        return normalizeLUTIndex(index.toUnderType() / UInt32(v));
     }
 
     template <typename T>
     friend inline LUTIndex operator/(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(UInt32(v) / index.toUnderType()) & date_lut_mask};
+        return normalizeLUTIndex(UInt32(v) / index.toUnderType());
     }
 
 public:
@@ -168,14 +187,9 @@ public:
     static_assert(sizeof(Values) == 16);
 
 private:
-
-    /// Mask is all-ones to allow efficient protection against overflow.
-    static constexpr UInt32 date_lut_mask = 0x1ffff;
-    static_assert(date_lut_mask == DATE_LUT_SIZE - 1);
-
     /// Offset to epoch in days (ExtendedDayNum) of the first day in LUT.
     /// "epoch" is the Unix Epoch (starts at unix timestamp zero)
-    static constexpr UInt32 daynum_offset_epoch = 16436;
+    static constexpr UInt32 daynum_offset_epoch = 25567;
     static_assert(daynum_offset_epoch == (1970 - DATE_LUT_MIN_YEAR) * 365 + (1970 - DATE_LUT_MIN_YEAR / 4 * 4) / 4);
 
     /// Lookup table is indexed by LUTIndex.
@@ -232,12 +246,12 @@ private:
 
     static inline LUTIndex toLUTIndex(DayNum d)
     {
-        return LUTIndex{(d + daynum_offset_epoch) & date_lut_mask};
+        return normalizeLUTIndex(d + daynum_offset_epoch);
     }
 
     static inline LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return LUTIndex{static_cast<UInt32>(d + daynum_offset_epoch) & date_lut_mask};
+        return normalizeLUTIndex(static_cast<UInt32>(d + daynum_offset_epoch));
     }
 
     inline LUTIndex toLUTIndex(Time t) const
@@ -563,7 +577,7 @@ public:
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
 
         LUTIndex index = findIndex(t);
-        UInt32 time = t - lut[index].date;
+        UInt32 time = static_cast<UInt32>(t - lut[index].date);
 
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
@@ -604,33 +618,33 @@ public:
     }
 
     template <typename DateOrTime>
-    inline unsigned toMonth(DateOrTime v) const { return lut[toLUTIndex(v)].month; }
+    inline UInt8 toMonth(DateOrTime v) const { return lut[toLUTIndex(v)].month; }
 
     template <typename DateOrTime>
-    inline unsigned toQuarter(DateOrTime v) const { return (lut[toLUTIndex(v)].month - 1) / 3 + 1; }
+    inline UInt8 toQuarter(DateOrTime v) const { return (lut[toLUTIndex(v)].month - 1) / 3 + 1; }
 
     template <typename DateOrTime>
     inline Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
     template <typename DateOrTime>
-    inline unsigned toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
+    inline UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
 
     template <typename DateOrTime>
-    inline unsigned toDayOfMonth(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_month; }
+    inline UInt8 toDayOfMonth(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_month; }
 
     template <typename DateOrTime>
-    inline unsigned toDayOfYear(DateOrTime v) const
+    inline UInt16 toDayOfYear(DateOrTime v) const
     {
         // TODO: different overload for ExtendedDayNum
         const LUTIndex i = toLUTIndex(v);
-        return i + 1 - toFirstDayNumOfYearIndex(i);
+        return static_cast<UInt16>(i + 1 - toFirstDayNumOfYearIndex(i));
     }
 
     /// Number of week from some fixed moment in the past. Week begins at monday.
     /// (round down to monday and divide DayNum by 7; we made an assumption,
     ///  that in domain of the function there was no weeks with any other number of days than 7)
     template <typename DateOrTime>
-    inline unsigned toRelativeWeekNum(DateOrTime v) const
+    inline Int32 toRelativeWeekNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
         /// We add 8 to avoid underflow at beginning of unix epoch.
@@ -639,7 +653,7 @@ public:
 
     /// Get year that contains most of the current week. Week begins at monday.
     template <typename DateOrTime>
-    inline unsigned toISOYear(DateOrTime v) const
+    inline Int16 toISOYear(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
         /// That's effectively the year of thursday of current week.
@@ -680,7 +694,7 @@ public:
     /// ISO 8601 week number. Week begins at monday.
     /// The week number 1 is the first week in year that contains 4 or more days (that's more than half).
     template <typename DateOrTime>
-    inline unsigned toISOWeek(DateOrTime v) const
+    inline UInt8 toISOWeek(DateOrTime v) const
     {
         return 1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7;
     }
@@ -737,38 +751,40 @@ public:
 
         YearWeek yw(toYear(i), 0);
         UInt16 days = 0;
-        const auto daynr = makeDayNum(yw.first, toMonth(i), toDayOfMonth(i));
-        auto first_daynr = makeDayNum(yw.first, 1, 1);
+        const auto day_number = makeDayNum(yw.first, toMonth(i), toDayOfMonth(i));
+        auto first_day_number = makeDayNum(yw.first, 1, 1);
 
         // 0 for monday, 1 for tuesday ...
         // get weekday from first day in year.
-        UInt16 weekday = calc_weekday(first_daynr, !monday_first_mode);
+        UInt8 weekday = calc_weekday(first_day_number, !monday_first_mode);
 
         if (toMonth(i) == 1 && toDayOfMonth(i) <= static_cast<UInt32>(7 - weekday))
         {
             if (!week_year_mode && ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4)))
                 return yw;
             week_year_mode = true;
-            (yw.first)--;
-            first_daynr -= (days = calc_days_in_year(yw.first));
+            --yw.first;
+            days = calc_days_in_year(yw.first);
+            first_day_number -= days;
             weekday = (weekday + 53 * 7 - days) % 7;
         }
 
         if ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4))
-            days = daynr - (first_daynr + (7 - weekday));
+            days = day_number - (first_day_number + (7 - weekday));
         else
-            days = daynr - (first_daynr - weekday);
+            days = day_number - (first_day_number - weekday);
 
         if (week_year_mode && days >= 52 * 7)
         {
             weekday = (weekday + calc_days_in_year(yw.first)) % 7;
             if ((!first_weekday_mode && weekday < 4) || (first_weekday_mode && weekday == 0))
             {
-                (yw.first)++;
+                ++yw.first;
                 yw.second = 1;
                 return yw;
             }
         }
+
         yw.second = days / 7 + 1;
         return yw;
     }
@@ -839,7 +855,7 @@ public:
       * Returns 0 for monday, 1 for tuesday...
       */
     template <typename DateOrTime>
-    inline unsigned calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const /// NOLINT
+    inline UInt8 calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const /// NOLINT
     {
         const LUTIndex i = toLUTIndex(v);
         if (!sunday_first_day_of_week)
@@ -849,21 +865,21 @@ public:
     }
 
     /// Calculate days in one year.
-    inline unsigned calc_days_in_year(Int32 year) const /// NOLINT
+    inline UInt16 calc_days_in_year(Int32 year) const /// NOLINT
     {
         return ((year & 3) == 0 && (year % 100 || (year % 400 == 0 && year)) ? 366 : 365);
     }
 
     /// Number of month from some fixed moment in the past (year * 12 + month)
     template <typename DateOrTime>
-    inline unsigned toRelativeMonthNum(DateOrTime v) const
+    inline Int32 toRelativeMonthNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
         return lut[i].year * 12 + lut[i].month;
     }
 
     template <typename DateOrTime>
-    inline unsigned toRelativeQuarterNum(DateOrTime v) const
+    inline Int32 toRelativeQuarterNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
         return lut[i].year * 4 + (lut[i].month - 1) / 3;
@@ -1062,7 +1078,7 @@ public:
 
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
-        /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
+        /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2299-12-31)
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 

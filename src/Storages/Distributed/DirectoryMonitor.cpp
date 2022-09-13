@@ -140,6 +140,11 @@ namespace
         size_t rows = 0;
         size_t bytes = 0;
 
+        UInt32 shard_num = 0;
+        std::string cluster;
+        std::string distributed_table;
+        std::string remote_table;
+
         /// dumpStructure() of the header -- obsolete
         std::string block_header_string;
         Block block_header;
@@ -193,6 +198,14 @@ namespace
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
                             in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
+            }
+
+            if (header_buf.hasPendingData())
+            {
+                readVarUInt(distributed_header.shard_num, header_buf);
+                readStringBinary(distributed_header.cluster, header_buf);
+                readStringBinary(distributed_header.distributed_table, header_buf);
+                readStringBinary(distributed_header.remote_table, header_buf);
             }
 
             /// Add handling new data here, for example:
@@ -538,6 +551,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             address.default_database,
             address.user,
             address.password,
+            address.quota_key,
             address.cluster,
             address.cluster_secret,
             storage.getName() + '_' + address.user, /* client */
@@ -608,6 +622,8 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
+
     Stopwatch watch;
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
 
@@ -618,11 +634,23 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        LOG_DEBUG(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
+            distributed_header.client_info.client_trace_context,
+            this->storage.getContext()->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.addAttribute("clickhouse.shard_num", distributed_header.shard_num);
+        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster);
+        thread_trace_context->root_span.addAttribute("clickhouse.distributed", distributed_header.distributed_table);
+        thread_trace_context->root_span.addAttribute("clickhouse.remote", distributed_header.remote_table);
+        thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
+        thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
+
+        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+        LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
+            file_path,
+            connection->getDescription(),
             formatReadableQuantity(distributed_header.rows),
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
@@ -633,8 +661,18 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     }
     catch (Exception & e)
     {
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(std::current_exception());
+
         e.addMessage(fmt::format("While sending {}", file_path));
         maybeMarkAsBroken(file_path, e);
+        throw;
+    }
+    catch (...)
+    {
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(std::current_exception());
+
         throw;
     }
 
@@ -717,10 +755,6 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         Stopwatch watch;
 
-        LOG_DEBUG(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
-            formatReadableQuantity(total_rows),
-            formatReadableSizeWithBinarySuffix(total_bytes));
-
         if (!recovered)
         {
             /// For deduplication in Replicated tables to work, in case of error
@@ -748,6 +782,12 @@ struct StorageDistributedDirectoryMonitor::Batch
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
+
+        LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
+            file_indices.size(),
+            connection->getDescription(),
+            formatReadableQuantity(total_rows),
+            formatReadableSizeWithBinarySuffix(total_bytes));
 
         bool batch_broken = false;
         bool batch_marked_as_broken = false;
@@ -848,6 +888,10 @@ private:
             ReadBufferFromFile in(file_path->second);
             const auto & distributed_header = readDistributedHeader(in, parent.log);
 
+            OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
+                distributed_header.client_info.client_trace_context,
+                parent.storage.getContext()->getOpenTelemetrySpanLog());
+
             if (!remote)
             {
                 remote = std::make_unique<RemoteInserter>(connection, timeouts,
@@ -881,6 +925,11 @@ private:
             {
                 ReadBufferFromFile in(file_path->second);
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
+
+                // this function is called in a separated thread, so we set up the trace context from the file
+                OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
+                    distributed_header.client_info.client_trace_context,
+                    parent.storage.getContext()->getOpenTelemetrySpanLog());
 
                 RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,

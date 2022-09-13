@@ -19,14 +19,14 @@ namespace DB
 
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const AggregateFunctionStateData & state = get<const AggregateFunctionStateData &>(field);
+    const AggregateFunctionStateData & state = field.get<const AggregateFunctionStateData &>();
     writeBinary(state.data, ostr);
 }
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     field = AggregateFunctionStateData();
-    AggregateFunctionStateData & s = get<AggregateFunctionStateData &>(field);
+    AggregateFunctionStateData & s = field.get<AggregateFunctionStateData &>();
     readBinary(s.data, istr);
     s.name = type_name;
 }

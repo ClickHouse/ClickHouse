@@ -1,4 +1,12 @@
 import pytest
+
+# FIXME Tests with MaterializedPostgresSQL are temporarily disabled
+# https://github.com/ClickHouse/ClickHouse/issues/36898
+# https://github.com/ClickHouse/ClickHouse/issues/38677
+# https://github.com/ClickHouse/ClickHouse/pull/39272#issuecomment-1190087190
+
+pytestmark = pytest.mark.skip
+
 import time
 import psycopg2
 import os.path as p

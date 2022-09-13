@@ -80,7 +80,7 @@ public:
 
 }
 
-void registerFunctionNowInBlock(FunctionFactory & factory)
+REGISTER_FUNCTION(NowInBlock)
 {
     factory.registerFunction<FunctionNowInBlock>();
 }

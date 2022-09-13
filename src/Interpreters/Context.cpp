@@ -73,6 +73,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/StackTrace.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -92,6 +93,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <filesystem>
+#include <re2/re2.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -141,7 +143,7 @@ namespace ErrorCodes
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
-struct ContextSharedPart
+struct ContextSharedPart : boost::noncopyable
 {
     Poco::Logger * log = &Poco::Logger::get("Context");
 
@@ -213,6 +215,7 @@ struct ContextSharedPart
     std::unique_ptr<AccessControl> access_control;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -311,11 +314,19 @@ struct ContextSharedPart
 
     ~ContextSharedPart()
     {
-        /// Wait for thread pool for background writes,
-        /// since it may use per-user MemoryTracker which will be destroyed here.
         try
         {
+            /// Wait for thread pool for background writes,
+            /// since it may use per-user MemoryTracker which will be destroyed here.
             IObjectStorage::getThreadPoolWriter().wait();
+            /// Make sure that threadpool is destructed before this->process_list
+            /// because thread_status, which was created for threads inside threadpool,
+            /// relies on it.
+            if (load_marks_threadpool)
+            {
+                load_marks_threadpool->wait();
+                load_marks_threadpool.reset();
+            }
         }
         catch (...)
         {
@@ -663,8 +674,8 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                "Policy '{} is used temporary files, such policy should have exactly one volume", policy_name);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
@@ -707,7 +718,10 @@ void Context::setUserDefinedPath(const String & path)
 void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
-    shared->addWarningMessage(msg);
+    auto suppress_re = getConfigRef().getString("warning_supress_regexp", "");
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -1330,29 +1344,6 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != UUID())
-    {
-        // Use the OpenTelemetry trace context we received from the client, and
-        // create a new span for the query.
-        query_trace_context = client_info.client_trace_context;
-        query_trace_context.span_id = thread_local_rng();
-    }
-    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        // If this is an initial query without any parent OpenTelemetry trace, we
-        // might start the trace ourselves, with some configurable probability.
-        std::bernoulli_distribution should_start_trace{
-            settings.opentelemetry_start_trace_probability};
-
-        if (should_start_trace(thread_local_rng))
-        {
-            // Use the randomly generated default query id as the new trace id.
-            query_trace_context.trace_id = random.uuid;
-            query_trace_context.span_id = thread_local_rng();
-            // Mark this trace as sampled in the flags.
-            query_trace_context.trace_flags = 1;
-        }
-    }
 
     String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
@@ -1657,14 +1648,14 @@ ProcessList::Element * Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes)
+void Context::setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
 }
 
 
@@ -1683,14 +1674,14 @@ void Context::dropUncompressedCache() const
 }
 
 
-void Context::setMarkCache(size_t cache_size_in_bytes)
+void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, mark_cache_policy);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -1706,6 +1697,17 @@ void Context::dropMarkCache() const
         shared->mark_cache->reset();
 }
 
+ThreadPool & Context::getLoadMarksThreadpool() const
+{
+    auto lock = getLock();
+    if (!shared->load_marks_threadpool)
+    {
+        constexpr size_t pool_size = 50;
+        constexpr size_t queue_size = 1000000;
+        shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+    }
+    return *shared->load_marks_threadpool;
+}
 
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
 {
@@ -2402,7 +2404,7 @@ void Context::startClusterDiscovery()
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     std::lock_guard lock(shared->clusters_mutex);
-    if (config->getBool("allow_experimental_cluster_discovery", false) && enable_discovery && !shared->cluster_discovery)
+    if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
     {
         shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
     }
@@ -2667,7 +2669,9 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, shared_from_this());
+        auto disk_selector = std::make_shared<DiskSelector>();
+        disk_selector->initialize(config, config_name, shared_from_this());
+        shared->merge_tree_disk_selector = disk_selector;
     }
     return shared->merge_tree_disk_selector;
 }
@@ -2965,6 +2969,11 @@ void Context::setQueryParameter(const String & name, const String & value)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
+void Context::addQueryParameters(const NameToNameMap & parameters)
+{
+    for (const auto & [name, value] : parameters)
+        query_parameters.insert_or_assign(name, value);
+}
 
 void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
 {
@@ -2985,7 +2994,7 @@ const IHostContextPtr & Context::getHostContext() const
 }
 
 
-std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
+std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
 {
     auto lock = getLock();
 
@@ -3440,17 +3449,26 @@ ReadSettings Context::getReadSettings() const
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
 
+    res.load_marks_asynchronously = settings.load_marks_asynchronously;
+
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
-    res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
     res.max_query_cache_size = settings.max_query_cache_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
+
+    /// Zero read buffer will not make progress.
+    if (!settings.max_read_buffer_size)
+    {
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value '{}' for max_read_buffer_size", settings.max_read_buffer_size);
+    }
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.remote_fs_buffer_size = settings.max_read_buffer_size;
@@ -3475,6 +3493,7 @@ WriteSettings Context::getWriteSettings() const
     WriteSettings res;
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
+    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
 
     res.remote_throttler = getRemoteWriteThrottler();
 

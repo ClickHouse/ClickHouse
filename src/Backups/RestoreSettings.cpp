@@ -143,6 +143,7 @@ namespace
 
 /// List of restore settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_RESTORE_SETTINGS(M) \
+    M(String, id) \
     M(String, password) \
     M(Bool, structure_only) \
     M(RestoreTableCreationMode, create_table) \

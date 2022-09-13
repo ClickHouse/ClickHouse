@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/settings/settings-profiles
 sidebar_position: 61
 sidebar_label: Settings Profiles
 ---

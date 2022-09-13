@@ -55,7 +55,7 @@ private:
     ALWAYS_INLINE void finalize()
     {
         /// In the last free byte, we write the remainder of the division by 256.
-        current_bytes[7] = cnt;
+        current_bytes[7] = static_cast<UInt8>(cnt);
 
         v3 ^= current_word;
         SIPROUND;
@@ -111,7 +111,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = unalignedLoad<UInt64>(data);
+            current_word = unalignedLoadLE<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -157,8 +157,8 @@ public:
     void get128(char * out)
     {
         finalize();
-        unalignedStore<UInt64>(out, v0 ^ v1);
-        unalignedStore<UInt64>(out + 8, v2 ^ v3);
+        unalignedStoreLE<UInt64>(out, v0 ^ v1);
+        unalignedStoreLE<UInt64>(out + 8, v2 ^ v3);
     }
 
     template <typename T>

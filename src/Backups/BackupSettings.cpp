@@ -60,6 +60,7 @@ namespace
 
 /// List of backup settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_BACKUP_SETTINGS(M) \
+    M(String, id) \
     M(String, compression_method) \
     M(Int64, compression_level) \
     M(String, password) \
