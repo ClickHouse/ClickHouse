@@ -76,6 +76,8 @@ struct ReadSettings
     /// For 'pread_threadpool' method. Lower is more priority.
     size_t priority = 0;
 
+    bool load_marks_asynchronously = true;
+
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
