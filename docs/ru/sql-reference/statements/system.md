@@ -66,7 +66,12 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS {#query_language-system-reload-models}
 
-Перегружает все модели [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse).
+:::note
+Это утверждение и `SYSTEM RELOAD MODEL` просто выгружают модели catboost из clickhouse-library-bridge. Функция `catboostEvaluate()`
+загружает модель при первом обращении, если она еще не загружена.
+:::
+
+Разгрузите все модели CatBoost.
 
 **Синтаксис**
 
@@ -76,7 +81,7 @@ SYSTEM RELOAD MODELS
 
 ## RELOAD MODEL {#query_language-system-reload-model}
 
-Полностью перегружает модель [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) `model_path`.
+Выгружает модель CatBoost по адресу `модель_путь`.
 
 **Синтаксис**
 
