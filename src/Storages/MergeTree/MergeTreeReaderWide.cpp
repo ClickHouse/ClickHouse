@@ -6,6 +6,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Common/escapeForFileName.h>
@@ -186,12 +187,15 @@ void MergeTreeReaderWide::addStreams(
         has_any_stream = true;
         bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
+        auto context = data_part_info_for_read->getContext();
+        auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
             data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
             data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part_info_for_read->getIndexGranularityInfo(),
-            profile_callback, clock_type, is_lc_dict));
+            profile_callback, clock_type, is_lc_dict, load_marks_threadpool));
     };
 
     serialization->enumerateStreams(callback);
