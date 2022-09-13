@@ -487,7 +487,7 @@ struct HashMethodKeysFixed
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
-    static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_cheap_key_calculation = true;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
