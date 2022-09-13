@@ -123,31 +123,13 @@ class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
 private:
     Operators_t operators;
-    Operators_t overlapping_operators_to_skip = { (const char *[]){ nullptr } };
-    ParserPtr first_elem_parser;
-    ParserPtr remaining_elem_parser;
-    /// =, !=, <, > ALL (subquery) / ANY (subquery)
-    bool comparison_expression = false;
+    ParserPtr elem_parser;
 
 public:
     /** `operators_` - allowed operators and their corresponding functions
       */
-    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && first_elem_parser_)
-        : operators(operators_), first_elem_parser(std::move(first_elem_parser_))
-    {
-    }
-
-    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_,
-            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool comparison_expression_ = false)
-        : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_),
-          first_elem_parser(std::move(first_elem_parser_)), comparison_expression(comparison_expression_)
-    {
-    }
-
-    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && first_elem_parser_,
-        ParserPtr && remaining_elem_parser_)
-        : operators(operators_), first_elem_parser(std::move(first_elem_parser_)),
-          remaining_elem_parser(std::move(remaining_elem_parser_))
+    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && elem_parser_)
+        : operators(operators_), elem_parser(std::move(elem_parser_))
     {
     }
 
@@ -157,71 +139,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-
-/** Expression with an infix operator of arbitrary arity.
-  * For example, a AND b AND c AND d.
-  */
-class ParserVariableArityOperatorList : public IParserBase
-{
-private:
-    const char * infix;
-    const char * function_name;
-    ParserPtr elem_parser;
-
-public:
-    ParserVariableArityOperatorList(const char * infix_, const char * function_, ParserPtr && elem_parser_)
-        : infix(infix_), function_name(function_), elem_parser(std::move(elem_parser_))
-    {
-    }
-
-protected:
-    const char * getName() const override { return "list, delimited by operator of variable arity"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** An expression with a prefix unary operator.
-  * Example, NOT x.
-  */
-class ParserPrefixUnaryOperatorExpression : public IParserBase
-{
-private:
-    Operators_t operators;
-    ParserPtr elem_parser;
-
-public:
-    /** `operators_` - allowed operators and their corresponding functions
-      */
-    ParserPrefixUnaryOperatorExpression(Operators_t operators_, ParserPtr && elem_parser_)
-        : operators(operators_), elem_parser(std::move(elem_parser_))
-    {
-    }
-
-protected:
-    const char * getName() const override { return "expression with prefix unary operator"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// CAST operator "::". This parser is used if left argument
-/// of operator cannot be read as simple literal from text of query.
-/// Example: "[1, 1 + 1, 1 + 2]::Array(UInt8)"
-class ParserCastExpression : public IParserBase
-{
-private:
-    ParserPtr elem_parser;
-
-public:
-    explicit ParserCastExpression(ParserPtr && elem_parser_)
-        : elem_parser(std::move(elem_parser_))
-    {
-    }
-
-protected:
-    const char * getName() const override { return "CAST expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 /// Optional conversion to INTERVAL data type. Example: "INTERVAL x SECOND" parsed as "toIntervalSecond(x)".
 class ParserIntervalOperatorExpression : public IParserBase
@@ -273,9 +190,6 @@ protected:
 // It's used to parse expressions in table function.
 class ParserTableFunctionExpression : public IParserBase
 {
-private:
-    ParserExpression elem_parser;
-
 protected:
     const char * getName() const override { return "table function expression"; }
 

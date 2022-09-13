@@ -199,80 +199,9 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
     auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
-
-    auto expr_list_args = std::make_shared<ASTExpressionList>();
-    expr_list_args->children.push_back(expr_ast);
-    expr_list_args->children.push_back(std::move(type_literal));
-
-    auto func_node = std::make_shared<ASTFunction>();
-    func_node->name = "CAST";
-    func_node->arguments = std::move(expr_list_args);
-    func_node->children.push_back(func_node->arguments);
-
-    return func_node;
+    return makeASTFunction("CAST", expr_ast, type_literal);
 }
 
-
-bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserIdentifier id_parser;
-    ParserSelectWithUnionQuery select;
-
-    ASTPtr identifier;
-    ASTPtr query;
-
-    bool if_permitted = false;
-
-    if (ParserKeyword{"VIEWIFPERMITTED"}.ignore(pos, expected))
-        if_permitted = true;
-    else if (!ParserKeyword{"VIEW"}.ignore(pos, expected))
-        return false;
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-
-    ++pos;
-
-    bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
-
-    if (!select.parse(pos, query, expected))
-        return false;
-
-    auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
-    if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
-    {
-        // It's an subquery. Bail out.
-        return false;
-    }
-
-    ASTPtr else_ast;
-    if (if_permitted)
-    {
-        if (!ParserKeyword{"ELSE"}.ignore(pos, expected))
-            return false;
-
-        if (!ParserWithOptionalAlias{std::make_unique<ParserFunction>(true, true), true}.parse(pos, else_ast, expected))
-            return false;
-    }
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-
-    ++pos;
-
-    auto expr_list = std::make_shared<ASTExpressionList>();
-    expr_list->children.push_back(query);
-    if (if_permitted)
-        expr_list->children.push_back(else_ast);
-
-    auto function_node = std::make_shared<ASTFunction>();
-    tryGetIdentifierNameInto(identifier, function_node->name);
-    function_node->name = if_permitted ? "viewIfPermitted" : "view";
-    function_node->arguments = expr_list;
-    function_node->children.push_back(function_node->arguments);
-    node = function_node;
-    return true;
-}
 
 bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1572,17 +1501,9 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     }
 
     auto name_literal = std::make_shared<ASTLiteral>(name);
-
-    auto expr_list_args = std::make_shared<ASTExpressionList>();
-    expr_list_args->children.push_back(std::move(name_literal));
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "globalVariable";
-    function_node->arguments = expr_list_args;
-    function_node->children.push_back(expr_list_args);
-
-    node = function_node;
+    node = makeASTFunction("globalVariable", name_literal);
     node->setAlias("@@" + name);
+
     return true;
 }
 

@@ -239,7 +239,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
         if (first)
         {
             ASTPtr elem;
-            if (!first_elem_parser->parse(pos, elem, expected))
+            if (!elem_parser->parse(pos, elem, expected))
                 return false;
 
             node = elem;
@@ -248,16 +248,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
         else
         {
             /// try to find any of the valid operators
-
             const char ** it;
-            Expected stub;
-            for (it = overlapping_operators_to_skip; *it; ++it)
-                if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
-                    break;
-
-            if (*it)
-                break;
-
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
                     break;
@@ -265,40 +256,13 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             if (!*it)
                 break;
 
-            /// the function corresponding to the operator
-            auto function = std::make_shared<ASTFunction>();
-
-            /// function arguments
-            auto exp_list = std::make_shared<ASTExpressionList>();
-
             ASTPtr elem;
-            SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
-            if (comparison_expression)
-            {
-                if (ParserKeyword("ANY").ignore(pos, expected))
-                    subquery_function_type = SubqueryFunctionType::ANY;
-                else if (ParserKeyword("ALL").ignore(pos, expected))
-                    subquery_function_type = SubqueryFunctionType::ALL;
-            }
-
-            if (subquery_function_type != SubqueryFunctionType::NONE && !ParserSubquery().parse(pos, elem, expected))
-                subquery_function_type = SubqueryFunctionType::NONE;
-
-            if (subquery_function_type == SubqueryFunctionType::NONE
-                && !(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
+            if (!elem_parser->parse(pos, elem, expected))
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
-            function->name = it[1];
-            function->arguments = exp_list;
-            function->children.push_back(exp_list);
-
-            exp_list->children.push_back(node);
-            exp_list->children.push_back(elem);
-
-            if (comparison_expression && subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
-                return false;
+            auto function = makeASTFunction(it[1], node, elem);
 
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
@@ -318,35 +282,6 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
     }
 
     pos.depth = current_depth;
-    return true;
-}
-
-
-bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr arguments;
-
-    if (!elem_parser->parse(pos, node, expected))
-        return false;
-
-    while (true)
-    {
-        if (!parseOperator(pos, infix, expected))
-            break;
-
-        if (!arguments)
-        {
-            node = makeASTFunction(function_name, node);
-            arguments = node->as<ASTFunction &>().arguments;
-        }
-
-        ASTPtr elem;
-        if (!elem_parser->parse(pos, elem, expected))
-            return false;
-
-        arguments->children.push_back(elem);
-    }
-
     return true;
 }
 
@@ -398,106 +333,6 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     f_combined_expression->children.emplace_back(f_combined_expression->arguments);
 
     return f_combined_expression;
-}
-
-
-bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (ParserTableFunctionView().parse(pos, node, expected))
-        return true;
-    ParserKeyword s_settings("SETTINGS");
-    if (s_settings.ignore(pos, expected))
-    {
-        ParserSetQuery parser_settings(true);
-        if (parser_settings.parse(pos, node, expected))
-            return true;
-    }
-    return elem_parser.parse(pos, node, expected);
-}
-
-
-bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// try to find any of the valid operators
-    const char ** it;
-    for (it = operators; *it; it += 2)
-    {
-        if (parseOperator(pos, *it, expected))
-            break;
-    }
-
-    /// Let's parse chains of the form `NOT NOT x`. This is hack.
-    /** This is done, because among the unary operators there is only a minus and NOT.
-      * But for a minus the chain of unary operators does not need to be supported.
-      */
-    size_t count = 1;
-    if (it[0] && 0 == strncmp(it[0], "NOT", 3))
-    {
-        while (true)
-        {
-            const char ** jt;
-            for (jt = operators; *jt; jt += 2)
-                if (parseOperator(pos, *jt, expected))
-                    break;
-
-            if (!*jt)
-                break;
-
-            ++count;
-        }
-    }
-
-    ASTPtr elem;
-    if (!elem_parser->parse(pos, elem, expected))
-        return false;
-
-    if (!*it)
-        node = elem;
-    else
-    {
-        for (size_t i = 0; i < count; ++i)
-        {
-            /// the function corresponding to the operator
-            auto function = std::make_shared<ASTFunction>();
-
-            /// function arguments
-            auto exp_list = std::make_shared<ASTExpressionList>();
-
-            function->name = it[1];
-            function->arguments = exp_list;
-            function->children.push_back(exp_list);
-
-            if (node)
-                exp_list->children.push_back(node);
-            else
-                exp_list->children.push_back(elem);
-
-            node = function;
-        }
-    }
-
-    return true;
-}
-
-
-bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr expr_ast;
-    if (!elem_parser->parse(pos, expr_ast, expected))
-        return false;
-
-    ASTPtr type_ast;
-    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
-        && ParserDataType().parse(pos, type_ast, expected))
-    {
-        node = createFunctionCast(expr_ast, type_ast);
-    }
-    else
-    {
-        node = expr_ast;
-    }
-
-    return true;
 }
 
 
@@ -752,11 +587,11 @@ public:
         elements.push_back(std::move(op));
     }
 
-    virtual bool getResult(ASTPtr & op)
+    virtual bool getResult(ASTPtr & node)
     {
         if (elements.size() == 1)
         {
-            op = std::move(elements[0]);
+            node = std::move(elements[0]);
             return true;
         }
 
@@ -922,6 +757,8 @@ public:
         return true;
     }
 
+    bool is_table_function = false;
+
     /// 'AND' in operator '... BETWEEN ... AND ...'  mirrors logical operator 'AND'.
     ///  In order to distinguish them we keep a counter of BETWEENs without matching ANDs.
     int between_counter = 0;
@@ -949,7 +786,7 @@ public:
     {
     }
 
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
         /// We can exit the main cycle outside the parse() function,
         ///  so we need to merge the element here
@@ -958,7 +795,7 @@ public:
 
         if (elements.size() == 1)
         {
-            op = std::move(elements[0]);
+            node = std::move(elements[0]);
             return true;
         }
 
@@ -1213,13 +1050,13 @@ private:
 class RoundBracketsLayer : public Layer
 {
 public:
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
         // Round brackets can mean priority operator as well as function tuple()
         if (!is_tuple && elements.size() == 1)
-            op = std::move(elements[0]);
+            node = std::move(elements[0]);
         else
-            op = makeASTFunction("tuple", std::move(elements));
+            node = makeASTFunction("tuple", std::move(elements));
 
         return true;
     }
@@ -1261,9 +1098,9 @@ private:
 class ArrayLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingSquareBracket>
 {
 public:
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
-        op = makeASTFunction("array", std::move(elements));
+        node = makeASTFunction("array", std::move(elements));
         return true;
     }
 
@@ -1386,18 +1223,18 @@ public:
 class ExtractLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
         if (state == 2)
         {
             if (elements.empty())
                 return false;
 
-            op = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), elements[0]);
+            node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), elements[0]);
         }
         else
         {
-            op = makeASTFunction("extract", std::move(elements));
+            node = makeASTFunction("extract", std::move(elements));
         }
 
         return true;
@@ -1455,9 +1292,9 @@ private:
 class SubstringLayer : public Layer
 {
 public:
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
-        op = makeASTFunction("substring", std::move(elements));
+        node = makeASTFunction("substring", std::move(elements));
         return true;
     }
 
@@ -1515,12 +1352,12 @@ public:
 class PositionLayer : public Layer
 {
 public:
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
         if (state == 2)
             std::swap(elements[1], elements[0]);
 
-        op = makeASTFunction("position", std::move(elements));
+        node = makeASTFunction("position", std::move(elements));
         return true;
     }
 
@@ -1612,9 +1449,9 @@ public:
     {
     }
 
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
-        op = makeASTFunction(function_name, std::move(elements));
+        node = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -1776,15 +1613,15 @@ public:
     {
     }
 
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
         if (parsed_interval_kind)
         {
             elements[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), elements[0]);
-            op = makeASTFunction(function_name, elements[1], elements[0]);
+            node = makeASTFunction(function_name, elements[1], elements[0]);
         }
         else
-            op = makeASTFunction(function_name, std::move(elements));
+            node = makeASTFunction(function_name, std::move(elements));
 
         return true;
     }
@@ -1829,20 +1666,20 @@ private:
 class DateDiffLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
-    bool getResult(ASTPtr & op) override
+    bool getResult(ASTPtr & node) override
     {
         if (parsed_interval_kind)
         {
             if (elements.size() == 2)
-                op = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
+                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
             else if (elements.size() == 3)
-                op = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
+                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
             else
                 return false;
         }
         else
         {
-            op = makeASTFunction("dateDiff", std::move(elements));
+            node = makeASTFunction("dateDiff", std::move(elements));
         }
         return true;
     }
@@ -1956,6 +1793,89 @@ private:
     IntervalKind interval_kind;
 };
 
+/// Layer for table function 'view' and 'viewIfPermitted'
+class ViewLayer : public Layer
+{
+public:
+    ViewLayer(bool if_permitted_) : if_permitted(if_permitted_) {}
+
+    bool getResult(ASTPtr & node) override
+    {
+        if (if_permitted)
+            node = makeASTFunction("viewIfPermitted", std::move(elements));
+        else
+            node = makeASTFunction("view", std::move(elements));
+
+        return true;
+    }
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    {
+        /// view(SELECT ...)
+        /// viewIfPermitted(SELECT ... ELSE func(...))
+        ///
+        /// 0. Parse the SELECT query and 'ELSE' keyword if needed
+        ///  
+
+        if (state == 0)
+        {
+            ASTPtr query;
+
+            bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+            if (!ParserSelectWithUnionQuery().parse(pos, query, expected))
+                return false;
+
+            auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+            if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+            {
+                // It's an subquery. Bail out.
+                return false;
+            }
+
+            pushResult(query);
+
+            if (!if_permitted)
+            {
+                if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    return false;
+
+                finished = true;
+                return true;
+            }
+
+            if (!ParserKeyword{"ELSE"}.ignore(pos, expected))
+                return false;
+
+            ///auto test_pos = pos;
+
+            // Check whether next thing is a function
+            // if (!ParserIdentifier(true).parse(pos, ))
+            // if (!ParserWithOptionalAlias{std::make_unique<ParserFunction>(true, true), true}.parse(pos, else_ast, expected))
+            //     return false;
+
+            state = 1;
+            return true;
+        }
+
+        if (state == 1)
+        {
+            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
+            }
+        }
+
+        return true;
+    }
+
+private:
+    bool if_permitted;
+};
+
 
 class CaseLayer : public Layer
 {
@@ -2049,7 +1969,7 @@ private:
 };
 
 
-std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool allow_function_parameters_ = true)
+std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool allow_function_parameters_ = true)
 {
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
@@ -2077,6 +1997,14 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool allow_function_p
 
     String function_name = getIdentifierName(identifier);
     String function_name_lowercase = Poco::toLower(function_name);
+
+    if (is_table_function)
+    {
+        if (function_name_lowercase == "view")
+            return std::make_unique<ViewLayer>(false);
+        else if (function_name_lowercase == "viewifpermitted")
+            return std::make_unique<ViewLayer>(true);
+    }
 
     if (function_name_lowercase == "cast")
         return std::make_unique<CastLayer>();
@@ -2214,6 +2142,21 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
+bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_settings("SETTINGS");
+    if (s_settings.ignore(pos, expected))
+    {
+        ParserSetQuery parser_settings(true);
+        if (parser_settings.parse(pos, node, expected))
+            return true;
+    }
+
+    auto start = std::make_unique<SingleElementLayer>();
+    start->is_table_function = true;
+    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+}
+
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto start = std::make_unique<IntervalLayer>();
@@ -2230,18 +2173,13 @@ bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (is_table_function)
-    {
-        if (ParserTableFunctionView().parse(pos, node, expected))
-            return true;
-    }
-
     ASTPtr identifier;
 
     if (ParserIdentifier(true).parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        auto start = getFunctionLayer(identifier, allow_function_parameters);
+        auto start = getFunctionLayer(identifier, is_table_function, allow_function_parameters);
+        start->is_table_function = is_table_function;
         return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
     }
     else
@@ -2377,6 +2315,17 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
 {
     ASTPtr tmp;
 
+    if (typeid_cast<ViewLayer *>(layers.back().get()))
+    {
+        if (identifier_parser.parse(pos, tmp, expected)
+            && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+        {
+            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
+            return ParseResult::OPERAND;
+        }
+        return ParseResult::ERROR;
+    }
+
     /// Special case for cast expression
     if (layers.back()->previousType() != OperatorType::TupleElement &&
         ParseCastExpression(pos, tmp, expected))
@@ -2462,7 +2411,7 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
         if (pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-            layers.push_back(getFunctionLayer(tmp));
+            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
             return ParseResult::OPERAND;
         }
         else
