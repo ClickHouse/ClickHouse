@@ -5,6 +5,7 @@
 #include <IO/S3Common.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Access/Common/AccessFlags.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
@@ -131,6 +132,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
 {
     if (configuration.structure == "auto")
     {
+        context->checkAccess(getSourceAccessType());
         return StorageS3::getTableStructureFromData(
             configuration.format,
             S3::URI(Poco::URI(configuration.url)),
