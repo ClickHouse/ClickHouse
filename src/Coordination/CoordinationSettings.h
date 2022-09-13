@@ -30,6 +30,7 @@ struct Settings;
     M(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
     M(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
     M(Milliseconds, shutdown_timeout, 5000, "How much time we will wait until RAFT shutdown", 0) \
+    M(Milliseconds, session_shutdown_timeout, 10000, "How much time we will wait until sessions are closed during shutdown", 0) \
     M(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
     M(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
     M(UInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
