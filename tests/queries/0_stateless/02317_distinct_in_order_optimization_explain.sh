@@ -10,10 +10,10 @@ DISABLE_OPTIMIZATION="set optimize_distinct_in_order=0"
 ENABLE_OPTIMIZATION="set optimize_distinct_in_order=1"
 GREP_DISTINCT="grep 'DistinctSortedChunkTransform\|DistinctSortedStreamTransform\|DistinctSortedTransform\|DistinctTransform'"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
-FIND_DISTINCT="$GREP_DISTINCT | $TRIM_LEADING_SPACES"
-FIND_READING_IN_ORDER="grep 'MergeTreeInOrder' | $TRIM_LEADING_SPACES"
-FIND_READING_DEFAULT="grep 'MergeTreeThread' | $TRIM_LEADING_SPACES"
-MAKE_OUTPUT_STABLE="set max_threads=1"
+REMOVE_NON_LETTERS="sed 's/[^a-zA-Z]//g'"
+FIND_DISTINCT="$GREP_DISTINCT | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
+FIND_READING_IN_ORDER="grep 'MergeTreeInOrder' | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
+FIND_READING_DEFAULT="grep 'MergeTreeThread' | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
 $CLICKHOUSE_CLIENT -q "create table distinct_in_order_explain (a int, b int, c int) engine=MergeTree() order by (a, b)"
@@ -22,42 +22,42 @@ $CLICKHOUSE_CLIENT -q "insert into distinct_in_order_explain select number % num
 
 $CLICKHOUSE_CLIENT -q "select '-- disable optimize_distinct_in_order'"
 $CLICKHOUSE_CLIENT -q "select '-- distinct all primary key columns -> ordinary distinct'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$DISABLE_OPTIMIZATION;explain pipeline select distinct * from distinct_in_order_explain" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;explain pipeline select distinct * from distinct_in_order_explain" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- enable optimize_distinct_in_order'"
 $CLICKHOUSE_CLIENT -q "select '-- distinct with all primary key columns -> pre-distinct optimization only'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct * from distinct_in_order_explain" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct * from distinct_in_order_explain" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix -> pre-distinct optimization only'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by column in distinct -> pre-distinct and final distinct optimization'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain order by c" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain order by c" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by the same columns -> pre-distinct and final distinct optimization'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain order by a, b" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain order by a, b" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by column in distinct but non-primary key prefix -> pre-distinct and final distinct optimization'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b, c from distinct_in_order_explain order by c" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b, c from distinct_in_order_explain order by c" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by column _not_ in distinct -> pre-distinct optimization only'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain order by b" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain order by b" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix -> ordinary distinct'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct b, c from distinct_in_order_explain" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, c from distinct_in_order_explain" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order by column in distinct -> final distinct optimization only'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct b, c from distinct_in_order_explain order by b" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, c from distinct_in_order_explain order by b" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order by column _not_ in distinct -> ordinary distinct'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct b, c from distinct_in_order_explain order by a" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, c from distinct_in_order_explain order by a" | eval $FIND_DISTINCT
 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order by _const_ column in distinct -> ordinary distinct'"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct b, 1 as x from distinct_in_order_explain order by x" | eval $FIND_DISTINCT
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, 1 as x from distinct_in_order_explain order by x" | eval $FIND_DISTINCT
 
 echo "-- Check reading in order for distinct"
-$CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 $CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 
-# $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
+$CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
