@@ -21,6 +21,7 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"path", std::make_shared<DataTypeString>()},
         {"free_space", std::make_shared<DataTypeUInt64>()},
         {"total_space", std::make_shared<DataTypeUInt64>()},
+        {"unreserved_space", std::make_shared<DataTypeUInt64>()},
         {"keep_free_space", std::make_shared<DataTypeUInt64>()},
         {"type", std::make_shared<DataTypeString>()},
         {"is_encrypted", std::make_shared<DataTypeUInt8>()},
@@ -44,6 +45,7 @@ Pipe StorageSystemDisks::read(
     MutableColumnPtr col_path = ColumnString::create();
     MutableColumnPtr col_free = ColumnUInt64::create();
     MutableColumnPtr col_total = ColumnUInt64::create();
+    MutableColumnPtr col_unreserved = ColumnUInt64::create();
     MutableColumnPtr col_keep = ColumnUInt64::create();
     MutableColumnPtr col_type = ColumnString::create();
     MutableColumnPtr col_is_encrypted = ColumnUInt8::create();
@@ -55,6 +57,7 @@ Pipe StorageSystemDisks::read(
         col_path->insert(disk_ptr->getPath());
         col_free->insert(disk_ptr->getAvailableSpace());
         col_total->insert(disk_ptr->getTotalSpace());
+        col_unreserved->insert(disk_ptr->getUnreservedSpace());
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
         auto data_source_description = disk_ptr->getDataSourceDescription();
         col_type->insert(toString(data_source_description.type));
@@ -72,6 +75,7 @@ Pipe StorageSystemDisks::read(
     res_columns.emplace_back(std::move(col_path));
     res_columns.emplace_back(std::move(col_free));
     res_columns.emplace_back(std::move(col_total));
+    res_columns.emplace_back(std::move(col_unreserved));
     res_columns.emplace_back(std::move(col_keep));
     res_columns.emplace_back(std::move(col_type));
     res_columns.emplace_back(std::move(col_is_encrypted));
