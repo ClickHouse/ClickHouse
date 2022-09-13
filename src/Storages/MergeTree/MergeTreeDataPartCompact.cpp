@@ -2,6 +2,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
@@ -45,9 +46,9 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
-    auto ptr = std::static_pointer_cast<const MergeTreeDataPartCompact>(shared_from_this());
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
     return std::make_unique<MergeTreeReaderCompact>(
-        ptr, columns_to_read, metadata_snapshot, uncompressed_cache,
+        read_info, columns_to_read, metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }
@@ -90,37 +91,44 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
         total_size.marks += mrk_checksum->second.file_size;
 }
 
+void MergeTreeDataPartCompact::loadIndexGranularityImpl(
+    MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const NamesAndTypesList & columns_, const DataPartStoragePtr & data_part_storage_)
+{
+    if (!index_granularity_info_.mark_type.adaptive)
+        throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary.", ErrorCodes::NOT_IMPLEMENTED);
+
+    auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
+    if (!data_part_storage_->exists(marks_file_path))
+        throw Exception(
+            ErrorCodes::NO_FILE_IN_DATA_PART,
+            "Marks file '{}' doesn't exist",
+            std::string(fs::path(data_part_storage_->getFullPath()) / marks_file_path));
+
+    size_t marks_file_size = data_part_storage_->getFileSize(marks_file_path);
+
+    auto buffer = data_part_storage_->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+    while (!buffer->eof())
+    {
+        /// Skip offsets for columns
+        buffer->seek(columns_.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
+        size_t granularity;
+        readIntBinary(granularity, *buffer);
+        index_granularity_.appendMark(granularity);
+    }
+
+    if (index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes(columns_.size()) != marks_file_size)
+        throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+
+    index_granularity_.setInitialized();
+}
+
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-    if (!index_granularity_info.mark_type.adaptive)
-        throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary.", ErrorCodes::NOT_IMPLEMENTED);
-
-    auto marks_file_path = index_granularity_info.getMarksFilePath("data");
-    if (!data_part_storage->exists(marks_file_path))
-        throw Exception(
-            ErrorCodes::NO_FILE_IN_DATA_PART,
-            "Marks file '{}' doesn't exist",
-            std::string(fs::path(data_part_storage->getFullPath()) / marks_file_path));
-
-    size_t marks_file_size = data_part_storage->getFileSize(marks_file_path);
-
-    auto buffer = data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
-    while (!buffer->eof())
-    {
-        /// Skip offsets for columns
-        buffer->seek(columns.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
-        size_t granularity;
-        readIntBinary(granularity, *buffer);
-        index_granularity.appendMark(granularity);
-    }
-
-    if (index_granularity.getMarksCount() * index_granularity_info.getMarkSizeInBytes(columns.size()) != marks_file_size)
-        throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
-
-    index_granularity.setInitialized();
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns, data_part_storage);
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const

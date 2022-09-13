@@ -242,7 +242,7 @@ void StorageSystemPartsColumns::processNextStorage(
             IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
             {
                 /// We count only final subcolumns, which are represented by files on disk
-                /// and skip intermediate suibcolumns of types Tuple and Nested.
+                /// and skip intermediate subcolumns of types Tuple and Nested.
                 if (isTuple(data.type) || isNested(data.type))
                     return;
 
@@ -270,7 +270,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
                 subcolumn_marks_bytes.push_back(size.marks);
 
-            }, { serialization, column.type, nullptr, nullptr });
+            }, ISerialization::SubstreamData(serialization).withType(column.type));
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_names);

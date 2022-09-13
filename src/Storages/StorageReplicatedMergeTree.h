@@ -327,6 +327,7 @@ public:
     static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
         const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context);
 
+    bool canUseZeroCopyReplication() const;
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -363,6 +364,12 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
+    /// Get connection from global context and reconnect if needed.
+    /// NOTE: use it only when table is shut down, in all other cases
+    /// use getZooKeeper() because it is managed by restarting thread
+    /// which guarantees that we have only one connected object
+    /// for table.
+    zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
     zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
     void setZooKeeper();
 
