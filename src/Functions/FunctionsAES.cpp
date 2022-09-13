@@ -9,9 +9,6 @@
 #include <string>
 #include <cassert>
 
-
-
-
 namespace DB
 {
 namespace ErrorCodes
