@@ -5,7 +5,6 @@
         <level>trace</level>
         <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
         <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
-        <size>never</size>
     </logger>
 
     <keeper_server>

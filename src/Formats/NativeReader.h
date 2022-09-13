@@ -24,7 +24,7 @@ public:
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
-    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool skip_unknown_columns_ = false);
+    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
@@ -43,7 +43,6 @@ private:
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
-    bool skip_unknown_columns;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;

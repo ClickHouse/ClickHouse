@@ -49,18 +49,18 @@ struct Decimal
     using NativeType = T;
 
     constexpr Decimal() = default;
-    constexpr Decimal(Decimal<T> &&) noexcept = default;
+    constexpr Decimal(Decimal<T> &&) = default;
     constexpr Decimal(const Decimal<T> &) = default;
 
-    constexpr Decimal(const T & value_): value(value_) {} // NOLINT(google-explicit-constructor)
+    constexpr Decimal(const T & value_): value(value_) {}
 
     template <typename U>
-    constexpr Decimal(const Decimal<U> & x): value(x.value) {} // NOLINT(google-explicit-constructor)
+    constexpr Decimal(const Decimal<U> & x): value(x.value) {}
 
-    constexpr Decimal<T> & operator=(Decimal<T> &&) noexcept = default;
+    constexpr Decimal<T> & operator = (Decimal<T> &&) = default;
     constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
 
-    constexpr operator T () const { return value; } // NOLINT(google-explicit-constructor)
+    constexpr operator T () const { return value; }
 
     template <typename U>
     constexpr U convertTo() const
@@ -111,7 +111,7 @@ public:
     using Base::Base;
     using NativeType = Base::NativeType;
 
-    constexpr DateTime64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
+    constexpr DateTime64(const Base & v): Base(v) {}
 };
 }
 

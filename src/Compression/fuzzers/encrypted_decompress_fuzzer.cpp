@@ -58,7 +58,7 @@ Fuzzing data consists of:
             else:
                 read_key()
             if (7):
-                read_nonce (similar to read_key)
+                read_nonce (simillar to read_key)
             if (8):
                 set current_key
 

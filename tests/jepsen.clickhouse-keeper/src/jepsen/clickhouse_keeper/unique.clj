@@ -36,9 +36,7 @@
   "A generator, client, and checker for a set test."
   [opts]
   {:client    (UniqueClient. nil nil)
-   :checker   (checker/compose
-                {:perf   (checker/perf)
-                 :unique (checker/unique-ids)})
+   :checker   (checker/unique-ids)
    :generator (->>
                (range)
                (map (fn [_] {:type :invoke, :f :generate})))})

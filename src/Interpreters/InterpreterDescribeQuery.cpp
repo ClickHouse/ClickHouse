@@ -89,7 +89,7 @@ BlockIO InterpreterDescribeQuery::execute()
         auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
 
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
-        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+        storage_snapshot = table->getStorageSnapshot(metadata_snapshot);
         columns = metadata_snapshot->getColumns();
     }
 
@@ -163,7 +163,7 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
+            }, { type->getDefaultSerialization(), type, nullptr, nullptr });
         }
     }
 

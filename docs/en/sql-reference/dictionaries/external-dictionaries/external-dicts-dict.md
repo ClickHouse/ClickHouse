@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
-sidebar_position: 40
-sidebar_label: Configuring an External Dictionary
+toc_priority: 40
+toc_title: Configuring an External Dictionary
 ---
 
-# Configuring an External Dictionary
+# Configuring an External Dictionary {#dicts-external-dicts-dict}
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 

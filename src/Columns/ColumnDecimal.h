@@ -63,7 +63,7 @@ public:
     {
         data.resize_fill(data.size() + length);
     }
-    void insert(const Field & x) override { data.push_back(x.get<T>()); }
+    void insert(const Field & x) override { data.push_back(DB::get<T>(x)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override
@@ -71,9 +71,9 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    std::string_view getRawData() const override
+    StringRef getRawData() const override
     {
-        return {reinterpret_cast<const char*>(data.data()), byteSize()};
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override
@@ -104,7 +104,7 @@ public:
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     bool getBool(size_t n) const override { return bool(data[n].value); }
-    Int64 getInt(size_t n) const override { return Int64(data[n].value); }
+    Int64 getInt(size_t n) const override { return Int64(data[n].value) * scale; }
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 

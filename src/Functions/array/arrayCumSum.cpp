@@ -162,7 +162,7 @@ struct ArrayCumSumImpl
 struct NameArrayCumSum { static constexpr auto name = "arrayCumSum"; };
 using FunctionArrayCumSum = FunctionArrayMapped<ArrayCumSumImpl, NameArrayCumSum>;
 
-REGISTER_FUNCTION(ArrayCumSum)
+void registerFunctionArrayCumSum(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayCumSum>();
 }

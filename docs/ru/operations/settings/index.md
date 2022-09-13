@@ -1,7 +1,7 @@
 ---
-sidebar_label: Settings
-sidebar_position: 55
-slug: /ru/operations/settings/
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: Introduction
 ---
 
 # Настройки {#session-settings-intro}

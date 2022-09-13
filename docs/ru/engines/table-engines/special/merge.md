@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/special/merge
-sidebar_position: 36
-sidebar_label: Merge
+toc_priority: 36
+toc_title: Merge
 ---
 
 # Merge {#merge}

@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/statements/select/distinct
-sidebar_label: DISTINCT
+toc_title: DISTINCT
 ---
 
 # DISTINCT子句 {#select-distinct}

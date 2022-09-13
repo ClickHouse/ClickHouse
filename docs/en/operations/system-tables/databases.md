@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/databases
----
-# databases
+# system.databases {#system-databases}
 
 Contains information about the databases that are available to the current user.
 

@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/groupbitand
-sidebar_position: 125
+toc_priority: 125
 ---
 
 # groupBitAnd {#groupbitand}

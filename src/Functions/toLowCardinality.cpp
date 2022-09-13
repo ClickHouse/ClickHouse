@@ -35,6 +35,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
     {
+        auto arg_num = arguments[0];
         const auto & arg = arguments[0];
 
         if (arg.type->lowCardinality())
@@ -50,7 +51,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(ToLowCardinality)
+void registerFunctionToLowCardinality(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToLowCardinality>();
 }

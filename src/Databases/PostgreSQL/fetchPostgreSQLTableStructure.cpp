@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
@@ -100,8 +99,6 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
         res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
         res = std::make_shared<DataTypeDate>();
-    else if (type == "uuid")
-        res = std::make_shared<DataTypeUUID>();
     else if (type.starts_with("numeric"))
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
@@ -265,11 +262,10 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
            "AND NOT attisdropped AND attnum > 0", where);
 
-    auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
-    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
+    table.physical_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, false);
 
     if (!table.physical_columns)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_with_schema);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
 
     if (with_primary_key)
     {
@@ -281,7 +277,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "AND a.attnum = ANY(i.indkey) "
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -302,13 +298,11 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and a.attnum = ANY(ix.indkey) "
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
-            "{}"
             "and ix.indisreplident = 't' " /// index is is replica identity index
-            "ORDER BY a.attname", /// column name
-            (postgres_schema.empty() ? "" : "and t.relnamespace = " + quoteString(postgres_schema)) + " ",
-            quoteString(postgres_table));
+            "ORDER BY a.attname", /// column names
+        quoteString(postgres_table));
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
     }
 
     return table;

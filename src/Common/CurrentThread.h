@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
+#include <base/StringRef.h>
 
 #include <memory>
 #include <string>
@@ -54,12 +55,7 @@ public:
     static void updatePerformanceCounters();
 
     static ProfileEvents::Counters & getProfileEvents();
-    inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
-    {
-        if (unlikely(!current_thread))
-            return nullptr;
-        return &current_thread->memory_tracker;
-    }
+    static MemoryTracker * getMemoryTracker();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -80,7 +76,7 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static std::string_view getQueryId()
+    static StringRef getQueryId()
     {
         if (unlikely(!current_thread))
             return {};
@@ -95,7 +91,6 @@ public:
     struct QueryScope
     {
         explicit QueryScope(ContextMutablePtr query_context);
-        explicit QueryScope(ContextPtr query_context);
         ~QueryScope();
 
         void logPeakMemoryUsage();

@@ -16,7 +16,6 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
-    extern const int DNS_ERROR;
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
@@ -91,7 +90,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     catch (const Exception & e)
     {
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::DNS_ERROR
             && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             throw;
 
@@ -199,10 +197,7 @@ bool ConnectionEstablisherAsync::checkReceiveTimeout()
         destroyFiber();
         /// In not async case this exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
-        fail_message = fmt::format(
-            "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
-            result.entry->getDescription(),
-            result.entry->getSocket()->getReceiveTimeout().totalMilliseconds());
+        fail_message = "Timeout exceeded while reading from socket (" + result.entry->getDescription() + ")";
         epoll.remove(socket_fd);
         resetResult();
         return false;

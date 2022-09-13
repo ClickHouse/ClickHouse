@@ -1,7 +1,6 @@
 ---
-slug: /zh/whats-new/security-changelog
-sidebar_position: 76
-sidebar_label: 安全更新日志
+toc_priority: 76
+toc_title: 安全更新日志
 ---
 
 ## 修复于ClickHouse Release 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}

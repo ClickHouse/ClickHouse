@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/stddevsamp
-sidebar_position: 31
+toc_priority: 31
 ---
 
 # stddevSamp {#stddevsamp}

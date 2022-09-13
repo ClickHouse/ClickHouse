@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/integrations/mongodb
-sidebar_position: 5
-sidebar_label: MongoDB
+toc_priority: 5
+toc_title: MongoDB
 ---
 
 # MongoDB {#mongodb}

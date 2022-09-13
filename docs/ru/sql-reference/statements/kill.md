@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/kill
-sidebar_position: 46
-sidebar_label: KILL
+toc_priority: 46
+toc_title: KILL
 ---
 
 # KILL {#kill-statements}

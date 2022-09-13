@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/groupbitmapor
-sidebar_position: 130
+toc_priority: 130
 ---
 
 # groupBitmapOr {#groupbitmapor}

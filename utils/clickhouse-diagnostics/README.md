@@ -22,7 +22,7 @@ python3 -m pip install -r requirements.txt
 ## Usage
 
 ```
-./clickhouse-diagnostics --host localhost --port 8123 --user default --password xxx
+./clickhouse-diagnostics
 ```
 
 Example output:
@@ -34,6 +34,7 @@ Uptime: **13 minutes and 51 seconds**
 #### ClickHouse configuration
 **result**
 ```XML
+<?xml version="1.0" encoding="utf-8"?>
 <clickhouse>
 	<logger>
 		<level>trace</level>

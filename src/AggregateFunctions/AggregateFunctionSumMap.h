@@ -17,7 +17,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -519,7 +519,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = rhs.get<FieldType>();
+        auto val = get<FieldType>(rhs);
         if (val > x)
         {
             x = val;
@@ -554,7 +554,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = rhs.get<FieldType>();
+        auto val = get<FieldType>(rhs);
         if (val < x)
         {
             x = val;

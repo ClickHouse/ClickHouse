@@ -1,9 +1,8 @@
 ---
-slug: /zh/sql-reference/data-types/special-data-types/interval
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 61
-sidebar_label: "\u95F4\u9694"
+toc_priority: 61
+toc_title: "\u95F4\u9694"
 ---
 
 # Interval类型 {#data-type-interval}

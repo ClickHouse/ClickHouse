@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
-#include <Interpreters/Context.h>
 #include <pcg_random.hpp>
 #include <random>
 
@@ -51,11 +50,10 @@ void BackgroundJobsAssignee::postpone()
 }
 
 
-bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
+void BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
 {
     bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
     res ? trigger() : postpone();
-    return res;
 }
 
 

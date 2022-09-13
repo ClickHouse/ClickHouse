@@ -118,7 +118,7 @@ struct CRCFunctionWrapper
 private:
     static ReturnType doCRC(const ColumnString::Chars & buf, size_t offset, size_t size)
     {
-        const unsigned char * p = reinterpret_cast<const unsigned char *>(buf.data()) + offset;
+        const unsigned char * p = reinterpret_cast<const unsigned char *>(&buf[0]) + offset;
         return Impl::makeCRC(p, size);
     }
 };
@@ -140,10 +140,10 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 template <class T>
 void registerFunctionCRCImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<T>(T::name, {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<T>(T::name, FunctionFactory::CaseInsensitive);
 }
 
-REGISTER_FUNCTION(CRC)
+void registerFunctionCRC(FunctionFactory & factory)
 {
     registerFunctionCRCImpl<FunctionCRC32ZLIB>(factory);
     registerFunctionCRCImpl<FunctionCRC32IEEE>(factory);
