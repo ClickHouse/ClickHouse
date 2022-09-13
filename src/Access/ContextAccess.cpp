@@ -410,7 +410,7 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 {
     static const std::shared_ptr<const ContextAccess> res = []
     {
-        auto full_access = ContextAccess::make();
+        auto full_access = std::make_shared<ContextAccess>();
         full_access->is_full_access = true;
         full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
         full_access->access_with_implicit = full_access->access;

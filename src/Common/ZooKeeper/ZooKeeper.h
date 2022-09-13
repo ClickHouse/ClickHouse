@@ -13,7 +13,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/GetPriorityForLoadBalancing.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/thread_local_rng.h>
 #include <unistd.h>
 #include <random>
@@ -58,6 +58,18 @@ struct ShuffleHost
     }
 };
 
+struct RemoveException
+{
+    explicit RemoveException(std::string_view path_ = "", bool remove_subtree_ = true)
+        : path(path_)
+        , remove_subtree(remove_subtree_)
+    {}
+
+    std::string_view path;
+    // whether we should keep the child node and its subtree or just the child node
+    bool remove_subtree;
+};
+
 using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
@@ -72,24 +84,11 @@ using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 class ZooKeeper
 {
 public:
+
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    /// hosts_string -- comma separated [secure://]host:port list
-    explicit ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
-              const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
-              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
-    explicit ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
-              const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
-              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
     /** Config of the form:
         <zookeeper>
@@ -232,13 +231,13 @@ public:
     void tryRemoveRecursive(const std::string & path);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
-    /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
-    /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
-    void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
+    /// Node defined as RemoveException will not be deleted.
+    void removeChildrenRecursive(const std::string & path, RemoveException keep_child = RemoveException{});
     /// If probably_flat is true, this method will optimistically try to remove children non-recursive
     /// and will fall back to recursive removal if it gets ZNOTEMPTY for some child.
     /// Returns true if no kind of fallback happened.
-    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, const String & keep_child_node = {});
+    /// Node defined as RemoveException will not be deleted.
+    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, RemoveException keep_child= RemoveException{});
 
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
@@ -332,13 +331,12 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    UInt32 getSessionUptime() const { return session_uptime.elapsedSeconds(); }
+    UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_);
+    void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -358,19 +356,12 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
-    Strings hosts;
-    std::string identity;
-    int32_t session_timeout_ms;
-    int32_t operation_timeout_ms;
-    std::string chroot;
-    std::string implementation;
+    ZooKeeperArgs args;
 
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
-
-    GetPriorityForLoadBalancing get_priority_load_balancing;
 
     AtomicStopwatch session_uptime;
 };

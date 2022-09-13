@@ -364,8 +364,26 @@ private:
     bool apply_deleted_mask = true;
 
 public:
-    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
-    OpenTelemetryTraceContext query_trace_context;
+    /// Some counters for current query execution.
+    /// Most of them are workarounds and should be removed in the future.
+    struct KitchenSink
+    {
+        std::atomic<size_t> analyze_counter = 0;
+
+        KitchenSink() = default;
+
+        KitchenSink(const KitchenSink & rhs)
+            : analyze_counter(rhs.analyze_counter.load())
+        {}
+
+        KitchenSink & operator=(const KitchenSink & rhs)
+        {
+            analyze_counter = rhs.analyze_counter.load();
+            return *this;
+        }
+    };
+
+    KitchenSink kitchen_sink;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -788,6 +806,7 @@ public:
     void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+    ThreadPool & getLoadMarksThreadpool() const;
 
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
@@ -918,7 +937,7 @@ public:
     bool applyDeletedMask() const { return apply_deleted_mask; }
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
-    ActionLocksManagerPtr getActionLocksManager();
+    ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType
     {

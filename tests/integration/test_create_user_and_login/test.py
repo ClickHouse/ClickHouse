@@ -61,7 +61,6 @@ def test_login_as_dropped_user_xml():
                 "-c",
                 """
             cat > /etc/clickhouse-server/users.d/user_c.xml << EOF
-<?xml version="1.0"?>
 <clickhouse>
     <users>
         <C>
