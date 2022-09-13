@@ -996,7 +996,7 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = method.data.getBufferSizeInBytes() > getL2CacheSize();
+        const bool prefetch = Method::State::has_cheap_key_calculation && (method.data.getBufferSizeInBytes() > getL2CacheSize());
 
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -1051,7 +1051,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = aggregates_pool->alloc(0);
         for (size_t i = row_begin; i < row_end; ++i)
         {
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder> && Method::State::has_cheap_key_calculation)
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
                 if (i == row_begin + prefetching.iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
@@ -1117,7 +1117,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         if constexpr (!no_more_keys)
         {
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder> && Method::State::has_cheap_key_calculation)
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
                 if (i == row_begin + prefetching.iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
@@ -2555,7 +2555,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
-    const bool prefetch = getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getL2CacheSize();
+    const bool prefetch
+        = Method::State::has_cheap_key_calculation && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getL2CacheSize());
 
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -2622,8 +2623,8 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
 
-    const bool prefetch
-        = Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > getL2CacheSize();
+    const bool prefetch = Method::State::has_cheap_key_calculation
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > getL2CacheSize());
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
