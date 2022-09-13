@@ -3649,7 +3649,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
         {
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
-            LOG_TRACE(log, "Got {} (of {}) replicas confirmed quorum {}, going to remove node",
+            LOG_TRACE(log, "Got {} (of {} required) replicas confirmed quorum {}, going to remove node",
                       quorum_entry.replicas.size(), quorum_entry.required_number_of_replicas, quorum_status_path);
 
             Coordination::Requests ops;
