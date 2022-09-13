@@ -36,7 +36,7 @@ Even though deletes are becoming more lightweight in ClickHouse, they should sti
 :::
 
 :::note
-DELETE FROM requires the ALTER DELETE privledge:
+DELETE FROM requires the ALTER DELETE privilege:
 ```sql
 grant ALTER DELETE ON db.table to username;
 ```
