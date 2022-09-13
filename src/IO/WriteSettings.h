@@ -15,6 +15,7 @@ struct WriteSettings
     bool enable_filesystem_cache_on_write_operations = false;
     bool enable_filesystem_cache_log = false;
     bool is_file_cache_persistent = false;
+    bool allow_parallel_write_to_object_storage = true;
 };
 
 }
