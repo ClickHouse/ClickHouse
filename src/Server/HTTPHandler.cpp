@@ -26,7 +26,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/ParserSetQuery.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
@@ -534,7 +533,19 @@ void HTTPHandler::processQuery(
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
 
-    auto client_info = session->getClientInfo();
+    // Parse the OpenTelemetry traceparent header.
+    ClientInfo client_info = session->getClientInfo();
+    if (request.has("traceparent"))
+    {
+        std::string opentelemetry_traceparent = request.get("traceparent");
+        std::string error;
+        if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+        {
+            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+        }
+        client_info.client_trace_context.tracestate = request.get("tracestate", "");
+    }
+
     auto context = session->makeQueryContext(std::move(client_info));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
@@ -638,7 +649,7 @@ void HTTPHandler::processQuery(
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str), context->getSettingsRef().zstd_window_log_max);
+        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str));
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -933,13 +944,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
 
-    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
-    SCOPE_EXIT({
-        // make sure the response status is recorded
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
-    });
-
     try
     {
         if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
@@ -947,28 +951,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             processOptionsRequest(response, server.config());
             return;
         }
-
-        // Parse the OpenTelemetry traceparent header.
-        ClientInfo& client_info = session->getClientInfo();
-        if (request.has("traceparent"))
-        {
-            std::string opentelemetry_traceparent = request.get("traceparent");
-            std::string error;
-            if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
-            {
-                LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
-            }
-            client_info.client_trace_context.tracestate = request.get("tracestate", "");
-        }
-
-        // Setup tracing context for this thread
-        auto context = session->sessionOrGlobalContext();
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("HTTPHandler",
-            client_info.client_trace_context,
-            context->getSettingsRef(),
-            context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
-
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
@@ -1004,9 +986,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// cannot write in it anymore. So, just log this exception.
         if (used_output.isFinalized())
         {
-            if (thread_trace_context)
-                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
-
             tryLogCurrentException(log, "Cannot flush data to client");
             return;
         }
@@ -1020,9 +999,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         int exception_code = getCurrentExceptionCode();
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
-
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute("clickhouse.exception_code", exception_code);
     }
 
     used_output.finalize();
@@ -1038,10 +1014,10 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     if (key == param_name)
         return true;    /// do nothing
 
-    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+    if (startsWith(key, "param_"))
     {
         /// Save name and values of substitution in dictionary.
-        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+        const String parameter_name = key.substr(strlen("param_"));
 
         if (!context->getQueryParameters().contains(parameter_name))
             context->setQueryParameter(parameter_name, value);

@@ -80,7 +80,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(ByteSize)
+void registerFunctionByteSize(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionByteSize>();
 }

@@ -10,7 +10,8 @@ using namespace DB;
 TEST(Common, getMultipleValuesFromConfig)
 {
     std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam(R"END(<clickhouse>
+        xml_isteam(R"END(<?xml version="1.0"?>
+<clickhouse>
     <first_level>
         <second_level>0</second_level>
         <second_level>1</second_level>

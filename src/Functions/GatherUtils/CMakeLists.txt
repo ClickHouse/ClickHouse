@@ -12,7 +12,7 @@ if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
     target_compile_definitions(clickhouse_functions_gatherutils PUBLIC HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
 endif()
 
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     target_compile_options(clickhouse_functions_gatherutils PRIVATE "-g0")
 endif()
 

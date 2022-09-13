@@ -4,7 +4,7 @@
 namespace DB
 {
 
-int ReplicatedMergeTreeAltersSequence::getHeadAlterVersion(std::unique_lock<std::mutex> & /*state_lock*/) const
+int ReplicatedMergeTreeAltersSequence::getHeadAlterVersion(std::lock_guard<std::mutex> & /*state_lock*/) const
 {
     /// If queue empty, than we don't have version
     if (!queue_state.empty())
@@ -66,7 +66,7 @@ void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::
     }
 }
 
-bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const
+bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
 {
     /// Queue maybe empty when we start after server shutdown
     /// and have some MUTATE_PART records in queue
@@ -80,7 +80,7 @@ bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, s
     return queue_state.at(alter_version).metadata_finished;
 }
 
-bool ReplicatedMergeTreeAltersSequence::canExecuteMetaAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const
+bool ReplicatedMergeTreeAltersSequence::canExecuteMetaAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
 {
     assert(!queue_state.empty());
 

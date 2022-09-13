@@ -12,7 +12,7 @@ CREATE TABLE default.merge_tree_pk_sql\n(\n    `key` UInt64,\n    `value` String
 2	b	0
 2	e	555
 CREATE TABLE default.merge_tree_pk_sql\n(\n    `key` UInt64,\n    `value` String,\n    `key2` UInt64\n)\nENGINE = ReplacingMergeTree\nPRIMARY KEY key\nORDER BY (key, key2)\nSETTINGS index_granularity = 8192
-CREATE TABLE default.replicated_merge_tree_pk_sql\n(\n    `key` UInt64,\n    `value` String\n)\nENGINE = ReplicatedReplacingMergeTree(\'/clickhouse/tables/default/01532_primary_key_without\', \'r1\')\nPRIMARY KEY key\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.replicated_merge_tree_pk_sql\n(\n    `key` UInt64,\n    `value` String\n)\nENGINE = ReplicatedReplacingMergeTree(\'/clickhouse/test/01532_primary_key_without\', \'r1\')\nPRIMARY KEY key\nORDER BY key\nSETTINGS index_granularity = 8192
 1	a
 2	b
 1	c
@@ -20,4 +20,4 @@ CREATE TABLE default.replicated_merge_tree_pk_sql\n(\n    `key` UInt64,\n    `va
 1	c	0
 2	b	0
 2	e	555
-CREATE TABLE default.replicated_merge_tree_pk_sql\n(\n    `key` UInt64,\n    `value` String,\n    `key2` UInt64\n)\nENGINE = ReplicatedReplacingMergeTree(\'/clickhouse/tables/default/01532_primary_key_without\', \'r1\')\nPRIMARY KEY key\nORDER BY (key, key2)\nSETTINGS index_granularity = 8192
+CREATE TABLE default.replicated_merge_tree_pk_sql\n(\n    `key` UInt64,\n    `value` String,\n    `key2` UInt64\n)\nENGINE = ReplicatedReplacingMergeTree(\'/clickhouse/test/01532_primary_key_without\', \'r1\')\nPRIMARY KEY key\nORDER BY (key, key2)\nSETTINGS index_granularity = 8192

@@ -1,20 +1,17 @@
 #include <Storages/StorageURL.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Storages/PartitionedSink.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/IOThreadPool.h>
 #include <IO/ParallelReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 
@@ -22,15 +19,17 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
 
-#include <Common/ThreadStatus.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Storages/PartitionedSink.h>
+#include "Common/ThreadStatus.h"
 #include <Common/parseRemoteDescription.h>
-#include <IO/HTTPCommon.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include "IO/HTTPCommon.h"
+#include "IO/ReadWriteBufferFromHTTP.h"
 
 #include <algorithm>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -46,9 +45,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
-    "url, name of used format (taken from file extension by default), "
-    "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
 static bool urlWithGlobs(const String & uri)
 {
@@ -71,7 +67,7 @@ IStorageURLBase::IStorageURLBase(
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , uri(uri_)
-    , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
+    , compression_method(compression_method_)
     , format_name(format_name_)
     , format_settings(format_settings_)
     , headers(headers_)
@@ -100,19 +96,20 @@ namespace
     ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders(const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_)
     {
         ReadWriteBufferFromHTTP::HTTPHeaderEntries headers(headers_.begin(), headers_.end());
-
         // Propagate OpenTelemetry trace context, if any, downstream.
-        const auto &current_trace_context = OpenTelemetry::CurrentContext();
-        if (current_trace_context.isTraceEnabled())
+        if (CurrentThread::isInitialized())
         {
-            headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
-
-            if (!current_trace_context.tracestate.empty())
+            const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
+            if (thread_trace_context.trace_id != UUID())
             {
-                headers.emplace_back("tracestate", current_trace_context.tracestate);
+                headers.emplace_back("traceparent", thread_trace_context.composeTraceparentHeader());
+
+                if (!thread_trace_context.tracestate.empty())
+                {
+                    headers.emplace_back("tracestate", thread_trace_context.tracestate);
+                }
             }
         }
-
         return headers;
     }
 
@@ -163,7 +160,7 @@ namespace
             const ColumnsDescription & columns,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
-            CompressionMethod compression_method,
+            const String & compression_method,
             size_t download_threads,
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
             const URIParams & params = {},
@@ -244,7 +241,7 @@ namespace
             const String & http_method,
             std::function<void(std::ostream &)> callback,
             const ConnectionTimeouts & timeouts,
-            CompressionMethod compression_method,
+            const String & compression_method,
             Poco::Net::HTTPBasicCredentials & credentials,
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
             bool glob_url,
@@ -353,8 +350,7 @@ namespace
                                         std::move(read_buffer_factory),
                                         threadPoolCallbackRunner(IOThreadPool::get()),
                                         download_threads),
-                                    compression_method,
-                                    settings.zstd_window_log_max);
+                                    chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }
                         }
                         catch (const Poco::Exception & e)
@@ -385,8 +381,7 @@ namespace
                             delay_initialization,
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error),
-                            compression_method,
-                        settings.zstd_window_log_max);
+                        chooseCompressionMethod(request_uri.getPath(), compression_method));
                 }
                 catch (...)
                 {
@@ -445,36 +440,18 @@ StorageURLSink::StorageURLSink(
 
 void StorageURLSink::consume(Chunk chunk)
 {
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
-        return;
     writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
-}
-
-void StorageURLSink::onCancel()
-{
-    std::lock_guard lock(cancel_mutex);
-    finalize();
-    cancelled = true;
 }
 
 void StorageURLSink::onException()
 {
-    std::lock_guard lock(cancel_mutex);
-    finalize();
+    if (!writer)
+        return;
+    onFinish();
 }
 
 void StorageURLSink::onFinish()
 {
-    std::lock_guard lock(cancel_mutex);
-    finalize();
-}
-
-void StorageURLSink::finalize()
-{
-    if (!writer)
-        return;
-
     try
     {
         writer->finalize();
@@ -565,7 +542,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const String & format,
     const String & uri,
-    CompressionMethod compression_method,
+    const String & compression_method,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
@@ -590,11 +567,8 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         urls_to_check = {uri};
     }
 
-    std::optional<ColumnsDescription> columns_from_cache;
-    if (context->getSettingsRef().schema_inference_use_cache_for_url)
-        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, credentials, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == urls_to_check.cend())
             return nullptr;
@@ -617,16 +591,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         return buf;
     };
 
-    ColumnsDescription columns;
-    if (columns_from_cache)
-        columns = *columns_from_cache;
-    else
-        columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
-
-    if (context->getSettingsRef().schema_inference_use_cache_for_url)
-        addColumnsToCache(urls_to_check, columns, format, format_settings, context);
-
-    return columns;
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns() const
@@ -790,7 +755,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             metadata_snapshot->getSampleBlock(),
             context,
             ConnectionTimeouts::getHTTPTimeouts(context),
-            compression_method,
+            chooseCompressionMethod(uri, compression_method),
             http_method);
     }
     else
@@ -802,89 +767,8 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             metadata_snapshot->getSampleBlock(),
             context,
             ConnectionTimeouts::getHTTPTimeouts(context),
-            compression_method,
+            chooseCompressionMethod(uri, compression_method),
             http_method);
-    }
-}
-
-SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
-{
-    static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
-    return schema_cache;
-}
-
-std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
-    const Strings & urls,
-    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-    const Poco::Net::HTTPBasicCredentials & credentials,
-    const String & format_name,
-    const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
-{
-    auto & schema_cache = getSchemaCache(context);
-    for (const auto & url : urls)
-    {
-        auto get_last_mod_time = [&]() -> std::optional<time_t>
-        {
-            auto last_mod_time = getLastModificationTime(url, headers, credentials, context);
-            /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
-            /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
-            /// special setting for this case is enabled.
-            if (!last_mod_time && !context->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
-                return 0;
-            return last_mod_time;
-        };
-
-        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
-        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
-        if (columns)
-            return columns;
-    }
-
-    return std::nullopt;
-}
-
-void IStorageURLBase::addColumnsToCache(
-    const Strings & urls,
-    const ColumnsDescription & columns,
-    const String & format_name,
-    const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
-{
-    auto & schema_cache = getSchemaCache(context);
-    auto cache_keys = getKeysForSchemaCache(urls, format_name, format_settings, context);
-    schema_cache.addMany(cache_keys, columns);
-}
-
-std::optional<time_t> IStorageURLBase::getLastModificationTime(
-    const String & url,
-    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-    const Poco::Net::HTTPBasicCredentials & credentials,
-    const ContextPtr & context)
-{
-    try
-    {
-        ReadWriteBufferFromHTTP buf(
-            Poco::URI(url),
-            Poco::Net::HTTPRequest::HTTP_GET,
-            {},
-            ConnectionTimeouts::getHTTPTimeouts(context),
-            credentials,
-            context->getSettingsRef().max_http_get_redirects,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getReadSettings(),
-            headers,
-            ReadWriteBufferFromHTTP::Range{},
-            &context->getRemoteHostFilter(),
-            true,
-            false,
-            false);
-
-        return buf.getLastModificationTime();
-    }
-    catch (...)
-    {
-        return std::nullopt;
     }
 }
 
@@ -974,64 +858,6 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-ASTs::iterator StorageURL::collectHeaders(
-    ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context)
-{
-    ASTs::iterator headers_it = url_function_args.end();
-
-    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
-    {
-        const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
-        if (headers_ast_function && headers_ast_function->name == "headers")
-        {
-            if (headers_it != url_function_args.end())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "URL table function can have only one key-value argument: headers=(). {}",
-                    bad_arguments_error_message);
-
-            const auto * headers_function_args_expr = assert_cast<const ASTExpressionList *>(headers_ast_function->arguments.get());
-            auto headers_function_args = headers_function_args_expr->children;
-
-            for (auto & header_arg : headers_function_args)
-            {
-                const auto * header_ast = header_arg->as<ASTFunction>();
-                if (!header_ast || header_ast->name != "equals")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Headers argument is incorrect. {}", bad_arguments_error_message);
-
-                const auto * header_args_expr = assert_cast<const ASTExpressionList *>(header_ast->arguments.get());
-                auto header_args = header_args_expr->children;
-                if (header_args.size() != 2)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Headers argument is incorrect: expected 2 arguments, got {}",
-                        header_args.size());
-
-                auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args[0], context);
-                auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
-                if (arg_name_value.getType() != Field::Types::Which::String)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header name");
-                auto arg_name = arg_name_value.safeGet<String>();
-
-                ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args[1], context);
-                auto arg_value = ast_literal->as<ASTLiteral>()->value;
-                if (arg_value.getType() != Field::Types::Which::String)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header value");
-
-                configuration.headers.emplace_back(arg_name, arg_value);
-            }
-
-            headers_it = arg_it;
-
-            continue;
-        }
-
-        (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
-    }
-
-    return headers_it;
-}
-
 URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, ContextPtr local_context)
 {
     URLBasedDataSourceConfiguration configuration;
@@ -1063,21 +889,23 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
     else
     {
         if (args.empty() || args.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
+            throw Exception(
+                "Storage URL requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional "
+                "compression method.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto header_it = collectHeaders(args, configuration, local_context);
-        if (header_it != args.end())
-            args.erase(header_it);
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, local_context);
 
-        configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
+        configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
         if (args.size() > 1)
-            configuration.format = checkAndGetLiteralArgument<String>(args[1], "format");
+            configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
         if (args.size() == 3)
-            configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
+            configuration.compression_method = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     }
 
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(configuration.url).getPath(), true);
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
 
     return configuration;
 }

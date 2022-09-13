@@ -138,7 +138,7 @@ using FunctionBitShiftRight = BinaryArithmeticOverloadResolver<BitShiftRightImpl
 
 }
 
-REGISTER_FUNCTION(BitShiftRight)
+void registerFunctionBitShiftRight(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitShiftRight>();
 }

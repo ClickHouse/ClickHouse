@@ -96,7 +96,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Demangle)
+void registerFunctionDemangle(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDemangle>();
 }

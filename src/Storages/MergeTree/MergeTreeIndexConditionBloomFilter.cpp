@@ -613,7 +613,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (which.isTuple() && function->name == "tuple")
         {
-            const Tuple & tuple = value_field.get<const Tuple &>();
+            const Tuple & tuple = get<const Tuple &>(value_field);
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
             const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 
@@ -691,15 +691,16 @@ SetPtr MergeTreeIndexConditionBloomFilter::getPreparedSet(const ASTPtr & node)
     if (header.has(node->getColumnName()))
     {
         const auto & column_and_type = header.getByName(node->getColumnName());
-        auto set_key = getPreparedSetKey(node, column_and_type.type);
-        if (auto prepared_set = query_info.prepared_sets->get(set_key))
-            return prepared_set;
+        const auto & prepared_set_it = query_info.sets.find(getPreparedSetKey(node, column_and_type.type));
+
+        if (prepared_set_it != query_info.sets.end() && prepared_set_it->second->hasExplicitSetElements())
+            return prepared_set_it->second;
     }
     else
     {
-        for (const auto & set : query_info.prepared_sets->getByTreeHash(node->getTreeHash()))
-            if (set->hasExplicitSetElements())
-                return set;
+        for (const auto & prepared_set_it : query_info.sets)
+            if (prepared_set_it.first.ast_hash == node->getTreeHash() && prepared_set_it.second->hasExplicitSetElements())
+                return prepared_set_it.second;
     }
 
     return DB::SetPtr();

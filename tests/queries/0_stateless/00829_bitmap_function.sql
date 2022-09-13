@@ -71,7 +71,6 @@ SELECT bitmapToArray(bitmapAnd(groupBitmapState(uid), bitmapBuild(CAST([1, 2, 3]
 
 -- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE bitmap_state_test
 (
 	pickup_date Date,

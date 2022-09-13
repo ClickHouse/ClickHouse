@@ -28,8 +28,6 @@ public:
 
     bool useDefaultImplementationForNothing() const override { return false; }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
@@ -55,7 +53,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(ToColumnTypeName)
+void registerFunctionToColumnTypeName(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToColumnTypeName>();
 }

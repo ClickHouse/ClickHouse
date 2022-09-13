@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/integrations/jdbc
 sidebar_position: 3
 sidebar_label: JDBC
 ---

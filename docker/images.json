@@ -29,7 +29,6 @@
     "docker/test/util": {
         "name": "clickhouse/test-util",
         "dependent": [
-            "docker/packager/binary",
             "docker/test/base",
             "docker/test/fasttest"
         ]

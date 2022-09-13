@@ -166,7 +166,7 @@ using FunctionToValidUTF8 = FunctionStringToString<ToValidUTF8Impl, NameToValidU
 
 }
 
-REGISTER_FUNCTION(ToValidUTF8)
+void registerFunctionToValidUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToValidUTF8>();
 }

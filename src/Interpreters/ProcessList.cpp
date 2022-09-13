@@ -224,7 +224,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             }
 
             thread_group->memory_tracker.setDescription("(for query)");
-            if (settings.memory_tracker_fault_probability > 0.0)
+            if (settings.memory_tracker_fault_probability)
                 thread_group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
 
             thread_group->memory_tracker.setOvercommitWaitingTime(settings.memory_usage_overcommit_max_wait_microseconds);

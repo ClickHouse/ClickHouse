@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/dictionaries/
 sidebar_position: 35
 sidebar_label: 字典
 ---

@@ -16,7 +16,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -35,6 +34,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 
@@ -312,7 +315,6 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -1435,15 +1437,15 @@ void registerStorageDistributed(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], local_context);
 
-        String remote_database = checkAndGetLiteralArgument<String>(engine_args[1], "remote_database");
-        String remote_table = checkAndGetLiteralArgument<String>(engine_args[2], "remote_table");
+        String remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
         String storage_policy = "default";
         if (engine_args.size() >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
-            storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            storage_policy = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         /// Check that sharding_key exists in the table and has numeric type.

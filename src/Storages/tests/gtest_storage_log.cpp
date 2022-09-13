@@ -40,7 +40,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
 
     StoragePtr table = std::make_shared<StorageLog>(
         "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
-        ConstraintsDescription{}, String{}, false, getContext().context);
+        ConstraintsDescription{}, String{}, false, static_cast<size_t>(1048576));
 
     table->startup();
 

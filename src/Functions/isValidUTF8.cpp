@@ -256,7 +256,7 @@ struct NameIsValidUTF8
 };
 using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
 
-REGISTER_FUNCTION(IsValidUTF8)
+void registerFunctionIsValidUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidUTF8>();
 }

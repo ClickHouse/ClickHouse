@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/functions-for-nulls
----
 # Nullable处理函数 {#nullablechu-li-han-shu}
 
 ## isNull {#isnull}

@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/wikistat
 sidebar_position: 17
 sidebar_label: WikiStat
 ---

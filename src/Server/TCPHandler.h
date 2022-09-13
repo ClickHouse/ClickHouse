@@ -14,7 +14,6 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClientInfo.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -102,8 +101,6 @@ struct QueryState
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
-    Stopwatch watch;
-    UInt64 prev_elapsed_ns = 0;
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
@@ -157,7 +154,6 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
-    String quota_key;
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
@@ -173,7 +169,6 @@ private:
 
     std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
-    ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -214,7 +209,6 @@ private:
 
     bool receiveProxyHeader();
     void receiveHello();
-    void receiveAddendum();
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
@@ -257,8 +251,6 @@ private:
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
     void sendProfileEvents();
-    void sendSelectProfileEvents();
-    void sendInsertProfileEvents();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

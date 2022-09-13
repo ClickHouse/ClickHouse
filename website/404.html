@@ -1,0 +1,15 @@
+{% extends "templates/base.html" %}
+{% set no_footer = True %}
+
+{% block content %}
+<div class="container py-5">
+    <a href="/">
+        <img id="logo-icon" src="/images/logo.svg" />
+        <img id="logo-text" src="/images/clickhouse-black.svg" alt="ClickHouse" />
+    </a>
+    <h2 class="my-4">404 Not Found</h2>
+    <p class="lead">
+        <a href="/">&larr; {{ _('Return to home page') }}</a>
+    </p>
+</div>
+{% endblock %}

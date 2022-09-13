@@ -18,7 +18,7 @@ public:
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
     void enumerateStreams(
-        EnumerateStreamsSettings & settings,
+        SubstreamPath & path,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
@@ -78,6 +78,9 @@ private:
 
     template <typename ... Params, typename... Args>
     void deserializeImpl(IColumn & column, DeserializeFunctionPtr<Params...> func, Args &&... args) const;
+
+    // template <typename Creator>
+    // static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
 };
 
 }

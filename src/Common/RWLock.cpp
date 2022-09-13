@@ -189,10 +189,9 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
                 /// Rollback(SM1): nothrow
                 if (it_group->requests == 0)
                 {
-                    /// When WRITE lock fails, we need to notify next read that is waiting,
-                    /// to avoid handing request, hence next=true.
-                    dropOwnerGroupAndPassOwnership(it_group, /* next= */ true);
+                    (type == Read ? readers_queue : writers_queue).erase(it_group);
                 }
+
                 return nullptr;
             }
         }
@@ -212,7 +211,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             /// Methods std::list<>::emplace_back() and std::unordered_map<>::emplace() provide strong exception safety
             /// We only need to roll back the changes to these objects: owner_queries and the readers/writers queue
             if (it_group->requests == 0)
-                dropOwnerGroupAndPassOwnership(it_group, /* next= */ false);  /// Rollback(SM1): nothrow
+                dropOwnerGroupAndPassOwnership(it_group);  /// Rollback(SM1): nothrow
 
             throw;
         }
@@ -260,11 +259,11 @@ void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query
 
     /// If we are the last remaining referrer, remove this QNode and notify the next one
     if (--group_it->requests == 0)               /// SM: nothrow
-        dropOwnerGroupAndPassOwnership(group_it, /* next= */ false);
+        dropOwnerGroupAndPassOwnership(group_it);
 }
 
 
-void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it, bool next) noexcept
+void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept
 {
     rdlock_owner = readers_queue.end();
     wrlock_owner = writers_queue.end();
@@ -288,14 +287,7 @@ void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_
         /// Prepare next phase
         if (!readers_queue.empty())
         {
-            if (next && readers_queue.size() > 1)
-            {
-                rdlock_owner = std::next(readers_queue.begin());
-            }
-            else
-            {
-                rdlock_owner = readers_queue.begin();
-            }
+            rdlock_owner = readers_queue.begin();
         }
         else
         {

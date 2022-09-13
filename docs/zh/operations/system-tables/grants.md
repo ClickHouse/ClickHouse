@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/grants
----
 # system.grants {#system_tables-grants}
 
 授予ClickHouse用户帐户的权限.

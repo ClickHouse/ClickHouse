@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/
----
 # 表引擎 {#biao-yin-qing}
 
 表引擎（即表的类型）决定了：

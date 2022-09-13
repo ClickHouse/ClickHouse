@@ -198,7 +198,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 }
 
 
-REGISTER_FUNCTION(ArrayReduce)
+void registerFunctionArrayReduce(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayReduce>();
 }

@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/
 sidebar_label: "Специальные движки таблиц"
 sidebar_position: 31
 ---
