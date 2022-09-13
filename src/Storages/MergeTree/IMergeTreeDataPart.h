@@ -501,6 +501,7 @@ protected:
 
     void initializePartMetadataManager();
 
+    void initializeIndexGranularityInfo();
 
 private:
     /// In compact parts order of columns is necessary
