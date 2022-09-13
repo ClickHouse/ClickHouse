@@ -8,11 +8,11 @@ BuildConfig = Dict[str, ConfValue]
 CI_CONFIG = {
     "build_config": {
         "package_release": {
-            "compiler": "clang-14",
+            "compiler": "clang-14-amd64sse2",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
-            "static_binary_name": "amd64",
+            "static_binary_name": "amd64sse2",
             "libraries": "static",
             "additional_pkgs": True,
             "tidy": "disable",
