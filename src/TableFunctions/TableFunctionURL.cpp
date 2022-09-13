@@ -2,6 +2,7 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -113,7 +114,10 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }

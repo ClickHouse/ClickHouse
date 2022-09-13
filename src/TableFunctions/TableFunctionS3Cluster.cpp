@@ -8,6 +8,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/S3Common.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
@@ -83,6 +84,7 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
 {
     if (configuration.structure == "auto")
     {
+        context->checkAccess(getSourceAccessType());
         return StorageS3::getTableStructureFromData(
             configuration.format,
             S3::URI(Poco::URI(configuration.url)),
