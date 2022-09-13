@@ -262,7 +262,7 @@ Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 
 Block SortedBlocksBuffer::exchange(Block && block)
 {
-    static constexpr const float reserve_coef = 1.2;
+    static constexpr const double reserve_coefficient = 1.2;
 
     Blocks out_blocks;
     Block empty_out = block.cloneEmpty();
@@ -282,7 +282,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
 
         /// Not saved. Return buffered.
         out_blocks.swap(buffer);
-        buffer.reserve(out_blocks.size() * reserve_coef);
+        buffer.reserve(static_cast<size_t>(out_blocks.size() * reserve_coefficient));
         current_bytes = 0;
     }
 

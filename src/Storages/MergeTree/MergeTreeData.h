@@ -970,7 +970,7 @@ public:
 
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
-    virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed);
+    virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
     virtual String getTableSharedID() const { return ""; }
 
@@ -1231,7 +1231,7 @@ protected:
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
     /// Makes backup entries to backup the parts of this table.
-    static BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup);
+    BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
