@@ -1197,7 +1197,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 continue;
 
             AggregateFunctionInstruction * inst = aggregate_instructions + i;
-            size_t arguments_size = inst->that->getArgumentTypes().size();
+            size_t arguments_size = inst->that->getArgumentTypes().size(); // NOLINT
 
             for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
