@@ -2974,7 +2974,7 @@ const IHostContextPtr & Context::getHostContext() const
 }
 
 
-std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
+std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
 {
     auto lock = getLock();
 
