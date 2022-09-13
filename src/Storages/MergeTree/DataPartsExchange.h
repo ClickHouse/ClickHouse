@@ -53,6 +53,7 @@ private:
     MergeTreeData::DataPart::Checksums sendPartFromDiskRemoteMeta(
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
+        bool send_part_id,
         const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections = {});
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
