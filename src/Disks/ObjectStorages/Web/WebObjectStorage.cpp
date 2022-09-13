@@ -188,7 +188,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl));
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl), read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
     }
 }
