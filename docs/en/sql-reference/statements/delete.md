@@ -35,3 +35,9 @@ An [alternative way to delete rows](./alter/delete.md) in ClickHouse is `ALTER T
 Even though deletes are becoming more lightweight in ClickHouse, they should still not be used as aggressively as on OLTP system. Ligthweight deletes are currently efficient for wide parts, but for compact parts they can be a heavyweight operation, and it may be better to use `ALTER TABLE` for some scenarios.
 :::
 
+:::note
+DELETE FROM requires the ALTER DELETE privledge:
+```sql
+grant ALTER DELETE ON db.table to username;
+```
+:::
