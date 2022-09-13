@@ -319,7 +319,7 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    UInt32 getSessionUptime() const { return session_uptime.elapsedSeconds(); }
+    UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
 private:
     friend class EphemeralNodeHolder;

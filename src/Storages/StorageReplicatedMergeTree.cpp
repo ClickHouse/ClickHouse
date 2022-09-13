@@ -822,6 +822,18 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
     } while (code == Coordination::Error::ZBADVERSION);
 }
 
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperIfTableShutDown() const
+{
+    zkutil::ZooKeeperPtr maybe_new_zookeeper;
+    if (zookeeper_name == default_zookeeper_name)
+        maybe_new_zookeeper = getContext()->getZooKeeper();
+    else
+        maybe_new_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+    maybe_new_zookeeper->sync(zookeeper_path);
+    return maybe_new_zookeeper;
+}
+
 void StorageReplicatedMergeTree::drop()
 {
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
@@ -833,11 +845,7 @@ void StorageReplicatedMergeTree::drop()
     {
         /// Table can be shut down, restarting thread is not active
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
-        zkutil::ZooKeeperPtr zookeeper;
-        if (zookeeper_name == default_zookeeper_name)
-            zookeeper = getContext()->getZooKeeper();
-        else
-            zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+        zkutil::ZooKeeperPtr zookeeper = getZooKeeperIfTableShutDown();
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
@@ -7569,7 +7577,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
 
     if (!part.data_part_storage || !part.data_part_storage->supportZeroCopyReplication())
     {
-        LOG_TRACE(log, "Part {} is not stored on zero-copy replicaed disk, blobs can be removed", part.name);
+        LOG_TRACE(log, "Part {} is not stored on zero-copy replicated disk, blobs can be removed", part.name);
         return std::make_pair(true, NameSet{});
     }
 
@@ -7594,7 +7602,16 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         return std::make_pair(true, NameSet{});
     }
 
-    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), getZooKeeper(), *getSettings(), log,
+    /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
+    /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
+    /// context.
+    zkutil::ZooKeeperPtr zookeeper;
+    if (shutdown_called.load())
+        zookeeper = getZooKeeperIfTableShutDown();
+    else
+        zookeeper = getZooKeeper();
+
+    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log,
         zookeeper_path);
 }
 
