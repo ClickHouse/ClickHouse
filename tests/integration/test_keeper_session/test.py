@@ -189,3 +189,5 @@ def test_session_close_shutdown(started_cluster):
     node2.stop_clickhouse()
 
     assert node1_zk.exists(eph_node) == None
+
+    node2.start_clickhouse()
