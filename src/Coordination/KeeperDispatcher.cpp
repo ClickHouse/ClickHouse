@@ -376,13 +376,15 @@ void KeeperDispatcher::shutdown()
                 // send to leader CLOSE requests for active sessions
                 for (const auto & [session, response] : session_to_response_callback)
                 {
-                    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
-                    KeeperStorage::RequestForSession request_info;
-                    request_info.request = request;
                     using namespace std::chrono;
-                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-                    request_info.session_id = session;
+                    KeeperStorage::RequestForSession request_info
+                    {
+                        .session_id = session,
+                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
+                        .request = std::move(request),
+                    };
 
                     close_requests.push_back(std::move(request_info));
                 }
@@ -461,13 +463,15 @@ void KeeperDispatcher::sessionCleanerTask()
                     LOG_INFO(log, "Found dead session {}, will try to close it", dead_session);
 
                     /// Close session == send close request to raft server
-                    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
-                    KeeperStorage::RequestForSession request_info;
-                    request_info.request = request;
                     using namespace std::chrono;
-                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-                    request_info.session_id = dead_session;
+                    KeeperStorage::RequestForSession request_info
+                    {
+                        .session_id = dead_session,
+                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
+                        .request = std::move(request),
+                    };
                     {
                         std::lock_guard lock(push_request_mutex);
                         if (!requests_queue->push(std::move(request_info)))
