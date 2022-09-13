@@ -67,7 +67,6 @@ if (USE_STATIC_LIBRARIES)
     add_library(_c-ares STATIC ${SRCS})
     target_compile_definitions(_c-ares PUBLIC CARES_STATICLIB)
 else()
-    # TODO test
     add_library(_c-ares SHARED ${SRCS})
     target_compile_definitions(_c-ares PUBLIC CARES_BUILDING_LIBRARY)
 endif()
@@ -79,7 +78,7 @@ target_include_directories(_c-ares SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
 )
 
-# Platform-specific include directories. The original build system does lots of check to eventually generate two header files with defines:
+# Platform-specific include directories. The original build system does a lot of checks to eventually generate two header files with defines:
 # ares_build.h and ares_config.h. To update, run the original CMake build in c-ares for each platform and copy the headers into the
 # platform-specific folder.
 # For the platform-specific compile definitions, see c-ares top-level CMakeLists.txt.
