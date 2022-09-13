@@ -2,6 +2,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 
@@ -47,9 +48,11 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
     auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
+    auto * load_marks_threadpool = reader_settings.read_settings.load_marks_asynchronously ? &read_info->getContext()->getLoadMarksThreadpool() : nullptr;
+
     return std::make_unique<MergeTreeReaderCompact>(
         read_info, columns_to_read, metadata_snapshot, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings,
+        mark_cache, mark_ranges, reader_settings, load_marks_threadpool,
         avg_value_size_hints, profile_callback);
 }
 
@@ -93,7 +96,7 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
 
 void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const NamesAndTypesList & columns_, const DataPartStoragePtr & data_part_storage_)
+    size_t columns_count, const DataPartStoragePtr & data_part_storage_)
 {
     if (!index_granularity_info_.mark_type.adaptive)
         throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary.", ErrorCodes::NOT_IMPLEMENTED);
@@ -111,13 +114,13 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     while (!buffer->eof())
     {
         /// Skip offsets for columns
-        buffer->seek(columns_.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
+        buffer->seek(columns_count * sizeof(MarkInCompressedFile), SEEK_CUR);
         size_t granularity;
         readIntBinary(granularity, *buffer);
         index_granularity_.appendMark(granularity);
     }
 
-    if (index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes(columns_.size()) != marks_file_size)
+    if (index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes(columns_count) != marks_file_size)
         throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
     index_granularity_.setInitialized();
@@ -128,7 +131,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns, data_part_storage);
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), data_part_storage);
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
