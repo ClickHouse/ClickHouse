@@ -500,23 +500,18 @@ enum class OperatorType
     Lambda
 };
 
-/** Operator class stores parameters of the operator:
+/** Operator struct stores parameters of the operator:
   *  - function_name  name of the function that operator will create
   *  - priority       priority of the operator relative to the other operators
   *  - arity          the amount of arguments that operator will consume
   *  - type           type of the operator that defines its behaviour
   */
-class Operator
+struct Operator
 {
-public:
     Operator() = default;
 
-    Operator(String function_name_,
-             Int32 priority_,
-             Int32 arity_ = 2,
-             OperatorType type_ = OperatorType::None) : type(type_), priority(priority_), arity(arity_), function_name(function_name_)
-    {
-    }
+    Operator(String function_name_, Int32 priority_, Int32 arity_ = 2, OperatorType type_ = OperatorType::None)
+        : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
 
     OperatorType type;
     Int32 priority;
@@ -1814,8 +1809,8 @@ public:
         /// view(SELECT ...)
         /// viewIfPermitted(SELECT ... ELSE func(...))
         ///
-        /// 0. Parse the SELECT query and 'ELSE' keyword if needed
-        ///  
+        /// 0. Parse the SELECT query and if 'if_permitted' parse 'ELSE' keyword (-> 1) else (finished)
+        /// 1. Parse closing token
 
         if (state == 0)
         {
@@ -1846,13 +1841,6 @@ public:
 
             if (!ParserKeyword{"ELSE"}.ignore(pos, expected))
                 return false;
-
-            ///auto test_pos = pos;
-
-            // Check whether next thing is a function
-            // if (!ParserIdentifier(true).parse(pos, ))
-            // if (!ParserWithOptionalAlias{std::make_unique<ParserFunction>(true, true), true}.parse(pos, else_ast, expected))
-            //     return false;
 
             state = 1;
             return true;
@@ -2244,7 +2232,7 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 {
     Action next = Action::OPERAND;
 
-    std::vector<std::unique_ptr<Layer>> layers;
+    Layers layers;
     layers.push_back(std::move(start));
 
     while (true)
