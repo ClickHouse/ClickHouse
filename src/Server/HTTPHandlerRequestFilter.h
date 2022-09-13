@@ -39,7 +39,7 @@ static inline bool checkExpression(std::string_view match_str, const std::pair<S
     return match_str == expression.first;
 }
 
-static inline auto methodsFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
+static inline auto methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
 {
     std::vector<String> methods;
     Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
@@ -63,7 +63,7 @@ static inline auto getExpression(const std::string & expression)
     return std::make_pair(expression, compiled_regex);
 }
 
-static inline auto urlFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
+static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
 {
     return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
     {
@@ -74,7 +74,7 @@ static inline auto urlFilter(Poco::Util::AbstractConfiguration & config, const s
     };
 }
 
-static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, const std::string & prefix) /// NOLINT
+static inline auto headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix) /// NOLINT
 {
     std::unordered_map<String, std::pair<String, CompiledRegexPtr>> headers_expression;
     Poco::Util::AbstractConfiguration::Keys headers_name;
