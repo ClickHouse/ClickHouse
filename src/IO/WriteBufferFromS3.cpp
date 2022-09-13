@@ -436,7 +436,8 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
     else
         throw S3Exception(
             outcome.GetError().GetErrorType(),
-            "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+            "Exception: {}, Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+            outcome.GetError().GetExceptionName(),
             outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
 }
 
