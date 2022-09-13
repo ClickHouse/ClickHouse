@@ -166,12 +166,6 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
-    template <typename... Args>
-    static std::shared_ptr<ContextAccess> make(Args &&... args)
-    {
-        return std::make_shared<ContextAccess>(std::forward<Args>(args)...);
-    }
-
     ~ContextAccess();
 
 private:

@@ -14,6 +14,7 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -55,7 +56,7 @@ public:
     bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
+    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -96,9 +97,10 @@ private:
     {
         Job job;
         int priority;
+        DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
-        JobWithPriority(Job job_, int priority_)
-            : job(job_), priority(priority_) {}
+        JobWithPriority(Job job_, int priority_, const DB::OpenTelemetry::TracingContextOnThread& thread_trace_context_)
+            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_) {}
 
         bool operator< (const JobWithPriority & rhs) const
         {
@@ -111,7 +113,7 @@ private:
     std::exception_ptr first_exception;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
+    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -154,14 +156,18 @@ public:
 
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
+  *
+  * NOTE: User code should use 'ThreadFromGlobalPool' declared below instead of directly using this class.
+  *
   */
-class ThreadFromGlobalPool : boost::noncopyable
+template <bool propagate_opentelemetry_context = true>
+class ThreadFromGlobalPoolImpl : boost::noncopyable
 {
 public:
-    ThreadFromGlobalPool() = default;
+    ThreadFromGlobalPoolImpl() = default;
 
     template <typename Function, typename... Args>
-    explicit ThreadFromGlobalPool(Function && func, Args &&... args)
+    explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
         : state(std::make_shared<State>())
     {
         /// NOTE:
@@ -185,15 +191,19 @@ public:
             /// before sending signal that permits to join this thread.
             DB::ThreadStatus thread_status;
             std::apply(function, arguments);
-        });
+        },
+        0, // default priority
+        0, // default wait_microseconds
+        propagate_opentelemetry_context
+        );
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPoolImpl & operator=(ThreadFromGlobalPoolImpl && rhs) noexcept
     {
         if (initialized())
             abort();
@@ -201,7 +211,7 @@ public:
         return *this;
     }
 
-    ~ThreadFromGlobalPool()
+    ~ThreadFromGlobalPoolImpl()
     {
         if (initialized())
             abort();
@@ -233,7 +243,7 @@ public:
         return true;
     }
 
-private:
+protected:
     struct State
     {
         /// Should be atomic() because of possible concurrent access between
@@ -254,6 +264,28 @@ private:
     }
 };
 
+/// Schedule jobs/tasks on global thread pool without implicit passing tracing context on current thread to underlying worker as parent tracing context.
+///
+/// If you implement your own job/task scheduling upon global thread pool or schedules a long time running job in a infinite loop way,
+/// you need to use class, or you need to use ThreadFromGlobalPool below.
+///
+/// See the comments of ThreadPool below to know how it works.
+using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
+
+/// An alias of thread that execute jobs/tasks on global thread pool by implicit passing tracing context on current thread to underlying worker as parent tracing context.
+/// If jobs/tasks are directly scheduled by using APIs of this class, you need to use this class or you need to use class above.
+using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
+///
+/// The template parameter of ThreadFromGlobalPool is set to false to disable tracing context propagation to underlying worker.
+/// Because ThreadFromGlobalPool schedules a job upon GlobalThreadPool, this means there will be two workers to schedule a job in 'ThreadPool',
+/// one is at GlobalThreadPool level, the other is at ThreadPool level, so tracing context will be initialized on the same thread twice.
+///
+/// Once the worker on ThreadPool gains the control of execution, it won't return until it's shutdown,
+/// which means the tracing context initialized at underlying worker level won't be delete for a very long time.
+/// This would cause wrong context for further jobs scheduled in ThreadPool.
+///
+/// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
+///
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
