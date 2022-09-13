@@ -204,7 +204,7 @@ public:
         /// Of from config - it can be changed with config reload.
         bool static_configuration = true;
 
-        /// Headers from ast is a part of static confuguration.
+        /// Headers from ast is a part of static configuration.
         HeaderCollection headers_from_ast;
 
         S3Configuration(
