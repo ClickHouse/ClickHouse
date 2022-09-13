@@ -516,7 +516,7 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(StringRef path) const
 {
-    if (auto node_it = nodes.find(std::string{path}); node_it != nodes.end())
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
         return node_it->second.node;
 
     return tryGetNodeFromStorage(path);
@@ -524,7 +524,7 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(St
 
 Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) const
 {
-    if (auto node_it = nodes.find(std::string{path}); node_it != nodes.end())
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
         return node_it->second.acls;
 
     auto node_it = storage.container.find(path);
@@ -830,7 +830,9 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
 void KeeperStorage::unregisterEphemeralPath(int64_t session_id, const std::string & path)
 {
     auto ephemerals_it = ephemerals.find(session_id);
-    assert(ephemerals_it != ephemerals.end());
+    if (ephemerals_it == ephemerals.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path");
+
     ephemerals_it->second.erase(path);
     if (ephemerals_it->second.empty())
         ephemerals.erase(ephemerals_it);
@@ -1825,6 +1827,11 @@ void KeeperStorage::finalize()
     session_expiry_queue.clear();
 }
 
+bool KeeperStorage::isFinalized() const
+{
+    return finalized;
+}
+
 
 class KeeperStorageRequestProcessorsFactory final : private boost::noncopyable
 {
@@ -1892,7 +1899,7 @@ UInt64 KeeperStorage::calculateNodesDigest(UInt64 current_digest, const std::vec
     if (!keeper_context->digest_enabled)
         return current_digest;
 
-    std::unordered_map<std::string, std::shared_ptr<Node>> updated_nodes;
+    std::unordered_map<std::string_view, std::shared_ptr<Node>> updated_nodes;
 
     for (const auto & delta : new_deltas)
     {
