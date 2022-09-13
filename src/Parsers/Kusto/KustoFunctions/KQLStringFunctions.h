@@ -2,6 +2,8 @@
 
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
+#include <base/extended_types.h>
+
 namespace DB
 {
 class Base64EncodeToString : public IParserKQLFunction
@@ -63,7 +65,7 @@ protected:
 class ExtractJson : public IParserKQLFunction
 {
 protected:
-    const char * getName() const override { return "extractjson()"; }
+    const char * getName() const override { return "extract_json()"; }
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 

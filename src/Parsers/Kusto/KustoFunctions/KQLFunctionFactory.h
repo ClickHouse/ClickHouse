@@ -49,7 +49,7 @@ namespace DB
         countof,
         extract,
         extract_all,
-        extractjson,
+        extract_json,
         has_any_index,
         indexof,
         isempty,

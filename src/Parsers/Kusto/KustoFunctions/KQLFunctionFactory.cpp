@@ -62,7 +62,7 @@ namespace DB
         {"countof", KQLFunctionValue::countof},
         {"extract", KQLFunctionValue::extract},
         {"extract_all", KQLFunctionValue::extract_all},
-        {"extractjson", KQLFunctionValue::extractjson},
+        {"extract_json", KQLFunctionValue::extract_json},
         {"has_any_index", KQLFunctionValue::has_any_index},
         {"indexof", KQLFunctionValue::indexof},
         {"isempty", KQLFunctionValue::isempty},
@@ -360,7 +360,7 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
         case KQLFunctionValue::extract_all:
             return std::make_unique<ExtractAll>();
 
-        case KQLFunctionValue::extractjson:
+        case KQLFunctionValue::extract_json:
             return std::make_unique<ExtractJson>();
 
         case KQLFunctionValue::has_any_index:

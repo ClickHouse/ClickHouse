@@ -165,5 +165,45 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         {
             "print bin(datetime(1970-05-11 13:45:07.456345672), 1microseconds)",
             "SELECT toDateTime64(toInt64(toFloat64(parseDateTime64BestEffortOrNull('1970-05-11 13:45:07.456345672', 9, 'UTC')) / 0.000001) * 0.000001, 9, 'UTC')"
+        },
+        {
+
+            "print parse_version('1.2.3.40')",
+            "SELECT toInt128('10000000200000003000000040')"
+        },
+        {
+            "print parse_version('1')",
+            "SELECT toInt128('1000000000000000000000000')"
+        },
+        {
+            "print parse_json( dynamic([1, 2, 3]))",
+            "SELECT [1, 2, 3]"
+        },
+        {
+            "print extract_json( '$.a' , '{\"a\":123, \"b\":\"{\"c\":456}\"}' , typeof(long))",
+            "SELECT accurateCastOrNull(JSON_VALUE('{\"a\":123, \"b\":\"{\"c\":456}\"}', '$.a'), 'Int64')"
+
+        },
+        {
+            "print parse_command_line('echo \"hello world!\" print$?', \"Windows\")",
+            "SELECT splitByChar(' ', 'echo \"hello world!\" print$?')"
+        },
+        {
+            "print reverse(123)",
+            "SELECT reverse(accurateCastOrNull(123, 'String'))"
+        },
+        {
+            "print reverse(123.34)",
+            "SELECT reverse(accurateCastOrNull(123.34, 'String'))"
+        },
+        {
+            "print reverse('clickhouse')",
+            "SELECT reverse(accurateCastOrNull('clickhouse', 'String'))"
+        },
+        {
+            "print result=parse_csv('aa,b,cc')",
+            "SELECT splitByChar(',', substring('aa,b,cc', 1, position('aa,b,cc', '\\n') - 1)) AS result"
+
         }
-})));
+})));   
+
