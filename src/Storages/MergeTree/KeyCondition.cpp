@@ -116,10 +116,20 @@ static void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuf
 {
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT): [[fallthrough]];
-        case (ActionsDAG::ActionType::COLUMN):
+        case (ActionsDAG::ActionType::INPUT):
             writeString(node.result_name, out);
             break;
+        case (ActionsDAG::ActionType::COLUMN):
+        {
+            /// If it was created from ASTLiteral, then result_name can be an alias.
+            /// We need to convert value back to string here.
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
+            /// It may be possible that column is ColumnSet
+            else
+                writeString(node.result_name, out);
+            break;
+        }
         case (ActionsDAG::ActionType::ALIAS):
             appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
             break;
@@ -961,7 +971,7 @@ KeyCondition::KeyCondition(
     {
         auto inverted_dag = cloneASTWithInversionPushDown(std::move(dag_nodes.nodes), context);
 
-        // std::cerr << "========== inverted dag: " << inverted_dag->dumpDAG() << std::endl;
+        std::cerr << "========== inverted dag: " << inverted_dag->dumpDAG() << std::endl;
 
         Block empty;
         for (const auto * node : inverted_dag->getOutputs())
