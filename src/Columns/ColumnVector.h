@@ -408,18 +408,21 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 template <typename Container, typename Type>
 inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
 {
-    const unsigned long long MASK64 = 0xffffffffffffffff;
+    const UInt64 MASK64 = 0xffffffffffffffff;
     const UInt8 * data_pos = reinterpret_cast<const UInt8 *>(data.data());
     const UInt8 * indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
     UInt8 * res_pos = reinterpret_cast<UInt8 *>(res_data.data());
     size_t data_size = data.size();
     size_t pos = 0;
     size_t limit64 = limit & ~63;
+
     if (data_size <= 64)
     {
+        /// one single mask load for table size <= 64
         __mmask64 last_mask = MASK64 >> (64 - data_size);
         __m512i table1 = _mm512_maskz_loadu_epi8(last_mask, data_pos);
 
+        /// 64 bytes table lookup using one single permutexvar_epi8
         while (pos < limit64)
         {
             __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
@@ -427,6 +430,7 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
             _mm512_storeu_epi8(res_pos + pos, out);
             pos += 64;
         }
+        /// tail handling
         if (limit > limit64)
         {
             __mmask64 tail_mask = MASK64 >> (limit64 + 64 - limit);
@@ -437,10 +441,12 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
     }
     else if (data_size <= 128)
     {
+        /// table size (64, 128] requires 2 zmm load
         __mmask64 last_mask = MASK64 >> (128 - data_size);
         __m512i table1 = _mm512_loadu_epi8(data_pos);
         __m512i table2 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 64);
 
+        /// 128 bytes table lookup using one single permute2xvar_epi8
         while (pos < limit64)
         {
             __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
@@ -469,6 +475,7 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
         __m512i table3, table4;
         if (data_size <= 192)
         {
+            /// only 3 tables need to load if size <= 192
             __mmask64 last_mask = MASK64 >> (192 - data_size);
             table3 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 128);
             table4 = _mm512_setzero_si512();
@@ -480,6 +487,7 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
             table4 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 192);
         }
 
+        /// 256 bytes table lookup can use: 2 permute2xvar_epi8 plus 1 blender with MSB
         while (pos < limit64)
         {
             __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
@@ -515,6 +523,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 #if USE_MULTITARGET_CODE
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
+        /// VBMI optimization only applicable for (U)Int8 types
         if (isArchSupported(TargetArch::AVX512VBMI))
         {
             TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
