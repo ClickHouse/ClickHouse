@@ -5,11 +5,16 @@
 #include <format>
 #include <cstdlib>
 #include <Parsers/CommonParsers.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
+#include <Poco/String.h>
+
 
 namespace DB::ErrorCodes
 {
 extern const int SYNTAX_ERROR;
 extern const int UNKNOWN_TYPE;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace DB
@@ -240,9 +245,54 @@ bool ExtractAll::convertImpl(String & out,IParser::Pos & pos)
 
 bool ExtractJson::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    const String json_datapath = getConvertedArgument(fn_name, pos);
+    ++pos;
+    const String json_datasource = getConvertedArgument(fn_name, pos);
+    ++pos;
+    String datatype = "String";
+    datatype = getConvertedArgument(fn_name, pos);
+    if (!datatype.empty())
+    {   
+        std::unordered_map<String,String> type_cast =
+        {   {"bool", "Boolean"},
+                                                                                                                                                                                                                                                                                                                                                {"boolean", "Boolean"},
+            {"datetime", "DateTime"},
+            {"date", "DateTime"},
+            {"dynamic", "Array"},
+            {"guid", "UUID"},
+            {"int", "Int32"},
+            {"long", "Int64"},
+            {"real", "Float64"},
+            {"double", "Float64"},
+            {"string", "String"},
+            {"decimal", "Decimal"}
+        };
+
+        Tokens token_type(datatype.c_str(), datatype.c_str() + datatype.size());
+        IParser::Pos pos_type(token_type, pos.max_depth);
+        ParserKeyword s_kql("typeof");
+        Expected expected;
+
+        if (s_kql.ignore(pos_type, expected))
+        {
+            ++pos_type;
+            auto kql_type= String(pos_type->begin,pos_type->end);
+            if (type_cast.find(kql_type) == type_cast.end())
+                return false;
+            datatype = type_cast[kql_type];
+        }
+    }    
+    const auto json_val = std::format("JSON_VALUE({0},{1})" , json_datasource , json_datapath);
+
+    out = std::format("accurateCastOrNull({},'{}')" , json_val  , datatype );
+   // ++pos;
+    return true;
+
 }
 
 bool HasAnyIndex::convertImpl(String & out,IParser::Pos & pos)
@@ -328,7 +378,22 @@ bool IsNotNull::convertImpl(String & out,IParser::Pos & pos)
 
 bool ParseCommandLine::convertImpl(String & out,IParser::Pos & pos)
 {
-    return directMapping(out,pos,"isNull");
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    const String json_string = getConvertedArgument(fn_name, pos);
+
+    ++pos;
+    const String type = getConvertedArgument(fn_name, pos);   
+
+    if (Poco::toLower(type) != "'windows'")
+        throw Exception("Supported type argument is windows for  " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+    
+    out = std::format("splitByChar(' ' , {})", json_string);
+
+    return true;
 }
 
 bool IsNull::convertImpl(String & out,IParser::Pos & pos)
@@ -338,16 +403,40 @@ bool IsNull::convertImpl(String & out,IParser::Pos & pos)
 
 bool ParseCSV::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String csv_string = getConvertedArgument(fn_name, pos);
+    out = std::format("splitByChar(',' , substring({0} , 1 , position({0} ,'\n') -1 ))", csv_string);
+
+    return true;
+
 }
 
 bool ParseJson::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    if (String(pos->begin, pos->end) == "dynamic" )
+    {
+        --pos;
+        auto arg = getArgument(fn_name,pos);
+        auto result =  kqlCallToExpression("dynamic", {arg}, pos.max_depth);
+        out = std::format("{}" , result);
+    }
+    else
+    {
+        auto arg = getConvertedArgument(fn_name, pos);
+        out = std::format( "if(isValidJSON({0}) , JSON_QUERY({0}, '$') , toJSONString({0}))" , arg);
+
+    }
+
+    return true;
 }
 
 bool ParseURL::convertImpl(String & out,IParser::Pos & pos)
@@ -391,9 +480,59 @@ bool ParseURLQuery::convertImpl(String & out,IParser::Pos & pos)
 
 bool ParseVersion::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    
+    String arg ;
+    ++pos;
+
+    arg = getConvertedArgument(fn_name, pos);
+    if ( arg.front() == '\"' || arg.front() == '\'' )
+    {
+        arg.erase( 0, 1 ); // erase the first quote
+        arg.erase( arg.size() - 1 ); // erase the last quote
+    }
+
+    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha);
+    if(is_string)
+    {
+        out = "NULL";
+        return true;
+    }
+    
+    std::vector<String> tokens(4 ,"0");
+    boost::split(tokens, arg, boost::is_any_of("."));
+
+    if(tokens.size() >4)
+    {
+        out = "NULL";
+        return true;
+    }
+    
+    while(tokens.size() < 4)
+    {
+        tokens.push_back("0");
+    }
+
+    for(int i = 0;i<4;i++)
+    {
+        if(std::stoi(tokens[i]) > 99999999 )
+        {
+            out = "NULL";
+            return true;
+        }
+    }
+    
+    tokens[0] = tokens[0] + String(8 - tokens[0].length(), '0');
+    tokens[1] = tokens[1] + String(8 - tokens[1].length(), '0');
+    tokens[2] = tokens[2] + String(8 - tokens[2].length(), '0');
+
+    auto result = tokens[0] + tokens[1] + tokens[2] + tokens[3];
+
+    out = std::format("toInt128('{}')", result);
+    return true;
 }
 
 bool ReplaceRegex::convertImpl(String & out,IParser::Pos & pos)
@@ -403,9 +542,22 @@ bool ReplaceRegex::convertImpl(String & out,IParser::Pos & pos)
 
 bool Reverse::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+
+    //if(pos->type != TokenType::QuotedIdentifier || pos->type != TokenType::StringLiteral)
+   // {
+        
+        auto arg = getConvertedArgument(fn_name, pos);
+        
+        out = std::format("reverse(accurateCastOrNull({} , 'String'))" , arg);
+    //}
+
+    return true;
+   
 }
 
 bool Split::convertImpl(String & out,IParser::Pos & pos)
