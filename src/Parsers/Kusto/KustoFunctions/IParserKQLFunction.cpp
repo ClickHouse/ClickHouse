@@ -21,6 +21,7 @@
 #include <pcg_random.hpp>
 
 #include <format>
+#include <stack>
 
 namespace DB::ErrorCodes
 {
@@ -188,17 +189,17 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
             magic_enum::enum_name(argument_state));
     
     String expression;
-    std::vector<DB::TokenType> scopes;
+    std::stack<DB::TokenType> scopes;
     while (!pos->isEnd() && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
     {
         if (const auto token_type = pos->type; isOpeningBracket(token_type))
-            scopes.push_back(token_type);
+            scopes.push(token_type);
         else if (isClosingBracket(token_type))
         {
-            if (scopes.empty() || determineClosingPair(scopes.back()) != token_type)
+            if (scopes.empty() || determineClosingPair(scopes.top()) != token_type)
                 throw Exception(DB::ErrorCodes::SYNTAX_ERROR, "Unmatched token: {} when parsing {}", magic_enum::enum_name(token_type), function_name);
              
-            scopes.pop_back();
+            scopes.pop();
         }
         
         expression.append(pos->begin, pos->end);
