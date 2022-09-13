@@ -395,9 +395,18 @@ protected:
     Container data;
 };
 
+DECLARE_DEFAULT_CODE(
+template <typename Container, typename Type>
+inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
+{
+    for (size_t i = 0; i < limit; ++i)
+        res_data[i] = data[indexes[i]];
+}
+);
+
 DECLARE_AVX512VBMI_SPECIFIC_CODE(
 template <typename Container, typename Type>
-void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
+inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
 {
     const unsigned long long MASK64 = 0xffffffffffffffff;
     const UInt8 * data_pos = reinterpret_cast<const UInt8 *>(data.data());
@@ -513,8 +522,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
         }
     }
 #endif
-    for (size_t i = 0; i < limit; ++i)
-        res_data[i] = data[indexes[i]];
+    TargetSpecific::Default::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
 
     return res;
 }
