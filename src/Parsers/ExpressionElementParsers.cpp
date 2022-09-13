@@ -199,7 +199,7 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
     auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
-    return makeASTFunction("CAST", expr_ast, type_literal);
+    return makeASTFunction("CAST", expr_ast, std::move(type_literal));
 }
 
 
