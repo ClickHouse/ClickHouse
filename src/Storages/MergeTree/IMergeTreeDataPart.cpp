@@ -320,6 +320,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     minmax_idx = std::make_shared<MinMaxIndex>();
 
+    initializeIndexGranularityInfo();
     initializePartMetadataManager();
 }
 
@@ -339,12 +340,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part(parent_part_)
     , use_metadata_cache(storage.use_metadata_cache)
 {
-    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(data_part_storage_);
-    if (mrk_ext)
-        index_granularity_info = MergeTreeIndexGranularityInfo(storage_, MarkType{*mrk_ext});
-    else
-        index_granularity_info = MergeTreeIndexGranularityInfo(storage_, part_type_);
-
     if (parent_part)
         state = MergeTreeDataPartState::Active;
     incrementStateMetric(state);
@@ -352,6 +347,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     minmax_idx = std::make_shared<MinMaxIndex>();
 
+    initializeIndexGranularityInfo();
     initializePartMetadataManager();
 }
 
@@ -1436,6 +1432,15 @@ void IMergeTreeDataPart::initializePartMetadataManager()
 #else
         metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 #endif
+}
+
+void IMergeTreeDataPart::initializeIndexGranularityInfo()
+{
+    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(data_part_storage);
+    if (mrk_ext)
+        index_granularity_info = MergeTreeIndexGranularityInfo(storage, MarkType{*mrk_ext});
+    else
+        index_granularity_info = MergeTreeIndexGranularityInfo(storage, part_type);
 }
 
 void IMergeTreeDataPart::remove() const
