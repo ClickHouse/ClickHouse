@@ -2,13 +2,10 @@
 
 #include <Core/Block.h>
 
-
-
 namespace local_engine
 {
 class BlockIterator
 {
-
 protected:
     void checkNextValid();
     // make current block available
@@ -24,4 +21,3 @@ private:
     bool consumed = true;
 };
 }
-

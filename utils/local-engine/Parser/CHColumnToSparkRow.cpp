@@ -10,12 +10,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int UNKNOWN_FUNCTION;
 }
 }
 

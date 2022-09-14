@@ -2,6 +2,7 @@ file(GLOB protobuf_files
         substrait/*.proto
         substrait/extensions/*.proto
         )
+
 FOREACH(FIL ${protobuf_files})
     file(RELATIVE_PATH FIL_RELATIVE ${ClickHouse_SOURCE_DIR}/utils/local-engine/proto/ ${FIL})
     string(REGEX REPLACE "\\.proto" "" FILE_NAME ${FIL_RELATIVE})
@@ -15,18 +16,15 @@ add_custom_target(
         DEPENDS protoc
         COMMENT "Running cpp protocol buffer compiler"
         VERBATIM )
+
 set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
 
-include_directories(${Protobuf_INCLUDE_DIR})
-
 set_source_files_properties(${SUBSTRAIT_SRCS} PROPERTIES GENERATED TRUE)
+
 add_library(substrait ${SUBSTRAIT_SRCS})
-target_compile_options(substrait PUBLIC
-        -Wno-error
-        -fPIC
-        )
+target_compile_options(substrait PUBLIC -fPIC -Wno-reserved-identifier -Wno-deprecated)
 add_dependencies(substrait generate_substrait)
-target_include_directories(substrait PRIVATE ${PROTOBUF_INCLUDE_DIR})
-target_include_directories(substrait PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/)
+target_include_directories(substrait SYSTEM BEFORE PRIVATE ${PROTOBUF_INCLUDE_DIR})
+target_include_directories(substrait SYSTEM BEFORE PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(substrait _libprotobuf)
 

@@ -8,11 +8,8 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Common/MergeTreeTool.h>
 
-
-
 using namespace DB;
 using namespace local_engine;
-
 
 TEST(TestBatchParquetFileSource, blob)
 {
@@ -29,7 +26,6 @@ TEST(TestBatchParquetFileSource, blob)
     auto builder = std::make_unique<QueryPipelineBuilder>();
     auto files = std::make_shared<FilesInfo>();
     files->files = {"wasb://libch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet"};
-    //    files->files = {"file:///home/saber/Downloads/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet"};
 
     const auto * type_string = "columns format version: 1\n"
                                "15 columns:\n"
@@ -77,7 +73,6 @@ TEST(TestBatchParquetFileSource, blob)
     ASSERT_TRUE(total_rows > 0);
     std::cerr << "rows:" << total_rows << std::endl;
 }
-
 
 TEST(TestBatchParquetFileSource, s3)
 {
@@ -194,7 +189,6 @@ TEST(TestBatchParquetFileSource, local_file)
     std::cerr << "rows:" << total_rows << std::endl;
     ASSERT_TRUE(total_rows == 59986052);
 }
-
 
 TEST(TestWrite, MergeTreeWriteTest)
 {

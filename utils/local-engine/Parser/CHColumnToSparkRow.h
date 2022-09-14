@@ -5,7 +5,6 @@
 
 namespace local_engine
 {
-
 int64_t calculateBitSetWidthInBytes(int32_t num_fields);
 
 class CHColumnToSparkRow;

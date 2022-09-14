@@ -1,21 +1,22 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <base/shared_ptr_helper.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
+#include <base/shared_ptr_helper.h>
 
-using namespace DB;
-using namespace std;
 namespace local_engine
 {
+using namespace DB;
+
 class CustomMergeTreeSink;
 
 class CustomStorageMergeTree final : public shared_ptr_helper<CustomStorageMergeTree>, public MergeTreeData
 {
     friend struct shared_ptr_helper<CustomStorageMergeTree>;
     friend class CustomMergeTreeSink;
+
 public:
     CustomStorageMergeTree(
         const StorageID & table_id_,
@@ -27,8 +28,8 @@ public:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag = false);
-    string getName() const override;
-    vector<MergeTreeMutationStatus> getMutationsStatus() const override;
+    std::string getName() const override;
+    std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & executor) override;
 
     MergeTreeDataWriter writer;
@@ -38,7 +39,7 @@ private:
     SimpleIncrement increment;
 
     void startBackgroundMovesIfNeeded() override;
-    unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
+    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
 protected:
     void dropPartNoWaitNoThrow(const String & part_name) override;
@@ -50,8 +51,6 @@ protected:
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) override;
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
-
 };
 
 }
-

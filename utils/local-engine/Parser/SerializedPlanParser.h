@@ -1,71 +1,70 @@
 #pragma once
 
-#include <substrait/plan.pb.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ISourceStep.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <Storages/IStorage.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <QueryPipeline/Pipe.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Parser/CHColumnToSparkRow.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
-#include <arrow/ipc/writer.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/CustomStorageMergeTree.h>
+#include <Storages/IStorage.h>
 #include <Storages/SourceFromJavaIter.h>
-#include <Parser/CHColumnToSparkRow.h>
+#include <arrow/ipc/writer.h>
+#include <substrait/plan.pb.h>
 #include <Common/BlockIterator.h>
 
 namespace local_engine
 {
+static const std::map<std::string, std::string> SCALAR_FUNCTIONS
+    = {{"is_not_null", "isNotNull"},
+       {"is_null", "isNull"},
+       {"gte", "greaterOrEquals"},
+       {"gt", "greater"},
+       {"lte", "lessOrEquals"},
+       {"lt", "less"},
+       {"equal", "equals"},
 
-static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
-    {"is_not_null","isNotNull"},
-    {"is_null","isNull"},
-    {"gte","greaterOrEquals"},
-    {"gt", "greater"},
-    {"lte", "lessOrEquals"},
-    {"lt", "less"},
-    {"equal", "equals"},
+       {"and", "and"},
+       {"or", "or"},
+       {"not", "not"},
+       {"xor", "xor"},
 
-    {"and", "and"},
-    {"or", "or"},
-    {"not", "not"},
-    {"xor", "xor"},
+       {"TO_DATE", "toDate"},
+       {"extract", ""},
+       {"cast", ""},
+       {"alias", "alias"},
 
-    {"TO_DATE", "toDate"},
-    {"extract", ""},
-    {"cast", ""},
-    {"alias", "alias"},
+       {"subtract", "minus"},
+       {"multiply", "multiply"},
+       {"add", "plus"},
+       {"divide", "divide"},
+       {"modulus", "modulo"},
 
-    {"subtract", "minus"},
-    {"multiply", "multiply"},
-    {"add", "plus"},
-    {"divide", "divide"},
-    {"modulus", "modulo"},
+       {"like", "like"},
+       {"not_like", "notLike"},
+       {"starts_with", "startsWith"},
+       {"ends_with", "endsWith"},
+       {"contains", "countSubstrings"},
+       {"substring", "substring"},
 
-    {"like", "like"},
-    {"not_like", "notLike"},
-    {"starts_with", "startsWith"},
-    {"ends_with", "endsWith"},
-    {"contains", "countSubstrings"},
-    {"substring", "substring"},
+       {"in", "in"},
 
-    {"in", "in"},
-
-    // aggregate functions
-    {"count", "count"},
-    {"avg", "avg"},
-    {"sum", "sum"},
-    {"min", "min"},
-    {"max", "max"}
-};
+       // aggregate functions
+       {"count", "count"},
+       {"avg", "avg"},
+       {"sum", "sum"},
+       {"min", "min"},
+       {"max", "max"}};
 
 static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
 
-struct QueryContext {
+struct QueryContext
+{
     StorageSnapshotPtr storage_snapshot;
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata;
     std::shared_ptr<CustomStorageMergeTree> custom_storage_merge_tree;
@@ -76,20 +75,18 @@ class SerializedPlanParser
 public:
     explicit SerializedPlanParser(const ContextPtr & context);
     static void initFunctionEnv();
-    DB::QueryPlanPtr parse(std::string& plan);
+    DB::QueryPlanPtr parse(std::string & plan);
     DB::QueryPlanPtr parse(std::unique_ptr<substrait::Plan> plan);
 
-    DB::QueryPlanPtr parseReadRealWithLocalFile(const substrait::ReadRel& rel);
-    DB::QueryPlanPtr parseReadRealWithJavaIter(const substrait::ReadRel& rel);
-    DB::QueryPlanPtr parseMergeTreeTable(const substrait::ReadRel& rel);
-    bool isReadRelFromJava(const substrait::ReadRel& rel);
-    static DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
-    static DB::DataTypePtr parseType(const substrait::Type& type);
+    DB::QueryPlanPtr parseReadRealWithLocalFile(const substrait::ReadRel & rel);
+    DB::QueryPlanPtr parseReadRealWithJavaIter(const substrait::ReadRel & rel);
+    DB::QueryPlanPtr parseMergeTreeTable(const substrait::ReadRel & rel);
 
-    void addInputIter(jobject iter)
-    {
-        input_iters.emplace_back(iter);
-    }
+    static bool isReadRelFromJava(const substrait::ReadRel & rel);
+    static DB::Block parseNameStruct(const substrait::NamedStruct & struct_);
+    static DB::DataTypePtr parseType(const substrait::Type & type);
+
+    void addInputIter(jobject iter) { input_iters.emplace_back(iter); }
 
     static ContextMutablePtr global_context;
     static Context::ConfigurationPtr config;
@@ -98,25 +95,35 @@ public:
 
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
-    DB::QueryPlanPtr parseOp(const substrait::Rel &rel);
-    void collectJoinKeys(const substrait::Expression& condition, std::vector<std::pair<int32_t, int32_t>>& join_keys, int32_t right_key_start);
+    DB::QueryPlanPtr parseOp(const substrait::Rel & rel);
+    void
+    collectJoinKeys(const substrait::Expression & condition, std::vector<std::pair<int32_t, int32_t>> & join_keys, int32_t right_key_start);
     DB::QueryPlanPtr parseJoin(substrait::JoinRel join, DB::QueryPlanPtr left, DB::QueryPlanPtr right);
-    void reorderJoinOutput(DB::QueryPlan & plan, DB::Names cols);
-    std::string getFunctionName(std::string function_sig, const substrait::Expression_ScalarFunction & function);
-    DB::ActionsDAGPtr parseFunction(const DataStream & input, const substrait::Expression &rel, std::string & result_name, std::vector<String> &required_columns, DB::ActionsDAGPtr actions_dag = nullptr,bool keep_result = false);
-    const ActionsDAG::Node * parseFunctionWithDAG(const substrait::Expression &rel, std::string & result_name, std::vector<String> &required_columns, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
-    DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel &rel, bool & is_final);
-    const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression &rel);
-    const ActionsDAG::Node * toFunctionNode(ActionsDAGPtr action_dag, const String function, const DB::ActionsDAG::NodeRawConstPtrs args);
+    static void reorderJoinOutput(DB::QueryPlan & plan, DB::Names cols);
+    static std::string getFunctionName(std::string function_sig, const substrait::Expression_ScalarFunction & function);
+    DB::ActionsDAGPtr parseFunction(
+        const DataStream & input,
+        const substrait::Expression & rel,
+        std::string & result_name,
+        std::vector<String> & required_columns,
+        DB::ActionsDAGPtr actions_dag = nullptr,
+        bool keep_result = false);
+    const ActionsDAG::Node * parseFunctionWithDAG(
+        const substrait::Expression & rel,
+        std::string & result_name,
+        std::vector<String> & required_columns,
+        DB::ActionsDAGPtr actions_dag = nullptr,
+        bool keep_result = false);
+    DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel & rel, bool & is_final);
+    const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression & rel);
+    const ActionsDAG::Node *
+    toFunctionNode(ActionsDAGPtr action_dag, const String & function, const DB::ActionsDAG::NodeRawConstPtrs & args);
     // remove nullable after isNotNull
     void removeNullable(std::vector<String> require_columns, ActionsDAGPtr actionsDag);
     void wrapNullable(std::vector<String> columns, ActionsDAGPtr actionsDag);
-    std::string getUniqueName(std::string name)
-    {
-        return name + "_" + std::to_string(name_no++);
-    }
+    std::string getUniqueName(std::string name) { return name + "_" + std::to_string(name_no++); }
 
-    Aggregator::Params getAggregateParam(const Block & header, const ColumnNumbers & keys, const AggregateDescriptions & aggregates)
+    static Aggregator::Params getAggregateParam(const Block & header, const ColumnNumbers & keys, const AggregateDescriptions & aggregates)
     {
         Settings settings;
         return Aggregator::Params(
@@ -137,7 +144,8 @@ private:
             3);
     }
 
-    Aggregator::Params getMergedAggregateParam(const Block & header, const ColumnNumbers & keys, const AggregateDescriptions & aggregates)
+    static Aggregator::Params
+    getMergedAggregateParam(const Block & header, const ColumnNumbers & keys, const AggregateDescriptions & aggregates)
     {
         Settings settings;
         return Aggregator::Params(header, keys, aggregates, false, settings.max_threads);
@@ -148,9 +156,6 @@ private:
     std::unordered_map<std::string, std::string> function_mapping;
     std::vector<jobject> input_iters;
     ContextPtr context;
-
-//    DB::QueryPlanPtr query_plan;
-
 };
 
 struct SparkBuffer
@@ -163,10 +168,10 @@ class LocalExecutor : public BlockIterator
 {
 public:
     LocalExecutor() = default;
-    explicit LocalExecutor(QueryContext& _query_context);
+    explicit LocalExecutor(QueryContext & _query_context);
     void execute(QueryPlanPtr query_plan);
     SparkRowInfoPtr next();
-    Block* nextColumnar();
+    Block * nextColumnar();
     bool hasNext();
     ~LocalExecutor()
     {

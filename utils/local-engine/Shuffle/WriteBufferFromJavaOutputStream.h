@@ -27,6 +27,3 @@ private:
     size_t buffer_size;
 };
 }
-
-
-

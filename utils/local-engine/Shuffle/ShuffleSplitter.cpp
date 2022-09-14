@@ -264,8 +264,8 @@ void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
     partition_ids.resize(block.rows());
     for (auto & pid : partition_ids)
     {
-        pid = pid_selection_;
-        pid_selection_ = (pid_selection_ + 1) % options.partition_nums;
+        pid = pid_selection;
+        pid_selection = (pid_selection + 1) % options.partition_nums;
     }
     split_result.total_compute_pid_time += watch.elapsedNanoseconds();
 }

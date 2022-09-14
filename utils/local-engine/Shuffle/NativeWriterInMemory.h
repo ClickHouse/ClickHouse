@@ -17,7 +17,3 @@ private:
     std::unique_ptr<DB::NativeWriter> writer;
 };
 }
-
-
-
-

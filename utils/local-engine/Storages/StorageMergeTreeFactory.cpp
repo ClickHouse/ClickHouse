@@ -1,12 +1,16 @@
 #include "StorageMergeTreeFactory.h"
 
-local_engine::StorageMergeTreeFactory & local_engine::StorageMergeTreeFactory::instance()
+namespace local_engine
 {
-    static local_engine::StorageMergeTreeFactory ret;
+
+StorageMergeTreeFactory & StorageMergeTreeFactory::instance()
+{
+    static StorageMergeTreeFactory ret;
     return ret;
 }
-local_engine::CustomStorageMergeTreePtr
-local_engine::StorageMergeTreeFactory::getStorage(StorageID id,  ColumnsDescription columns, std::function<CustomStorageMergeTreePtr()> creator)
+
+CustomStorageMergeTreePtr
+StorageMergeTreeFactory::getStorage(StorageID id, ColumnsDescription columns, std::function<CustomStorageMergeTreePtr()> creator)
 {
     auto table_name = id.database_name + "." + id.table_name;
     if (!storage_map.contains(table_name))
@@ -14,8 +18,8 @@ local_engine::StorageMergeTreeFactory::getStorage(StorageID id,  ColumnsDescript
         std::lock_guard lock(storage_map_mutex);
         if (storage_map.contains(table_name))
         {
-            std::set<string> existed_columns = storage_columns_map.at(table_name);
-            for (const auto& column : columns)
+            std::set<std::string> existed_columns = storage_columns_map.at(table_name);
+            for (const auto & column : columns)
             {
                 if (!existed_columns.contains(column.name))
                 {
@@ -28,7 +32,7 @@ local_engine::StorageMergeTreeFactory::getStorage(StorageID id,  ColumnsDescript
         {
             storage_map.emplace(table_name, creator());
             storage_columns_map.emplace(table_name, std::set<std::string>());
-            for (const auto& column : storage_map.at(table_name)->getInMemoryMetadataPtr()->columns)
+            for (const auto & column : storage_map.at(table_name)->getInMemoryMetadataPtr()->columns)
             {
                 storage_columns_map.at(table_name).emplace(column.name);
             }
@@ -37,7 +41,7 @@ local_engine::StorageMergeTreeFactory::getStorage(StorageID id,  ColumnsDescript
     return storage_map.at(table_name);
 }
 
-local_engine::StorageInMemoryMetadataPtr local_engine::StorageMergeTreeFactory::getMetadata(StorageID id, std::function<StorageInMemoryMetadataPtr()> creator)
+StorageInMemoryMetadataPtr StorageMergeTreeFactory::getMetadata(StorageID id, std::function<StorageInMemoryMetadataPtr()> creator)
 {
     auto table_name = id.database_name + "." + id.table_name;
 
@@ -53,9 +57,11 @@ local_engine::StorageInMemoryMetadataPtr local_engine::StorageMergeTreeFactory::
 }
 
 
-std::unordered_map<std::string , local_engine::CustomStorageMergeTreePtr> local_engine::StorageMergeTreeFactory::storage_map;
-std::unordered_map<std::string , std::set<std::string>> local_engine::StorageMergeTreeFactory::storage_columns_map;
-std::mutex local_engine::StorageMergeTreeFactory::storage_map_mutex;
+std::unordered_map<std::string, CustomStorageMergeTreePtr> StorageMergeTreeFactory::storage_map;
+std::unordered_map<std::string, std::set<std::string>> StorageMergeTreeFactory::storage_columns_map;
+std::mutex StorageMergeTreeFactory::storage_map_mutex;
 
-std::unordered_map<std::string , local_engine::StorageInMemoryMetadataPtr> local_engine::StorageMergeTreeFactory::metadata_map;
-std::mutex local_engine::StorageMergeTreeFactory::metadata_map_mutex;
+std::unordered_map<std::string, StorageInMemoryMetadataPtr> StorageMergeTreeFactory::metadata_map;
+std::mutex StorageMergeTreeFactory::metadata_map_mutex;
+
+}

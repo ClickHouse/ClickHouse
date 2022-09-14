@@ -23,16 +23,19 @@ void registerAllFunctions()
 void init()
 {
     static std::once_flag init_flag;
-    std::call_once(init_flag, [](){
-                       registerAllFunctions();
-                       local_engine::Logger::initConsoleLogger();
+    std::call_once(
+        init_flag,
+        []()
+        {
+            registerAllFunctions();
+            local_engine::Logger::initConsoleLogger();
 #if USE_EMBEDDED_COMPILER
-                       /// 128 MB
-                       constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
-                       constexpr size_t compiled_expression_cache_elements_size_default = 10000;
-                       CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size_default, compiled_expression_cache_size_default);
+            /// 128 MB
+            constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
+            constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+            CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size_default, compiled_expression_cache_size_default);
 #endif
-                   });
+        });
 
     static std::mutex context_lock;
 
@@ -43,8 +46,6 @@ void init()
             local_engine::SerializedPlanParser::shared_context = SharedContextHolder(Context::createShared());
             local_engine::SerializedPlanParser::global_context
                 = Context::createGlobal(local_engine::SerializedPlanParser::shared_context.get());
-            // disable global context initialized
-            //    local_engine::SerializedPlanParser::global_context->setBackgroundExecutorsInitialized(true);
             local_engine::SerializedPlanParser::global_context->makeGlobalContext();
             local_engine::SerializedPlanParser::global_context->setSetting("join_use_nulls", true);
             local_engine::SerializedPlanParser::global_context->setConfig(local_engine::SerializedPlanParser::config);
@@ -60,7 +61,7 @@ char * createExecutor(std::string plan_string)
     auto query_plan = parser.parse(plan_string);
     local_engine::LocalExecutor * executor = new local_engine::LocalExecutor(parser.query_context);
     executor->execute(std::move(query_plan));
-    return reinterpret_cast<char* >(executor);
+    return reinterpret_cast<char *>(executor);
 }
 
 bool executorHasNext(char * executor_address)
@@ -68,8 +69,6 @@ bool executorHasNext(char * executor_address)
     local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     return executor->hasNext();
 }
-
-
 
 #ifdef __cplusplus
 }

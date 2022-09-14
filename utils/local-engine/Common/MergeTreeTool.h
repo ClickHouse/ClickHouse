@@ -13,26 +13,26 @@
 #include <Interpreters/TableJoin.h>
 
 
-using namespace DB;
-
 namespace local_engine
 {
-    std::shared_ptr<DB::StorageInMemoryMetadata> buildMetaData(DB::NamesAndTypesList columns, ContextPtr context);
 
-    std::unique_ptr<MergeTreeSettings> buildMergeTreeSettings();
+using namespace DB;
+std::shared_ptr<DB::StorageInMemoryMetadata> buildMetaData(DB::NamesAndTypesList columns, ContextPtr context);
 
-    std::unique_ptr<SelectQueryInfo> buildQueryInfo(NamesAndTypesList& names_and_types_list);
+std::unique_ptr<MergeTreeSettings> buildMergeTreeSettings();
 
-    struct MergeTreeTable
-    {
-        std::string database;
-        std::string table;
-        std::string relative_path;
-        int min_block;
-        int max_block;
+std::unique_ptr<SelectQueryInfo> buildQueryInfo(NamesAndTypesList & names_and_types_list);
 
-        std::string toString() const;
-    };
+struct MergeTreeTable
+{
+    std::string database;
+    std::string table;
+    std::string relative_path;
+    int min_block;
+    int max_block;
 
-    MergeTreeTable parseMergeTreeTableString(std::string & info);
+    std::string toString() const;
+};
+
+MergeTreeTable parseMergeTreeTableString(std::string & info);
 }

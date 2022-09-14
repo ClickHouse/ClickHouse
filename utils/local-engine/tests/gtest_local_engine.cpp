@@ -23,27 +23,26 @@
 #include <gtest/gtest.h>
 #include "Storages/CustomStorageMergeTree.h"
 #include "testConfig.h"
-//#include <Poco/URI.h>
 
-using namespace dbms;
 using namespace local_engine;
+using namespace dbms;
 
 TEST(TestSelect, ReadRel)
 {
     dbms::SerializedSchemaBuilder schema_builder;
-    auto* schema = schema_builder
-        .column("sepal_length", "FP64")
-        .column("sepal_width", "FP64")
-        .column("petal_length", "FP64")
-        .column("petal_width", "FP64")
-        .column("type", "I64").column("type_string", "String")
-        .build();
+    auto * schema = schema_builder.column("sepal_length", "FP64")
+                        .column("sepal_width", "FP64")
+                        .column("petal_length", "FP64")
+                        .column("petal_width", "FP64")
+                        .column("type", "I64")
+                        .column("type_string", "String")
+                        .build();
     dbms::SerializedPlanBuilder plan_builder;
-    auto plan = plan_builder.read(  TEST_DATA(/data/iris.parquet), std::move(schema)).build();
+    auto plan = plan_builder.read(TEST_DATA(/ data / iris.parquet), std::move(schema)).build();
 
     ASSERT_TRUE(plan->relations(0).root().input().has_read());
     ASSERT_EQ(plan->relations_size(), 1);
-    std::cout << "start execute" <<std::endl;
+    std::cout << "start execute" << std::endl;
     local_engine::LocalExecutor local_executor;
     local_engine::SerializedPlanParser parser(local_engine::SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
@@ -63,15 +62,13 @@ TEST(TestSelect, ReadRel)
 TEST(TestSelect, ReadDate)
 {
     dbms::SerializedSchemaBuilder schema_builder;
-    auto* schema = schema_builder
-                        .column("date", "Date")
-                        .build();
+    auto * schema = schema_builder.column("date", "Date").build();
     dbms::SerializedPlanBuilder plan_builder;
-    auto plan = plan_builder.read(TEST_DATA(/data/date.parquet), std::move(schema)).build();
+    auto plan = plan_builder.read(TEST_DATA(/ data / date.parquet), std::move(schema)).build();
 
     ASSERT_TRUE(plan->relations(0).root().input().has_read());
     ASSERT_EQ(plan->relations_size(), 1);
-    std::cout << "start execute" <<std::endl;
+    std::cout << "start execute" << std::endl;
     local_engine::LocalExecutor local_executor;
     local_engine::SerializedPlanParser parser(local_engine::SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
@@ -88,40 +85,30 @@ TEST(TestSelect, ReadDate)
     }
 }
 
-bool inside_main=true;
+bool inside_main = true;
 TEST(TestSelect, TestFilter)
 {
     dbms::SerializedSchemaBuilder schema_builder;
     // sorted by key
-    auto* schema = schema_builder
-                        .column("sepal_length", "FP64")
+    auto * schema = schema_builder.column("sepal_length", "FP64")
                         .column("sepal_width", "FP64")
                         .column("petal_length", "FP64")
                         .column("petal_width", "FP64")
-                        .column("type", "I64").column("type_string", "String")
+                        .column("type", "I64")
+                        .column("type_string", "String")
                         .build();
     dbms::SerializedPlanBuilder plan_builder;
     // sepal_length * 0.8
-    auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY,
-                                             {dbms::selection(2),
-                                              dbms::literal(0.8)});
+    auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(2), dbms::literal(0.8)});
     // sepal_length * 0.8 < 4.0
-    auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {
-                                                           mul_exp,
-                                                           dbms::literal(4.0)
-                                                                               });
+    auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {mul_exp, dbms::literal(4.0)});
     // type_string = '类型1'
-    auto * type_0 = dbms::scalarFunction(dbms::EQUAL_TO, {dbms::selection(5),
-                                                          dbms::literal("类型1")});
+    auto * type_0 = dbms::scalarFunction(dbms::EQUAL_TO, {dbms::selection(5), dbms::literal("类型1")});
 
     auto * filter = dbms::scalarFunction(dbms::AND, {less_exp, type_0});
-    auto plan = plan_builder
-                    .registerSupportedFunctions()
-                    .filter(filter)
-                    .read(TEST_DATA(/data/iris.parquet), std::move(schema)).build();
-//    ASSERT_TRUE(plan->relations(0).has_read());
+    auto plan = plan_builder.registerSupportedFunctions().filter(filter).read(TEST_DATA(/ data / iris.parquet), std::move(schema)).build();
     ASSERT_EQ(plan->relations_size(), 1);
-    std::cout << "start execute" <<std::endl;
+    std::cout << "start execute" << std::endl;
     local_engine::LocalExecutor local_executor;
     local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
@@ -142,33 +129,24 @@ TEST(TestSelect, TestAgg)
 {
     dbms::SerializedSchemaBuilder schema_builder;
     // sorted by key
-    auto* schema = schema_builder
-                        .column("sepal_length", "FP64")
+    auto * schema = schema_builder.column("sepal_length", "FP64")
                         .column("sepal_width", "FP64")
                         .column("petal_length", "FP64")
                         .column("petal_width", "FP64")
-                        .column("type", "I64").column("type_string", "String")
+                        .column("type", "I64")
+                        .column("type_string", "String")
                         .build();
     dbms::SerializedPlanBuilder plan_builder;
-    auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY,
-                                          {dbms::selection(2),
-                                           dbms::literal(0.8)});
-    auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {
-                                                                mul_exp,
-                                                                dbms::literal(4.0)
-                                                            });
-    auto * mul_exp2 = dbms::scalarFunction(dbms::MULTIPLY,
-                                          {dbms::selection(2),
-                                           dbms::literal(1.1)});
+    auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(2), dbms::literal(0.8)});
+    auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {mul_exp, dbms::literal(4.0)});
     auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
-    auto plan = plan_builder
-                    .registerSupportedFunctions()
+    auto plan = plan_builder.registerSupportedFunctions()
                     .aggregate({}, {measure})
                     .filter(less_exp)
-                    .read(TEST_DATA(/data/iris.parquet), std::move(schema)).build();
-    //    ASSERT_TRUE(plan->relations(0).has_read());
+                    .read(TEST_DATA(/ data / iris.parquet), std::move(schema))
+                    .build();
     ASSERT_EQ(plan->relations_size(), 1);
-    std::cout << "start execute" <<std::endl;
+    std::cout << "start execute" << std::endl;
     local_engine::LocalExecutor local_executor;
     local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
@@ -184,7 +162,9 @@ TEST(TestSelect, TestAgg)
         auto block = converter.convertSparkRowInfoToCHColumn(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
         auto reader = SparkRowReader(spark_row_info->getNumCols());
-        reader.pointTo(reinterpret_cast<int64_t>(spark_row_info->getBufferAddress() + spark_row_info->getOffsets()[1]), spark_row_info->getLengths()[0]);
+        reader.pointTo(
+            reinterpret_cast<int64_t>(spark_row_info->getBufferAddress() + spark_row_info->getOffsets()[1]),
+            spark_row_info->getLengths()[0]);
         ASSERT_EQ(reader.getDouble(0), 103.2);
     }
 }
@@ -221,38 +201,32 @@ TEST(TestSelect, MergeTreeWriteTest)
     settings->set("min_bytes_for_wide_part", Field(0));
     settings->set("min_rows_for_wide_part", Field(0));
 
-    local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
-                                                                                    "test-intel/",
-                                                                                    *metadata,
-                                                                                    false,
-                                                           global_context,
-                                                                                    "",
-                                                                                    param,
-                                                                                    std::move(settings)
-                                                                                );
+    local_engine::CustomStorageMergeTree custom_merge_tree(
+        DB::StorageID("default", "test"), "test-intel/", *metadata, false, global_context, "", param, std::move(settings));
 
     auto sink = std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
     auto files_info = std::make_shared<FilesInfo>();
     files_info->files.push_back("/home/kyligence/Documents/test-dataset/intel-gazelle-test-150.snappy.parquet");
     auto source = std::make_shared<BatchParquetFileSource>(files_info, metadata->getSampleBlock(), SerializedPlanParser::global_context);
 
-    QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
     QueryPipelineBuilder query_pipeline;
     query_pipeline.init(Pipe(source));
-    query_pipeline.setSinks([&](const Block &, Pipe::StreamType type) -> ProcessorPtr
-                          {
-                              if (type != Pipe::StreamType::Main)
-                                  return nullptr;
+    query_pipeline.setSinks(
+        [&](const Block &, Pipe::StreamType type) -> ProcessorPtr
+        {
+            if (type != Pipe::StreamType::Main)
+                return nullptr;
 
-                              return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
-                          });
+            return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
+        });
     auto executor = query_pipeline.execute();
     executor->execute(1);
 }
 
-TEST(TESTUtil, TestByteToLong) {
-    long expected = 0xf085460ccf7f0000l;
-    char* arr = new char[8];
+TEST(TESTUtil, TestByteToLong)
+{
+    Int64 expected = 0xf085460ccf7f0000l;
+    char * arr = new char[8];
     arr[0] = -16;
     arr[1] = -123;
     arr[2] = 70;
@@ -261,56 +235,57 @@ TEST(TESTUtil, TestByteToLong) {
     arr[5] = 127;
     arr[6] = 0;
     arr[7] = 0;
-    std::reverse(arr, arr+8);
+    std::reverse(arr, arr + 8);
     Int64 result = reinterpret_cast<Int64 *>(arr)[0];
-    std::cout<< std::to_string(result);
+    std::cout << std::to_string(result);
 
     ASSERT_EQ(expected, result);
 }
 
-TEST(TestSubstrait, TestGenerate) {
+TEST(TestSubstrait, TestGenerate)
+{
     dbms::SerializedSchemaBuilder schema_builder;
-    auto schema = schema_builder
-                      .column("l_discount", "FP64")
-                      .column("l_extendedprice", "FP64")
-                      .column("l_quantity", "FP64")
-                      .column("l_shipdate_new", "Date")
-                      .build();
+    auto * schema = schema_builder.column("l_discount", "FP64")
+                        .column("l_extendedprice", "FP64")
+                        .column("l_quantity", "FP64")
+                        .column("l_shipdate_new", "Date")
+                        .build();
     dbms::SerializedPlanBuilder plan_builder;
-    auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
+    auto * agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
     auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
     auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
     auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
-    auto plan = plan_builder.registerSupportedFunctions()
-                    .aggregate({}, {measure1, measure2, measure3})
-                    .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
-                    .filter(dbms::scalarFunction(dbms::AND, {
-                                                                dbms::scalarFunction(AND, {
-                                                                                              dbms::scalarFunction(AND, {
-                                                                                                                            dbms::scalarFunction(AND, {
-                                                                                                                                                          dbms::scalarFunction(AND, {
-                                                                                                                                                                                        dbms::scalarFunction(AND, {
-                                                                                                                                                                                                                      dbms::scalarFunction(AND, {
-                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(3)}),
-                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(0)})
-                                                                                                                                                                                                                                                }),
-                                                                                                                                                                                                                      scalarFunction(IS_NOT_NULL, {selection(2)})
-                                                                                                                                                                                                                  }),
-                                                                                                                                                                                        dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
-                                                                                                                                                                                    }),
-                                                                                                                                                          scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})
-                                                                                                                                                      }),
-                                                                                                                            scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
-                                                                                                                        }),
-                                                                                              scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})
-                                                                                          }),
-                                                                scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
-                                                            }))
-                    .readMergeTree("default", "test", "usr/code/data/test-mergetree", 1, 12, std::move(schema)).build();
+    auto plan
+        = plan_builder.registerSupportedFunctions()
+              .aggregate({}, {measure1, measure2, measure3})
+              .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
+              .filter(dbms::scalarFunction(
+                  dbms::AND,
+                  {dbms::scalarFunction(
+                       AND,
+                       {dbms::scalarFunction(
+                            AND,
+                            {dbms::scalarFunction(
+                                 AND,
+                                 {dbms::scalarFunction(
+                                      AND,
+                                      {dbms::scalarFunction(
+                                           AND,
+                                           {dbms::scalarFunction(
+                                                AND,
+                                                {scalarFunction(IS_NOT_NULL, {selection(3)}), scalarFunction(IS_NOT_NULL, {selection(0)})}),
+                                            scalarFunction(IS_NOT_NULL, {selection(2)})}),
+                                       dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})}),
+                                  scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})}),
+                             scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})}),
+                        scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})}),
+                   scalarFunction(LESS_THAN, {selection(2), literal(24.0)})}))
+              .readMergeTree("default", "test", "usr/code/data/test-mergetree", 1, 12, std::move(schema))
+              .build();
     std::ofstream output;
     output.open("/home/kyligence/Documents/code/ClickHouse/plan.txt", std::fstream::in | std::fstream::out | std::fstream::trunc);
-        output << plan->SerializeAsString();
-//    plan->SerializeToOstream(&output);
+    output << plan->SerializeAsString();
+    //    plan->SerializeToOstream(&output);
     output.flush();
     output.close();
 }
@@ -337,14 +312,14 @@ TEST(ReadBufferFromFile, seekBackwards)
 
     /// Check 2 consecutive  seek calls without reading.
     in.seek(BUF_SIZE * 2, SEEK_SET);
-//    readIntBinary(x, in);
+    //    readIntBinary(x, in);
     in.seek(BUF_SIZE, SEEK_SET);
 
     readIntBinary(x, in);
     ASSERT_EQ(x, 8);
 }
 
-int main(int argc, char **argv)
+int main(int argc, char ** argv)
 {
     SharedContextHolder shared_context = Context::createShared();
     local_engine::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
@@ -353,6 +328,6 @@ int main(int argc, char **argv)
     local_engine::SerializedPlanParser::global_context->setPath("/tmp");
     local_engine::SerializedPlanParser::global_context->getDisksMap().emplace();
     local_engine::SerializedPlanParser::initFunctionEnv();
-    ::testing::InitGoogleTest(&argc,argv);
+    ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

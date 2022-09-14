@@ -35,7 +35,7 @@ public:
     virtual ~NativeSplitter();
 
 protected:
-    virtual void computePartitionId(DB::Block & block) { }
+    virtual void computePartitionId(DB::Block &) { }
     Options options;
     std::vector<DB::IColumn::ColumnIndex> partition_ids;
 

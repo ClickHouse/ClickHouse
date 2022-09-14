@@ -9,8 +9,6 @@
 #include <Common/RWLock.h>
 #include <Storages/StorageJoin.h>
 
-
-
 namespace local_engine
 {
 class StorageJoinFromReadBuffer : public shared_ptr_helper<StorageJoinFromReadBuffer>, public DB::StorageSetOrJoinBase
@@ -88,6 +86,5 @@ private:
     mutable std::mutex mutate_mutex;
 };
 }
-
 
 

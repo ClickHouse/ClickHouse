@@ -14,6 +14,3 @@ public:
     static bool isNullPartitionValue(std::string value);
 };
 }
-
-
-

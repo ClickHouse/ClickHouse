@@ -13,7 +13,6 @@ public:
     static CustomStorageMergeTreePtr getStorage(StorageID id, ColumnsDescription columns, std::function<CustomStorageMergeTreePtr()> creator);
     static StorageInMemoryMetadataPtr getMetadata(StorageID id, std::function<StorageInMemoryMetadataPtr()> creator);
 
-
 private:
     static std::unordered_map<std::string , CustomStorageMergeTreePtr> storage_map;
     static std::unordered_map<std::string , std::set<std::string>> storage_columns_map;
@@ -23,6 +22,3 @@ private:
     static std::mutex metadata_map_mutex;
 };
 }
-
-
-

@@ -4,10 +4,8 @@
 #include <Common/JNIUtils.h>
 
 
-using namespace DB;
 namespace local_engine
 {
-
 jclass NativeSplitter::iterator_class = nullptr;
 jmethodID NativeSplitter::iterator_has_next = nullptr;
 jmethodID NativeSplitter::iterator_next = nullptr;
@@ -106,7 +104,8 @@ bool NativeSplitter::hasNext()
 }
 DB::Block * NativeSplitter::next()
 {
-    if (!output_buffer.empty()) {
+    if (!output_buffer.empty())
+    {
         output_buffer.pop();
     }
     consume();
@@ -164,7 +163,7 @@ std::unique_ptr<NativeSplitter> NativeSplitter::create(std::string short_name, O
 void HashNativeSplitter::computePartitionId(Block & block)
 {
     ColumnsWithTypeAndName args;
-    for (auto &name : options.exprs)
+    for (auto & name : options.exprs)
     {
         args.emplace_back(block.getByName(name));
     }

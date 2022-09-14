@@ -1,10 +1,10 @@
 #include "PartitionColumnFillingTransform.h"
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils.h>
 
 using namespace DB;
@@ -13,39 +13,26 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
 }
 }
 
 namespace local_engine
 {
-
 template <typename Type>
-    requires(std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt16> || std::is_same_v<Type, Int16> || std::is_same_v<Type, Int32> || std::is_same_v<Type, Int64>)
-ColumnPtr createIntPartitionColumn(DataTypePtr column_type, std::string partition_value)
+requires(
+    std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt16> || std::is_same_v<Type, Int16> || std::is_same_v<Type, Int32> || std::is_same_v<Type, Int64>)
+    ColumnPtr createIntPartitionColumn(DataTypePtr column_type, std::string partition_value)
 {
     Type value;
     auto value_buffer = ReadBufferFromString(partition_value);
     readIntText(value, value_buffer);
     return column_type->createColumnConst(1, value);
 }
-//template <>
-//ColumnPtr createIntPartitionColumn<Int8>(DataTypePtr column_type, std::string partition_value);
-//template <>
-//ColumnPtr createIntPartitionColumn<Int16>(DataTypePtr column_type, std::string partition_value);
-//template <>
-//ColumnPtr createIntPartitionColumn<UInt16>(DataTypePtr column_type, std::string partition_value);
-//template <>
-//ColumnPtr createIntPartitionColumn<Int32>(DataTypePtr column_type, std::string partition_value);
-//template <>
-//ColumnPtr createIntPartitionColumn<Int64>(DataTypePtr column_type, std::string partition_value);
 
 template <typename Type>
-    requires(std::is_same_v<Type, Float32> || std::is_same_v<Type, Float64>)
-ColumnPtr createFloatPartitionColumn(DataTypePtr column_type, std::string partition_value)
+requires(std::is_same_v<Type, Float32> || std::is_same_v<Type, Float64>) ColumnPtr
+    createFloatPartitionColumn(DataTypePtr column_type, std::string partition_value)
 {
     Type value;
     auto value_buffer = ReadBufferFromString(partition_value);
@@ -70,7 +57,7 @@ ColumnPtr PartitionColumnFillingTransform::createPartitionColumn()
 {
     ColumnPtr result;
     DataTypePtr nested_type = partition_col_type;
-    if (const DataTypeNullable* nullable_type = checkAndGetDataType<DataTypeNullable>(partition_col_type.get()))
+    if (const DataTypeNullable * nullable_type = checkAndGetDataType<DataTypeNullable>(partition_col_type.get()))
     {
         nested_type = nullable_type->getNestedType();
         if (StringUtils::isNullPartitionValue(partition_col_value))
@@ -108,7 +95,7 @@ ColumnPtr PartitionColumnFillingTransform::createPartitionColumn()
         DayNum value;
         auto value_buffer = ReadBufferFromString(partition_col_value);
         readDateText(value, value_buffer);
-        result =  partition_col_type->createColumnConst(1, value);
+        result = partition_col_type->createColumnConst(1, value);
     }
     else if (which.isString())
     {
@@ -130,7 +117,7 @@ void PartitionColumnFillingTransform::transform(DB::Chunk & chunk)
     }
     else
     {
-        chunk.addColumn(partition_column_position , partition_column->cloneResized(chunk.getNumRows()));
+        chunk.addColumn(partition_column_position, partition_column->cloneResized(chunk.getNumRows()));
     }
 }
 }

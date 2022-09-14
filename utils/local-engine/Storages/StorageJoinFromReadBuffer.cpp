@@ -11,7 +11,6 @@
 #include <Interpreters/joinDispatch.h>
 
 
-
 namespace DB
 {
 
@@ -22,10 +21,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
 }
-
 
 template <typename T>
 static const char * rawData(T & t)
@@ -112,7 +108,6 @@ private:
     std::optional<size_t> key_pos;
 
     std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
-
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     Chunk createChunk(const Maps & maps)

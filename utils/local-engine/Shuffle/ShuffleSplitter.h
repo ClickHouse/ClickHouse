@@ -1,19 +1,17 @@
 #pragma once
-#include <Core/Block.h>
 #include <Columns/IColumn.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/PODArray.h>
+#include <Core/Block.h>
 #include <Formats/NativeWriter.h>
-#include <IO/WriteBufferFromFile.h>
 #include <Functions/IFunction.h>
-
+#include <IO/WriteBufferFromFile.h>
+#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
 
 
 //using namespace DB;
 
 namespace local_engine
 {
-
 struct SplitOptions
 {
     size_t buffer_size = DEFAULT_BLOCK_SIZE;
@@ -29,7 +27,7 @@ struct SplitOptions
 class ColumnsBuffer
 {
 public:
-    explicit ColumnsBuffer(size_t prefer_buffer_size=8192);
+    explicit ColumnsBuffer(size_t prefer_buffer_size = 8192);
     void add(DB::Block & columns, int start, int end);
     size_t size() const;
     DB::Block releaseColumns();
@@ -61,13 +59,12 @@ public:
     explicit ShuffleSplitter(SplitOptions && options);
     virtual ~ShuffleSplitter()
     {
-        if (!stopped) stop();
+        if (!stopped)
+            stop();
     }
-    void split(DB::Block& block);
-    virtual void computeAndCountPartitionId(DB::Block & block) {}
-    std::vector<int64_t> getPartitionLength() {
-        return split_result.partition_length;
-    }
+    void split(DB::Block & block);
+    virtual void computeAndCountPartitionId(DB::Block &) { }
+    std::vector<int64_t> getPartitionLength() const { return split_result.partition_length; }
     void writeIndexFile();
     SplitResult stop();
 
@@ -91,26 +88,26 @@ protected:
     SplitResult split_result;
 };
 
-class RoundRobinSplitter : public ShuffleSplitter {
+class RoundRobinSplitter : public ShuffleSplitter
+{
 public:
     static std::unique_ptr<ShuffleSplitter> create(SplitOptions && options);
 
-    RoundRobinSplitter(SplitOptions options_)
-        : ShuffleSplitter(std::move(options_)) {}
+    explicit RoundRobinSplitter(SplitOptions options_) : ShuffleSplitter(std::move(options_)) { }
 
     ~RoundRobinSplitter() override = default;
     void computeAndCountPartitionId(DB::Block & block) override;
 
 private:
-    int32_t pid_selection_ = 0;
+    int32_t pid_selection = 0;
 };
 
-class HashSplitter : public ShuffleSplitter {
+class HashSplitter : public ShuffleSplitter
+{
 public:
     static std::unique_ptr<ShuffleSplitter> create(SplitOptions && options);
 
-    HashSplitter(SplitOptions options_)
-        : ShuffleSplitter(std::move(options_)) {}
+    explicit HashSplitter(SplitOptions options_) : ShuffleSplitter(std::move(options_)) { }
 
     ~HashSplitter() override = default;
     void computeAndCountPartitionId(DB::Block & block) override;

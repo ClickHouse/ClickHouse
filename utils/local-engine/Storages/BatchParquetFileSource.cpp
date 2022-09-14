@@ -1,18 +1,18 @@
 #include "BatchParquetFileSource.h"
 
+#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromS3.h>
+#include <IO/ReadSettings.h>
+#include <IO/S3Common.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ArrowParquetBlockInputFormat.h>
-#include <Poco/URI.h>
-#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
-#include <IO/ReadBufferFromAzureBlobStorage.h>
-#include <Formats/FormatSettings.h>
-#include <IO/ReadBufferFromS3.h>
-#include <IO/ReadSettings.h>
-#include <aws/core/client/DefaultRetryStrategy.h>
-#include <IO/S3Common.h>
 #include <Storages/StorageS3Settings.h>
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <Poco/URI.h>
 
 using namespace DB;
 
@@ -20,15 +20,15 @@ namespace local_engine
 {
 #if USE_AWS_S3
 
-std::shared_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::shared_ptr<Aws::S3::S3Client>
+getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
-        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects);
+        context->getRemoteHostFilter(),
+        context->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
     S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
-//    if (uri.key.back() != '/')
-//        throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
     client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
@@ -50,8 +50,8 @@ std::shared_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
 }
 #endif
 
-BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files, const DB::Block & sample, const DB::ContextPtr & context_)
-    : SourceWithProgress(sample), files_info(files), header(sample), context(context_)
+BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files_info_, const DB::Block & header_, const DB::ContextPtr & context_)
+    : SourceWithProgress(header_), files_info(files_info_), header(header_), context(context_)
 {
 }
 DB::Chunk BatchParquetFileSource::generate()
@@ -72,7 +72,6 @@ DB::Chunk BatchParquetFileSource::generate()
 
             read_buf = getReadBufferFromFileURI(current_path);
             ProcessorPtr format = std::make_shared<local_engine::ArrowParquetBlockInputFormat>(*read_buf, header, DB::FormatSettings());
-            //            auto format = DB::ParquetBlockInputFormat::getParquetFormat(*read_buf, header);
             QueryPipelineBuilder builder;
             builder.init(Pipe(format));
             pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
@@ -139,7 +138,7 @@ std::unique_ptr<ReadBuffer> BatchParquetFileSource::getReadBufferFromLocal(const
 }
 
 #if USE_AWS_S3
-std::unique_ptr<ReadBuffer> BatchParquetFileSource::getReadBufferFromS3(const String &bucket, const String &key)
+std::unique_ptr<ReadBuffer> BatchParquetFileSource::getReadBufferFromS3(const String & bucket, const String & key)
 {
     if (!s3_client)
     {

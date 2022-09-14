@@ -6,9 +6,10 @@
 #include <Interpreters/Set.h>
 #include <gtest/gtest.h>
 
-TEST(TestFuntion, hash)
+TEST(TestFuntion, Hash)
 {
-    auto & factory = DB::FunctionFactory::instance();
+    using namespace DB;
+    auto & factory = FunctionFactory::instance();
     auto function = factory.get("murmurHash2_64", local_engine::SerializedPlanParser::global_context);
     auto type0 = DataTypeFactory::instance().get("String");
     auto column0 = type0->createColumn();
@@ -35,9 +36,10 @@ TEST(TestFuntion, hash)
     ASSERT_EQ(result->getUInt(0), result->getUInt(1));
 }
 
-TEST(TestFunction, in)
+TEST(TestFunction, In)
 {
-    auto & factory = DB::FunctionFactory::instance();
+    using namespace DB;
+    auto & factory = FunctionFactory::instance();
     auto function = factory.get("in", local_engine::SerializedPlanParser::global_context);
     auto type0 = DataTypeFactory::instance().get("String");
     auto type_set = std::make_shared<DataTypeSet>();
@@ -76,9 +78,10 @@ TEST(TestFunction, in)
 }
 
 
-TEST(TestFunction, not_in)
+TEST(TestFunction, NotIn1)
 {
-    auto & factory = DB::FunctionFactory::instance();
+    using namespace DB;
+    auto & factory = FunctionFactory::instance();
     auto function = factory.get("notIn", local_engine::SerializedPlanParser::global_context);
     auto type0 = DataTypeFactory::instance().get("String");
     auto type_set = std::make_shared<DataTypeSet>();
@@ -116,9 +119,10 @@ TEST(TestFunction, not_in)
     ASSERT_EQ(result->getUInt(3), 1);
 }
 
-TEST(TestFunction, not__in)
+TEST(TestFunction, NotIn2)
 {
-    auto & factory = DB::FunctionFactory::instance();
+    using namespace DB;
+    auto & factory = FunctionFactory::instance();
     auto function = factory.get("in", local_engine::SerializedPlanParser::global_context);
     auto type0 = DataTypeFactory::instance().get("String");
     auto type_set = std::make_shared<DataTypeSet>();
@@ -151,7 +155,6 @@ TEST(TestFunction, not__in)
     debug::headBlock(block);
     auto executable = function->build(block.getColumnsWithTypeAndName());
     auto result = executable->execute(block.getColumnsWithTypeAndName(), executable->getResultType(), block.rows());
-
 
     auto function_not = factory.get("not", local_engine::SerializedPlanParser::global_context);
     auto type_bool = DataTypeFactory::instance().get("UInt8");

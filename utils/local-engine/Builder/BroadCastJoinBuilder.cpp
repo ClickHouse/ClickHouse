@@ -1,17 +1,12 @@
 #include "BroadCastJoinBuilder.h"
-#include <Poco/StringTokenizer.h>
 #include <Parser/SerializedPlanParser.h>
+#include <Poco/StringTokenizer.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int UNKNOWN_FUNCTION;
 }
 }
 
@@ -20,7 +15,6 @@ using namespace DB;
 
 namespace local_engine
 {
-
 std::queue<std::string> BroadCastJoinBuilder::storage_join_queue;
 std::unordered_map<std::string, std::shared_ptr<StorageJoinFromReadBuffer>> BroadCastJoinBuilder::storage_join_map;
 std::unordered_map<std::string, std::shared_ptr<std::mutex>> BroadCastJoinBuilder::storage_join_lock;
@@ -34,7 +28,6 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
     DB::ASTTableJoin::Strictness strictness_,
     const DB::ColumnsDescription & columns_)
 {
-
     if (!storage_join_map.contains(key))
     {
         std::lock_guard build_lock(join_lock_mutex);
@@ -47,17 +40,20 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
                 storage_join_queue.pop();
                 storage_join_map.erase(tmp);
             }
-            storage_join_map.emplace(key, std::make_shared<StorageJoinFromReadBuffer>(std::move(read_buffer),
-                                                                                     StorageID("default", key),
-                                                                                     key_names_,
-                                                                                     true,
-                                                                                     SizeLimits(),
-                                                                                     kind_,
-                                                                                     strictness_,
-                                                                                     columns_,
-                                                                                     ConstraintsDescription(),
-                                                                                     key,
-                                                                                     true));
+            storage_join_map.emplace(
+                key,
+                std::make_shared<StorageJoinFromReadBuffer>(
+                    std::move(read_buffer),
+                    StorageID("default", key),
+                    key_names_,
+                    true,
+                    SizeLimits(),
+                    kind_,
+                    strictness_,
+                    columns_,
+                    ConstraintsDescription(),
+                    key,
+                    true));
             storage_join_queue.push(key);
         }
     }
@@ -82,7 +78,7 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
 {
     auto join_key_list = Poco::StringTokenizer(join_keys, ",");
     Names key_names;
-    for (const auto& key_name : join_key_list)
+    for (const auto & key_name : join_key_list)
     {
         key_names.emplace_back(key_name);
     }
