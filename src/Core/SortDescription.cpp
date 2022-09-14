@@ -42,7 +42,7 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("With Fill", with_fill);
 }
 
-size_t SortDescription::hasPrefix(const SortDescription & prefix) const
+bool SortDescription::hasPrefix(const SortDescription & prefix) const
 {
     if (prefix.empty())
         return true;

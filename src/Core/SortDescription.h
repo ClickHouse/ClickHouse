@@ -121,7 +121,7 @@ public:
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
 
-    size_t hasPrefix(const SortDescription & prefix) const;
+    bool hasPrefix(const SortDescription & prefix) const;
 };
 
 /** Compile sort description for header_types.

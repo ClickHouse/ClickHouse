@@ -11,41 +11,34 @@
 namespace DB::QueryPlanOptimizations
 {
 
-///
 size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
-    /// walk through the plan
-    /// (1) check if there is preliminary distinct node
-    /// (2) check if nodes below preliminary distinct preserve sorting
-    QueryPlan::Node * node = parent_node;
+    /// check if it is preliminary distinct node
     DistinctStep * pre_distinct = nullptr;
-    QueryPlan::Node * pre_distinct_node = nullptr;
-    while (!node->children.empty())
+    if (auto * distinct = typeid_cast<DistinctStep *>(parent_node->step.get()); distinct)
     {
-        if (pre_distinct)
-        {
-            /// check if nodes below DISTINCT preserve sorting
-            const auto * step = dynamic_cast<const ITransformingStep *>(node->step.get());
-            if (step)
-            {
-                const ITransformingStep::DataStreamTraits & traits = step->getDataStreamTraits();
-                if (!traits.preserves_sorting)
-                    return 0;
-            }
-        }
-        if (auto * tmp = typeid_cast<DistinctStep *>(node->step.get()); tmp)
-        {
-            if (tmp->isPreliminary())
-            {
-                pre_distinct_node = node;
-                pre_distinct = tmp;
-            }
-        }
-        node = node->children.front();
+        if (distinct->isPreliminary())
+            pre_distinct = distinct;
     }
     if (!pre_distinct)
         return 0;
 
+    /// walk through the plan
+    /// check if nodes below preliminary distinct preserve sorting
+    QueryPlan::Node * node = parent_node;
+    while (!node->children.empty())
+    {
+        const auto * step = dynamic_cast<const ITransformingStep *>(node->step.get());
+        if (step)
+        {
+            const ITransformingStep::DataStreamTraits & traits = step->getDataStreamTraits();
+            if (!traits.preserves_sorting)
+                return 0;
+        }
+        node = node->children.front();
+    }
+
+    /// check if we read from MergeTree
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_merge_tree)
         return 0;
@@ -55,7 +48,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (output.sort_scope != DataStream::SortScope::Chunk)
         return 0;
 
-    const SortDescription & sort_desc = output.sort_description;
+    /// find non-const columns in DISTINCT
     const auto & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
     std::vector<std::string_view> non_const_columns;
     non_const_columns.reserve(distinct_columns.size());
@@ -67,6 +60,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
+    const SortDescription & sort_desc = output.sort_description;
     if (sort_desc.size() < non_const_columns.size())
         return 0;
 
@@ -83,14 +77,15 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (distinct_sort_desc.empty())
         return 0;
 
+    /// update input order info in read_from_merge_tree step
     const int direction = 1; /// default direction, ASC
     InputOrderInfoPtr order_info
         = std::make_shared<const InputOrderInfo>(distinct_sort_desc, distinct_sort_desc.size(), direction, pre_distinct->getLimitHint());
     read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
 
-    /// update data stream's sorting properties
+    /// find all transforms between preliminary distinct step and ReadFromMergeTree
     std::vector<ITransformingStep *> steps2update;
-    node = pre_distinct_node;
+    node = parent_node;
     while (node && node->step.get() != read_from_merge_tree)
     {
         auto * transform = dynamic_cast<ITransformingStep *>(node->step.get());
@@ -103,6 +98,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
             node = nullptr;
     }
 
+    /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
     while (!steps2update.empty())
     {
