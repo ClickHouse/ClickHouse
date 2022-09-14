@@ -145,6 +145,8 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segment) const
 {
+    /// Use is_persistent flag from in-memory state of the filesegment,
+    /// because it is consistent with what is written on disk.
     auto path = file_segment.getPathInLocalCache();
 
     ReadSettings local_read_settings{settings};
@@ -237,8 +239,6 @@ bool CachedOnDiskReadBufferFromFile::canStartFromCache(size_t current_offset, co
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & file_segment)
 {
-    auto range = file_segment->range();
-
     auto download_state = file_segment->state();
     LOG_TEST(log, "getReadBufferForFileSegment: {}", file_segment->getInfoForLog());
 
