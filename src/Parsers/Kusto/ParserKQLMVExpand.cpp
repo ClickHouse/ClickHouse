@@ -94,7 +94,7 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
                 return false;
         }
 
-        if ((pos->type == TokenType::Comma && bracket_count == 0) || String(pos->begin, pos->end) == "limit")
+        if ((pos->type == TokenType::Comma && bracket_count == 0) || String(pos->begin, pos->end) == "limit" || pos->type == TokenType::Semicolon)
         {
             if (column_array_expr.empty())
             {
@@ -109,6 +109,9 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
             alias.clear();
             column_array_expr.clear();
             to_type.clear();
+
+            if (pos->type == TokenType::Semicolon)
+                break;
         }
 
         if (String(pos->begin, pos->end) == "limit")

@@ -73,6 +73,7 @@ bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_lparen.ignore(pos, expected))
     {   
         ++paren_count;
+        auto pos_start = pos;
         while (!pos->isEnd())
         {
             if (pos->type == TokenType::ClosingRoundBracket)
@@ -82,10 +83,10 @@ bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
             if (paren_count == 0)
                 break;
-
-            kql_statement = kql_statement + " " + String(pos->begin,pos->end);
             ++pos;
         }
+        kql_statement = String(pos_start->begin, (--pos)->end);
+        ++pos;
 
         Tokens token_kql(kql_statement.c_str(), kql_statement.c_str() + kql_statement.size());
         IParser::Pos pos_kql(token_kql, pos.max_depth);

@@ -96,7 +96,7 @@ String ParserKQLBase::getExprFromPipe(Pos & pos)
         if (end->type == TokenType::OpeningRoundBracket)
             ++bracket_count;
 
-        if (end->type == TokenType::OpeningRoundBracket)
+        if (end->type == TokenType::ClosingRoundBracket)
             --bracket_count;
 
         if (end->type == TokenType::PipeMark && bracket_count == 0)
