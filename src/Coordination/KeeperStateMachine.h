@@ -33,7 +33,7 @@ public:
 
     static KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
 
-    void preprocess(const KeeperStorage::RequestForSession & request_for_session);
+    bool preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
