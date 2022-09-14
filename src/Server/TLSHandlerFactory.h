@@ -3,6 +3,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TLSHandler.h>
 #include <Server/IServer.h>
 #include <Server/TCPServer.h>
@@ -45,7 +46,11 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TLSHandler(socket, conf_name, stack_data);
+            return new TLSHandler(
+                socket,
+                server.config().getString(conf_name + ".privateKeyFile", ""),
+                server.config().getString(conf_name + ".certificateFile", ""),
+                stack_data);
         }
         catch (const Poco::Net::NetException &)
         {

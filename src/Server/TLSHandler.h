@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Poco/Net/Context.h>
 #include <Poco/Net/TCPServerConnection.h>
-#include "Server/TCPProtocolStackData.h"
+#include <Poco/SharedPtr.h>
+#include <Common/Exception.h>
+#include <Server/TCPProtocolStackData.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -18,18 +21,27 @@ namespace ErrorCodes
 
 class TLSHandler : public Poco::Net::TCPServerConnection
 {
+#if USE_SSL    
+    using SecureStreamSocket = Poco::Net::SecureStreamSocket;
+    using SSLManager = Poco::Net::SSLManager;
+    using Context = Poco::Net::Context;
+#endif
     using StreamSocket = Poco::Net::StreamSocket;
 public:
-    explicit TLSHandler(const StreamSocket & socket, const std::string & conf_name_, TCPProtocolStackData & stack_data_)
+    explicit TLSHandler(const StreamSocket & socket, const std::string & key_, const std::string & certificate_, TCPProtocolStackData & stack_data_)
         : Poco::Net::TCPServerConnection(socket)
-        , conf_name(conf_name_)
+        , key(key_)
+        , certificate(certificate_)
         , stack_data(stack_data_)
     {}
 
     void run() override
     {
 #if USE_SSL
-        socket() = Poco::Net::SecureStreamSocket::attach(socket(), Poco::Net::SSLManager::instance().defaultServerContext());
+        auto ctx = SSLManager::instance().defaultServerContext();
+        if (!key.empty() && !certificate.empty())
+            ctx = new Context(Context::Usage::SERVER_USE, key, certificate, ctx->getCAPaths().caLocation);
+        socket() = SecureStreamSocket::attach(socket(), ctx);
         stack_data.socket = socket();
 #else
         throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -37,7 +49,8 @@ public:
 #endif
     }
 private:
-    std::string conf_name;
+    std::string key [[maybe_unused]];
+    std::string certificate [[maybe_unused]];
     TCPProtocolStackData & stack_data [[maybe_unused]];
 };
 

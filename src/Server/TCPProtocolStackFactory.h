@@ -3,6 +3,9 @@
 #include <Server/TCPServerConnectionFactory.h>
 #include <Server/IServer.h>
 #include <Server/TCPProtocolStackHandler.h>
+#include <Poco/Logger.h>
+#include <Poco/Net/NetException.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
