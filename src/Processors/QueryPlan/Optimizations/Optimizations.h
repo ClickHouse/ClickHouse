@@ -54,7 +54,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 /// Update information about prefix sort description in SortingStep.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-/// TODO: description
+/// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
 size_t tryDistinctReadInOrder(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
 
 inline const auto & getOptimizations()
