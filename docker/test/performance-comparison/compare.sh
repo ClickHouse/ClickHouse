@@ -88,7 +88,15 @@ function configure
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    for i in {1..60}
+    do
+        killall clickhouse || break
+        if [ $i = 60 ]; then
+            echo cannot kill CH server
+            exit 1
+        fi
+        sleep 1
+    done
     echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
