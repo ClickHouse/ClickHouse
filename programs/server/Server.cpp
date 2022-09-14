@@ -1913,15 +1913,15 @@ void Server::createServers(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"))
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"))
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"))
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -1934,12 +1934,12 @@ void Server::createServers(
             hosts.push_back(config.getString("protocols." + protocol + ".host"));
         else
             hosts = listen_hosts;
-        
+
         for (const auto & host : hosts)
         {
             std::string conf_name = "protocols." + protocol;
             std::string prefix = conf_name + ".";
-            std::unordered_set<std::string> pset {prefix};
+            std::unordered_set<std::string> pset {conf_name};
 
             if (config.has(prefix + "port"))
             {
