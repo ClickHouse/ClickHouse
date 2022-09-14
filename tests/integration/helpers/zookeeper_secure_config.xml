@@ -12,6 +12,6 @@
             <host>zoo3</host>
             <port>2281</port>
         </node>
-        <session_timeout_ms>15000</session_timeout_ms>
+        <session_timeout_ms>3000</session_timeout_ms>
     </zookeeper>
 </clickhouse>

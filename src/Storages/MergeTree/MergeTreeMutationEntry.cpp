@@ -4,8 +4,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
-#include <Interpreters/TransactionLog.h>
-#include <Backups/BackupEntryFromMemory.h>
 
 #include <utility>
 
@@ -45,34 +43,22 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'", file_name_);
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
-    , tid(tid_)
 {
     try
     {
-        auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
+        auto out = disk->writeFile(path_prefix + file_name);
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
         commands.writeText(*out);
         *out << "\n";
-        if (tid.isPrehistoric())
-        {
-            csn = Tx::PrehistoricCSN;
-        }
-        else
-        {
-            *out << "tid: ";
-            TransactionID::write(tid, *out);
-            *out << "\n";
-        }
         out->sync();
     }
     catch (...)
@@ -104,14 +90,6 @@ void MergeTreeMutationEntry::removeFile()
     }
 }
 
-void MergeTreeMutationEntry::writeCSN(CSN csn_)
-{
-    csn = csn_;
-    auto out = disk->writeFile(path_prefix + file_name, 256, WriteMode::Append);
-    *out << "csn: " << csn << "\n";
-    out->finalize();
-}
-
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
     : disk(std::move(disk_))
     , path_prefix(path_prefix_)
@@ -133,23 +111,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     commands.readText(*buf);
     *buf >> "\n";
 
-    if (buf->eof())
-    {
-        tid = Tx::PrehistoricTID;
-        csn = Tx::PrehistoricCSN;
-    }
-    else
-    {
-        *buf >> "tid: ";
-        tid = TransactionID::read(*buf);
-        *buf >> "\n";
-
-        if (!buf->eof())
-        {
-            *buf >> "csn: " >> csn >> "\n";
-        }
-    }
-
     assertEOF(*buf);
 }
 
@@ -166,18 +127,6 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-}
-
-std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
-{
-    WriteBufferFromOwnString out;
-    out << "block number: " << block_number << "\n";
-
-    out << "commands: ";
-    commands.writeText(out);
-    out << "\n";
-
-    return std::make_shared<BackupEntryFromMemory>(out.str());
 }
 
 }

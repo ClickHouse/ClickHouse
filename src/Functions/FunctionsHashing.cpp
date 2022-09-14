@@ -6,7 +6,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(Hashing)
+void registerFunctionsHashing(FunctionFactory & factory)
 {
 #if USE_SSL
     factory.registerFunction<FunctionMD4>();
@@ -39,7 +39,5 @@ REGISTER_FUNCTION(Hashing)
 
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
-
-    factory.registerFunction<FunctionWyHash64>();
 }
 }

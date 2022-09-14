@@ -22,7 +22,7 @@ static auto typeFromString(const std::string & str)
 {
     auto & data_type_factory = DataTypeFactory::instance();
     return data_type_factory.get(str);
-}
+};
 
 static auto typesFromString(const std::string & str)
 {
@@ -33,7 +33,7 @@ static auto typesFromString(const std::string & str)
         data_types.push_back(typeFromString(data_type));
 
     return data_types;
-}
+};
 
 struct TypesTestCase
 {

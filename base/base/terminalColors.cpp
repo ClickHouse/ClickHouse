@@ -11,12 +11,12 @@ std::string setColor(UInt64 hash)
     /// It still looks awesome.
     UInt8 y = 128;
 
-    UInt8 cb = static_cast<UInt8>(hash % 256);
-    UInt8 cr = static_cast<UInt8>(hash / 256 % 256);
+    UInt8 cb = hash % 256;
+    UInt8 cr = hash / 256 % 256;
 
-    UInt8 r = static_cast<UInt8>(std::max(0.0, std::min(255.0, y + 1.402 * (cr - 128))));
-    UInt8 g = static_cast<UInt8>(std::max(0.0, std::min(255.0, y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128))));
-    UInt8 b = static_cast<UInt8>(std::max(0.0, std::min(255.0, y + 1.772 * (cb - 128))));
+    UInt8 r = std::max(0.0, std::min(255.0, y + 1.402 * (cr - 128)));
+    UInt8 g = std::max(0.0, std::min(255.0, y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128)));
+    UInt8 b = std::max(0.0, std::min(255.0, y + 1.772 * (cb - 128)));
 
     /// ANSI escape sequence to set 24-bit foreground font color in terminal.
     return "\033[38;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" + std::to_string(b) + "m";

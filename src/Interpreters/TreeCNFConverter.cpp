@@ -349,7 +349,7 @@ CNFQuery & CNFQuery::pullNotOutFunctions()
     return *this;
 }
 
-CNFQuery & CNFQuery::pushNotInFunctions()
+CNFQuery & CNFQuery::pushNotInFuntions()
 {
     transformAtoms([](const AtomicFormula & atom) -> AtomicFormula
                    {

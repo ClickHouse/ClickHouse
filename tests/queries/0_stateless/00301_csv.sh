@@ -18,7 +18,7 @@ Hello "world", 789 ,2016-01-03
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY d, s";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t DateTime('Asia/Istanbul'), s String) ENGINE = Memory";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t DateTime('Europe/Moscow'), s String) ENGINE = Memory";
 
 echo '"2016-01-01 01:02:03","1"
 2016-01-02 01:02:03, "2"
@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY s";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t Nullable(DateTime('Asia/Istanbul')), s Nullable(String)) ENGINE = Memory";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t Nullable(DateTime('Europe/Moscow')), s Nullable(String)) ENGINE = Memory";
 
 echo 'NULL, NULL
 "2016-01-01 01:02:03",NUL

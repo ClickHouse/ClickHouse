@@ -1,5 +1,5 @@
 if (NOT ENABLE_KAFKA)
-    message(STATUS "Not using kafka")
+    message(STATUS "Not using librdkafka (skip cppkafka)")
     return()
 endif()
 

@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/statements/alter/delete
-sidebar_position: 39
-sidebar_label: DELETE
+toc_priority: 39
+toc_title: DELETE
 ---
 
-# ALTER TABLE … DELETE Statement
+# ALTER TABLE … DELETE Statement {#alter-mutations}
 
 ``` sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
@@ -12,10 +11,8 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 
 Deletes data matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
 
-
-:::note
-The `ALTER TABLE` prefix makes this syntax different from most other systems supporting SQL. It is intended to signify that unlike similar queries in OLTP databases this is a heavy operation not designed for frequent use.  `ALTER TABLE` is considered a heavyweight operation that requires the underlying data to be merged before it is deleted. For MergeTree tables, consider using the [`DELETE FROM` query](../delete.md), which performs a lightweight delete and can be considerably faster.
-:::
+!!! note "Note"
+    The `ALTER TABLE` prefix makes this syntax different from most other systems supporting SQL. It is intended to signify that unlike similar queries in OLTP databases this is a heavy operation not designed for frequent use.
 
 The `filter_expr` must be of type `UInt8`. The query deletes rows in the table for which this expression takes a non-zero value.
 

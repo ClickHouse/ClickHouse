@@ -84,7 +84,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3ExactEdgeLengthM)
+void registerFunctionH3ExactEdgeLengthM(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3ExactEdgeLengthM>();
 }

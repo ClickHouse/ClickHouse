@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/uuid-functions
----
 # UUID函数 {#uuidhan-shu}
 
 下面列出了所有UUID的相关函数

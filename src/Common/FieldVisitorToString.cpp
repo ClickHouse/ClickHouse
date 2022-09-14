@@ -145,11 +145,5 @@ String FieldVisitorToString::operator() (const Object & x) const
 
 }
 
-String convertFieldToString(const Field & field)
-{
-    if (field.getType() == Field::Types::Which::String)
-        return field.get<String>();
-    return applyVisitor(FieldVisitorToString(), field);
 }
 
-}

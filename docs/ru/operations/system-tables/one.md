@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/one
----
 # system.one {#system-one}
 
 Таблица содержит одну строку с одним столбцом `dummy` типа UInt8, содержащим значение 0.

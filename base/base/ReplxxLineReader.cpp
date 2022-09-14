@@ -27,7 +27,7 @@ void trim(String & s)
 
 std::string getEditor()
 {
-    const char * editor = std::getenv("EDITOR"); // NOLINT(concurrency-mt-unsafe)
+    const char * editor = std::getenv("EDITOR");
 
     if (!editor || !*editor)
         editor = "vim";
@@ -45,16 +45,14 @@ std::string replxx_now_ms_str()
     time_t t = ms.count() / 1000;
     tm broken;
     if (!localtime_r(&t, &broken))
-        return {};
+    {
+        return std::string();
+    }
 
     static int const BUFF_SIZE(32);
     char str[BUFF_SIZE];
-    if (strftime(str, BUFF_SIZE, "%Y-%m-%d %H:%M:%S.", &broken) <= 0)
-        return {};
-
-    if (snprintf(str + sizeof("YYYY-mm-dd HH:MM:SS"), 5, "%03d", static_cast<int>(ms.count() % 1000)) <= 0)
-        return {};
-
+    strftime(str, BUFF_SIZE, "%Y-%m-%d %H:%M:%S.", &broken);
+    snprintf(str + sizeof("YYYY-mm-dd HH:MM:SS"), 5, "%03d", static_cast<int>(ms.count() % 1000));
     return str;
 }
 
@@ -76,7 +74,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     if (!in)
     {
         rx.print("Cannot open %s reading (for conversion): %s\n",
-            path.c_str(), errnoToString().c_str());
+            path.c_str(), errnoToString(errno).c_str());
         return;
     }
 
@@ -84,7 +82,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     if (getline(in, line).bad())
     {
         rx.print("Cannot read from %s (for conversion): %s\n",
-            path.c_str(), errnoToString().c_str());
+            path.c_str(), errnoToString(errno).c_str());
         return;
     }
 
@@ -113,7 +111,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     if (!out)
     {
         rx.print("Cannot open %s for writing (for conversion): %s\n",
-            path.c_str(), errnoToString().c_str());
+            path.c_str(), errnoToString(errno).c_str());
         return;
     }
 
@@ -151,7 +149,7 @@ ReplxxLineReader::ReplxxLineReader(
         history_file_fd = open(history_file_path.c_str(), O_RDWR);
         if (history_file_fd < 0)
         {
-            rx.print("Open of history file failed: %s\n", errnoToString().c_str());
+            rx.print("Open of history file failed: %s\n", errnoToString(errno).c_str());
         }
         else
         {
@@ -159,18 +157,18 @@ ReplxxLineReader::ReplxxLineReader(
 
             if (flock(history_file_fd, LOCK_SH))
             {
-                rx.print("Shared lock of history file failed: %s\n", errnoToString().c_str());
+                rx.print("Shared lock of history file failed: %s\n", errnoToString(errno).c_str());
             }
             else
             {
                 if (!rx.history_load(history_file_path))
                 {
-                    rx.print("Loading history failed: %s\n", errnoToString().c_str());
+                    rx.print("Loading history failed: %s\n", errnoToString(errno).c_str());
                 }
 
                 if (flock(history_file_fd, LOCK_UN))
                 {
-                    rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
+                    rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
                 }
             }
         }
@@ -220,41 +218,12 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
     rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
-
-    /// readline insert-comment
-    auto insert_comment_action = [this](char32_t code)
-    {
-        replxx::Replxx::State state(rx.get_state());
-        const char * line = state.text();
-        const char * line_end = line + strlen(line);
-
-        std::string commented_line;
-        if (std::find(line, line_end, '\n') != line_end)
-        {
-            /// If query has multiple lines, multiline comment is used over
-            /// commenting each line separately for easier uncomment (though
-            /// with invoking editor it is simpler to uncomment multiple lines)
-            ///
-            /// Note, that using multiline comment is OK even with nested
-            /// comments, since nested comments are supported.
-            commented_line = fmt::format("/* {} */", state.text());
-        }
-        else
-        {
-            // In a simplest case use simple comment.
-            commented_line = fmt::format("-- {}", state.text());
-        }
-        rx.set_state(replxx::Replxx::State(commented_line.c_str(), commented_line.size()));
-
-        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-    };
-    rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 }
 
 ReplxxLineReader::~ReplxxLineReader()
 {
     if (close(history_file_fd))
-        rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+        rx.print("Close of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
@@ -279,7 +248,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     // and that is why flock() is added here.
     bool locked = false;
     if (flock(history_file_fd, LOCK_EX))
-        rx.print("Lock of history file failed: %s\n", errnoToString().c_str());
+        rx.print("Lock of history file failed: %s\n", errnoToString(errno).c_str());
     else
         locked = true;
 
@@ -287,10 +256,10 @@ void ReplxxLineReader::addToHistory(const String & line)
 
     // flush changes to the disk
     if (!rx.history_save(history_file_path))
-        rx.print("Saving history failed: %s\n", errnoToString().c_str());
+        rx.print("Saving history failed: %s\n", errnoToString(errno).c_str());
 
     if (locked && 0 != flock(history_file_fd, LOCK_UN))
-        rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
+        rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
 /// See comments in ShellCommand::executeImpl()
@@ -304,7 +273,7 @@ int ReplxxLineReader::executeEditor(const std::string & path)
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
     if (!real_vfork)
     {
-        rx.print("Cannot find symbol vfork in myself: %s\n", errnoToString().c_str());
+        rx.print("Cannot find symbol vfork in myself: %s\n", errnoToString(errno).c_str());
         return -1;
     }
 
@@ -312,7 +281,7 @@ int ReplxxLineReader::executeEditor(const std::string & path)
 
     if (-1 == pid)
     {
-        rx.print("Cannot vfork: %s\n", errnoToString().c_str());
+        rx.print("Cannot vfork: %s\n", errnoToString(errno).c_str());
         return -1;
     }
 
@@ -321,11 +290,11 @@ int ReplxxLineReader::executeEditor(const std::string & path)
     {
         sigset_t mask;
         sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
+        sigprocmask(0, nullptr, &mask);
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
 
         execvp(editor.c_str(), argv);
-        rx.print("Cannot execute %s: %s\n", editor.c_str(), errnoToString().c_str());
+        rx.print("Cannot execute %s: %s\n", editor.c_str(), errnoToString(errno).c_str());
         _exit(-1);
     }
 
@@ -338,7 +307,7 @@ int ReplxxLineReader::executeEditor(const std::string & path)
             if (errno == EINTR)
                 continue;
 
-            rx.print("Cannot waitpid: %s\n", errnoToString().c_str());
+            rx.print("Cannot waitpid: %s\n", errnoToString(errno).c_str());
             return -1;
         }
         else
@@ -353,7 +322,7 @@ void ReplxxLineReader::openEditor()
     int fd = ::mkstemps(filename, 4);
     if (-1 == fd)
     {
-        rx.print("Cannot create temporary file to edit query: %s\n", errnoToString().c_str());
+        rx.print("Cannot create temporary file to edit query: %s\n", errnoToString(errno).c_str());
         return;
     }
 
@@ -367,7 +336,7 @@ void ReplxxLineReader::openEditor()
         ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
-            rx.print("Cannot write to temporary query file %s: %s\n", filename, errnoToString().c_str());
+            rx.print("Cannot write to temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
             break;
         }
         bytes_written += res;
@@ -375,7 +344,7 @@ void ReplxxLineReader::openEditor()
 
     if (0 != ::close(fd))
     {
-        rx.print("Cannot close temporary query file %s: %s\n", filename, errnoToString().c_str());
+        rx.print("Cannot close temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
         return;
     }
 
@@ -393,7 +362,7 @@ void ReplxxLineReader::openEditor()
         }
         catch (...)
         {
-            rx.print("Cannot read from temporary query file %s: %s\n", filename, errnoToString().c_str());
+            rx.print("Cannot read from temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
             return;
         }
     }
@@ -402,11 +371,11 @@ void ReplxxLineReader::openEditor()
         enableBracketedPaste();
 
     if (0 != ::unlink(filename))
-        rx.print("Cannot remove temporary query file %s: %s\n", filename, errnoToString().c_str());
+        rx.print("Cannot remove temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
 }
 
 void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
-}
+};

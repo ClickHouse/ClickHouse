@@ -248,6 +248,7 @@ template <> inline long                 Value::get<long                 >() cons
 template <> inline unsigned long        Value::get<unsigned long        >() const { return getUInt(); } /// NOLINT
 template <> inline long long            Value::get<long long            >() const { return getInt(); } /// NOLINT
 template <> inline unsigned long long   Value::get<unsigned long long   >() const { return getUInt(); } /// NOLINT
+template <> inline float                Value::get<float                >() const { return getDouble(); }
 template <> inline double               Value::get<double               >() const { return getDouble(); }
 template <> inline std::string          Value::get<std::string          >() const { return getString(); }
 template <> inline LocalDate            Value::get<LocalDate            >() const { return getDate(); }
@@ -258,8 +259,7 @@ namespace details
 {
 // To avoid stack overflow when converting to type with no appropriate c-tor,
 // resulting in endless recursive calls from `Value::get<T>()` to `Value::operator T()` to `Value::get<T>()` to ...
-template <typename T>
-requires std::is_constructible_v<T, Value>
+template <typename T, typename std::enable_if_t<std::is_constructible_v<T, Value>>>
 inline T contructFromValue(const Value & val)
 {
     return T(val);

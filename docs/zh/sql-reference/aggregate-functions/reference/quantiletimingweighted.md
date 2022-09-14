@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantiletimingweighted
-sidebar_position: 205
+toc_priority: 205
 ---
 
 # quantileTimingWeighted {#quantiletimingweighted}

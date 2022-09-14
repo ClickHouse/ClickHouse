@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Defines.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <Poco/Timespan.h>
@@ -22,9 +21,6 @@ struct ConnectionTimeouts
     /// Timeouts for HedgedConnections
     Poco::Timespan hedged_connection_timeout;
     Poco::Timespan receive_data_timeout;
-
-    /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus)
-    Poco::Timespan sync_request_timeout = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0);
 
     ConnectionTimeouts() = default;
 

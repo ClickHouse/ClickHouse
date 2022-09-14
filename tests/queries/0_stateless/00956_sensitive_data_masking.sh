@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # Get all server logs
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"

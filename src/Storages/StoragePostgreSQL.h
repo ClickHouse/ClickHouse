@@ -3,6 +3,7 @@
 #include "config_core.h"
 
 #if USE_LIBPQXX
+#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
@@ -16,8 +17,9 @@ class Logger;
 namespace DB
 {
 
-class StoragePostgreSQL final : public IStorage
+class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {
+    friend struct shared_ptr_helper<StoragePostgreSQL>;
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
@@ -45,6 +47,8 @@ public:
     static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
+    friend class PostgreSQLBlockOutputStream;
+
     String remote_table_name;
     String remote_table_schema;
     String on_conflict;

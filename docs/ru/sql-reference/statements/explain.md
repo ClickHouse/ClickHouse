@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/explain
-sidebar_position: 39
-sidebar_label: EXPLAIN
+toc_priority: 39
+toc_title: EXPLAIN
 ---
 
 # EXPLAIN {#explain}
@@ -134,9 +133,9 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     Оценка стоимости выполнения шага и запроса не поддерживается.
-    :::
+
 При `json = 1` шаги выполнения запроса выводятся в формате JSON. Каждый узел — это словарь, в котором всегда есть ключи `Node Type` и `Plans`. `Node Type` — это строка с именем шага. `Plans` — это массив с описаниями дочерних шагов. Другие дополнительные ключи могут быть добавлены в зависимости от типа узла и настроек.
 
 Пример:
