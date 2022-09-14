@@ -400,6 +400,8 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         }
 
         when_done(ret, exception);
+
+        return ret ? latest_snapshot_path : "";
     };
 
 

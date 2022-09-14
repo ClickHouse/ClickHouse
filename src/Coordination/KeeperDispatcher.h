@@ -36,6 +36,9 @@ private:
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
 
+    using SnapshotBackupQueue = ConcurrentBoundedQueue<std::string>;
+    SnapshotBackupQueue snapshots_backup_queue;
+
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
 
@@ -62,6 +65,8 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
+    /// Backup new snapshots to S3
+    ThreadFromGlobalPool snapshot_backup_thread;
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
 
@@ -85,6 +90,8 @@ private:
     void sessionCleanerTask();
     /// Thread create snapshots in the background
     void snapshotThread();
+    /// Thread backup snapshots to S3 in the background
+    void snapshotBackupThread();
     /// Thread apply or wait configuration changes from leader
     void updateConfigurationThread();
 
