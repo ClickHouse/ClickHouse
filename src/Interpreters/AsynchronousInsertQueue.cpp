@@ -120,8 +120,9 @@ std::exception_ptr AsynchronousInsertQueue::InsertData::Entry::getException() co
 }
 
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, Milliseconds cleanup_timeout_)
     : WithContext(context_)
+    , cleanup_timeout(cleanup_timeout_)
     , pool(pool_size)
     , dump_by_first_update_thread(&AsynchronousInsertQueue::busyCheck, this)
     , cleanup_thread(&AsynchronousInsertQueue::cleanup, this)
@@ -138,13 +139,8 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
 
     {
-        std::lock_guard lock(shutdown_mutex);
-        shutdown = true;
-        shutdown_cv.notify_all();
-    }
-
-    {
         std::lock_guard lock(deadline_mutex);
+        shutdown = true;
         are_tasks_available.notify_one();
     }
 
@@ -329,13 +325,16 @@ void AsynchronousInsertQueue::busyCheck()
 
 void AsynchronousInsertQueue::cleanup()
 {
-    /// Do not run cleanup too often,
-    /// because it holds exclusive lock.
-    /// FIXME: Come up with another mechanism.
-    auto timeout = Milliseconds(1000);
-
-    while (!waitForShutdown(timeout))
+    while (true)
     {
+        {
+            std::unique_lock shutdown_lock(shutdown_mutex);
+            shutdown_cv.wait_for(shutdown_lock, Milliseconds(cleanup_timeout), [this]() { return shutdown; });
+
+            if (shutdown)
+                return;
+        }
+
         std::vector<InsertQuery> keys_to_remove;
 
         {
@@ -387,11 +386,6 @@ void AsynchronousInsertQueue::cleanup()
     }
 }
 
-bool AsynchronousInsertQueue::waitForShutdown(const Milliseconds & timeout)
-{
-    std::unique_lock shutdown_lock(shutdown_mutex);
-    return shutdown_cv.wait_for(shutdown_lock, timeout, [this]() { return shutdown; });
-}
 
 // static
 void AsynchronousInsertQueue::processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context)

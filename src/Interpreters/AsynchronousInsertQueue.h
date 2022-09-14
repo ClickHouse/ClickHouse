@@ -18,7 +18,7 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, Milliseconds cleanup_timeout);
     ~AsynchronousInsertQueue();
 
     void push(ASTPtr query, ContextPtr query_context);
@@ -96,6 +96,9 @@ private:
     mutable std::shared_mutex rwlock;
     Queue queue;
 
+    mutable std::mutex shutdown_mutex;
+    mutable std::condition_variable shutdown_cv;
+
     mutable std::mutex deadline_mutex;
     mutable std::condition_variable are_tasks_available;
     DeadlineQueue deadline_queue;
@@ -113,7 +116,9 @@ private:
     /// During processing incoming INSERT queries we can also check whether the maximum size of data in buffer is reached (async_insert_max_data_size setting)
     /// If so, then again we dump the data.
 
-    std::atomic<bool> shutdown{false};
+    const Milliseconds cleanup_timeout;
+
+    bool shutdown{false};
 
     ThreadPool pool;  /// dump the data only inside this pool.
     ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
