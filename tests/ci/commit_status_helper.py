@@ -10,9 +10,11 @@ from ci_config import CI_CONFIG, REQUIRED_CHECKS
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from github import Github
 from github.Commit import Commit
+from github.CommitStatus import CommitStatus
 from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 
 RETRY = 5
+CommitStatuses = List[CommitStatus]
 
 
 def override_status(status: str, check_name: str, invert=False) -> str:
@@ -68,6 +70,22 @@ def post_commit_status_to_file(
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow([state, report_url, description])
+
+
+def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
+    """
+    Squash statuses to latest state
+    1. context="first", state="success", update_time=1
+    2. context="second", state="success", update_time=2
+    3. context="first", stat="failure", update_time=3
+    =========>
+    1. context="second", state="success"
+    2. context="first", stat="failure"
+    """
+    filtered = {}
+    for status in sorted(commit.get_statuses(), key=lambda x: x.updated_at):
+        filtered[status.context] = status
+    return list(filtered.values())
 
 
 def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]):
