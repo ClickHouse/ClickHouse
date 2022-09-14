@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Poco/Net/Context.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Poco/SharedPtr.h>
 #include <Common/Exception.h>
 #include <Server/TCPProtocolStackData.h>
 
 #if USE_SSL
+#   include <Poco/Net/Context.h>
 #   include <Poco/Net/SecureStreamSocket.h>
 #   include <Poco/Net/SSLManager.h>
 #endif
