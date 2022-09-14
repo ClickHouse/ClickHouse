@@ -408,13 +408,14 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 template <typename Container, typename Type>
 inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
 {
-    const UInt64 MASK64 = 0xffffffffffffffff;
-    const UInt8 * data_pos = reinterpret_cast<const UInt8 *>(data.data());
-    const UInt8 * indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
-    UInt8 * res_pos = reinterpret_cast<UInt8 *>(res_data.data());
-    size_t data_size = data.size();
+    static constexpr UInt64 MASK64 = 0xffffffffffffffff;
+    const size_t limit64 = limit & ~63;
     size_t pos = 0;
-    size_t limit64 = limit & ~63;
+    size_t data_size = data.size();
+
+    auto data_pos = reinterpret_cast<const UInt8 *>(data.data());
+    auto indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
+    auto res_pos = reinterpret_cast<UInt8 *>(res_data.data());
 
     if (data_size <= 64)
     {
