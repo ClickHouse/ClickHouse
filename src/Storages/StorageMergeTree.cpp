@@ -335,6 +335,13 @@ void StorageMergeTree::alter(
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
         }
 
+        {
+            /// Reset Object columns, because column of type
+            /// Object may be added or dropped by alter.
+            auto parts_lock = lockParts();
+            resetObjectColumnsFromActiveParts(parts_lock);
+        }
+
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())

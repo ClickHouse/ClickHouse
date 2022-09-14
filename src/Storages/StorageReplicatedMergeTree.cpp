@@ -4649,6 +4649,13 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", metadata_version);
     }
 
+    {
+        /// Reset Object columns, because column of type
+        /// Object may be added or dropped by alter.
+        auto parts_lock = lockParts();
+        resetObjectColumnsFromActiveParts(parts_lock);
+    }
+
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
     /// TODO Maybe do in in one transaction for Replicated database?
     zookeeper->createOrUpdate(fs::path(replica_path) / "metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
