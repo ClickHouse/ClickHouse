@@ -7636,7 +7636,8 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String files_not_to_remove_str = zookeeper_ptr->get(zc_zookeeper_path);
+        String files_not_to_remove_str;
+        zookeeper_ptr->tryGet(zc_zookeeper_path, files_not_to_remove_str);
 
         files_not_to_remove.clear();
         if (!files_not_to_remove_str.empty())
@@ -7659,7 +7660,8 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
 
         /// Check, maybe we were the last replica and can remove part forever
-        Strings children = zookeeper_ptr->getChildren(zookeeper_part_uniq_node);
+        Strings children;
+        zookeeper_ptr->tryGetChildren(zookeeper_part_uniq_node, children);
 
         if (!children.empty())
         {
