@@ -47,12 +47,12 @@ class FunctionDateDiff : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateDiff>(context->getSettingsRef().default_user_timezone); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateDiff>(context->getSettingsRef().force_timezone); }
 
-    explicit FunctionDateDiff(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    explicit FunctionDateDiff(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
 
     String getName() const override
     {
@@ -106,8 +106,8 @@ public:
         size_t rows = input_rows_count;
         auto res = ColumnInt64::create(rows);
 
-        const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1, default_user_timezone);
-        const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2, default_user_timezone);
+        const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1, force_timezone);
+        const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2, force_timezone);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
             dispatchForColumns<ToRelativeYearNumImpl>(x, y, timezone_x, timezone_y, res->getData());

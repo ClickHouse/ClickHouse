@@ -51,13 +51,13 @@ using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 class FunctionDateNameImpl : public IFunction
 {
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
     static constexpr auto name = "dateName";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateNameImpl>(context->getSettingsRef().default_user_timezone); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateNameImpl>(context->getSettingsRef().force_timezone); }
 
-    explicit FunctionDateNameImpl(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    explicit FunctionDateNameImpl(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
     
     String getName() const override { return name; }
 
@@ -143,7 +143,7 @@ public:
 
         const DateLUTImpl * time_zone_tmp;
         if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1, default_user_timezone);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1, force_timezone);
         else
             time_zone_tmp = &DateLUT::instance();
 

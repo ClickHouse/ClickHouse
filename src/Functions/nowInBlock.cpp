@@ -24,12 +24,12 @@ namespace
 class FunctionNowInBlock : public IFunction
 {
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
     static constexpr auto name = "nowInBlock";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_unique<FunctionNowInBlock>(context->getSettingsRef().default_user_timezone); }
-    explicit FunctionNowInBlock(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_unique<FunctionNowInBlock>(context->getSettingsRef().force_timezone); }
+    explicit FunctionNowInBlock(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
 
     String getName() const override
     {
@@ -69,7 +69,7 @@ public:
         }
         if (arguments.size() == 1)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, default_user_timezone));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, force_timezone));
         }
         return std::make_shared<DataTypeDateTime>();
     }

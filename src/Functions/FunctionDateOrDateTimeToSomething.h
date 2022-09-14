@@ -24,17 +24,17 @@ namespace ErrorCodes
 template <typename ToDataType, typename Transform>
 class FunctionDateOrDateTimeToSomething : public IFunction
 {
-    const std::string default_user_timezone;
+    const std::string force_timezone;
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(context->getSettingsRef().default_user_timezone); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(context->getSettingsRef().force_timezone); }
 
     String getName() const override
     {
         return name;
     }
 
-    explicit FunctionDateOrDateTimeToSomething(const std::string & default_user_timezone_) : default_user_timezone{default_user_timezone_}
+    explicit FunctionDateOrDateTimeToSomething(const std::string & force_timezone_) : force_timezone{force_timezone_}
     {
     }
 
@@ -80,7 +80,7 @@ public:
         /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
+            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, force_timezone);
             /// only validate the time_zone part if the number of arguments is 2. This is mainly
             /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
             if (arguments.size() == 2 && time_zone.empty())
@@ -88,10 +88,10 @@ public:
                     "Function " + getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-//            // if timezone not explicitly specified, but there is default_user_timezone set in Settings
-//            if (time_zone.empty() && !default_user_timezone.empty())
+//            // if timezone not explicitly specified, but there is force_timezone set in Settings
+//            if (time_zone.empty() && !force_timezone.empty())
 //            {
-//                return std::make_shared<ToDataType>(default_user_timezone);
+//                return std::make_shared<ToDataType>(force_timezone);
 //            }
 //            else
 //            {
@@ -119,17 +119,17 @@ public:
                 scale = std::max(source_scale, static_cast<Int64>(9));
             }
 
-            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
+            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, force_timezone);
 
             if (arguments.size() == 3 && time_zone.empty())
                 throw Exception(
                     "Function " + getName() + " supports a 3rd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-//            // if timezone not explicitly specified, but there is default_user_timezone set in Settings
-//            if (time_zone.empty() && !default_user_timezone.empty())
+//            // if timezone not explicitly specified, but there is force_timezone set in Settings
+//            if (time_zone.empty() && !force_timezone.empty())
 //            {
-//                return std::make_shared<ToDataType>(scale, default_user_timezone);
+//                return std::make_shared<ToDataType>(scale, force_timezone);
 //            }
 //            else
 //            {

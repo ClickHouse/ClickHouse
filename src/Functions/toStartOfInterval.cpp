@@ -313,10 +313,10 @@ namespace
 class FunctionToStartOfInterval : public IFunction
 {
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToStartOfInterval>(context->getSettingsRef().default_user_timezone); }
-    explicit FunctionToStartOfInterval(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToStartOfInterval>(context->getSettingsRef().force_timezone); }
+    explicit FunctionToStartOfInterval(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
 
 
     static constexpr auto name = function_name;
@@ -394,7 +394,7 @@ public:
         if (result_type_is_date)
             return std::make_shared<DataTypeDate>();
         else if (result_type_is_datetime)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, default_user_timezone));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, force_timezone));
         else
         {
             auto scale = 0;
@@ -406,7 +406,7 @@ public:
             else if (interval_type->getKind() == IntervalKind::Millisecond)
                 scale = 3;
 
-            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, default_user_timezone));
+            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, force_timezone));
         }
 
     }
@@ -418,7 +418,7 @@ public:
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
-        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0, default_user_timezone);
+        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0, force_timezone);
         auto result_column = dispatchForColumns(time_column, interval_column, result_type, time_zone);
         return result_column;
     }

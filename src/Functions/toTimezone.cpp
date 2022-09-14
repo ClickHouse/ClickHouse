@@ -81,15 +81,15 @@ private:
 class ToTimeZoneOverloadResolver : public IFunctionOverloadResolver
 {
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
     static constexpr auto name = "toTimezone";
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ToTimeZoneOverloadResolver>(context->getSettingsRef().default_user_timezone); }
-    explicit ToTimeZoneOverloadResolver(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ToTimeZoneOverloadResolver>(context->getSettingsRef().force_timezone); }
+    explicit ToTimeZoneOverloadResolver(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
 
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -104,7 +104,7 @@ public:
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                 ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
+        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, force_timezone);
         if (which_type.isDateTime())
             return std::make_shared<DataTypeDateTime>(time_zone_name);
 

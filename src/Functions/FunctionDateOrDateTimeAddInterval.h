@@ -538,7 +538,7 @@ template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
     static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments,
-        const DataTypePtr & result_type, const std::string & default_user_timezone, UInt16 scale = 0)
+        const DataTypePtr & result_type, const std::string & force_timezone, UInt16 scale = 0)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
@@ -546,7 +546,7 @@ struct DateTimeAddIntervalImpl
 
         auto op = Adder<Transform>{std::move(transform)};
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0, default_user_timezone);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0, force_timezone);
 
         const ColumnPtr source_col = arguments[0].column;
 
@@ -593,12 +593,12 @@ template <typename Transform>
 class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(context->getSettingsRef().default_user_timezone); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(context->getSettingsRef().force_timezone); }
 
-    explicit FunctionDateOrDateTimeAddInterval(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    explicit FunctionDateOrDateTimeAddInterval(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
 
     String getName() const override
     {
@@ -682,7 +682,7 @@ public:
             return std::make_shared<DataTypeDate32>();
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, default_user_timezone));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, force_timezone));
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
@@ -702,7 +702,7 @@ public:
 
                 scale = std::max(scale, from_scale);
 
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, default_user_timezone));
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, force_timezone));
             }
             else
             {
@@ -715,7 +715,7 @@ public:
                 else if (std::is_same_v<Transform, AddMillisecondsImpl>)
                     scale = 3;
 
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, default_user_timezone));
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, force_timezone));
             }
         }
         else
@@ -738,23 +738,23 @@ public:
         if (which.isDate())
         {
             return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
-                Transform{}, arguments, result_type, default_user_timezone);
+                Transform{}, arguments, result_type, force_timezone);
         }
         else if (which.isDate32())
         {
             return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(
-                Transform{}, arguments, result_type, default_user_timezone);
+                Transform{}, arguments, result_type, force_timezone);
         }
         else if (which.isDateTime())
         {
             return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
-                Transform{}, arguments, result_type, default_user_timezone);
+                Transform{}, arguments, result_type, force_timezone);
         }
         else if (const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type))
         {
             auto from_scale = datetime64_type->getScale();
             return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
-                Transform{}, arguments, result_type, default_user_timezone, from_scale);
+                Transform{}, arguments, result_type, force_timezone, from_scale);
         }
         else
             throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),

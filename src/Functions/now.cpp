@@ -76,7 +76,7 @@ private:
 class NowOverloadResolver : public IFunctionOverloadResolver
 {
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
     static constexpr auto name = "now";
 
@@ -87,8 +87,8 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context->getSettingsRef().default_user_timezone); }
-    explicit NowOverloadResolver(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context->getSettingsRef().force_timezone); }
+    explicit NowOverloadResolver(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
 
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -104,7 +104,7 @@ public:
         }
         if (arguments.size() == 1)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, default_user_timezone));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, force_timezone));
         }
         return std::make_shared<DataTypeDateTime>();
     }
@@ -123,7 +123,7 @@ public:
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
                 time(nullptr), DataTypes{arguments.front().type},
-                std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, default_user_timezone)));
+                std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, force_timezone)));
 
         return std::make_unique<FunctionBaseNow>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>());
     }

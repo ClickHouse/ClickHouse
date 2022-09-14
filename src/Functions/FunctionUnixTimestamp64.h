@@ -91,11 +91,11 @@ class FunctionFromUnixTimestamp64 : public IFunction
 private:
     size_t target_scale;
     const char * name;
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 
 public:
-    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, const std::string & default_user_timezone_)
-        : target_scale(target_scale_), name(name_), default_user_timezone(default_user_timezone_)
+    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, const std::string & force_timezone_)
+        : target_scale(target_scale_), name(name_), force_timezone(force_timezone_)
     {
     }
 
@@ -115,7 +115,7 @@ public:
 
         std::string timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, force_timezone);
 
         return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
     }

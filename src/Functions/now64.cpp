@@ -101,7 +101,7 @@ private:
 class Now64OverloadResolver : public IFunctionOverloadResolver
 {
 private:
-    std::string default_user_timezone = "";
+    std::string force_timezone = "";
 public:
     static constexpr auto name = "now64";
 
@@ -113,8 +113,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context->getSettingsRef().default_user_timezone); }
-    explicit Now64OverloadResolver(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context->getSettingsRef().force_timezone); }
+    explicit Now64OverloadResolver(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -139,7 +139,7 @@ public:
         }
         if (arguments.size() == 2)
         {
-            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
+            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, force_timezone);
         }
 
         return std::make_shared<DataTypeDateTime64>(scale, timezone_name);

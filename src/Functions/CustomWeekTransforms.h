@@ -140,7 +140,7 @@ struct CustomWeekTransformImpl
 {
     template <typename Transform>
     static ColumnPtr
-    execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {}, const std::string & default_user_timezone = "")
+    execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {}, const std::string & force_timezone = "")
     {
         const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
 
@@ -151,7 +151,7 @@ struct CustomWeekTransformImpl
                 week_mode = week_mode_column->getValue<UInt8>();
         }
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0, default_user_timezone);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0, force_timezone);
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {

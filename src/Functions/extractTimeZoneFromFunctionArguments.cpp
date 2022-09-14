@@ -31,7 +31,7 @@ std::string extractTimeZoneNameFromColumn(const IColumn & column)
 
 
 std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num,
-                                                     size_t datetime_arg_num, const std::string & user_default_time_zone)
+                                                     size_t datetime_arg_num, const std::string & force_timezone)
 {
     /// Explicit time zone may be passed in last argument.
     if (arguments.size() == time_zone_arg_num + 1 && arguments[time_zone_arg_num].column)
@@ -42,10 +42,10 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
     {
         if (arguments.size() <= datetime_arg_num)
         {
-            if (user_default_time_zone.empty())
+            if (force_timezone.empty())
                 return {};
             else
-                return user_default_time_zone;
+                return force_timezone;
         }
 
         const auto & dt_arg = arguments[datetime_arg_num].type.get();
@@ -55,15 +55,15 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
         if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
             return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
 
-        if (user_default_time_zone.empty())
+        if (force_timezone.empty())
             return {};
         else
-            return user_default_time_zone;
+            return force_timezone;
     }
 }
 
 const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num,
-                                                         size_t datetime_arg_num, const std::string & user_default_time_zone)
+                                                         size_t datetime_arg_num, const std::string & force_timezone)
 {
     if (arguments.size() == time_zone_arg_num + 1)
     {
@@ -76,9 +76,9 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
     {
         if (arguments.size() <= datetime_arg_num)
         {
-            if (!user_default_time_zone.empty())
+            if (!force_timezone.empty())
             {
-                return DateLUT::instance(user_default_time_zone);
+                return DateLUT::instance(force_timezone);
             }
             else
                 return DateLUT::instance();
@@ -92,10 +92,10 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
             return type->getTimeZone();
 
 
-        if (user_default_time_zone.empty())
+        if (force_timezone.empty())
             return DateLUT::instance();
         else
-            return DateLUT::instance(user_default_time_zone);
+            return DateLUT::instance(force_timezone);
     }
 }
 
