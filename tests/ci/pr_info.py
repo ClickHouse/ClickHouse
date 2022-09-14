@@ -86,7 +86,7 @@ class PRInfo:
         self.changed_files = set()  # type: Set[str]
         self.body = ""
         self.diff_urls = []
-        self.release_pr = ""
+        self.release_pr = 0
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
