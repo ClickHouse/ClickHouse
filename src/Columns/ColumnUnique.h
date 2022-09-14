@@ -136,15 +136,16 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
+    /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
-        auto& nested = *getNestedColumn();
+        const IColumn & nested = *getNestedColumn();
 
         for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
+            if (!nested.isNullAt(i) && nested.getDataAt(i) == value)
                 return i;
 
         return {};

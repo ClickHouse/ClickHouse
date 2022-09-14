@@ -1,5 +1,5 @@
 ---
-slug: /en/development/tests
+slug: /zh/development/tests
 sidebar_position: 70
 sidebar_label: Testing
 title: ClickHouse Testing
