@@ -524,7 +524,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 
             const String & model_path = params.get("model_path");
 
-            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().getOrCreateModel(model_path, library_path, /*create_if_not_found*/ true);
+            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().tryGetModel(model_path, library_path, /*create_if_not_found*/ true);
             size_t tree_count = catboost_handler->getTreeCount();
             writeIntBinary(tree_count, out);
         }
@@ -558,7 +558,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             for (const auto & p : col_ptrs)
                 col_raw_ptrs.push_back(&*p);
 
-            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().getOrCreateModel(model_path, "DummyLibraryPath", /*create_if_not_found*/ false);
+            auto catboost_handler = CatBoostLibraryHandlerFactory::instance().tryGetModel(model_path, "DummyLibraryPath", /*create_if_not_found*/ false);
 
             if (!catboost_handler)
             {

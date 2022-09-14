@@ -22,21 +22,11 @@ namespace ErrorCodes
 
 CatBoostLibraryBridgeHelper::CatBoostLibraryBridgeHelper(
         ContextPtr context_,
-        std::string_view library_path_,
-        std::string_view model_path_)
+        std::optional<String> model_path_,
+        std::optional<String> library_path_)
     : LibraryBridgeHelper(context_->getGlobalContext())
-    , library_path(library_path_)
     , model_path(model_path_)
-{
-}
-
-CatBoostLibraryBridgeHelper::CatBoostLibraryBridgeHelper(ContextPtr context_, std::string_view model_path_)
-    : CatBoostLibraryBridgeHelper(context_, "", model_path_)
-{
-}
-
-CatBoostLibraryBridgeHelper::CatBoostLibraryBridgeHelper(ContextPtr context_)
-    : CatBoostLibraryBridgeHelper(context_, "", "")
+    , library_path(library_path_)
 {
 }
 
@@ -122,12 +112,14 @@ void CatBoostLibraryBridgeHelper::removeModel()
 {
     startBridgeSync();
 
+    assert(model_path);
+
     ReadWriteBufferFromHTTP buf(
         createRequestURI(CATBOOST_REMOVEMODEL_METHOD),
         Poco::Net::HTTPRequest::HTTP_POST,
         [this](std::ostream & os)
         {
-            os << "model_path=" << escapeForFileName(model_path);
+            os << "model_path=" << escapeForFileName(*model_path);
         },
         http_timeouts, credentials);
 
@@ -155,13 +147,15 @@ size_t CatBoostLibraryBridgeHelper::getTreeCount()
 {
     startBridgeSync();
 
+    assert(model_path && library_path);
+
     ReadWriteBufferFromHTTP buf(
         createRequestURI(CATBOOST_GETTREECOUNT_METHOD),
         Poco::Net::HTTPRequest::HTTP_POST,
         [this](std::ostream & os)
         {
-            os << "library_path=" << escapeForFileName(library_path) << "&";
-            os << "model_path=" << escapeForFileName(model_path);
+            os << "library_path=" << escapeForFileName(*library_path) << "&";
+            os << "model_path=" << escapeForFileName(*model_path);
         },
         http_timeouts, credentials);
 
@@ -179,12 +173,14 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
     NativeWriter serializer(string_write_buf, /*client_revision*/ 0, block);
     serializer.write(block);
 
+    assert(model_path);
+
     ReadWriteBufferFromHTTP buf(
         createRequestURI(CATBOOST_LIB_EVALUATE_METHOD),
         Poco::Net::HTTPRequest::HTTP_POST,
         [this, serialized = string_write_buf.str()](std::ostream & os)
         {
-            os << "model_path=" << escapeForFileName(model_path) << "&";
+            os << "model_path=" << escapeForFileName(*model_path) << "&";
             os << "data=" << escapeForFileName(serialized);
         },
         http_timeouts, credentials);

@@ -58,7 +58,7 @@ public:
         if (!std::filesystem::exists(model_path))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't load model {}: file doesn't exist", model_path);
 
-        bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), library_path, model_path);
+        bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), model_path, library_path);
     }
 
     DataTypePtr getReturnTypeFromLibraryBridge() const
