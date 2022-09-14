@@ -21,13 +21,6 @@ node = cluster.add_instance(
 )
 
 
-@pytest.fixture(scope="module")
-def list_all_test_in_module(request):
-    items = request.session.items
-    all_tests_names = [item.name for item in items]
-    return all_tests_names
-
-
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -145,9 +138,9 @@ def test_query_is_lock_free(lock_free_query, exclusive_table):
 
 PERMANENT_QUERIES = {
     "truncate": ("TRUNCATE TABLE {table};", 0),
-    "detach partition all": ("ALTER TABLE {table} DETACH PARTITION ALL;", 0),
-    "detach part": ("ALTER TABLE {table} DETACH PARTITION '20221001';", 49),
-    "drop part": ("ALTER TABLE {table} DROP PART '20220901_1_1_0';", 49),
+    "detach-partition-all": ("ALTER TABLE {table} DETACH PARTITION ALL;", 0),
+    "detach-part": ("ALTER TABLE {table} DETACH PARTITION '20221001';", 49),
+    "drop-part": ("ALTER TABLE {table} DROP PART '20220901_1_1_0';", 49),
 }
 
 

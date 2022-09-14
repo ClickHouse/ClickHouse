@@ -2116,12 +2116,11 @@ size_t MergeTreeData::clearEmptyParts()
         if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
             continue;
 
+        /// Don't drop empty parts that cover other parts
+        /// Otherwise covered parts resurrect
         {
             auto lock = lockParts();
             DataPartsVector covered_parts = getCoveredOutdatedParts(part->info, lock);
-
-            // Don't drop empty parts that cover other parts
-            // Otherwise covered parts resurrect
             if (!covered_parts.empty())
                 continue;
         }
@@ -2130,7 +2129,6 @@ size_t MergeTreeData::clearEmptyParts()
 
         dropPartNoWaitNoThrow(part->name);
         ++cleared_count;
-
     }
     return cleared_count;
 }
@@ -2906,61 +2904,17 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
     }
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getCoveredOutdatedParts(
+void MergeTreeData::getPartHierarchy(
     const MergeTreePartInfo & part_info,
-    DataPartsLock & /* data_parts_lock */) const
-{
-    auto it_middle = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{DataPartState::Outdated, part_info});
-    auto outdated_parts_range = getDataPartsStateRange(DataPartState::Outdated);
-
-    /// Go to the left.
-    DataPartIteratorByStateAndInfo begin = it_middle;
-    while (begin != outdated_parts_range.begin())
-    {
-        auto prev = std::prev(begin);
-
-        if (!part_info.contains((*prev)->info))
-        {
-            if ((*prev)->info.contains(part_info))
-                return {};
-
-            break;
-        }
-
-        begin = prev;
-    }
-
-    /// Go to the right.
-    DataPartIteratorByStateAndInfo end = it_middle;
-    while (end != outdated_parts_range.end())
-    {
-        if ((*end)->info == part_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", (*end)->getNameWithState());
-
-        if (!part_info.contains((*end)->info))
-        {
-            if ((*end)->info.contains(part_info))
-                return {};
-
-            break;
-        }
-
-        ++end;
-    }
-
-    return DataPartsVector{begin, end};
-}
-
-
-MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
-    const MergeTreePartInfo & new_part_info,
-    const String & new_part_name,
+    const String & part_name,
+    DataPartState state,
     DataPartPtr & out_covering_part,
+    DataPartsVector & covered_part,
     DataPartsLock & /* data_parts_lock */) const
 {
     /// Parts contained in the part are consecutive in data_parts, intersecting the insertion place for the part itself.
-    auto it_middle = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{DataPartState::Active, new_part_info});
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+    auto it_middle = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{state, part_info});
+    auto committed_parts_range = getDataPartsStateRange(state);
 
     /// Go to the left.
     DataPartIteratorByStateAndInfo begin = it_middle;
@@ -2968,17 +2922,17 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     {
         auto prev = std::prev(begin);
 
-        if (!new_part_info.contains((*prev)->info))
+        if (!part_info.contains((*prev)->info))
         {
-            if ((*prev)->info.contains(new_part_info))
+            if ((*prev)->info.contains(part_info))
             {
                 out_covering_part = *prev;
-                return {};
+                return;
             }
 
-            if (!new_part_info.isDisjoint((*prev)->info))
+            if (!part_info.isDisjoint((*prev)->info))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug.",
-                                new_part_name, (*prev)->getNameWithState());
+                                part_name, (*prev)->getNameWithState());
 
             break;
         }
@@ -2990,20 +2944,20 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     DataPartIteratorByStateAndInfo end = it_middle;
     while (end != committed_parts_range.end())
     {
-        if ((*end)->info == new_part_info)
+        if ((*end)->info == part_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", (*end)->getNameWithState());
 
-        if (!new_part_info.contains((*end)->info))
+        if (!part_info.contains((*end)->info))
         {
-            if ((*end)->info.contains(new_part_info))
+            if ((*end)->info.contains(part_info))
             {
                 out_covering_part = *end;
-                return {};
+                return;
             }
 
-            if (!new_part_info.isDisjoint((*end)->info))
+            if (!part_info.isDisjoint((*end)->info))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug.",
-                                new_part_name, (*end)->getNameWithState());
+                                part_name, (*end)->getNameWithState());
 
             break;
         }
@@ -3011,9 +2965,29 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
         ++end;
     }
 
-    return DataPartsVector{begin, end};
+    covered_part = DataPartsVector{begin, end};
 }
 
+MergeTreeData::DataPartsVector MergeTreeData::getCoveredOutdatedParts(
+    const MergeTreePartInfo & part_info,
+    DataPartsLock & data_parts_lock) const
+{
+    DataPartPtr covering_part;
+    DataPartsVector covered_parts;
+    getPartHierarchy(part_info, part_info.getPartName(), DataPartState::Outdated, covering_part, covered_parts, data_parts_lock);
+    return covered_parts;
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
+    const MergeTreePartInfo & new_part_info,
+    const String & new_part_name,
+    DataPartPtr & out_covering_part,
+    DataPartsLock & data_parts_lock) const
+{
+    DataPartsVector covered_parts;
+    getPartHierarchy(new_part_info, new_part_name, DataPartState::Active, out_covering_part, covered_parts, data_parts_lock);
+    return covered_parts;
+}
 
 bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
