@@ -96,6 +96,7 @@ private:
 
     size_t getQuorumSize(size_t replicas_num) const;
     bool isQuorumEnabled() const;
+    String quorumLogMessage(size_t replicas_num) const; /// Used in logs for debug purposes
 
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
