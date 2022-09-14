@@ -510,13 +510,13 @@ struct Operator
 {
     Operator() = default;
 
-    Operator(String function_name_, Int32 priority_, Int32 arity_ = 2, OperatorType type_ = OperatorType::None)
+    Operator(const std::string & function_name_, int priority_, int arity_ = 2, OperatorType type_ = OperatorType::None)
         : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
 
     OperatorType type;
-    Int32 priority;
-    Int32 arity;
-    String function_name;
+    int priority;
+    int arity;
+    std::string function_name;
 };
 
 enum class Checkpoint
@@ -2132,14 +2132,6 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_settings("SETTINGS");
-    if (s_settings.ignore(pos, expected))
-    {
-        ParserSetQuery parser_settings(true);
-        if (parser_settings.parse(pos, node, expected))
-            return true;
-    }
-
     auto start = std::make_unique<SingleElementLayer>();
     start->is_table_function = true;
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
@@ -2303,15 +2295,39 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
 {
     ASTPtr tmp;
 
-    if (typeid_cast<ViewLayer *>(layers.back().get()))
+    if (layers.front()->is_table_function)
     {
-        if (identifier_parser.parse(pos, tmp, expected)
-            && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+        if (typeid_cast<ViewLayer *>(layers.back().get()))
         {
-            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
-            return ParseResult::OPERAND;
+            if (identifier_parser.parse(pos, tmp, expected)
+                && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+            {
+                layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
+                return ParseResult::OPERAND;
+            }
+            return ParseResult::ERROR;
         }
-        return ParseResult::ERROR;
+
+        /// Current element should be empty (there should be no other operands or operators)
+        /// to parse SETTINGS in table function
+        if (layers.back()->empty())
+        {
+            auto old_pos = pos;
+            ParserKeyword s_settings("SETTINGS");
+            if (s_settings.ignore(pos, expected))
+            {
+                ParserSetQuery parser_settings(true);
+                if (parser_settings.parse(pos, tmp, expected))
+                {
+                    layers.back()->pushOperand(tmp);
+                    return ParseResult::OPERAND;
+                }
+                else
+                {
+                    pos = old_pos;
+                }
+            }
+        }
     }
 
     /// Special case for cast expression
