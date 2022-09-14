@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/special/url
----
 # URL(URL,格式) {#table_engines-url}
 
 用于管理远程 HTTP/HTTPS 服务器上的数据。该引擎类似

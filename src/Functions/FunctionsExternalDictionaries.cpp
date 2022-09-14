@@ -5,7 +5,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(ExternalDictionaries)
+void registerFunctionsExternalDictionaries(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDictHas>();
     factory.registerFunction<FunctionDictGetUInt8>();
@@ -24,8 +24,8 @@ REGISTER_FUNCTION(ExternalDictionaries)
     factory.registerFunction<FunctionDictGetString>();
     factory.registerFunction<FunctionDictGetHierarchy>();
     factory.registerFunction<FunctionDictIsIn>();
-    factory.registerFunction<FunctionDictGetChildrenOverloadResolver>();
-    factory.registerFunction<FunctionDictGetDescendantsOverloadResolver>();
+    factory.registerFunction<FunctionDictGetChildren>();
+    factory.registerFunction<FunctionDictGetDescendants>();
     factory.registerFunction<FunctionDictGetUInt8OrDefault>();
     factory.registerFunction<FunctionDictGetUInt16OrDefault>();
     factory.registerFunction<FunctionDictGetUInt32OrDefault>();

@@ -8,7 +8,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
-#include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -39,25 +39,22 @@ public:
     {
         size_t subquery_depth;
         bool is_remote;
-        bool is_explain;
         TemporaryTablesMapping & external_tables;
-        PreparedSetsPtr prepared_sets;
+        SubqueriesForSets & subqueries_for_sets;
         bool & has_global_subqueries;
 
         Data(
             ContextPtr context_,
             size_t subquery_depth_,
             bool is_remote_,
-            bool is_explain_,
             TemporaryTablesMapping & tables,
-            PreparedSetsPtr prepared_sets_,
+            SubqueriesForSets & subqueries_for_sets_,
             bool & has_global_subqueries_)
             : WithContext(context_)
             , subquery_depth(subquery_depth_)
             , is_remote(is_remote_)
-            , is_explain(is_explain_)
             , external_tables(tables)
-            , prepared_sets(prepared_sets_)
+            , subqueries_for_sets(subqueries_for_sets_)
             , has_global_subqueries(has_global_subqueries_)
         {
         }
@@ -163,11 +160,7 @@ public:
             /// We need to materialize external tables immediately because reading from distributed
             /// tables might generate local plans which can refer to external tables during index
             /// analysis. It's too late to populate the external table via CreatingSetsTransform.
-            if (is_explain)
-            {
-                /// Do not materialize external tables if it's explain statement.
-            }
-            else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
+            if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
@@ -178,8 +171,9 @@ public:
             }
             else
             {
-                auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
-                subquery_for_set.createSource(*interpreter, external_storage);
+                subqueries_for_sets[external_table_name].source = std::make_unique<QueryPlan>();
+                interpreter->buildQueryPlan(*subqueries_for_sets[external_table_name].source);
+                subqueries_for_sets[external_table_name].table = external_storage;
             }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
@@ -238,7 +232,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
                 || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             data.addExternalStorage(table_elem.table_expression, true);

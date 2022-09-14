@@ -103,7 +103,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3IndexesAreNeighbors)
+void registerFunctionH3IndexesAreNeighbors(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3IndexesAreNeighbors>();
 }

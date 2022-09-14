@@ -27,6 +27,6 @@ struct FreeingDeleter
     }
 };
 
-using DemangleResult = std::unique_ptr<char, FreeingDeleter>;
+typedef std::unique_ptr<char, FreeingDeleter> DemangleResult;
 
 DemangleResult tryDemangle(const char * name);

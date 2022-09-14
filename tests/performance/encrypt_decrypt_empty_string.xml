@@ -7,22 +7,28 @@
           <name>func</name>
           <values>
               <!-- materialize(plaitext) is to avoid all-args-are-const optimization, resulting in executing function exactly once. -->
+              <value>encrypt('aes-128-cfb128', materialize(plaintext), key16, iv16)</value>
               <value>encrypt('aes-128-ctr', materialize(plaintext), key16, iv16)</value>
               <value>encrypt('aes-128-ofb', materialize(plaintext), key16, iv16)</value>
 
+              <value>encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-ctr', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-ofb', materialize(plaintext), key24, iv16)</value>
 
+              <value>encrypt('aes-256-cfb128', materialize(plaintext), key32, iv16)</value>
               <value>encrypt('aes-256-ctr', materialize(plaintext), key32, iv16)</value>
               <value>encrypt('aes-256-ofb', materialize(plaintext), key32, iv16)</value>
 
               <!-- decrypt + encrypt since it is really hard to compose decrypt-only case -->
+              <value>decrypt('aes-128-cfb128', encrypt('aes-128-cfb128', materialize(plaintext), key16, iv16), key16, iv16)</value>
               <value>decrypt('aes-128-ctr', encrypt('aes-128-ctr', materialize(plaintext), key16, iv16), key16, iv16)</value>
               <value>decrypt('aes-128-ofb', encrypt('aes-128-ofb', materialize(plaintext), key16, iv16), key16, iv16)</value>
 
+              <value>decrypt('aes-192-cfb128', encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-ctr', encrypt('aes-192-ctr', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-ofb', encrypt('aes-192-ofb', materialize(plaintext), key24, iv16), key24, iv16)</value>
 
+              <value>decrypt('aes-256-cfb128', encrypt('aes-256-cfb128', materialize(plaintext), key32, iv16), key32, iv16)</value>
               <value>decrypt('aes-256-ctr', encrypt('aes-256-ctr', materialize(plaintext), key32, iv16), key32, iv16)</value>
               <value>decrypt('aes-256-ofb', encrypt('aes-256-ofb', materialize(plaintext), key32, iv16), key32, iv16)</value>
 

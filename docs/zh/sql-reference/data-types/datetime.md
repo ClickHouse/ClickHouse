@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/data-types/datetime
----
 # 日期时间 {#data_type-datetime}
 
 时间戳类型。用四个字节（无符号的）存储 Unix 时间戳）。允许存储与日期类型相同的范围内的值。最小值为 1970-01-01 00:00:00。时间戳类型值精确到秒（没有闰秒）。

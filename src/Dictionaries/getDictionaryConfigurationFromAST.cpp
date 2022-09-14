@@ -290,14 +290,6 @@ void buildSingleAttribute(
         attribute_element->appendChild(hierarchical_element);
     }
 
-    if (dict_attr->bidirectional)
-    {
-        AutoPtr<Element> bidirectional_element(doc->createElement("bidirectional"));
-        AutoPtr<Text> bidirectional(doc->createTextNode("true"));
-        bidirectional_element->appendChild(bidirectional);
-        attribute_element->appendChild(bidirectional_element);
-    }
-
     if (dict_attr->injective)
     {
         AutoPtr<Element> injective_element(doc->createElement("injective"));

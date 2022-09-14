@@ -539,7 +539,7 @@ if(WITH_FOLLY_DISTRIBUTED_MUTEX)
     "${ROCKSDB_SOURCE_DIR}/third-party/folly/folly/synchronization/WaitOptions.cpp")
 endif()
 
-add_library(_rocksdb ${SOURCES})
+add_library(_rocksdb STATIC ${SOURCES})
 add_library(ch_contrib::rocksdb ALIAS _rocksdb)
 target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
 # SYSTEM is required to overcome some issues

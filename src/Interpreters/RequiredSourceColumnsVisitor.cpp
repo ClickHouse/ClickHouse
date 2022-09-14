@@ -7,7 +7,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTInterpolateElement.h>
 
 namespace DB
 {
@@ -47,13 +46,15 @@ bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const AST
         return false;
 
     /// Processed. Do not need children.
-    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>() || node->as<ASTSelectQuery>() || node->as<ASTInterpolateElement>())
+    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>() || node->as<ASTSelectQuery>())
         return false;
 
     if (const auto * f = node->as<ASTFunction>())
     {
+        /// "indexHint" is a special function for index analysis.
+        /// Everything that is inside it is not calculated. See KeyCondition
         /// "lambda" visit children itself.
-        if (f->name == "lambda")
+        if (f->name == "indexHint" || f->name == "lambda")
             return false;
     }
 
@@ -71,11 +72,6 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
     }
     if (auto * t = ast->as<ASTFunction>())
     {
-        /// "indexHint" is a special function for index analysis.
-        /// Everything that is inside it is not calculated. See KeyCondition
-        if (!data.visit_index_hint && t->name == "indexHint")
-            return;
-
         data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
         return;
@@ -118,17 +114,15 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
 
 void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
-    NameSet select_columns;
     /// special case for top-level SELECT items: they are publics
     for (auto & node : select.select()->children)
     {
-        select_columns.insert(node->getAliasOrColumnName());
-
         if (const auto * identifier = node->as<ASTIdentifier>())
             data.addColumnIdentifier(*identifier);
         else
             data.addColumnAliasIfAny(*node);
     }
+
 
     if (auto interpolate_list = select.interpolate())
     {
@@ -173,7 +167,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (node.name().empty())
         throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (!data.private_aliases.contains(node.name()))
+    if (!data.private_aliases.count(node.name()))
         data.addColumnIdentifier(node);
 }
 

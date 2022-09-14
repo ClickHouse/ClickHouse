@@ -49,13 +49,3 @@ def test_access_control_on_cluster():
     assert "There is no user `Alex`" in ch1.query_and_get_error("SHOW CREATE USER Alex")
     assert "There is no user `Alex`" in ch2.query_and_get_error("SHOW CREATE USER Alex")
     assert "There is no user `Alex`" in ch3.query_and_get_error("SHOW CREATE USER Alex")
-
-
-def test_grant_all_on_cluster():
-    ch1.query("CREATE USER IF NOT EXISTS Alex ON CLUSTER 'cluster'")
-    ch1.query("GRANT ALL ON *.* TO Alex ON CLUSTER 'cluster'")
-
-    assert ch1.query("SHOW GRANTS FOR Alex") == "GRANT ALL ON *.* TO Alex\n"
-    assert ch2.query("SHOW GRANTS FOR Alex") == "GRANT ALL ON *.* TO Alex\n"
-
-    ch1.query("DROP USER Alex ON CLUSTER 'cluster'")

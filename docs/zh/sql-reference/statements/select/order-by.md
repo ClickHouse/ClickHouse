@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/statements/select/order-by
-sidebar_label: ORDER BY
+toc_title: ORDER BY
 ---
 
 # ORDER BY {#select-order-by}

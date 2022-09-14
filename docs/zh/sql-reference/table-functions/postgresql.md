@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/table-functions/postgresql
-sidebar_position: 42
-sidebar_label: postgresql
+toc_priority: 42
+toc_title: postgresql
 ---
 
 # postgresql {#postgresql}

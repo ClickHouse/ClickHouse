@@ -1,9 +1,9 @@
 ---
-slug: /en/engines/table-engines/special/generate
-sidebar_position: 140
-sidebar_label:  GenerateRandom
-title: "GenerateRandom Table Engine"
+toc_priority: 46
+toc_title: GenerateRandom
 ---
+
+# GenerateRandom Table Engine {#table_engines-generate}
 
 The GenerateRandom table engine produces random data for given table schema.
 
@@ -56,4 +56,4 @@ SELECT * FROM generate_engine_table LIMIT 3
     -   Indices
     -   Replication
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/generate/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/generate/) <!--hide-->

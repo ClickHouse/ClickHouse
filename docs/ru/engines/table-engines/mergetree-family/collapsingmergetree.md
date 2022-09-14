@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/mergetree-family/collapsingmergetree
-sidebar_position: 36
-sidebar_label: CollapsingMergeTree
+toc_priority: 36
+toc_title: CollapsingMergeTree
 ---
 
 # CollapsingMergeTree {#table_engine-collapsingmergetree}
@@ -43,9 +42,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Attention"
+!!! attention "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-    :::
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (

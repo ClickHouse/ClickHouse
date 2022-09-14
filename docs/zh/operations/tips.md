@@ -1,6 +1,3 @@
----
-slug: /zh/operations/tips
----
 # 使用建议 {#usage-recommendations}
 
 ## CPU频率调节器 {#cpu-scaling-governor}

@@ -455,7 +455,7 @@ private:
 };
 
 
-REGISTER_FUNCTION(Range)
+void registerFunctionRange(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRange>();
 }

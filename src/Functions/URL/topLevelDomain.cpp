@@ -11,19 +11,19 @@ struct ExtractTopLevelDomain
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
-        std::string_view host = getURLHost(data, size);
+        StringRef host = getURLHost(data, size);
 
         res_data = data;
         res_size = 0;
 
-        if (!host.empty())
+        if (host.size != 0)
         {
-            if (host[host.size() - 1] == '.')
-                host.remove_suffix(1);
+            if (host.data[host.size - 1] == '.')
+                host.size -= 1;
 
-            const auto * host_end = host.data() + host.size();
+            const auto * host_end = host.data + host.size;
 
-            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end);
+            Pos last_dot = find_last_symbols_or_null<'.'>(host.data, host_end);
             if (!last_dot)
                 return;
 
@@ -43,7 +43,7 @@ struct ExtractTopLevelDomain
 struct NameTopLevelDomain { static constexpr auto name = "topLevelDomain"; };
 using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, NameTopLevelDomain>;
 
-REGISTER_FUNCTION(TopLevelDomain)
+void registerFunctionTopLevelDomain(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTopLevelDomain>();
 }

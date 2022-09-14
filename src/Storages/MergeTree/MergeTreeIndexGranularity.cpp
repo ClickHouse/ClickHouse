@@ -15,6 +15,12 @@ MergeTreeIndexGranularity::MergeTreeIndexGranularity(const std::vector<size_t> &
 {
 }
 
+
+MergeTreeIndexGranularity::MergeTreeIndexGranularity(size_t marks_count, size_t fixed_granularity)
+    : marks_rows_partial_sums(marks_count, fixed_granularity)
+{
+}
+
 /// Rows after mark to next mark
 size_t MergeTreeIndexGranularity::getMarkRows(size_t mark_index) const
 {

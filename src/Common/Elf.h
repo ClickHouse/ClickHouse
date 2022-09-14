@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <IO/MMapReadBufferFromFile.h>
 
@@ -61,7 +61,7 @@ public:
     static String getBuildID(const char * nhdr_pos, size_t size);
 
     /// Hash of the binary for integrity checks.
-    String getStoredBinaryHash() const;
+    String getBinaryHash() const;
 
 private:
     MMapReadBufferFromFile in;

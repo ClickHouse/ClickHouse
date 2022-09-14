@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/functions/url-functions
-sidebar_position: 54
-sidebar_label: "Функции для работы с URL"
+toc_priority: 54
+toc_title: "Функции для работы с URL"
 ---
 
 # Функции для работы с URL {#funktsii-dlia-raboty-s-url}

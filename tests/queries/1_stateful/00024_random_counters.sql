@@ -998,12 +998,3 @@ SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15094099;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6308405;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20762370;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14121177;
-
-SYSTEM DROP UNCOMPRESSED CACHE;
-
-SET local_filesystem_read_method = 'pread_threadpool';
-SET min_bytes_to_use_direct_io = 1;
-SET use_uncompressed_cache = 1;
-
-SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32745436;
-SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33436573;
