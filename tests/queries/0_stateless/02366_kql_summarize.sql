@@ -35,7 +35,7 @@ Customers | summarize MyAvg = avgif(Age, Age<40) by Occupation;
 Customers | summarize MySum = sumif(Age, Age<40) by Occupation;
 Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
-Customers | summarize count() by bin(Age, 10) | order by count() ASC;
+Customers | summarize count_ = count() by bin(Age, 10) | order by count_ asc;
 
 -- make_list()
 Customers | summarize f_list = make_list(Education) by Occupation;

@@ -31,7 +31,7 @@ print '-- Query has second Column selection --';
 Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName;
 
 print '-- Query has second Column selection with extra column --';
-Customers| project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education;
+Customers| project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education;-- { serverError 47 }
 
 print '-- Query with desc sort --';
 Customers | project FirstName | take 5 | sort by FirstName desc;

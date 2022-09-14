@@ -46,9 +46,6 @@ Theodore	Diaz
 Stephanie	Cox
 Peter	Nara
 -- Query has second Column selection with extra column --
-Theodore	Diaz	Bachelors
-Stephanie	Cox	Bachelors
-Peter	Nara	Graduate Degree
 -- Query with desc sort --
 Theodore
 Stephanie
@@ -57,15 +54,15 @@ Latoya
 Joshua
 Skilled Manual
 Skilled Manual
-Skilled Manual
-Skilled Manual
 Professional
+Professional
+Management
 -- Query with asc sort --
 Management
 Professional
 Professional
-Professional
-Professional
+Skilled Manual
+Skilled Manual
 -- Query with sort (without keyword asc desc) --
 Theodore
 Stephanie
@@ -74,21 +71,21 @@ Latoya
 Joshua
 Skilled Manual
 Skilled Manual
-Skilled Manual
-Skilled Manual
 Professional
+Professional
+Management
 -- Query with sort 2 Columns with different direction --
 Stephanie	Cox	Management
-Dalton	Wood	Professional
-Angel	Stewart	Professional
 Latoya	Shen	Professional
-Cameron	Rodriguez	Professional
+Joshua	Lee	Professional
+Peter	Nara	Skilled Manual
+Theodore	Diaz	Skilled Manual
 -- Query with second sort --
 Stephanie	Cox	Management
-Dalton	Wood	Professional
-Angel	Stewart	Professional
 Latoya	Shen	Professional
-Cameron	Rodriguez	Professional
+Joshua	Lee	Professional
+Peter	Nara	Skilled Manual
+Theodore	Diaz	Skilled Manual
 -- Test String Equals (==) --
 Theodore	Diaz	Skilled Manual
 Peter	Nara	Skilled Manual
