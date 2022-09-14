@@ -5,7 +5,6 @@
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
 
 
 namespace DB
@@ -117,7 +116,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (name_collision && (id_by_name != id))
     {
         assert(replace_if_exists);
-        removeNoLock(id_by_name, /* throw_if_not_exists= */ false);
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ true);
     }
 
     if (id_collision)
@@ -139,7 +138,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
             }
             return true;
         }
-        removeNoLock(id, /* throw_if_not_exists= */ false);
+        removeNoLock(id, /* throw_if_not_exists= */ true);
     }
 
     /// Do insertion.
@@ -239,16 +238,17 @@ void MemoryAccessStorage::removeAllExcept(const std::vector<UUID> & ids_to_keep)
 
 void MemoryAccessStorage::removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep)
 {
-    boost::container::flat_set<UUID> ids_to_keep_set{ids_to_keep.begin(), ids_to_keep.end()};
+    removeAllExceptNoLock(boost::container::flat_set<UUID>{ids_to_keep.begin(), ids_to_keep.end()});
+}
+
+void MemoryAccessStorage::removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep)
+{
     for (auto it = entries_by_id.begin(); it != entries_by_id.end();)
     {
         const auto & id = it->first;
         ++it;
-        if (!ids_to_keep_set.contains(id))
-        {
-            UUID id_to_remove = id;
-            removeNoLock(id_to_remove, /* throw_if_not_exists */ false);
-        }
+        if (!ids_to_keep.contains(id))
+            removeNoLock(id, /* throw_if_not_exists */ true);
     }
 }
 
@@ -267,59 +267,20 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 {
     std::lock_guard lock{mutex};
 
-    boost::container::flat_set<UUID> not_used_ids;
-    std::vector<UUID> conflicting_ids;
+    /// Remove conflicting entities from the specified list.
+    auto entities_without_conflicts = all_entities;
+    clearConflictsInEntitiesList(entities_without_conflicts, getLogger());
 
-    /// Get the list of currently used IDs. Later we will remove those of them which are not used anymore.
-    for (const auto & id : entries_by_id | boost::adaptors::map_keys)
-        not_used_ids.emplace(id);
-
-    /// Get the list of conflicting IDs and update the list of currently used ones.
-    for (const auto & [id, entity] : all_entities)
-    {
-        auto it = entries_by_id.find(id);
-        if (it != entries_by_id.end())
-        {
-            not_used_ids.erase(id); /// ID is used.
-
-            Entry & entry = it->second;
-            if (entry.entity->getType() != entity->getType())
-                conflicting_ids.emplace_back(id); /// Conflict: same ID, different type.
-        }
-
-        const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(entity->getType())];
-        auto it2 = entries_by_name.find(entity->getName());
-        if (it2 != entries_by_name.end())
-        {
-            Entry & entry = *(it2->second);
-            if (entry.id != id)
-                conflicting_ids.emplace_back(entry.id); /// Conflict: same name and type, different ID.
-        }
-    }
-
-    /// Remove entities which are not used anymore and which are in conflict with new entities.
-    boost::container::flat_set<UUID> ids_to_remove = std::move(not_used_ids);
-    boost::range::copy(conflicting_ids, std::inserter(ids_to_remove, ids_to_remove.end()));
-    for (const auto & id : ids_to_remove)
-        removeNoLock(id, /* throw_if_not_exists = */ false);
+    /// Remove entities which are not used anymore.
+    boost::container::flat_set<UUID> ids_to_keep;
+    ids_to_keep.reserve(entities_without_conflicts.size());
+    for (const auto & [id, _] : entities_without_conflicts)
+        ids_to_keep.insert(id);
+    removeAllExceptNoLock(ids_to_keep);
 
     /// Insert or update entities.
-    for (const auto & [id, entity] : all_entities)
-    {
-        auto it = entries_by_id.find(id);
-        if (it == entries_by_id.end())
-        {
-            insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
-        }
-        else if (*(it->second.entity) != *entity)
-        {
-            const AccessEntityPtr & changed_entity = entity;
-            updateNoLock(
-                id,
-                [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
-                /* throw_if_not_exists = */ true);
-        }
-    }
+    for (const auto & [id, entity] : entities_without_conflicts)
+        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
 }
 
 
