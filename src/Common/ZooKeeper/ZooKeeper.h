@@ -114,6 +114,8 @@ public:
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
+    ZooKeeper(const ZooKeeperArgs & args_, const size_t zk_index_, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
     std::vector<ShuffleHost> shuffleHosts() const;
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
@@ -333,6 +335,8 @@ public:
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
+    ZooKeeperArgs getZookeeperArgs() const { return args; } 
+
 private:
     friend class EphemeralNodeHolder;
 
@@ -358,6 +362,7 @@ private:
 
     ZooKeeperArgs args;
 
+private:
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;

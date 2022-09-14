@@ -794,6 +794,8 @@ public:
     void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
+    // Reconnect Zookeeper server
+    void reconnectZookeeper(const size_t index);
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 

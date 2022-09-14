@@ -542,6 +542,10 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+        case Type::CONNECT_TO:
+            getContext()->checkAccess(AccessType::SYSTEM_ZOOKEEPER_CONNECT);
+            getContext()->reconnectZookeeper(query.zk_index);
+            break;
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -1029,6 +1033,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        case Type::CONNECT_TO:
         case Type::UNKNOWN:
         case Type::END: break;
     }

@@ -175,6 +175,29 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
     return shuffle_hosts;
 }
 
+ZooKeeper::ZooKeeper(const ZooKeeperArgs & zk_args, const size_t zk_index,
+    std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    : zk_log(std::move(zk_log_))
+{
+    log = &Poco::Logger::get("ZooKeeper");
+
+    LOG_INFO(log, "zookeeper reconnecting");
+
+    if (zk_index > zk_args.hosts.size()-1)
+        throw KeeperException("zk index is out of range.", Coordination::Error::ZBADARGUMENTS);
+
+    std::vector<std::string> zk_hosts(zk_args.hosts);
+    Strings index_hosts;
+    String host = zk_hosts[zk_index];
+    zk_args.hosts.clear();
+    zk_args.hosts.push_back(host);
+
+    init(zk_args);
+
+    // restore the zk hosts vector
+    zk_args.hosts.clear();
+    zk_args.hosts.assign(zk_hosts.begin(), zk_hosts.end());
+}
 
 bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
 {

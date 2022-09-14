@@ -68,6 +68,7 @@ public:
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
         UNFREEZE,
+        CONNECT_TO,
         END
     };
 
@@ -77,6 +78,8 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+
+    size_t zk_index = 0;
 
     String getDatabase() const;
     String getTable() const;

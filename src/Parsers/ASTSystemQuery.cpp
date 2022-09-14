@@ -205,6 +205,13 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(backup_name);
     }
+    else if (type == Type::CONNECT_TO)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " INDEX"
+            << (settings.hilite ? hilite_none : "") << zk_index
+            << (settings.hilite ? hilite_keyword: "") << " KEEPER"
+            << (settings.hilite ? hilite_none : "");
+    }
 }
 
 

@@ -394,6 +394,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
+        case Type::CONNECT_TO:
+        {
+            ASTPtr index;
+            if (!(ParserKeyword{"INDEX"}.ignore(pos,expected)
+                && ParserUnsignedInteger().parse(pos, index, expected)
+                && ParserKeyword{"KEEPER"}.ignore(pos, expected)))
+            {
+                return false;
+            }
+
+            res->zk_index = index->as<ASTLiteral>()->value.get<size_t>();
+            break;
+        }
 
         default:
         {
