@@ -5,16 +5,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # This function takes 2 arguments:
-# $1 - query
-# $2 - trace id
-function executeQuery()
+# $1 - query id
+# $2 - query
+function execute_query()
 {
-  ${CLICKHOUSE_CLIENT} --database=${CLICKHOUSE_DATABASE} --opentelemetry_start_trace_probability=1 --query_id $1 -nq "
+  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 --query_id $1 -nq "
       ${2}
   "
 }
 
-# For some quries, it's not able to know how many bytes/rows are read when tests are executed on CI,
+# For some queries, it's not possible to know how many bytes/rows are read when tests are executed on CI,
 # so we only to check the db.statement only
 function check_query_span_query_only()
 {
@@ -35,9 +35,7 @@ ${CLICKHOUSE_CLIENT} -nq "
     SYSTEM FLUSH LOGS;
     SELECT attribute['db.statement']             as query,
            attribute['clickhouse.read_rows']     as read_rows,
-           attribute['clickhouse.read_bytes']    as read_bytes,
-           attribute['clickhouse.written_rows']  as written_rows,
-           attribute['clickhouse.written_bytes'] as written_bytes
+           attribute['clickhouse.written_rows']  as written_rows
     FROM system.opentelemetry_span_log
     WHERE finish_date                      >= yesterday()
     AND   operation_name                   = 'query'
@@ -49,36 +47,36 @@ ${CLICKHOUSE_CLIENT} -nq "
 #
 # Set up
 #
-${CLICKHOUSE_CLIENT} --database=${CLICKHOUSE_DATABASE} -nq "
-DROP   TABLE IF EXISTS opentelemetry_test;
-CREATE TABLE opentelemetry_test (id UInt64) Engine=MergeTree Order By id;
+${CLICKHOUSE_CLIENT} -nq "
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.opentelemetry_test;
+CREATE TABLE ${CLICKHOUSE_DATABASE}.opentelemetry_test (id UInt64) Engine=MergeTree Order By id;
 "
 
 # test 1, a query that has special path in the code
 # Format Null is used to make sure no output is generated so that it won't pollute the reference file
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
-executeQuery $query_id 'show processlist format Null'
+execute_query $query_id 'show processlist format Null'
 check_query_span_query_only "$query_id"
 
 # test 2, a normal show command
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
-executeQuery $query_id 'show databases format Null'
+execute_query $query_id 'show databases format Null'
 check_query_span_query_only "$query_id"
 
 # test 3, a normal insert query on local table
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
-executeQuery $query_id 'insert into opentelemetry_test values(1)(2)(3)'
+execute_query $query_id 'insert into opentelemetry_test values(1)(2)(3)'
 check_query_span "$query_id"
 
 # test 4, a normal select query
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
-executeQuery $query_id 'select * from opentelemetry_test format Null'
+execute_query $query_id 'select * from opentelemetry_test format Null'
 check_query_span $query_id
 
 
 #
 # Tear down
 #
-${CLICKHOUSE_CLIENT} --database=${CLICKHOUSE_DATABASE} -q "
-DROP   TABLE IF EXISTS opentelemetry_test;
+${CLICKHOUSE_CLIENT} -q "
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.opentelemetry_test;
 "
