@@ -4056,3 +4056,13 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
 
 Значение по умолчанию: `''`.
+
+## force_timezone {#force_timezone}
+
+Задаёт значение часового пояса (timezone) по умолчанию. Все значения DateTime/DateTime64, для которых явно не указан параметр timezone, будут по умолчанию иметь указанный ezone.
+
+Возможные значения:
+
+-    Строка вида `Region/Place`, например `Europe/Zurich`
+
+Значение по умолчанию: `''`.

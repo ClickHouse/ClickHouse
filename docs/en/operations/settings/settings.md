@@ -3667,6 +3667,16 @@ Possible values:
 
 Default value: `0`.
 
+## force_timezone {#force_timezone}
+
+Sets a default timezone for session. All DateTime/DateTime64 values that have no explicit timezone specified are treated as having this timezone instead of default.
+
+Possible values:
+
+-    Any valid timezone in `Region/Place` notation, e.g. `Europe/Zurich`
+
+Default value: `''`.
+
 ## JSON formats settings {#json-formats-settings}
 
 ### input_format_import_nested_json {#input_format_import_nested_json}
