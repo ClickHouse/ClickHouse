@@ -50,10 +50,15 @@ OutputBlockColumns prepareOutputBlockColumns(
 
             if (aggregate_functions[i]->isState())
             {
-                auto * column_aggregate_func = assert_cast<ColumnAggregateFunction *>(
-                    aggregate_functions[i]->extractStateColumnFromResultColumn(final_aggregate_columns[i].get()));
-                for (auto & pool : aggregates_pools)
-                    column_aggregate_func->addArena(pool);
+                auto callback = [&](auto & subcolumn)
+                {
+                    /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
+                    if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
+                        for (auto & pool : aggregates_pools)
+                            column_aggregate_func->addArena(pool);
+                };
+                callback(final_aggregate_columns[i]);
+                final_aggregate_columns[i]->forEachSubcolumnRecursively(callback);
             }
         }
     }

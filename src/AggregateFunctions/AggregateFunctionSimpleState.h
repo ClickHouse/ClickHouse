@@ -56,9 +56,16 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
+
     void create(AggregateDataPtr __restrict place) const override { nested_func->create(place); }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override { nested_func->destroy(place); }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override { nested_func->destroyUpToState(place); }
 
     bool hasTrivialDestructor() const override { return nested_func->hasTrivialDestructor(); }
 

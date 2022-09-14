@@ -114,6 +114,11 @@ public:
         nested_function->destroy(nestedPlace(place));
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_function->destroyUpToState(nestedPlace(place));
+    }
+
     bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
@@ -187,11 +192,6 @@ public:
     bool isState() const override
     {
         return nested_function->isState();
-    }
-
-    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
-    {
-        return nested_function->extractStateColumnFromResultColumn(column);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

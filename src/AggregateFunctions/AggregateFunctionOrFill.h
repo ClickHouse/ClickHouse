@@ -67,11 +67,6 @@ public:
         return nested_function->isState();
     }
 
-    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
-    {
-        return nested_function->extractStateColumnFromResultColumn(column);
-    }
-
     bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
@@ -101,6 +96,11 @@ public:
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_function->destroy(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_function->destroyUpToState(place);
     }
 
     void add(

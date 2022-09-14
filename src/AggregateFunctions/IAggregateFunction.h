@@ -113,6 +113,17 @@ public:
     /// Delete data for aggregation.
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
+    /// Delete all combinator states that were used after combinator -State.
+    /// For example for uniqArrayStateForEachMap(...) it will destroy
+    /// states that were created by combinators Map and ForEach.
+    /// It's needed because ColumnAggregateFunction in the result will be
+    /// responsible only for destruction of states that were created
+    /// by aggregate function and all combinators before -State combinator.
+    virtual void destroyUpToState(AggregateDataPtr __restrict place) const noexcept
+    {
+        destroy(place);
+    }
+
     /// It is not necessary to delete data.
     virtual bool hasTrivialDestructor() const = 0;
 
@@ -168,21 +179,12 @@ public:
 
     /** Returns true for aggregate functions of type -State
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
-      * Also returns true when the final value of this aggregate function contains State of other aggregate function inside.
       */
     virtual bool isState() const { return false; }
 
-    /** Special method for aggregate functions with combinator -State, it takes resulting column and extracts
-      * column that has type ColumnAggregateFunction. This is needed because by using different combinators
-      * resulting column can have complex type like nested Arrays/Maps with ColumnAggregateFunction inside it.
+    /** Same as isState but also returns true when the final value of this aggregate function contains
+      * State of other aggregate function inside (when some other combinators are used after -State)
       */
-    virtual IColumn * extractStateColumnFromResultColumn(IColumn *) const
-    {
-        if (isState())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method extractStateColumnFromResultColumn is not implemented");
-
-        throw Exception("Method extractStateColumnFromResultColumn is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
@@ -289,8 +291,7 @@ public:
         Arena * arena) const = 0;
 
     /** Insert result of aggregate function into result column with batch size.
-      * If destroy_place_after_insert is true. Then implementation of this method
-      * must destroy aggregate place if insert state into result column was successful.
+      * The implementation of this method will destroy aggregate place up to -State if insert state into result column was successful.
       * All places that were not inserted must be destroyed if there was exception during insert into result column.
       */
     virtual void insertResultIntoBatch(
@@ -299,8 +300,7 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         IColumn & to,
-        Arena * arena,
-        bool destroy_place_after_insert) const = 0;
+        Arena * arena) const = 0;
 
     /** Destroy batch of aggregate places.
       */
@@ -624,8 +624,7 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         IColumn & to,
-        Arena * arena,
-        bool destroy_place_after_insert) const override
+        Arena * arena) const override
     {
         size_t batch_index = row_begin;
 
@@ -634,9 +633,9 @@ public:
             for (; batch_index < row_end; ++batch_index)
             {
                 static_cast<const Derived *>(this)->insertResultInto(places[batch_index] + place_offset, to, arena);
-
-                if (destroy_place_after_insert)
-                    static_cast<const Derived *>(this)->destroy(places[batch_index] + place_offset);
+                /// For State AggregateFunction ownership of aggregate place is passed to result column after insert,
+                /// so we need to destroy all states up to state of -State combinator.
+                static_cast<const Derived *>(this)->destroyUpToState(places[batch_index] + place_offset);
             }
         }
         catch (...)

@@ -240,6 +240,12 @@ public:
         callback(data);
     }
 
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(data);
+        data->forEachSubcolumnRecursively(callback);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (const auto * rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
