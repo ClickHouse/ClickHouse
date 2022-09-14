@@ -27,7 +27,8 @@ public:
     /// with such name & type.
     bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
 
-    /// Removes all entities except a specified list.
+    /// Removes all entities except the specified list `ids_to_keep`.
+    /// The function skips IDs not contained in the storage.
     void removeAllExcept(const std::vector<UUID> & ids_to_keep);
 
     /// Sets all entities at once.
@@ -52,6 +53,7 @@ private:
     bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) TSA_REQUIRES(mutex);
 
     void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
+    void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
 
     struct Entry
     {

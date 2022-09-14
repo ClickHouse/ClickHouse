@@ -447,7 +447,7 @@ zkutil::ZooKeeperPtr ReplicatedAccessStorage::getZooKeeperNoLock()
 void ReplicatedAccessStorage::reload()
 {
     /// TODO: Disabled because reload() is called by SYSTEM RELOAD CONFIG and replicated access storage is not a config-based.
-    /// We need a separate SYSTEM RELOAD USES command.
+    /// We need a separate SYSTEM RELOAD USERS command.
 #if 0
     /// Reinitialize ZooKeeper and reread everything.
     std::lock_guard lock{cached_zookeeper_mutex};

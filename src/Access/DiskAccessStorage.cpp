@@ -382,7 +382,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
         all_entities.emplace_back(id, entity);
     }
 
-    setAll(all_entities);
+    setAllInMemory(all_entities);
 
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
@@ -391,69 +391,41 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     writeLists();
 }
 
-void DiskAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
+void DiskAccessStorage::setAllInMemory(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
 {
-    /// This function is similar to MemoryAccessStorage::setAll().
-    boost::container::flat_set<UUID> not_used_ids;
-    std::vector<UUID> conflicting_ids;
+    /// Remove conflicting entities from the specified list.
+    auto entities_without_conflicts = all_entities;
+    clearConflictsInEntitiesList(entities_without_conflicts, getLogger());
 
-    /// Get the list of currently used IDs. Later we will remove those of them which are not used anymore.
-    for (const auto & [id, _] : entries_by_id)
-        not_used_ids.emplace(id);
-
-    /// Get the list of conflicting IDs and update the list of currently used ones.
-    for (const auto & [id, entity] : all_entities)
-    {
-        auto it = entries_by_id.find(id);
-        if (it != entries_by_id.end())
-        {
-            not_used_ids.erase(id); /// ID is used.
-
-            const Entry & entry = it->second;
-            if (entry.entity->getType() != entity->getType())
-                conflicting_ids.emplace_back(id); /// Conflict: same ID, different type.
-        }
-
-        const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(entity->getType())];
-        auto it2 = entries_by_name.find(entity->getName());
-        if (it2 != entries_by_name.end())
-        {
-            const Entry & entry = *(it2->second);
-            if (entry.id != id)
-                conflicting_ids.emplace_back(entry.id); /// Conflict: same name and type, different ID.
-        }
-    }
-
-    /// Remove entities which are not used anymore and which are in conflict with new entities.
-    boost::container::flat_set<UUID> ids_to_remove = std::move(not_used_ids);
-    boost::range::copy(conflicting_ids, std::inserter(ids_to_remove, ids_to_remove.end()));
-    for (const auto & id : ids_to_remove)
-        removeNoLock(id, /* throw_if_not_exists= */ false);
+    /// Remove entities which are not used anymore.
+    boost::container::flat_set<UUID> ids_to_keep;
+    ids_to_keep.reserve(entities_without_conflicts.size());
+    for (const auto & [id, _] : entities_without_conflicts)
+        ids_to_keep.insert(id);
+    removeAllExceptInMemory(ids_to_keep);
 
     /// Insert or update entities.
-    for (const auto & [id, entity] : all_entities)
+    for (const auto & [id, entity] : entities_without_conflicts)
+        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* write_on_disk= */ false);
+}
+
+void DiskAccessStorage::removeAllExceptInMemory(const boost::container::flat_set<UUID> & ids_to_keep)
+{
+    for (auto it = entries_by_id.begin(); it != entries_by_id.end();)
     {
-        auto it = entries_by_id.find(id);
-        if (it == entries_by_id.end())
-        {
-            insertNoLock(id, entity, /* replace_if_exists= */ false, /* throw_if_exists= */ true);
-        }
-        else if (!it->second.entity || (*(it->second.entity) != *entity))
-        {
-            const AccessEntityPtr & changed_entity = entity;
-            updateNoLock(
-                id,
-                [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
-                /* throw_if_not_exists= */ true);
-        }
+        const auto & id = it->first;
+        ++it;
+        if (!ids_to_keep.contains(id))
+            removeNoLock(id, /* throw_if_not_exists */ true, /* write_on_disk= */ false);
     }
 }
+
 
 
 void DiskAccessStorage::reload()
 {
     /// TODO: Disabled because reload() is called by SYSTEM RELOAD CONFIG and replicated access storage is not a config-based.
-    /// We need a separate SYSTEM RELOAD USES command.
+    /// We need a separate SYSTEM RELOAD USERS command.
 #if 0
     std::lock_guard lock{mutex};
     reloadAllAndRebuildLists();
@@ -528,21 +500,21 @@ std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWi
 std::optional<UUID> DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     UUID id = generateRandomID();
-    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
+    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists, /* write_on_disk= */ true))
         return id;
 
     return std::nullopt;
 }
 
 
-bool DiskAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool DiskAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, bool write_on_disk)
 {
     std::lock_guard lock{mutex};
-    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
+    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, write_on_disk);
 }
 
 
-bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, bool write_on_disk)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -579,13 +551,14 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             return false;
     }
 
-    scheduleWriteLists(type);
+    if (write_on_disk)
+        scheduleWriteLists(type);
 
     /// Remove collisions if necessary.
     if (name_collision && (id_by_name != id))
     {
         assert(replace_if_exists);
-        removeNoLock(id_by_name, /* throw_if_not_exists= */ false);
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ false, write_on_disk);
     }
 
     if (id_collision)
@@ -596,6 +569,8 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         {
             if (!existing_entry.entity || (*existing_entry.entity != *new_entity))
             {
+                if (write_on_disk)
+                    writeAccessEntityToDisk(id, *new_entity);
                 if (existing_entry.name != new_entity->getName())
                 {
                     entries_by_name.erase(existing_entry.name);
@@ -608,12 +583,12 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             return true;
         }
 
-        scheduleWriteLists(existing_entry.type);
-        removeNoLock(id, /* throw_if_not_exists= */ false);
+        removeNoLock(id, /* throw_if_not_exists= */ false, write_on_disk);
     }
 
     /// Do insertion.
-    writeAccessEntityToDisk(id, *new_entity);
+    if (write_on_disk)
+        writeAccessEntityToDisk(id, *new_entity);
 
     auto & entry = entries_by_id[id];
     entry.id = id;
@@ -630,11 +605,11 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
 bool DiskAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
     std::lock_guard lock{mutex};
-    return removeNoLock(id, throw_if_not_exists);
+    return removeNoLock(id, throw_if_not_exists, /* write_on_disk= */ true);
 }
 
 
-bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
+bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, bool write_on_disk)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -651,8 +626,11 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
     if (readonly)
         throwReadonlyCannotRemove(type, entry.name);
 
-    scheduleWriteLists(type);
-    deleteAccessEntityOnDisk(id);
+    if (write_on_disk)
+    {
+        scheduleWriteLists(type);
+        deleteAccessEntityOnDisk(id);
+    }
 
     /// Do removing.
     UUID removed_id = id;
@@ -668,11 +646,11 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
 bool DiskAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
     std::lock_guard lock{mutex};
-    return updateNoLock(id, update_func, throw_if_not_exists);
+    return updateNoLock(id, update_func, throw_if_not_exists, /* write_on_disk= */ true);
 }
 
 
-bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
+bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool write_on_disk)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -708,10 +686,13 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     {
         if (entries_by_name.contains(new_name))
             throwNameCollisionCannotRename(type, old_name, new_name);
-        scheduleWriteLists(type);
+        if (write_on_disk)
+            scheduleWriteLists(type);
     }
 
-    writeAccessEntityToDisk(id, *new_entity);
+    if (write_on_disk)
+        writeAccessEntityToDisk(id, *new_entity);
+
     entry.entity = new_entity;
 
     if (name_changed)
@@ -763,7 +744,7 @@ void DiskAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
         for (const auto & [id, entity] : entities)
-            insertWithID(id, entity, replace_if_exists, throw_if_exists);
+            insertWithID(id, entity, replace_if_exists, throw_if_exists, /* write_on_disk= */ true);
     });
 }
 

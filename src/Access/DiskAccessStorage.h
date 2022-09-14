@@ -47,15 +47,16 @@ private:
     void writeLists() TSA_REQUIRES(mutex);
     void scheduleWriteLists(AccessEntityType type) TSA_REQUIRES(mutex);
     void reloadAllAndRebuildLists() TSA_REQUIRES(mutex);
-    void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities) TSA_REQUIRES(mutex);
+    void setAllInMemory(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities) TSA_REQUIRES(mutex);
+    void removeAllExceptInMemory(const boost::container::flat_set<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
 
     void listsWritingThreadFunc() TSA_NO_THREAD_SAFETY_ANALYSIS;
     void stopListsWritingThread();
 
-    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists) TSA_REQUIRES(mutex);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists) TSA_REQUIRES(mutex);
-    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) TSA_REQUIRES(mutex);
+    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, bool write_on_disk);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, bool write_on_disk) TSA_REQUIRES(mutex);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool write_on_disk) TSA_REQUIRES(mutex);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists, bool write_on_disk) TSA_REQUIRES(mutex);
 
     AccessEntityPtr readAccessEntityFromDisk(const UUID & id) const;
     void writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const;
