@@ -69,3 +69,6 @@ print '-- without by';
 make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase step  2.0;
 
 make_series_test_table3 | make-series avg(metric) default=0  on timestamp from datetime(2017-01-01) to datetime(2017-01-10) step 1d 
+
+-- print '-- summarize --'
+-- make_series_test_table | summarize count() by format_datetime(bin(Purchase, 1d), 'yy-MM-dd');
