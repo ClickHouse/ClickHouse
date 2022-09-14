@@ -203,11 +203,11 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
             }
 
             block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
-            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows on {} replicas", block_id, current_block.block.rows(), replicas_num);
+            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows{}", block_id, current_block.block.rows(), quorumLogMessage(replicas_num));
         }
         else
         {
-            LOG_DEBUG(log, "Wrote block with {} rows on {} replicas", current_block.block.rows(), replicas_num);
+            LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
         }
 
         UInt64 elapsed_ns = watch.elapsed();
@@ -639,7 +639,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
-    LOG_TRACE(log, "Waiting for quorum '{}' for part {} on {} replicas", quorum_path, part_name, replicas_num);
+    LOG_TRACE(log, "Waiting for quorum '{}' for part {}{}", quorum_path, part_name, quorumLogMessage(replicas_num));
 
     try
     {
@@ -682,6 +682,13 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     }
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
+}
+
+String ReplicatedMergeTreeSink::quorumLogMessage(size_t replicas_num) const
+{
+    if (!isQuorumEnabled())
+        return "";
+    return fmt::format(" (quorum {} of {} replicas)", getQuorumSize(replicas_num), replicas_num);
 }
 
 size_t ReplicatedMergeTreeSink::getQuorumSize(size_t replicas_num) const
