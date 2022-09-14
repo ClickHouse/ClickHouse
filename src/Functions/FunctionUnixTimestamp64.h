@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnsNumber.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <Interpreters/Context.h>
 
 #include <base/arithmeticOverflow.h>
 
@@ -27,11 +28,9 @@ class FunctionToUnixTimestamp64 : public IFunction
 private:
     size_t target_scale;
     const char * name;
+
 public:
-    FunctionToUnixTimestamp64(size_t target_scale_, const char * name_)
-        : target_scale(target_scale_), name(name_)
-    {
-    }
+    FunctionToUnixTimestamp64(size_t target_scale_, const char * name_) : target_scale(target_scale_), name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -92,9 +91,11 @@ class FunctionFromUnixTimestamp64 : public IFunction
 private:
     size_t target_scale;
     const char * name;
+    std::string default_user_timezone = "";
+
 public:
-    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_)
-        : target_scale(target_scale_), name(name_)
+    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, const std::string & default_user_timezone_)
+        : target_scale(target_scale_), name(name_), default_user_timezone(default_user_timezone_)
     {
     }
 
@@ -114,7 +115,7 @@ public:
 
         std::string timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
 
         return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
     }
@@ -152,15 +153,15 @@ public:
               || (executeType<Int32>(result_column, arguments, input_rows_count))
               || (executeType<Int64>(result_column, arguments, input_rows_count))))
         {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column {} of first argument of function {}",
-                            arguments[0].column->getName(),
-                            getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(),
+                getName());
         }
 
         return result_column;
     }
-
 };
 
 }

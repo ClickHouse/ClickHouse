@@ -1,5 +1,6 @@
 #include <Functions/FunctionUnixTimestamp64.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -7,8 +8,8 @@ namespace DB
 REGISTER_FUNCTION(FromUnixTimestamp64Micro)
 {
     factory.registerFunction("fromUnixTimestamp64Micro",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionFromUnixTimestamp64>(6, "fromUnixTimestamp64Micro")); });
+        [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
+            std::make_shared<FunctionFromUnixTimestamp64>(6, "fromUnixTimestamp64Micro", context->getSettingsRef().default_user_timezone)); });
 }
 
 }

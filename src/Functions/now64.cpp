@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
@@ -99,6 +100,8 @@ private:
 
 class Now64OverloadResolver : public IFunctionOverloadResolver
 {
+private:
+    std::string default_user_timezone = "";
 public:
     static constexpr auto name = "now64";
 
@@ -109,7 +112,9 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
+
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context->getSettingsRef().default_user_timezone); }
+    explicit Now64OverloadResolver(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -134,7 +139,7 @@ public:
         }
         if (arguments.size() == 2)
         {
-            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
         }
 
         return std::make_shared<DataTypeDateTime64>(scale, timezone_name);

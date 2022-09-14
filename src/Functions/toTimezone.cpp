@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
@@ -79,13 +80,17 @@ private:
 /// Just changes time zone information for data type. The calculation is free.
 class ToTimeZoneOverloadResolver : public IFunctionOverloadResolver
 {
+private:
+    std::string default_user_timezone = "";
 public:
     static constexpr auto name = "toTimezone";
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<ToTimeZoneOverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ToTimeZoneOverloadResolver>(context->getSettingsRef().default_user_timezone); }
+    explicit ToTimeZoneOverloadResolver(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -99,7 +104,7 @@ public:
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                 ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone);
         if (which_type.isDateTime())
             return std::make_shared<DataTypeDateTime>(time_zone_name);
 

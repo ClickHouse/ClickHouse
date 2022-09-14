@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <Interpreters/Context.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -200,9 +201,13 @@ struct TimeSlotsImpl
 
 class FunctionTimeSlots : public IFunction
 {
+private:
+std::string default_user_timezone = "";
 public:
     static constexpr auto name = "timeSlots";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSlots>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSlots>(context->getSettingsRef().default_user_timezone); }
+    explicit FunctionTimeSlots(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+
 
     String getName() const override
     {
@@ -254,14 +259,14 @@ public:
         /// Note that there is no explicit time zone argument for this function (we specify 2 as an argument number with explicit time zone).
         if (WhichDataType(arguments[0].type).isDateTime())
         {
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, default_user_timezone)));
         }
         else
         {
             auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
             auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
             return std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
+                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, default_user_timezone)));
         }
 
     }

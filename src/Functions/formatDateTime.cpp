@@ -13,6 +13,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
@@ -297,6 +298,8 @@ public:
     static constexpr auto name = Name::name;
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context->getSettingsRef().default_user_timezone); }
+    static FunctionPtr create() { return std::make_shared<FunctionFormatDateTimeImpl>(""); }
+
 
     explicit FunctionFormatDateTimeImpl(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
 

@@ -1,5 +1,6 @@
 #include <Common/DateLUTImpl.h>
 
+#include <Interpreters/Context.h>
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 
@@ -49,11 +50,15 @@ using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 
 class FunctionDateNameImpl : public IFunction
 {
+private:
+    std::string default_user_timezone = "";
 public:
     static constexpr auto name = "dateName";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateNameImpl>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateNameImpl>(context->getSettingsRef().default_user_timezone); }
 
+    explicit FunctionDateNameImpl(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+    
     String getName() const override { return name; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -138,7 +143,7 @@ public:
 
         const DateLUTImpl * time_zone_tmp;
         if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1, default_user_timezone);
         else
             time_zone_tmp = &DateLUT::instance();
 

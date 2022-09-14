@@ -3,6 +3,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -22,12 +23,13 @@ namespace
   */
 class FunctionNowInBlock : public IFunction
 {
+private:
+    std::string default_user_timezone = "";
 public:
     static constexpr auto name = "nowInBlock";
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionNowInBlock>();
-    }
+
+    static FunctionPtr create(ContextPtr context) { return std::make_unique<FunctionNowInBlock>(context->getSettingsRef().default_user_timezone); }
+    explicit FunctionNowInBlock(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
 
     String getName() const override
     {
@@ -67,7 +69,7 @@ public:
         }
         if (arguments.size() == 1)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, default_user_timezone));
         }
         return std::make_shared<DataTypeDateTime>();
     }

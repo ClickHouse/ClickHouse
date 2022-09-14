@@ -7,7 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -24,9 +24,13 @@ namespace ErrorCodes
 template <typename ToDataType, typename Transform>
 class FunctionCustomWeekToSomething : public IFunction
 {
+private:
+    std::string default_user_timezone = "";
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCustomWeekToSomething>(context->getSettingsRef().default_user_timezone); }
+
+    explicit FunctionCustomWeekToSomething(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
 
     String getName() const override { return name; }
 
@@ -99,18 +103,18 @@ public:
 
         if (which.isDate())
             return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
-                arguments, result_type, input_rows_count, Transform{});
+                arguments, result_type, input_rows_count, Transform{}, default_user_timezone);
         else if (which.isDate32())
             return CustomWeekTransformImpl<DataTypeDate32, ToDataType>::execute(
-                arguments, result_type, input_rows_count, Transform{});
+                arguments, result_type, input_rows_count, Transform{}, default_user_timezone);
         else if (which.isDateTime())
             return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
-                arguments, result_type, input_rows_count, Transform{});
+                arguments, result_type, input_rows_count, Transform{}, default_user_timezone);
         else if (which.isDateTime64())
         {
             return CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
                 arguments, result_type, input_rows_count,
-                TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
+                TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()}, default_user_timezone);
         }
         else
             throw Exception(

@@ -842,7 +842,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
     using FromFieldType = typename FromDataType::FieldType;
     using ColVecType = ColumnVectorOrDecimal<FromFieldType>;
 
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, const std::string & default_user_timezone = "")
     {
         ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
 
@@ -854,7 +854,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
         {
             auto non_null_args = createBlockWithNestedColumns(arguments);
-            time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+            time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0, default_user_timezone);
         }
 
         if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
@@ -1169,7 +1169,7 @@ struct ConvertThroughParsing
 
     template <typename Additions = void *>
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
-                        Additions additions [[maybe_unused]] = Additions())
+                        Additions additions [[maybe_unused]] = Additions(), const std::string & default_user_timezone = "")
     {
         using ColVecTo = typename ToDataType::ColumnType;
 
@@ -1184,7 +1184,7 @@ struct ConvertThroughParsing
             if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
             else
-                local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
+                local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0, default_user_timezone);
 
             if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort || parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 utc_time_zone = &DateLUT::instance("UTC");
@@ -1615,6 +1615,8 @@ static inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
 {
+private:
+    std::string default_user_timezone = "";
 public:
     using Monotonic = MonotonicityImpl;
 
@@ -1632,8 +1634,11 @@ public:
                                                 std::is_same_v<ToDataType, DataTypeDate32> ||
                                                 std::is_same_v<ToDataType, DataTypeDateTime>;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvert>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context->getSettingsRef().default_user_timezone); }
+    static FunctionPtr create() { return std::make_shared<FunctionConvert>(""); }
+
+    explicit FunctionConvert(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+
 
     String getName() const override
     {
@@ -1743,13 +1748,13 @@ public:
 
                 if (to_datetime64 || scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
                     return std::make_shared<DataTypeDateTime64>(scale,
-                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, default_user_timezone));
 
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, default_user_timezone));
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, default_user_timezone));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception("Unexpected branch in code of conversion function: it is a bug.", ErrorCodes::LOGICAL_ERROR);
             else
@@ -1962,6 +1967,8 @@ template <typename ToDataType, typename Name,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Normal>
 class FunctionConvertFromString : public IFunction
 {
+private:
+    std::string default_user_timezone = "";
 public:
     static constexpr auto name = Name::name;
     static constexpr bool to_decimal =
@@ -1972,8 +1979,11 @@ public:
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvertFromString>(context->getSettingsRef().default_user_timezone); }
+    static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(""); }
+
+    explicit FunctionConvertFromString(const std::string & default_user_timezone_) : default_user_timezone(default_user_timezone_) {}
+
 
     String getName() const override
     {
@@ -2006,7 +2016,7 @@ public:
             UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
-            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
+            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, default_user_timezone);
 
             res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
@@ -2054,7 +2064,7 @@ public:
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+                res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, default_user_timezone));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
             else if constexpr (to_decimal)

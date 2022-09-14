@@ -78,8 +78,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
         {
             if (!user_default_time_zone.empty())
             {
-                DateLUT::setDefaultTimezone(user_default_time_zone);
-                return DateLUT::instance();
+                return DateLUT::instance(user_default_time_zone);
             }
             else
                 return DateLUT::instance();
@@ -92,7 +91,11 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
         if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
             return type->getTimeZone();
 
-        return DateLUT::instance();
+
+        if (user_default_time_zone.empty())
+            return DateLUT::instance();
+        else
+            return DateLUT::instance(user_default_time_zone);
     }
 }
 

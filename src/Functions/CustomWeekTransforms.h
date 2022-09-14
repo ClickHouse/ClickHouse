@@ -2,14 +2,14 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/IFunction.h>
-#include <Common/Exception.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <base/types.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 
 /// The default mode value to use for the WEEK() function
 #define DEFAULT_WEEK_MODE 0
@@ -44,7 +44,7 @@ struct ToYearWeekImpl
     }
     static inline UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum (d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
         return yw.first * 100 + yw.second;
     }
     static inline UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
@@ -118,13 +118,10 @@ struct ToWeekImpl
 template <typename FromType, typename ToType, typename Transform>
 struct WeekTransformer
 {
-    explicit WeekTransformer(Transform transform_)
-        : transform(std::move(transform_))
-    {}
+    explicit WeekTransformer(Transform transform_) : transform(std::move(transform_)) { }
 
     template <typename FromVectorType, typename ToVectorType>
-    void
-    vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
+    void vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -142,7 +139,8 @@ template <typename FromDataType, typename ToDataType>
 struct CustomWeekTransformImpl
 {
     template <typename Transform>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
+    static ColumnPtr
+    execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {}, const std::string & default_user_timezone = "")
     {
         const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
 
@@ -153,7 +151,7 @@ struct CustomWeekTransformImpl
                 week_mode = week_mode_column->getValue<UInt8>();
         }
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0, default_user_timezone);
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
@@ -164,8 +162,7 @@ struct CustomWeekTransformImpl
         else
         {
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function "
-                    + Transform::name,
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }
     }
