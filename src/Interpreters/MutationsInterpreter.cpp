@@ -226,7 +226,7 @@ bool isStorageTouchedByMutations(
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
     /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and and give it into ExpressionTransform
+    /// For some reason it may copy context and give it into ExpressionTransform
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(
         select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
@@ -288,13 +288,17 @@ MutationsInterpreter::MutationsInterpreter(
     const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     ContextPtr context_,
-    bool can_execute_)
+    bool can_execute_,
+    bool return_all_columns_,
+    bool return_deleted_rows_)
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
+    , return_all_columns(return_all_columns_)
+    , return_deleted_rows(return_deleted_rows_)
 {
     mutation_ast = prepare(!can_execute);
 }
@@ -469,17 +473,25 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
+    std::vector<String> read_columns;
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
     {
+        // we can return deleted rows only if it's the only present command
+        assert(command.type == MutationCommand::DELETE || !return_deleted_rows);
+
         if (command.type == MutationCommand::DELETE)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto negated_predicate = makeASTFunction("isZeroOrNull", getPartitionAndPredicateExpressionForMutationCommand(command));
-            stages.back().filters.push_back(negated_predicate);
+            auto predicate  = getPartitionAndPredicateExpressionForMutationCommand(command);
+
+            if (!return_deleted_rows)
+                predicate = makeASTFunction("isZeroOrNull", predicate);
+
+            stages.back().filters.push_back(predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -695,15 +707,21 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::READ_COLUMN)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (stages.empty() || !stages.back().column_to_updated.empty())
-                stages.emplace_back(context);
-            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
-                stages.emplace_back(context);
-
-            stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
+            read_columns.emplace_back(command.column_name);
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+    }
+
+    if (!read_columns.empty())
+    {
+        if (stages.empty() || !stages.back().column_to_updated.empty())
+            stages.emplace_back(context);
+        if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+            stages.emplace_back(context);
+
+        for (auto & column_name : read_columns)
+            stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
     }
 
     /// We care about affected indices and projections because we also need to rewrite them
@@ -789,7 +807,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
-        if (!prepared_stages[i].filters.empty())
+        if (return_all_columns || !prepared_stages[i].filters.empty())
         {
             for (const auto & column : all_columns)
                 prepared_stages[i].output_columns.insert(column.name);

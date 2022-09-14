@@ -662,6 +662,7 @@ namespace
         std::optional<Session> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
+        OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
         ASTInsertQuery * insert_query = nullptr;
@@ -839,6 +840,12 @@ namespace
 
         query_context->setCurrentQueryId(query_info.query_id());
         query_scope.emplace(query_context);
+
+        /// Set up tracing context for this query on current thread
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
+            query_context->getClientInfo().client_trace_context,
+            query_context->getSettingsRef(),
+            query_context->getOpenTelemetrySpanLog());
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
@@ -1359,6 +1366,7 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
+        thread_trace_context.reset();
         session.reset();
     }
 

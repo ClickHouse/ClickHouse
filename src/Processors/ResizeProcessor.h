@@ -85,6 +85,13 @@ public:
     {
     }
 
+    StrictResizeProcessor(InputPorts inputs_, OutputPorts outputs_)
+        : IProcessor(inputs_, outputs_)
+        , current_input(inputs.begin())
+        , current_output(outputs.begin())
+    {
+    }
+
     String getName() const override { return "StrictResize"; }
 
     Status prepare(const PortNumbers &, const PortNumbers &) override;

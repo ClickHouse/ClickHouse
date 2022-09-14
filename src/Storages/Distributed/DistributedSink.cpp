@@ -171,7 +171,6 @@ void DistributedSink::writeAsync(const Block & block)
     }
     else
     {
-
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
             return writeSplitAsync(block);
 
@@ -291,6 +290,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block, num_shards]()
     {
+        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
@@ -331,14 +332,18 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
         const Settings & settings = context->getSettingsRef();
 
-        /// Do not initiate INSERT for empty block.
         size_t rows = shard_block.rows();
+
+        span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+        span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
+        span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
+        span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+        span.addAttribute("clickhouse.rows", rows);
+        span.addAttribute("clickhouse.bytes", [&shard_block]() { return toString(shard_block.bytes()); });
+
+        /// Do not initiate INSERT for empty block.
         if (rows == 0)
             return;
-
-        OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-        span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-        span.addAttribute("clickhouse.written_rows", rows);
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -419,7 +424,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+    OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
@@ -610,20 +615,15 @@ void DistributedSink::writeSplitAsync(const Block & block)
 
 void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
-    OpenTelemetrySpanHolder span("DistributedSink::writeAsyncImpl()");
-
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
     Block block_to_send = removeSuperfluousColumns(block);
-
-    span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-    span.addAttribute("clickhouse.written_rows", block.rows());
 
     if (shard_info.hasInternalReplication())
     {
         if (shard_info.isLocal() && settings.prefer_localhost_replica)
             /// Prefer insert into current instance directly
-            writeToLocal(block_to_send, shard_info.getLocalNodeCount());
+            writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
         else
         {
             const auto & path = shard_info.insertPathForInternalReplication(
@@ -631,13 +631,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
                 throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(block_to_send, {path});
+            writeToShard(shard_info, block_to_send, {path});
         }
     }
     else
     {
         if (shard_info.isLocal() && settings.prefer_localhost_replica)
-            writeToLocal(block_to_send, shard_info.getLocalNodeCount());
+            writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
@@ -645,30 +645,44 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
-            writeToShard(block_to_send, dir_names);
+            writeToShard(shard_info, block_to_send, dir_names);
     }
 }
 
 
-void DistributedSink::writeToLocal(const Block & block, size_t repeats)
+void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const Block & block, size_t repeats)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-    span.addAttribute("db.statement", this->query_string);
+    OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+    span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+    span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
+    span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
+    span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+    span.addAttribute("clickhouse.rows", [&block]() { return toString(block.rows()); });
+    span.addAttribute("clickhouse.bytes", [&block]() { return toString(block.bytes()); });
 
-    InterpreterInsertQuery interp(query_ast, context, allow_materialized);
+    try
+    {
+        InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
-    auto block_io = interp.execute();
-    PushingPipelineExecutor executor(block_io.pipeline);
+        auto block_io = interp.execute();
+        PushingPipelineExecutor executor(block_io.pipeline);
 
-    executor.start();
-    writeBlockConvert(executor, block, repeats, log);
-    executor.finish();
+        executor.start();
+        writeBlockConvert(executor, block, repeats, log);
+        executor.finish();
+    }
+    catch (...)
+    {
+        span.addAttribute(std::current_exception());
+        throw;
+    }
 }
 
 
-void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
+void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+    OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+    span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
@@ -737,11 +751,11 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
 
-            if (context->getClientInfo().client_trace_context.trace_id != UUID() && CurrentThread::isInitialized())
+            if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
-                client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+                client_info.client_trace_context = OpenTelemetry::CurrentContext();
                 client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             }
             else
@@ -758,6 +772,11 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
                 NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
                 header_stream.write(block.cloneEmpty());
             }
+
+            writeVarUInt(shard_info.shard_num, header_buf);
+            writeStringBinary(this->storage.cluster_name, header_buf);
+            writeStringBinary(this->storage.getStorageID().getFullNameNotQuoted(), header_buf);
+            writeStringBinary(this->storage.remote_database + "." + this->storage.remote_table, header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
