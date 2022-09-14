@@ -85,12 +85,13 @@ public:
     ~TemporaryFileStream();
 
 private:
-    void updateAlloc();
+    void updateAlloc(size_t rows_added);
 
     TemporaryDataOnDisk * parent;
 
     size_t compressed_size = 0;
     size_t uncompressed_size = 0;
+    size_t written_rows = 0;
 
     TemporaryFileOnDiskHolder file;
 

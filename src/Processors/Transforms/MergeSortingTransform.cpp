@@ -62,7 +62,7 @@ public:
         }
 
         Block block = tmp_stream.read();
-        if (!block)
+        if (!block || block.rows() == 0)
             return {};
 
         UInt64 num_rows = block.rows();
@@ -220,13 +220,14 @@ void MergeSortingTransform::generate()
 {
     if (!generated_prefix)
     {
-        if (temporary_files.empty())
+        size_t num_tmp_files = tmp_data ? tmp_data->getStreams().size() : 0;
+        if (num_tmp_files == 0)
             merge_sorter
                 = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         else
         {
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
-            LOG_INFO(log, "There are {} temporary sorted parts to merge", temporary_files.size());
+            LOG_INFO(log, "There are {} temporary sorted parts to merge", num_tmp_files);
 
             processors.emplace_back(std::make_shared<MergeSorterSource>(
                     header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
