@@ -171,7 +171,7 @@ ColumnsDescription getObjectColumns(
     std::unordered_map<String, DataTypes> types_in_entries;
 
     /// Add dummy column for all Object columns
-    /// to not to lost any column if it's missing
+    /// to not lose any column if it's missing
     /// in all entries. If it exists in any entry
     /// dummy column will be removed.
     for (const auto & column : storage_columns)
