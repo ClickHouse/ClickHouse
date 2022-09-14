@@ -350,7 +350,8 @@ if __name__ == "__main__":
         # randomizer, we should remove it after Sep 2022
         try:
             subprocess.check_call(
-                f"docker volume ls -q | grep '{VOLUME_NAME}_.*_volume' | xargs --no-run-if-empty docker volume rm",
+                "docker volume rm $(docker volume ls -q | "
+                f"grep '{VOLUME_NAME}_.*_volume')",
                 shell=True,
             )
         except Exception as ex:
