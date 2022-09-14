@@ -80,6 +80,7 @@ struct TemporaryFileStream::OutputWriter
         out_writer.flush();
         out_compressed_buf.next();
         out_file_buf.next();
+        finalized = true;
     }
 
     ~OutputWriter()
@@ -129,7 +130,7 @@ void TemporaryFileStream::write(const Block & block)
         throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
 
     out_writer->write(block);
-    updateAlloc();
+    updateAlloc(block.rows());
 }
 
 TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
@@ -138,7 +139,7 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
     {
         Block header = out_writer->out_writer.getHeader();
         out_writer->finalize();
-        updateAlloc();
+        updateAlloc(0);
         out_writer.reset();
 
         in_reader = std::make_unique<InputReader>(file->path(), header);
@@ -170,8 +171,9 @@ Block TemporaryFileStream::getHeader() const
 }
 
 
-void TemporaryFileStream::updateAlloc()
+void TemporaryFileStream::updateAlloc(size_t rows_added)
 {
+    assert(out_writer);
     size_t new_compressed_size = out_writer->out_compressed_buf.getCompressedBytes();
     size_t new_uncompressed_size = out_writer->out_compressed_buf.getUncompressedBytes();
 
@@ -185,6 +187,7 @@ void TemporaryFileStream::updateAlloc()
     parent->deltaAlloc(new_compressed_size - compressed_size, new_uncompressed_size - uncompressed_size);
     this->compressed_size = new_compressed_size;
     this->uncompressed_size = new_uncompressed_size;
+    this->written_rows += rows_added;
 }
 
 TemporaryFileStream::~TemporaryFileStream()
