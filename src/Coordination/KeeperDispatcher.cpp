@@ -30,6 +30,7 @@ namespace ErrorCodes
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
+    , snapshots_backup_queue(std::numeric_limits<size_t>::max())
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
@@ -191,10 +192,44 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
+
+            if (snapshot_path.empty())
+                continue;
+
+            if (isLeader())
+            {
+                if (!snapshots_backup_queue.push(snapshot_path))
+                    LOG_WARNING(log, "Failed to add snapshot {} to backup queue", snapshot_path);
+            }
         }
         catch (...)
         {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void KeeperDispatcher::snapshotBackupThread()
+{
+    setThreadName("KeeperBSnpT");
+    while (!shutdown_called)
+    {
+        std::string snapshot_path;
+        if (!snapshots_backup_queue.pop(snapshot_path))
+            break;
+
+        if (shutdown_called)
+            break;
+
+        try
+        {
+            LOG_INFO(log, "Will try to backup snapshot on {}", snapshot_path);
+            ReadBufferFromFile snapshot_file(snapshot_path);
+        }
+        catch (...)
+        {
+            LOG_INFO(log, "Failed to backup {}", snapshot_path);
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
@@ -284,6 +319,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
+    snapshot_backup_thread = ThreadFromGlobalPool([this] { snapshotBackupThread(); });
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
 
@@ -348,6 +384,10 @@ void KeeperDispatcher::shutdown()
             snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
+
+            snapshots_backup_queue.finish();
+            if (snapshot_backup_thread.joinable())
+                snapshot_backup_thread.join();
 
             update_configuration_queue.finish();
             if (update_configuration_thread.joinable())
