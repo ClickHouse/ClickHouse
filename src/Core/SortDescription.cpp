@@ -53,9 +53,9 @@ size_t SortDescription::hasPrefix(const SortDescription & prefix) const
     for (size_t i = 0; i < prefix.size(); ++i)
     {
         if ((*this)[i] != prefix[i])
-            return i;
+            return false;
     }
-    return size();
+    return true;
 }
 
 #if USE_EMBEDDED_COMPILER
