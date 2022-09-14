@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
-    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
