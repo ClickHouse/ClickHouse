@@ -89,9 +89,19 @@ public:
         return nested_func->isState();
     }
 
-    IColumn * extractStateColumnFromResultColumn(IColumn * column) const override
+    bool isVersioned() const override
     {
-        return nested_func->extractStateColumnFromResultColumn(&assert_cast<ColumnMap *>(column)->getNestedData().getColumn(1));
+        return nested_func->isVersioned();
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
+    }
+
+    bool hasTrivialDestructor() const override
+    {
+        return false;
     }
 
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
@@ -195,6 +205,33 @@ public:
 
             nested_func->merge(nested_place, elem.second, arena);
         }
+    }
+
+    template <bool up_to_state>
+    void destroyImpl(AggregateDataPtr __restrict place) const noexcept
+    {
+        AggregateFunctionMapCombinatorData<KeyType> & state = Base::data(place);
+
+        for (const auto & [key, nested_place] : state.merged_maps)
+        {
+            if constexpr (up_to_state)
+                nested_func->destroyUpToState(nested_place);
+            else
+                nested_func->destroy(nested_place);
+        }
+
+        auto to_destroy = std::move(state.merged_maps);
+        this->data(place).~Data();
+    }
+
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<false>(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<true>(place);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

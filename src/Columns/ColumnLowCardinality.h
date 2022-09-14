@@ -177,6 +177,19 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(idx.getPositionsPtr());
+        idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
+
+        /// Column doesn't own dictionary if it's shared.
+        if (!dictionary.isShared())
+        {
+            callback(dictionary.getColumnUniquePtr());
+            dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
+        }
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (const auto * rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
