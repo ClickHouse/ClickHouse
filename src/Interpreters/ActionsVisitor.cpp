@@ -127,7 +127,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             bool is_conversion_ok = convertFieldToTypeStrict(value, *types[0], field);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
             if (is_conversion_ok && (!field.isNull() || need_insert_null))
-                columns[0]->insert(std::move(field));
+                columns[0]->insert(field);
         }
         else
         {
