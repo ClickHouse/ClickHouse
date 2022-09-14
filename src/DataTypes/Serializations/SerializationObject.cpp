@@ -61,7 +61,9 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     auto & [paths, values] = *result;
     assert(paths.size() == values.size());
 
-    size_t old_column_size = column_object.size();
+    HashSet<StringRef, StringRefHash> paths_set;
+    size_t column_size = column_object.size();
+
     for (size_t i = 0; i < paths.size(); ++i)
     {
         auto field_info = getFieldInfo(values[i]);
@@ -70,16 +72,20 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
         if (isNothing(field_info.scalar_type))
             continue;
 
+        if (!paths_set.insert(paths[i].getPath()).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Object has ambiguous path: {}", paths[i].getPath());
+
         if (!column_object.hasSubcolumn(paths[i]))
         {
             if (paths[i].hasNested())
-                column_object.addNestedSubcolumn(paths[i], field_info, old_column_size);
+                column_object.addNestedSubcolumn(paths[i], field_info, column_size);
             else
-                column_object.addSubcolumn(paths[i], old_column_size);
+                column_object.addSubcolumn(paths[i], column_size);
         }
 
         auto & subcolumn = column_object.getSubcolumn(paths[i]);
-        assert(subcolumn.size() == old_column_size);
+        assert(subcolumn.size() == column_size);
 
         subcolumn.insert(std::move(values[i]), std::move(field_info));
     }
@@ -88,7 +94,7 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     const auto & subcolumns = column_object.getSubcolumns();
     for (const auto & entry : subcolumns)
     {
-        if (entry->data.size() == old_column_size)
+        if (!paths_set.has(entry->path.getPath()))
         {
             bool inserted = column_object.tryInsertDefaultFromNested(entry);
             if (!inserted)
@@ -260,12 +266,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     auto * state_object = checkAndGetState<SerializeStateObject>(state);
 
     if (!column_object.isFinalized())
-    {
-        auto finalized_object = column_object.clone();
-        assert_cast<ColumnObject &>(*finalized_object).finalize();
-        serializeBinaryBulkWithMultipleStreams(*finalized_object, offset, limit, settings, state);
-        return;
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write non-finalized ColumnObject");
 
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 

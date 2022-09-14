@@ -14,7 +14,7 @@ namespace DB
 template <typename T>
 void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    FieldType x = field.get<DecimalField<T>>();
+    FieldType x = get<DecimalField<T>>(field);
     writeBinary(x, ostr);
 }
 

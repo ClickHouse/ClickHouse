@@ -41,29 +41,23 @@ struct ReplicatedMergeTreeSink::DelayedChunk
         String block_id;
     };
 
-    DelayedChunk() = default;
-    explicit DelayedChunk(size_t replicas_num_) : replicas_num(replicas_num_) {}
-
-    size_t replicas_num = 0;
-
     std::vector<Partition> partitions;
 };
 
 ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     StorageReplicatedMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    size_t quorum_size,
+    size_t quorum_,
     size_t quorum_timeout_ms_,
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
-    bool majority_quorum,
     ContextPtr context_,
     bool is_attach_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , required_quorum_size(majority_quorum ? std::nullopt : std::make_optional<size_t>(quorum_size))
+    , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
     , is_attach(is_attach_)
@@ -71,14 +65,14 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshot(metadata_snapshot, context))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
-    if (required_quorum_size == 1)
-        required_quorum_size = 0;
+    if (quorum == 1)
+        quorum = 0;
 }
 
 ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink() = default;
+
 
 /// Allow to verify that the session in ZooKeeper is still alive.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
@@ -90,11 +84,9 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
         throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
 }
 
-size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper)
-{
-    if (!isQuorumEnabled())
-        return 0;
 
+void ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper)
+{
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
     Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
@@ -112,12 +104,9 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
         if (status.get().error == Coordination::Error::ZOK)
             ++active_replicas;
 
-    size_t replicas_number = replicas.size();
-    size_t quorum_size = getQuorumSize(replicas_number);
-
-    if (active_replicas < quorum_size)
-        throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS, "Number of alive replicas ({}) is less than requested quorum ({}/{}).",
-                        active_replicas, quorum_size, replicas_number);
+    if (active_replicas < quorum)
+        throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS, "Number of alive replicas ({}) is less than requested quorum ({}).",
+                        active_replicas, quorum);
 
     /** Is there a quorum for the last part for which a quorum is needed?
         * Write of all the parts with the included quorum is linearly ordered.
@@ -143,9 +132,8 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
     quorum_info.is_active_node_value = is_active.data;
     quorum_info.is_active_node_version = is_active.stat.version;
     quorum_info.host_node_version = host.stat.version;
-
-    return replicas_number;
 }
+
 
 void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
@@ -159,8 +147,10 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
       * And also check that during the insertion, the replica was not reinitialized or disabled (by the value of `is_active` node).
       * TODO Too complex logic, you can do better.
       */
-    size_t replicas_num = checkQuorumPrecondition(zookeeper);
+    if (quorum)
+        checkQuorumPrecondition(zookeeper);
 
+    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
     storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
@@ -203,11 +193,11 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
             }
 
             block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
-            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows{}", block_id, current_block.block.rows(), quorumLogMessage(replicas_num));
+            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
         else
         {
-            LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
+            LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
         }
 
         UInt64 elapsed_ns = watch.elapsed();
@@ -221,7 +211,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         if (streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk(zookeeper);
-            delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>(replicas_num);
+            delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>();
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk(zookeeper);
 
@@ -264,7 +254,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, partition.temp_part.builder, delayed_chunk->replicas_num);
+            commitPart(zookeeper, part, partition.block_id);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -283,6 +273,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
     delayed_chunk.reset();
 }
 
+
 void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
     /// NOTE: No delay in this case. That's Ok.
@@ -290,14 +281,15 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
 
-    size_t replicas_num = checkQuorumPrecondition(zookeeper);
+    if (quorum)
+        checkQuorumPrecondition(zookeeper);
 
     Stopwatch watch;
 
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "", part->data_part_storage->getBuilder(), replicas_num);
+        commitPart(zookeeper, part, "");
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -307,17 +299,14 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
+
 void ReplicatedMergeTreeSink::commitPart(
-    zkutil::ZooKeeperPtr & zookeeper,
-    MergeTreeData::MutableDataPartPtr & part,
-    const String & block_id,
-    DataPartStorageBuilderPtr builder,
-    size_t replicas_num)
+    zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
+    String temporary_part_relative_path = part->relative_path;
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -375,7 +364,7 @@ void ReplicatedMergeTreeSink::commitPart(
             log_entry.source_replica = storage.replica_name;
             log_entry.new_part_name = part->name;
             /// TODO maybe add UUID here as well?
-            log_entry.quorum = getQuorumSize(replicas_num);
+            log_entry.quorum = quorum;
             log_entry.block_id = block_id;
             log_entry.new_part_type = part->getType();
 
@@ -392,11 +381,11 @@ void ReplicatedMergeTreeSink::commitPart(
               *  but for it the quorum has not yet been reached.
               *  You can not do the next quorum record at this time.)
               */
-            if (isQuorumEnabled())
+            if (quorum)
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry;
                 quorum_entry.part_name = part->name;
-                quorum_entry.required_number_of_replicas = getQuorumSize(replicas_num);
+                quorum_entry.required_number_of_replicas = quorum;
                 quorum_entry.replicas.insert(storage.replica_name);
 
                 /** At this point, this node will contain information that the current replica received a part.
@@ -444,7 +433,7 @@ void ReplicatedMergeTreeSink::commitPart(
             {
                 part->is_duplicate = true;
                 ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                if (isQuorumEnabled())
+                if (quorum)
                 {
                     LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it, but checking quorum.", block_id, existing_part_name);
 
@@ -454,7 +443,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value, replicas_num);
+                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value);
                 }
                 else
                 {
@@ -482,15 +471,12 @@ void ReplicatedMergeTreeSink::commitPart(
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
 
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
 
         try
         {
-            auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
+            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction);
         }
         catch (const Exception & e)
         {
@@ -554,8 +540,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false, builder);
-                builder->commit();
+                part->renameTo(temporary_part_relative_path, false);
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
                 /// than it will be ignored on the next itration.
@@ -601,7 +586,7 @@ void ReplicatedMergeTreeSink::commitPart(
         break;
     }
 
-    if (isQuorumEnabled())
+    if (quorum)
     {
         if (is_already_existing_part)
         {
@@ -613,7 +598,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 storage.updateQuorum(part->name, false);
         }
 
-        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num);
+        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
 }
 
@@ -635,11 +620,10 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     zkutil::ZooKeeperPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
-    const std::string & is_active_node_value,
-    size_t replicas_num) const
+    const std::string & is_active_node_value) const
 {
     /// We are waiting for quorum to be satisfied.
-    LOG_TRACE(log, "Waiting for quorum '{}' for part {}{}", quorum_path, part_name, quorumLogMessage(replicas_num));
+    LOG_TRACE(log, "Waiting for quorum");
 
     try
     {
@@ -663,7 +647,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
             if (!event->tryWait(quorum_timeout_ms))
                 throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
 
-            LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
+            LOG_TRACE(log, "Quorum {} updated, will check quorum node still exists", quorum_path);
         }
 
         /// And what if it is possible that the current replica at this time has ceased to be active
@@ -681,30 +665,8 @@ void ReplicatedMergeTreeSink::waitForQuorum(
             ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
     }
 
-    LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
+    LOG_TRACE(log, "Quorum satisfied");
 }
 
-String ReplicatedMergeTreeSink::quorumLogMessage(size_t replicas_num) const
-{
-    if (!isQuorumEnabled())
-        return "";
-    return fmt::format(" (quorum {} of {} replicas)", getQuorumSize(replicas_num), replicas_num);
-}
-
-size_t ReplicatedMergeTreeSink::getQuorumSize(size_t replicas_num) const
-{
-    if (!isQuorumEnabled())
-        return 0;
-
-    if (required_quorum_size)
-        return required_quorum_size.value();
-
-    return replicas_num / 2 + 1;
-}
-
-bool ReplicatedMergeTreeSink::isQuorumEnabled() const
-{
-    return !required_quorum_size.has_value() || required_quorum_size.value() > 1;
-}
 
 }

@@ -19,20 +19,14 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        DataPartStoragePtr data_part_storage_,
-        const String & path_prefix_,
-        const String & data_file_extension_,
-        size_t marks_count_,
+        DiskPtr disk_,
+        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        size_t file_size_,
-        const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback,
-        clockid_t clock_type,
-        bool is_low_cardinality_dictionary_,
-        ThreadPool * load_marks_cache_threadpool_);
+        MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
+        size_t file_size_, const MergeTreeIndexGranularityInfo * index_granularity_info_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+        bool is_low_cardinality_dictionary_);
 
     void seekToMark(size_t index);
 
@@ -58,7 +52,7 @@ private:
     size_t file_size;
     UncompressedCache * uncompressed_cache;
 
-    DataPartStoragePtr data_part_storage;
+    DiskPtr disk;
     std::string path_prefix;
     std::string data_file_extension;
 
@@ -82,5 +76,4 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 };
-
 }

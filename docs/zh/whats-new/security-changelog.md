@@ -1,5 +1,4 @@
 ---
-slug: /zh/whats-new/security-changelog
 sidebar_position: 76
 sidebar_label: 安全更新日志
 ---

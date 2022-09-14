@@ -1,9 +1,9 @@
 ---
-slug: /en/operations/tips
 sidebar_position: 58
 sidebar_label: Usage Recommendations
-title: "Usage Recommendations"
 ---
+
+# Usage Recommendations
 
 ## CPU Scaling Governor
 
@@ -74,15 +74,12 @@ Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is ena
 
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime`. XFS works well too.
+Ext4 is the most reliable option. Set the mount options `noatime`.
+XFS should be avoided. It works mostly fine but there are some reports about lower performance.
 Most other file systems should also work fine.
-
-FAT-32 and exFAT are not supported due to lack of hard links.
 
 Do not use compressed filesystems, because ClickHouse does compression on its own and better.
 It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
-
-While ClickHouse can work over NFS, it is not the best idea.
 
 ## Linux Kernel {#linux-kernel}
 
@@ -131,8 +128,7 @@ You should never use manually written scripts to transfer data between different
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
-You can run ClickHouse Keeper on the same server as ClickHouse in test environments, or in environments with low ingestion rate. 
-For production environments we suggest to use separate servers for ClickHouse and ZooKeeper/Keeper, or place ClickHouse files and Keeper files on to separate disks. Because ZooKeeper/Keeper are very sensitive for disk latency and ClickHouse may utilize all available system resources.
+You can run ClickHouse Keeper on the same server as ClickHouse, but do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
 You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
 
@@ -278,6 +274,6 @@ end script
 
 ## Antivirus software {#antivirus-software}
 
-If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
+If you use antivirus software configure it to skip folders with Clickhouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
 [Original article](https://clickhouse.com/docs/en/operations/tips/)

@@ -15,27 +15,22 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        DataPartStoragePtr data_part_storage_,
-        const String & path_prefix_,
-        const String & data_file_extension_,
-        size_t marks_count_,
+        DiskPtr disk_,
+        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges_,
         const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache_,
-        UncompressedCache * uncompressed_cache_,
-        size_t file_size_,
+        UncompressedCache * uncompressed_cache_, size_t file_size_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        clockid_t clock_type_,
-        bool is_low_cardinality_dictionary_,
-        ThreadPool * load_marks_cache_threadpool_)
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_,
+        bool is_low_cardinality_dictionary_)
     : settings(settings_)
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , all_mark_ranges(all_mark_ranges_)
     , file_size(file_size_)
     , uncompressed_cache(uncompressed_cache_)
-    , data_part_storage(std::move(data_part_storage_))
+    , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
@@ -43,17 +38,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
-    , marks_loader(
-        data_part_storage,
-        mark_cache,
-        index_granularity_info->getMarksFilePath(path_prefix),
-        marks_count,
-        *index_granularity_info,
-        save_marks_in_cache,
-        settings.read_settings,
-        load_marks_cache_threadpool_)
-{
-}
+    , marks_loader(disk, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
+        marks_count, *index_granularity_info, save_marks_in_cache) {}
 
 void MergeTreeReaderStream::init()
 {
@@ -93,13 +79,13 @@ void MergeTreeReaderStream::init()
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
+            fullPath(disk, path_prefix + data_file_extension),
             [this, estimated_sum_mark_range_bytes, read_settings]()
             {
-                return data_part_storage->readFile(
+                return disk->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes, std::nullopt);
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache);
 
@@ -116,11 +102,10 @@ void MergeTreeReaderStream::init()
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            data_part_storage->readFile(
+            disk->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes,
-                std::nullopt));
+                estimated_sum_mark_range_bytes));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

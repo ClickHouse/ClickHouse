@@ -115,7 +115,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(AppendTrailingCharIfAbsent)
+void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAppendTrailingCharIfAbsent>();
 }

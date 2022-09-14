@@ -1,10 +1,12 @@
 #include "filesystemHelpers.h"
 
 #if defined(OS_LINUX)
+#    include <cstdio>
 #    include <mntent.h>
 #    include <sys/sysmacros.h>
 #endif
 #include <cerrno>
+#include <Poco/Version.h>
 #include <Poco/Timestamp.h>
 #include <filesystem>
 #include <fcntl.h>
@@ -15,17 +17,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
-
-
-namespace ProfileEvents
-{
-    extern const Event ExternalProcessingFilesTotal;
-}
 
 namespace DB
 {
@@ -36,11 +29,11 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_STAT;
-    extern const int CANNOT_FSTAT;
     extern const int CANNOT_STATVFS;
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_CREATE_FILE;
 }
+
 
 struct statvfs getStatVFS(const String & path)
 {
@@ -54,20 +47,18 @@ struct statvfs getStatVFS(const String & path)
     return fs;
 }
 
-bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
+
+bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
 {
-    fs::path filepath(path);
-    /// `path` may point to nonexisting file, then we can't check it directly, move to parent directory
-    while (filepath.has_parent_path() && !fs::exists(filepath))
-        filepath = filepath.parent_path();
-    auto free_space = fs::space(filepath).free;
+    auto free_space = fs::space(path).free;
     return data_size <= free_space;
 }
 
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(path);
+
+    /// NOTE: std::make_shared cannot use protected constructors
     return std::make_unique<TemporaryFile>(path);
 }
 
@@ -88,22 +79,6 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #endif
 }
 
-
-std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path)
-{
-#if defined(OS_LINUX)
-    struct stat sb;
-    if (lstat(path.c_str(), &sb))
-        return {};
-    WriteBufferFromOwnString ss;
-    ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
-    return ss.str();
-#else
-    return {};
-#endif
-
-}
-
 #if !defined(OS_LINUX)
 [[noreturn]]
 #endif
@@ -112,10 +87,7 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 #if defined(OS_LINUX)
     try
     {
-        const auto path{std::filesystem::path("/sys/dev/block/") / device_id / "queue/rotational"};
-        if (!std::filesystem::exists(path))
-            return BlockDeviceType::UNKNOWN;
-        ReadBufferFromFile in(path);
+        ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/rotational");
         int rotational;
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
@@ -137,8 +109,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 #if defined(OS_LINUX)
     try
     {
-        const auto path{std::filesystem::path("/sys/dev/block/") / device_id / "queue/read_ahead_kb"};
-        ReadBufferFromFile in(path);
+        ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/read_ahead_kb");
         int read_ahead_kb;
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
@@ -244,49 +215,6 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
-size_t getSizeFromFileDescriptor(int fd, const String & file_name)
-{
-    struct stat buf;
-    int res = fstat(fd, &buf);
-    if (-1 == res)
-    {
-        throwFromErrnoWithPath(
-            "Cannot execute fstat" + (file_name.empty() ? "" : " file: " + file_name),
-            file_name,
-            ErrorCodes::CANNOT_FSTAT);
-    }
-    return buf.st_size;
-}
-
-int getINodeNumberFromPath(const String & path)
-{
-    struct stat file_stat;
-    if (stat(path.data(), &file_stat))
-    {
-        throwFromErrnoWithPath(
-            "Cannot execute stat for file " + path,
-            path,
-            ErrorCodes::CANNOT_STAT);
-    }
-    return file_stat.st_ino;
-}
-
-std::optional<size_t> tryGetSizeFromFilePath(const String & path)
-{
-    std::error_code ec;
-
-    size_t size = fs::file_size(path, ec);
-    if (!ec)
-        return size;
-
-    if (ec == std::errc::no_such_file_or_directory)
-        return std::nullopt;
-    if (ec == std::errc::operation_not_supported)
-        return std::nullopt;
-
-    throw fs::filesystem_error("Got unexpected error while getting file size", path, ec);
-}
-
 }
 
 
@@ -376,24 +304,4 @@ void setModificationTime(const std::string & path, time_t time)
     if (utime(path.c_str(), &tb) != 0)
         DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
-
-bool isSymlink(const fs::path & path)
-{
-    /// Remove trailing slash before checking if file is symlink.
-    /// Let /path/to/link is a symlink to /path/to/target/dir/ directory.
-    /// In this case is_symlink("/path/to/link") is true,
-    /// but is_symlink("/path/to/link/") is false (it's a directory)
-    if (path.filename().empty())
-        return fs::is_symlink(path.parent_path());      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-    return fs::is_symlink(path);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-}
-
-fs::path readSymlink(const fs::path & path)
-{
-    /// See the comment for isSymlink
-    if (path.filename().empty())
-        return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-    return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-}
-
 }

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/table-functions/
 sidebar_label: 表函数
 sidebar_position: 34
 ---

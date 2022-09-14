@@ -102,39 +102,11 @@ void Client::processError(const String & query) const
 }
 
 
-void Client::showWarnings()
-{
-    try
-    {
-        std::vector<String> messages = loadWarningMessages();
-        if (!messages.empty())
-        {
-            std::cout << "Warnings:" << std::endl;
-            for (const auto & message : messages)
-                std::cout << " * " << message << std::endl;
-            std::cout << std::endl;
-        }
-    }
-    catch (...)
-    {
-        /// Ignore exception
-    }
-}
-
 /// Make query to get all server warnings
 std::vector<String> Client::loadWarningMessages()
 {
-    /// Older server versions cannot execute the query loading warnings.
-    constexpr UInt64 min_server_revision_to_load_warnings = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
-
-    if (server_revision < min_server_revision_to_load_warnings)
-        return {};
-
     std::vector<String> messages;
-    connection->sendQuery(connection_parameters.timeouts,
-                          "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
-                          {} /* query_parameters */,
-                          "" /* query_id */,
+    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
                           &global_context->getClientInfo(), false, {});
@@ -183,7 +155,7 @@ void Client::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    const char * home_path_cstr = getenv("HOME");
     if (home_path_cstr)
         home_path = home_path_cstr;
 
@@ -202,11 +174,11 @@ void Client::initialize(Poco::Util::Application & self)
       * may be statically allocated, and can be modified by a subsequent call to getenv(), putenv(3), setenv(3), or unsetenv(3).
       */
 
-    const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
+    const char * env_user = getenv("CLICKHOUSE_USER");
     if (env_user)
         config().setString("user", env_user);
 
-    const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
     if (env_password)
         config().setString("password", env_password);
 
@@ -252,9 +224,25 @@ try
 
     connect();
 
-    /// Show warnings at the beginning of connection.
+    /// Load Warnings at the beginning of connection
     if (is_interactive && !config().has("no-warnings"))
-        showWarnings();
+    {
+        try
+        {
+            std::vector<String> messages = loadWarningMessages();
+            if (!messages.empty())
+            {
+                std::cout << "Warnings:" << std::endl;
+                for (const auto & message : messages)
+                    std::cout << " * " << message << std::endl;
+                std::cout << std::endl;
+            }
+        }
+        catch (...)
+        {
+            /// Ignore exception
+        }
+    }
 
     if (is_interactive && !delayed_interactive)
     {
@@ -380,7 +368,7 @@ void Client::connect()
     }
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
-    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
+    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false));
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -620,7 +608,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     stderr,
                     "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
-                _exit(1);
+                exit(1);
             }
 
             auto fuzzed_text = ast_to_process->formatForErrorMessage();
@@ -723,7 +711,7 @@ bool Client::processWithFuzzing(const String & full_query)
         // queries, for lack of a better solution.
         // There is also a problem that fuzzer substitutes positive Int64
         // literals or Decimal literals, which are then parsed back as
-        // UInt64, and suddenly duplicate alias substitution starts or stops
+        // UInt64, and suddenly duplicate alias substitition starts or stops
         // working (ASTWithAlias::formatImpl) or something like that.
         // So we compare not even the first and second formatting of the
         // query, but second and third.
@@ -770,7 +758,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
                     fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
 
-                    _exit(1);
+                    exit(1);
                 }
             }
         }
@@ -909,7 +897,7 @@ void Client::processOptions(const OptionsDescription & options_description,
             auto exit_code = e.code() % 256;
             if (exit_code == 0)
                 exit_code = 255;
-            _exit(exit_code);
+            exit(exit_code);
         }
     }
 
@@ -1006,7 +994,7 @@ void Client::processConfig()
     ///   The value of the option is used as the text of query (or of multiple queries).
     ///   If stdin is not a terminal, INSERT data for the first query is read from it.
     /// - stdin is not a terminal. In this case queries are read from it.
-    /// - --queries-file command line option is present.
+    /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));

@@ -87,7 +87,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3UnidirectionalEdgeIsValid)
+void registerFunctionH3UnidirectionalEdgeIsValid(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3UnidirectionalEdgeIsValid>();
 }

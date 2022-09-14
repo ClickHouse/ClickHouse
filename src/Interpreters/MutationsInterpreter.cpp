@@ -28,8 +28,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/PreparedSets.h>
-#include <Storages/LightweightDeleteDescription.h>
 
 
 namespace DB
@@ -226,7 +224,7 @@ bool isStorageTouchedByMutations(
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
     /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and give it into ExpressionTransform
+    /// For some reason it may copy context and and give it into ExpressionTransform
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(
         select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
@@ -288,17 +286,13 @@ MutationsInterpreter::MutationsInterpreter(
     const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     ContextPtr context_,
-    bool can_execute_,
-    bool return_all_columns_,
-    bool return_deleted_rows_)
+    bool can_execute_)
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
-    , return_all_columns(return_all_columns_)
-    , return_deleted_rows(return_deleted_rows_)
 {
     mutation_ast = prepare(!can_execute);
 }
@@ -353,14 +347,6 @@ static void validateUpdateColumns(
                 found = true;
                 break;
             }
-        }
-
-        /// Allow to override value of lightweight delete filter virtual column
-        if (!found && column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
-        {
-            if (!storage->supportsLightweightDelete())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
-            found = true;
         }
 
         if (!found)
@@ -473,25 +459,17 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
-    std::vector<String> read_columns;
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
     {
-        // we can return deleted rows only if it's the only present command
-        assert(command.type == MutationCommand::DELETE || !return_deleted_rows);
-
         if (command.type == MutationCommand::DELETE)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto predicate  = getPartitionAndPredicateExpressionForMutationCommand(command);
-
-            if (!return_deleted_rows)
-                predicate = makeASTFunction("isZeroOrNull", predicate);
-
-            stages.back().filters.push_back(predicate);
+            auto negated_predicate = makeASTFunction("isZeroOrNull", getPartitionAndPredicateExpressionForMutationCommand(command));
+            stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -524,14 +502,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 ///
                 /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
 
-                DataTypePtr type;
-                if (auto physical_column = columns_desc.tryGetPhysical(column))
-                    type = physical_column->type;
-                else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
-                    type = LightweightDeleteDescription::FILTER_COLUMN.type;
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
-
+                const auto & type = columns_desc.getPhysical(column).type;
                 auto type_literal = std::make_shared<ASTLiteral>(type->getName());
 
                 const auto & update_expr = kv.second;
@@ -707,21 +678,15 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::READ_COLUMN)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            read_columns.emplace_back(command.column_name);
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
-    }
-
-    if (!read_columns.empty())
-    {
-        if (stages.empty() || !stages.back().column_to_updated.empty())
-            stages.emplace_back(context);
-        if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
-            stages.emplace_back(context);
-
-        for (auto & column_name : read_columns)
-            stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
     }
 
     /// We care about affected indices and projections because we also need to rewrite them
@@ -797,17 +762,10 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
     auto all_columns = storage_snapshot->getColumns(options);
 
-    /// Add _row_exists column if it is present in the part
-    if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(storage))
-    {
-        if (part_storage->hasLightweightDeletedMask())
-            all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
-    }
-
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
-        if (return_all_columns || !prepared_stages[i].filters.empty())
+        if (!prepared_stages[i].filters.empty())
         {
             for (const auto & column : all_columns)
                 prepared_stages[i].output_columns.insert(column.name);
@@ -817,11 +775,11 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         if (i > 0)
             prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
 
-        /// Make sure that all updated columns are included into output_columns set.
-        /// This is important for a "hidden" column like _row_exists gets because it is a virtual column
-        /// and so it is not in the list of AllPhysical columns.
-        for (const auto & kv : prepared_stages[i].column_to_updated)
-            prepared_stages[i].output_columns.insert(kv.first);
+        if (prepared_stages[i].output_columns.size() < all_columns.size())
+        {
+            for (const auto & kv : prepared_stages[i].column_to_updated)
+                prepared_stages[i].output_columns.insert(kv.first);
+        }
     }
 
     /// Now, calculate `expressions_chain` for each stage except the first.
@@ -878,9 +836,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             for (const auto & kv : stage.column_to_updated)
             {
                 auto column_name = kv.second->getColumnName();
-                const auto & dag_node = actions->findInOutputs(column_name);
+                const auto & dag_node = actions->findInIndex(column_name);
                 const auto & alias = actions->addAlias(dag_node, kv.first);
-                actions->addOrReplaceInOutputs(alias);
+                actions->addOrReplaceInIndex(alias);
             }
         }
 
@@ -953,7 +911,14 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             }
         }
 
-        addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
+        SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
+        if (!subqueries_for_sets.empty())
+        {
+            const Settings & settings = context->getSettingsRef();
+            SizeLimits network_transfer_limits(
+                    settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+            addCreatingSetsStep(plan, std::move(subqueries_for_sets), network_transfer_limits, context);
+        }
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan;
@@ -1007,18 +972,7 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
     if (!select_interpreter)
-    {
-        /// Skip to apply deleted mask for MutateSomePartColumn cases when part has lightweight delete.
-        if (!apply_deleted_mask)
-        {
-            auto context_for_reading = Context::createCopy(context);
-            context_for_reading->setApplyDeletedMask(apply_deleted_mask);
-            select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context_for_reading, storage, metadata_snapshot, select_limits);
-        }
-        else
-            select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
-    }
-
+        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
 
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);

@@ -87,8 +87,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
         region,
         remote_host_filter,
         s3_max_redirects,
-        enable_s3_requests_logging,
-        /* for_disk_s3 = */ false
+        enable_s3_requests_logging
     );
 
     client_configuration.endpointOverride = uri.endpoint;

@@ -40,7 +40,7 @@ struct AsynchronousMetricLogElement
         return "event_date Date CODEC(Delta(2), ZSTD(1)), "
                "event_time DateTime CODEC(Delta(4), ZSTD(1)), "
                "metric LowCardinality(String) CODEC(ZSTD(1)), "
-               "value Float64 CODEC(ZSTD(3))";
+               "value Float64 CODEC(Gorilla, ZSTD(3))";
     }
 };
 

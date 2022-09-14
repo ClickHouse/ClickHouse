@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Interpreters/Context.h>
 
 
@@ -52,8 +51,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
-        LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
-        required_columns, virt_column_names, prewhere_info, /*with_subcolumns=*/ true);
+        storage, storage_snapshot, data_part,
+        required_columns, prewhere_info, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -64,8 +63,13 @@ void MergeTreeSelectProcessor::initializeReaders()
 
     owned_mark_cache = storage.getContext()->getMarkCache();
 
-    initializeMergeTreeReadersForPart(data_part, task_columns, storage_snapshot->getMetadataForQuery(),
-        all_mark_ranges, {}, {});
+    reader = data_part->getReader(task_columns.columns, storage_snapshot->getMetadataForQuery(),
+        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+
+    if (prewhere_info)
+        pre_reader = data_part->getReader(task_columns.pre_columns, storage_snapshot->getMetadataForQuery(),
+            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+
 }
 
 
@@ -76,7 +80,7 @@ void MergeTreeSelectProcessor::finish()
     * buffers don't waste memory.
     */
     reader.reset();
-    pre_reader_for_step.clear();
+    pre_reader.reset();
     data_part.reset();
 }
 

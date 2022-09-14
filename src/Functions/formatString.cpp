@@ -135,7 +135,7 @@ using FunctionFormat = FormatFunction<NameFormat>;
 
 }
 
-REGISTER_FUNCTION(Format)
+void registerFunctionFormat(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormat>();
 }

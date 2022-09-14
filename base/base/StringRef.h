@@ -55,12 +55,18 @@ struct StringRef
     bool empty() const { return size == 0; }
 
     std::string toString() const { return std::string(data, size); }
-    explicit operator std::string() const { return toString(); }
 
+    explicit operator std::string() const { return toString(); }
     std::string_view toView() const { return std::string_view(data, size); }
+
     constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
 };
 
+/// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
+/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetic
+/// and the UBSan thinks that something like nullptr + 8 is UB.
+constexpr const inline char empty_string_ref_addr{};
+constexpr const inline StringRef EMPTY_STRING_REF{&empty_string_ref_addr, 0};
 
 using StringRefs = std::vector<StringRef>;
 
@@ -222,7 +228,7 @@ inline UInt64 shiftMix(UInt64 val)
     return val ^ (val >> 47);
 }
 
-inline UInt64 rotateByAtLeast1(UInt64 val, UInt8 shift)
+inline UInt64 rotateByAtLeast1(UInt64 val, int shift)
 {
     return (val >> shift) | (val << (64 - shift));
 }
@@ -244,7 +250,7 @@ inline size_t hashLessThan8(const char * data, size_t size)
         uint8_t b = data[size >> 1];
         uint8_t c = data[size - 1];
         uint32_t y = static_cast<uint32_t>(a) + (static_cast<uint32_t>(b) << 8);
-        uint32_t z = static_cast<uint32_t>(size) + (static_cast<uint32_t>(c) << 2);
+        uint32_t z = size + (static_cast<uint32_t>(c) << 2);
         return shiftMix(y * k2 ^ z * k3) * k2;
     }
 
@@ -257,7 +263,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
     {
         UInt64 a = unalignedLoad<UInt64>(data);
         UInt64 b = unalignedLoad<UInt64>(data + size - 8);
-        return hashLen16(a, rotateByAtLeast1(b + size, static_cast<UInt8>(size))) ^ b;
+        return hashLen16(a, rotateByAtLeast1(b + size, size)) ^ b;
     }
 
     return hashLessThan8(data, size);

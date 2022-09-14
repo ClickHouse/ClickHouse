@@ -46,6 +46,7 @@ age	String
 isOnline	Enum8(\'offline\' = 0, \'online\' = 1)					
 someRatio	Float64					
 visitTime	UInt64					
+newMessage	Tuple(empty Array(Tuple()), z Float32)					
 randomBigNumber	Int64					
 newFieldInt	Array(Int32)					
 color	Array(Float32)					

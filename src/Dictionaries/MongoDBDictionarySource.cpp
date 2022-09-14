@@ -20,7 +20,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         Block & sample_block,
         ContextPtr context,
         const std::string & /* default_database */,
-        bool created_from_ddl)
+        bool /* created_from_ddl */)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         ExternalDataSourceConfiguration configuration;
@@ -38,9 +38,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             configuration.password = config.getString(config_prefix + ".password", "");
             configuration.database = config.getString(config_prefix + ".db", "");
         }
-
-        if (created_from_ddl)
-            context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
 
         return std::make_unique<MongoDBDictionarySource>(dict_struct,
             config.getString(config_prefix + ".uri", ""),
@@ -118,7 +115,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         Poco::URI poco_uri(uri);
 
         // Parse database from URI. This is required for correctness -- the
-        // cursor is created using database name and collection name, so we have
+        // cursor is created using database name and colleciton name, so we have
         // to specify them properly.
         db = poco_uri.getPath();
         // getPath() may return a leading slash, remove it.
@@ -232,7 +229,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
                 }
                 case AttributeUnderlyingType::String:
                 {
-                    String loaded_str((*key_columns[attribute_index])[row_idx].get<String>());
+                    String loaded_str(get<String>((*key_columns[attribute_index])[row_idx]));
                     /// Convert string to ObjectID
                     if (key_attribute.is_object_id)
                     {
@@ -259,7 +256,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}.{},{}{}:{}", db, collection, (user.empty() ? " " : " " + user + '@'), host, port);
+    return "MongoDB: " + db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + host + ':' + DB::toString(port);
 }
 
 }

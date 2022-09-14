@@ -72,9 +72,9 @@ private:
     FunctionOverloadResolverPtr function_resolver;
 };
 
-REGISTER_FUNCTION(MonthName)
+void registerFunctionMonthName(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionMonthName>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMonthName>(FunctionFactory::CaseInsensitive);
 }
 
 }

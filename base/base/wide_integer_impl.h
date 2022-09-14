@@ -15,8 +15,6 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 #include <boost/math/special_functions/fpclassify.hpp>
 
-// NOLINTBEGIN(*)
-
 /// Use same extended double for all platforms
 #if (LDBL_MANT_DIG == 64)
 #define CONSTEXPR_FROM_DOUBLE constexpr
@@ -453,7 +451,7 @@ private:
             if constexpr (sizeof(T) <= sizeof(base_type))
             {
                 if (0 == idx)
-                    return static_cast<base_type>(x);
+                    return x;
             }
             else if (idx * sizeof(base_type) < sizeof(T))
                 return x >> (idx * base_bits); // & std::numeric_limits<base_type>::max()
@@ -1239,13 +1237,13 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
-    return static_cast<double>(static_cast<long double>(*this));
+    return static_cast<long double>(*this);
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
-    return static_cast<float>(static_cast<long double>(*this));
+    return static_cast<long double>(*this);
 }
 
 // Unary operators
@@ -1480,5 +1478,3 @@ struct hash<wide::integer<Bits, Signed>>
 };
 
 }
-
-// NOLINTEND(*)

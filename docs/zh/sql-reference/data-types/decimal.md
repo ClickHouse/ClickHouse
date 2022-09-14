@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/data-types/decimal
----
 # Decimal(P,S),Decimal32(S),Decimal64(S),Decimal128(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
 
 有符号的定点数，可在加、减和乘法运算过程中保持精度。对于除法，最低有效数字会被丢弃（不舍入）。

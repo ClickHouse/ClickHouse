@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/settings-profile
 sidebar_position: 43
 sidebar_label: "Профиль настроек"
 ---

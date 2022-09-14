@@ -73,11 +73,6 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return true;
 }
 
-std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
-{
-    return std::unique_lock{exec_mutex};
-}
-
 void BackgroundSchedulePoolTaskInfo::execute()
 {
     Stopwatch watch;
@@ -149,9 +144,9 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
 
     threads.resize(size_);
     for (auto & thread : threads)
-        thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
+        thread = ThreadFromGlobalPool([this] { threadFunction(); });
 
-    delayed_thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { delayExecutionThreadFunction(); });
+    delayed_thread = ThreadFromGlobalPool([this] { delayExecutionThreadFunction(); });
 }
 
 
@@ -168,7 +163,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 
     threads.resize(new_threads_count);
     for (size_t i = old_threads_count; i < new_threads_count; ++i)
-        threads[i] = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
+        threads[i] = ThreadFromGlobalPool([this] { threadFunction(); });
 }
 
 

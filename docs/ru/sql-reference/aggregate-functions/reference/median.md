@@ -1,6 +1,3 @@
----
-slug: /ru/sql-reference/aggregate-functions/reference/median
----
 # median {#median}
 
 Функции `median*` — синонимы для соответствущих функций `quantile*`. Они вычисляют медиану числовой последовательности.

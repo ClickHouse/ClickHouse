@@ -9,7 +9,6 @@
 
 namespace DB
 {
-class IBackupEntry;
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
@@ -48,8 +47,6 @@ struct MergeTreeMutationEntry
     void removeFile();
 
     void writeCSN(CSN csn_);
-
-    std::shared_ptr<const IBackupEntry> backup() const;
 
     static String versionToFileName(UInt64 block_number_);
     static UInt64 tryParseFileName(const String & file_name_);

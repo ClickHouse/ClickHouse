@@ -26,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
-    extern const int THERE_IS_NO_PROFILE;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -48,7 +47,7 @@ namespace
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
 
-    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name, const std::unordered_set<UUID> & allowed_profile_ids, bool allow_no_password, bool allow_plaintext_password)
+    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name, bool allow_no_password, bool allow_plaintext_password)
     {
         auto user = std::make_shared<User>();
         user->setName(user_name);
@@ -141,11 +140,8 @@ namespace
         if (config.has(profile_name_config))
         {
             auto profile_name = config.getString(profile_name_config);
-            auto profile_id = generateID(AccessEntityType::SETTINGS_PROFILE, profile_name);
-            if (!allowed_profile_ids.contains(profile_id))
-                throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Profile {} was not found", profile_name);
             SettingsProfileElement profile_element;
-            profile_element.parent_profile = profile_id;
+            profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, profile_name);
             user->settings.push_back(std::move(profile_element));
         }
 
@@ -235,7 +231,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, const std::unordered_set<UUID> & allowed_profile_ids, bool allow_no_password, bool allow_plaintext_password)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, bool allow_no_password, bool allow_plaintext_password)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -246,7 +242,7 @@ namespace
         {
             try
             {
-                users.push_back(parseUser(config, user_name, allowed_profile_ids, allow_no_password, allow_plaintext_password));
+                users.push_back(parseUser(config, user_name, allow_no_password, allow_plaintext_password));
             }
             catch (Exception & e)
             {
@@ -461,7 +457,6 @@ namespace
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
         const String & profile_name,
-        const std::unordered_set<UUID> & allowed_parent_profile_ids,
         const AccessControl & access_control)
     {
         auto profile = std::make_shared<SettingsProfile>();
@@ -476,11 +471,8 @@ namespace
             if (key == "profile" || key.starts_with("profile["))
             {
                 String parent_profile_name = config.getString(profile_config + "." + key);
-                auto parent_profile_id = generateID(AccessEntityType::SETTINGS_PROFILE, parent_profile_name);
-                if (!allowed_parent_profile_ids.contains(parent_profile_id))
-                    throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Parent profile '{}' was not found", parent_profile_name);
                 SettingsProfileElement profile_element;
-                profile_element.parent_profile = parent_profile_id;
+                profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, parent_profile_name);
                 profile->elements.emplace_back(std::move(profile_element));
                 continue;
             }
@@ -506,7 +498,6 @@ namespace
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
-        const std::unordered_set<UUID> & allowed_parent_profile_ids,
         const AccessControl & access_control)
     {
         Poco::Util::AbstractConfiguration::Keys profile_names;
@@ -519,7 +510,7 @@ namespace
         {
             try
             {
-                profiles.push_back(parseSettingsProfile(config, profile_name, allowed_parent_profile_ids, access_control));
+                profiles.push_back(parseSettingsProfile(config, profile_name, access_control));
             }
             catch (Exception & e)
             {
@@ -530,24 +521,10 @@ namespace
 
         return profiles;
     }
-
-
-    std::unordered_set<UUID> getAllowedSettingsProfileIDs(const Poco::Util::AbstractConfiguration & config)
-    {
-        Poco::Util::AbstractConfiguration::Keys profile_names;
-        config.keys("profiles", profile_names);
-        std::unordered_set<UUID> ids;
-        for (const auto & profile_name : profile_names)
-            ids.emplace(generateID(AccessEntityType::SETTINGS_PROFILE, profile_name));
-        return ids;
-    }
 }
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_)
-    : IAccessStorage(storage_name_)
-    , access_control(access_control_)
-    , memory_storage(storage_name_, access_control.getChangesNotifier(), false)
-    , backup_allowed(allow_backup_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_)
+    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier())
 {
 }
 
@@ -589,18 +566,16 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
 {
     try
     {
-        auto allowed_profile_ids = getAllowedSettingsProfileIDs(config);
         bool no_password_allowed = access_control.isNoPasswordAllowed();
         bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
-
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config, allowed_profile_ids, no_password_allowed, plaintext_password_allowed))
+        for (const auto & entity : parseUsers(config, no_password_allowed, plaintext_password_allowed))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseRowPolicies(config, access_control.isEnabledUsersWithoutRowPoliciesCanReadRows()))
             all_entities.emplace_back(generateID(*entity), entity);
-        for (const auto & entity : parseSettingsProfiles(config, allowed_profile_ids, access_control))
+        for (const auto & entity : parseSettingsProfiles(config, access_control))
             all_entities.emplace_back(generateID(*entity), entity);
         memory_storage.setAll(all_entities);
     }
@@ -680,9 +655,9 @@ AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id, bool throw_i
 }
 
 
-std::optional<std::pair<String, AccessEntityType>> UsersConfigAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.readNameWithType(id, throw_if_not_exists);
+    return memory_storage.readName(id, throw_if_not_exists);
 }
 
 }

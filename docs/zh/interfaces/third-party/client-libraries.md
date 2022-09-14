@@ -1,5 +1,4 @@
 ---
-slug: /zh/interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: 客户端开发库
 ---
@@ -47,6 +46,7 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
     -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
     -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
+    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)

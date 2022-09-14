@@ -3,7 +3,6 @@
 #include <Processors/Transforms/SortingTransform.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Common/logger_useful.h>
 
 
@@ -56,7 +55,7 @@ private:
     bool remerge_is_useful = true;
 
     /// Everything below is for external sorting.
-    std::vector<TemporaryFileOnDiskHolder> temporary_files;
+    std::vector<std::unique_ptr<TemporaryFile>> temporary_files;
 
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();

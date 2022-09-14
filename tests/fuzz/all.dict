@@ -898,7 +898,6 @@
 "parseDateTimeBestEffortUS"
 "parseDateTimeBestEffortUSOrNull"
 "parseDateTimeBestEffortUSOrZero"
-"parseTimeDelta"
 "PARTITION"
 "PARTITION BY"
 "partitionId"

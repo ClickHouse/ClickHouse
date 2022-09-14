@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/syntax
 sidebar_position: 31
 sidebar_label: SQL语法
 

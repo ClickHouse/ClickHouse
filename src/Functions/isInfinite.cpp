@@ -35,7 +35,7 @@ using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
 
 }
 
-REGISTER_FUNCTION(IsInfinite)
+void registerFunctionIsInfinite(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIsInfinite>();
 }

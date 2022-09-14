@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/errors
----
 # errors
 
 Contains error codes with the number of times they have been triggered.

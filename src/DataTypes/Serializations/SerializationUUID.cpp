@@ -84,7 +84,7 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 
 void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    UUID x = field.get<UUID>();
+    UUID x = get<UUID>(field);
     writeBinary(x, ostr);
 }
 

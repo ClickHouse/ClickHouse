@@ -54,17 +54,12 @@ void registerStorageMySQL(StorageFactory & factory);
 
 void registerStorageMongoDB(StorageFactory & factory);
 
-
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);
 #endif
 
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
-#endif
-
-#if USE_NATSIO
-void registerStorageNATS(StorageFactory & factory);
 #endif
 
 #if USE_ROCKSDB
@@ -88,7 +83,6 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
-void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorages()
 {
@@ -152,10 +146,6 @@ void registerStorages()
     registerStorageRabbitMQ(factory);
     #endif
 
-    #if USE_NATSIO
-    registerStorageNATS(factory);
-    #endif
-
     #if USE_ROCKSDB
     registerStorageEmbeddedRocksDB(factory);
     #endif
@@ -172,8 +162,6 @@ void registerStorages()
     #if USE_SQLITE
     registerStorageSQLite(factory);
     #endif
-
-    registerStorageKeeperMap(factory);
 }
 
 }

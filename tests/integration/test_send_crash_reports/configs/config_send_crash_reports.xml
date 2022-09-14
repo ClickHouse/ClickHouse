@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <send_crash_reports>
         <enabled>true</enabled>

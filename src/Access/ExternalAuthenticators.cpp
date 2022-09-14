@@ -231,23 +231,18 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
         params.prefix = config.getString(prefix + ".prefix");
 }
 
-void ExternalAuthenticators::resetImpl()
+void ExternalAuthenticators::reset()
 {
+    std::scoped_lock lock(mutex);
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
 }
 
-void ExternalAuthenticators::reset()
-{
-    std::scoped_lock lock(mutex);
-    resetImpl();
-}
-
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
     std::scoped_lock lock(mutex);
-    resetImpl();
+    reset();
 
     Poco::Util::AbstractConfiguration::Keys all_keys;
     config.keys("", all_keys);
