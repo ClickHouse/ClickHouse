@@ -1,11 +1,11 @@
 #include <iterator>
 #include <variant>
-#include <Coordination/KeeperStorage.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
-#include <Poco/Base64Encoder.h>
 #include <Poco/SHA1Engine.h>
+
+#include <Common/Base64.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -15,8 +15,11 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
+
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperStorage.h>
+
 #include <sstream>
 #include <iomanip>
 #include <mutex>
@@ -35,17 +38,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-String base64Encode(const String & decoded)
-{
-    std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ostr.exceptions(std::ios::failbit);
-    Poco::Base64Encoder encoder(ostr);
-    encoder.rdbuf()->setLineLength(0);
-    encoder << decoded;
-    encoder.close();
-    return ostr.str();
-}
 
 String getSHA1(const String & userdata)
 {
