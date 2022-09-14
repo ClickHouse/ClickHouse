@@ -58,7 +58,7 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateNameImpl>(context->getSettingsRef().force_timezone); }
 
     explicit FunctionDateNameImpl(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
-    
+
     String getName() const override { return name; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
