@@ -202,7 +202,7 @@ struct TimeSlotsImpl
 class FunctionTimeSlots : public IFunction
 {
 private:
-std::string force_timezone = "";
+std::string force_timezone;
 public:
     static constexpr auto name = "timeSlots";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSlots>(context->getSettingsRef().force_timezone); }

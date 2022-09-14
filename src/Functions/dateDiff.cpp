@@ -47,7 +47,7 @@ class FunctionDateDiff : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 private:
-    std::string force_timezone = "";
+    std::string force_timezone;
 public:
     static constexpr auto name = "dateDiff";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateDiff>(context->getSettingsRef().force_timezone); }

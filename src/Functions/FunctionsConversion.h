@@ -1616,7 +1616,7 @@ template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
 {
 private:
-    std::string force_timezone = "";
+    std::string force_timezone;
 public:
     using Monotonic = MonotonicityImpl;
 
@@ -1968,7 +1968,7 @@ template <typename ToDataType, typename Name,
 class FunctionConvertFromString : public IFunction
 {
 private:
-    std::string force_timezone = "";
+    std::string force_timezone;
 public:
     static constexpr auto name = Name::name;
     static constexpr bool to_decimal =

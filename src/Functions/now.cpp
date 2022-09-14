@@ -76,7 +76,7 @@ private:
 class NowOverloadResolver : public IFunctionOverloadResolver
 {
 private:
-    std::string force_timezone = "";
+    std::string force_timezone;
 public:
     static constexpr auto name = "now";
 

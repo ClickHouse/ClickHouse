@@ -91,7 +91,7 @@ class FunctionFromUnixTimestamp64 : public IFunction
 private:
     size_t target_scale;
     const char * name;
-    std::string force_timezone = "";
+    std::string force_timezone;
 
 public:
     FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, const std::string & force_timezone_)

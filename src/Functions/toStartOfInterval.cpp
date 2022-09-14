@@ -313,7 +313,7 @@ namespace
 class FunctionToStartOfInterval : public IFunction
 {
 private:
-    std::string force_timezone = "";
+    std::string force_timezone;
 public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToStartOfInterval>(context->getSettingsRef().force_timezone); }
     explicit FunctionToStartOfInterval(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
