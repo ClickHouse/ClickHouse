@@ -14,6 +14,7 @@ REMOVE_NON_LETTERS="sed 's/[^a-zA-Z]//g'"
 FIND_DISTINCT="$GREP_DISTINCT | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
 FIND_READING_IN_ORDER="grep 'MergeTreeInOrder' | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
 FIND_READING_DEFAULT="grep 'MergeTreeThread' | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
+FIND_SORTING_PROPERTIES="grep 'Sorting (Stream)' | $TRIM_LEADING_SPACES"
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
 $CLICKHOUSE_CLIENT -q "create table distinct_in_order_explain (a int, b int, c int) engine=MergeTree() order by (a, b)"
@@ -68,5 +69,8 @@ echo "-- enabled, distinct columns contains constant columns, non-const columns 
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, b, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
+
+echo "-- check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain where a > 0" | eval $FIND_SORTING_PROPERTIES
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"

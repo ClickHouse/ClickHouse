@@ -46,3 +46,8 @@ MergeTreeThread
 MergeTreeInOrder
 -- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key
 MergeTreeInOrder
+-- check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
+Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC

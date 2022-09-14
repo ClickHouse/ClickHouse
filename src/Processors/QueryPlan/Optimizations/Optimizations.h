@@ -67,7 +67,7 @@ inline const auto & getOptimizations()
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryDistinctReadInOrder, "distinctReadInOrder", &QueryPlanOptimizationSettings::distinct_in_order}
+        {tryDistinctReadInOrder, "distinctReadInOrder", &QueryPlanOptimizationSettings::distinct_in_order},
     }};
 
     return optimizations;

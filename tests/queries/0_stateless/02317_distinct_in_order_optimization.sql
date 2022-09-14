@@ -85,5 +85,13 @@ select count() as diff from (select distinct * from distinct_in_order except sel
 drop table if exists distinct_in_order;
 drop table if exists ordinary_distinct;
 
-drop table if exists distinct_cardinality_low;
+select '-- check that distinct in order WITHOUT order by and WITH filter returns the same result as ordinary distinct';
+create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
+insert into distinct_in_order select distinct * from distinct_cardinality_low where low > 0 settings optimize_distinct_in_order=1;
+create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
+insert into ordinary_distinct select distinct * from distinct_cardinality_low where low > 0 settings optimize_distinct_in_order=0;
+select count() as diff from (select distinct * from distinct_in_order except select * from ordinary_distinct);
 
+drop table if exists distinct_in_order;
+drop table if exists ordinary_distinct;
+drop table if exists distinct_cardinality_low;
