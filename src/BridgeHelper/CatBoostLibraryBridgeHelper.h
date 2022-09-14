@@ -6,7 +6,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
 #include <Poco/URI.h>
-
+#include <optional>
 
 namespace DB
 {
@@ -17,17 +17,18 @@ public:
     static constexpr inline auto PING_HANDLER = "/catboost_ping";
     static constexpr inline auto MAIN_HANDLER = "/catboost_request";
 
-    CatBoostLibraryBridgeHelper(ContextPtr context_, std::string_view library_path_, std::string_view model_path_);
-    CatBoostLibraryBridgeHelper(ContextPtr context_, std::string_view model_path_);
-    explicit CatBoostLibraryBridgeHelper(ContextPtr context_);
+    explicit CatBoostLibraryBridgeHelper(
+        ContextPtr context_,
+        std::optional<String> model_path_ = std::nullopt,
+        std::optional<String> library_path_ = std::nullopt);
 
     ExternalModelInfos listModels();
 
-    void removeModel();
+    void removeModel();                                            /// requires model_path
     void removeAllModels();
 
-    size_t getTreeCount();
-    ColumnPtr evaluate(const ColumnsWithTypeAndName & columns);
+    size_t getTreeCount();                                         /// requires model_path and library_path
+    ColumnPtr evaluate(const ColumnsWithTypeAndName & columns);    /// requires model_path
 
 protected:
     Poco::URI getPingURI() const override;
@@ -45,8 +46,8 @@ private:
 
     Poco::URI createRequestURI(const String & method) const;
 
-    const String library_path;
-    const String model_path;
+    const std::optional<String> model_path;
+    const std::optional<String> library_path;
 };
 
 }

@@ -12,7 +12,12 @@ CatBoostLibraryHandlerFactory & CatBoostLibraryHandlerFactory::instance()
     return instance;
 }
 
-CatBoostLibraryHandlerPtr CatBoostLibraryHandlerFactory::getOrCreateModel(const String & model_path, const String & library_path, bool create_if_not_found)
+CatBoostLibraryHandlerFactory::CatBoostLibraryHandlerFactory()
+    : log(&Poco::Logger::get("CatBoostLibraryHandlerFactory"))
+{
+}
+
+CatBoostLibraryHandlerPtr CatBoostLibraryHandlerFactory::tryGetModel(const String & model_path, const String & library_path, bool create_if_not_found)
 {
     std::lock_guard lock(mutex);
 
@@ -26,8 +31,8 @@ CatBoostLibraryHandlerPtr CatBoostLibraryHandlerFactory::getOrCreateModel(const 
         if (create_if_not_found)
         {
             auto new_handler = std::make_shared<CatBoostLibraryHandler>(library_path, model_path);
-            library_handlers.emplace(std::make_pair(model_path, new_handler));
-            LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Loaded catboost library handler for model path '{}'", model_path);
+            library_handlers.emplace(model_path, new_handler);
+            LOG_DEBUG(log, "Loaded catboost library handler for model path '{}'", model_path);
             return new_handler;
         }
         return nullptr;
@@ -41,17 +46,17 @@ void CatBoostLibraryHandlerFactory::removeModel(const String & model_path)
     bool deleted = library_handlers.erase(model_path);
     if (!deleted)
     {
-        LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Cannot unload catboost library handler for model path '{}'", model_path);
+        LOG_DEBUG(log, "Cannot unload catboost library handler for model path '{}'", model_path);
         return;
     }
-    LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Unloaded catboost library handler for model path '{}'", model_path);
+    LOG_DEBUG(log, "Unloaded catboost library handler for model path '{}'", model_path);
 }
 
 void CatBoostLibraryHandlerFactory::removeAllModels()
 {
     std::lock_guard lock(mutex);
     library_handlers.clear();
-    LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Unloaded all catboost library handlers");
+    LOG_DEBUG(log, "Unloaded all catboost library handlers");
 }
 
 ExternalModelInfos CatBoostLibraryHandlerFactory::getModelInfos()
