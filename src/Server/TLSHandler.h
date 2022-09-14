@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 class TLSHandler : public Poco::Net::TCPServerConnection
 {
-#if USE_SSL    
+#if USE_SSL
     using SecureStreamSocket = Poco::Net::SecureStreamSocket;
     using SSLManager = Poco::Net::SSLManager;
     using Context = Poco::Net::Context;
