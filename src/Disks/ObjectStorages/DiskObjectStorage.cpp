@@ -282,7 +282,10 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
     if (!id.starts_with(object_storage_root_path))
+    {
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}", id, object_storage_root_path);
         return false;
+    }
 
     auto object = StoredObject::create(*object_storage, id, {}, {}, true);
     return object_storage->exists(object);

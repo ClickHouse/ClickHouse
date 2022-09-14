@@ -613,7 +613,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (which.isTuple() && function->name == "tuple")
         {
-            const Tuple & tuple = get<const Tuple &>(value_field);
+            const Tuple & tuple = value_field.get<const Tuple &>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
             const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 

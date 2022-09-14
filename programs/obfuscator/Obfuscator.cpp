@@ -833,7 +833,7 @@ public:
             }
         }
 
-        if (params.frequency_desaturate)
+        if (params.frequency_desaturate > 0.0)
         {
             for (auto & elem : table)
             {
@@ -846,7 +846,7 @@ public:
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
                 {
-                    bucket.second = bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate;
+                    bucket.second = static_cast<UInt64>(bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
                     new_total += bucket.second;
                 }
 
