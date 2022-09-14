@@ -45,8 +45,6 @@ public:
       */
     static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
-    static void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block);
-
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
     /// You should call finalize() to wait until all data is written.

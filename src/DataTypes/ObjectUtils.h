@@ -11,6 +11,9 @@
 namespace DB
 {
 
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t getNumberOfDimensions(const IDataType & type);
 
@@ -38,6 +41,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column);
 /// Converts Object types and columns to Tuples in @columns_list and @block
 /// and checks that types are consistent with types in @extended_storage_columns.
 void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns);
+void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block);
 
 /// Checks that each path is not the prefix of any other path.
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths);
@@ -164,26 +168,23 @@ ColumnsDescription getObjectColumns(
     const ColumnsDescription & storage_columns,
     EntryColumnsGetter && entry_columns_getter)
 {
-    ColumnsDescription res;
-
-    if (begin == end)
-    {
-        for (const auto & column : storage_columns)
-        {
-            if (isObject(column.type))
-            {
-                auto tuple_type = std::make_shared<DataTypeTuple>(
-                    DataTypes{std::make_shared<DataTypeUInt8>()},
-                    Names{ColumnObject::COLUMN_NAME_DUMMY});
-
-                res.add({column.name, std::move(tuple_type)});
-            }
-        }
-
-        return res;
-    }
-
     std::unordered_map<String, DataTypes> types_in_entries;
+
+    /// Add dummy column for all Object columns
+    /// to not lose any column if it's missing
+    /// in all entries. If it exists in any entry
+    /// dummy column will be removed.
+    for (const auto & column : storage_columns)
+    {
+        if (isObject(column.type))
+        {
+            auto tuple_type = std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeUInt8>()},
+                Names{ColumnObject::COLUMN_NAME_DUMMY});
+
+            types_in_entries[column.name].push_back(std::move(tuple_type));
+        }
+    }
 
     for (auto it = begin; it != end; ++it)
     {
@@ -196,6 +197,7 @@ ColumnsDescription getObjectColumns(
         }
     }
 
+    ColumnsDescription res;
     for (const auto & [name, types] : types_in_entries)
         res.add({name, getLeastCommonTypeForObject(types)});
 

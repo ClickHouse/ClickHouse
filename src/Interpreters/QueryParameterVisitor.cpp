@@ -1,5 +1,4 @@
 #include <Interpreters/QueryParameterVisitor.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -50,4 +49,3 @@ NameSet analyzeReceiveQueryParams(const std::string & query)
 }
 
 }
-
