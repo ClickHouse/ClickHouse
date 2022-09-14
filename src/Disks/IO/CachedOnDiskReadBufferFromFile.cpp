@@ -339,7 +339,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                         LOG_TEST(log, "Predownload. File segment info: {}", file_segment->getInfoForLog());
                         chassert(file_offset_of_buffer_end > file_segment->getCurrentWriteOffset());
                         bytes_to_predownload = file_offset_of_buffer_end - file_segment->getCurrentWriteOffset();
-                        chassert(bytes_to_predownload < range.size());
+                        chassert(bytes_to_predownload < file_segment->range().size());
                     }
 
                     read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
