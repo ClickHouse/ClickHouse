@@ -149,9 +149,9 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
 
     threads.resize(size_);
     for (auto & thread : threads)
-        thread = ThreadFromGlobalPool([this] { threadFunction(); });
+        thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
 
-    delayed_thread = ThreadFromGlobalPool([this] { delayExecutionThreadFunction(); });
+    delayed_thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { delayExecutionThreadFunction(); });
 }
 
 
@@ -168,7 +168,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 
     threads.resize(new_threads_count);
     for (size_t i = old_threads_count; i < new_threads_count; ++i)
-        threads[i] = ThreadFromGlobalPool([this] { threadFunction(); });
+        threads[i] = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
 }
 
 
