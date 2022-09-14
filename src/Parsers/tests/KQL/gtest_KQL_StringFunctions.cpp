@@ -8,7 +8,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "print Quine = base64_encode_fromguid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb')",
-            "SELECT base64Encode('ae3133f2-6e22-49ae-b06a-16e6a9b212eb') AS Quine"
+            "SELECT base64Encode(toString(toUUIDOrNull('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'))) AS Quine"
         },
         {
             "print base64_decode_toguid('YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi')",
@@ -64,15 +64,15 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         },
         {
             "print guid(74be27de-1e4e-49d9-b579-fe0b331d3642)",
-            "SELECT toUUID('74be27de-1e4e-49d9-b579-fe0b331d3642')"
+            "SELECT toUUIDOrNull('74be27de-1e4e-49d9-b579-fe0b331d3642')"
         },
         {
             "print guid('74be27de-1e4e-49d9-b579-fe0b331d3642')",
-            "SELECT toUUID('74be27de-1e4e-49d9-b579-fe0b331d3642')"
+            "SELECT toUUIDOrNull('74be27de-1e4e-49d9-b579-fe0b331d3642')"
         },
         {
             "print guid('74be27de1e4e49d9b579fe0b331d3642')",
-            "SELECT toUUID('74be27de1e4e49d9b579fe0b331d3642')"
+            "SELECT toUUIDOrNull('74be27de1e4e49d9b579fe0b331d3642')"
         },
         {
             "print int(32.5)",
