@@ -3649,7 +3649,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
         {
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
-            LOG_TRACE(log, "Got {} (of {}) replicas confirmed quorum {}, going to remove node",
+            LOG_TRACE(log, "Got {} (of {} required) replicas confirmed quorum {}, going to remove node",
                       quorum_entry.replicas.size(), quorum_entry.required_number_of_replicas, quorum_status_path);
 
             Coordination::Requests ops;
@@ -4647,6 +4647,13 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         metadata_version = entry.alter_version;
 
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", metadata_version);
+    }
+
+    {
+        /// Reset Object columns, because column of type
+        /// Object may be added or dropped by alter.
+        auto parts_lock = lockParts();
+        resetObjectColumnsFromActiveParts(parts_lock);
     }
 
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
