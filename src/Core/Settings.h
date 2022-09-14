@@ -618,6 +618,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, allow_deprecated_database_ordinary, false, "Allow to create databases with deprecated Ordinary engine", 0) \
     M(Bool, allow_deprecated_syntax_for_merge_tree, false, "Allow to create *MergeTree tables with deprecated engine definition syntax", 0) \
     \
+    M(Bool, force_grouping_standard_compatibility, true, "Make GROUPING function to return 1 when argument is not used as an aggregation key", 0) \
+    \
     M(Bool, schema_inference_use_cache_for_file, true, "Use cache in schema inference while using file table function", 0) \
     M(Bool, schema_inference_use_cache_for_s3, true, "Use cache in schema inference while using s3 table function", 0) \
     M(Bool, schema_inference_use_cache_for_hdfs, true, "Use cache in schema inference while using hdfs table function", 0) \
@@ -775,6 +777,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     \
     M(UInt64, input_format_allow_errors_num, 0, "Maximum absolute amount of errors while reading text formats (like CSV, TSV). In case of error, if at least absolute or relative amount of errors is lower than corresponding value, will skip until next line and continue.", 0) \
     M(Float, input_format_allow_errors_ratio, 0, "Maximum relative amount of errors while reading text formats (like CSV, TSV). In case of error, if at least absolute or relative amount of errors is lower than corresponding value, will skip until next line and continue.", 0) \
+    M(String, input_format_record_errors_file_path, "", "Path of the file used to record errors while reading text formats (CSV, TSV).", 0) \
+    M(String, errors_output_format, "CSV", "Method to write Errors to text output.", 0) \
     \
     M(String, format_schema, "", "Schema identifier (used by schema-based formats)", 0) \
     M(String, format_template_resultset, "", "Path to file which contains format string for result set (for Template format)", 0) \
