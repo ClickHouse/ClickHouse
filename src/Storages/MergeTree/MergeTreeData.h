@@ -1224,6 +1224,14 @@ protected:
         const MergeTreePartInfo & part_info,
         DataPartsLock & data_parts_lock) const;
 
+    void getPartHierarchy(
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        DataPartState state,
+        DataPartPtr & out_covering_part,
+        DataPartsVector & covered_part,
+        DataPartsLock & /* data_parts_lock */) const;
+
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 

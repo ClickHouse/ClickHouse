@@ -1,0 +1,36 @@
+concurrent_insert
+2
+all_1_4_1	0
+all_5_5_0	1
+all_6_6_1	0
+concurrent_drop_part_before
+PART_IS_TEMPORARILY_LOCKED
+INVALID_TRANSACTION
+1
+3
+all_1_1_0	1
+all_2_2_1	0
+all_3_3_0	1
+concurrent_drop_part_after
+NO_SUCH_DATA_PART
+INVALID_TRANSACTION
+all_1_3_1	0
+concurrent_delete
+tx41	41	3
+tx41	41	3
+PART_IS_TEMPORARILY_LOCKED
+tx42	42	1
+2
+4
+concurrent_delete_rollback
+tx51	3
+tx51	3
+tx52	1
+tx51	3
+0
+read_from_snapshot
+tx61	3
+tx61	3
+tx62	0
+tx61	3
+0

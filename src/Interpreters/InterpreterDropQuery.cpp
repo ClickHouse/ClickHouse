@@ -210,22 +210,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             table->checkTableCanBeDropped();
 
-            ActionLock merges_blocker;
-            TableLockHolder table_shared_lock;
             TableExclusiveLockHolder table_excl_lock;
-            /// We don't need any lock for ReplicatedMergeTree
-            if (!table->supportsReplication())
-            {
-                /// And for simple MergeTree we can stop merges before acquiring the lock
-                merges_blocker = table->getActionLock(ActionLocks::PartsMerge);
-
-                /// For the rest of tables types exclusive lock is needed
-                auto merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
-                if (merge_tree)
-                    table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
-                else
-                    table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
-            }
+            /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
+            /// For the rest of tables types exclusive lock is needed
+            if (!table->supportsReplication() && !std::dynamic_pointer_cast<MergeTreeData>(table))
+                table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
@@ -481,13 +470,10 @@ bool InterpreterDropQuery::supportsTransactions() const
 
     auto & drop = query_ptr->as<ASTDropQuery &>();
 
-    if (drop.cluster.empty()
+    return drop.cluster.empty()
             && !drop.temporary
             && drop.kind == ASTDropQuery::Kind::Truncate
-            && drop.table)
-        return true;
-
-    return false;
+            && drop.table;
 }
 
 }
