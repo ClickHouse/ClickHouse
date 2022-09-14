@@ -302,9 +302,9 @@ size_t getL2CacheSize()
         l2_size = ret;
 #endif
 
-    /// 512KB looks like a reasonable default.
+    /// 4MB looks like a reasonable default.
     /// max() is needed because sysconf() may return 0 instead of the actual value (at least on ARM).
-    return std::max<size_t>(l2_size, 512 * 1024);
+    return std::max<size_t>(l2_size, 4 * 1024 * 1024);
 }
 
 }
