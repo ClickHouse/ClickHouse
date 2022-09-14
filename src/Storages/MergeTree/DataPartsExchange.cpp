@@ -193,7 +193,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
                     writeBinary(projections.size(), out);
                 }
 
-                sendPartFromDiskRemoteMeta(part, out, true);
+                sendPartFromDiskRemoteMeta(part, out, true, part->getProjectionParts());
                 return;
             }
         }
