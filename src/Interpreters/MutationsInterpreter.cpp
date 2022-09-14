@@ -473,6 +473,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
+    std::vector<String> read_columns;
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
     {
@@ -706,15 +707,21 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::READ_COLUMN)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (stages.empty() || !stages.back().column_to_updated.empty())
-                stages.emplace_back(context);
-            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
-                stages.emplace_back(context);
-
-            stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
+            read_columns.emplace_back(command.column_name);
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+    }
+
+    if (!read_columns.empty())
+    {
+        if (stages.empty() || !stages.back().column_to_updated.empty())
+            stages.emplace_back(context);
+        if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+            stages.emplace_back(context);
+
+        for (auto & column_name : read_columns)
+            stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
     }
 
     /// We care about affected indices and projections because we also need to rewrite them
