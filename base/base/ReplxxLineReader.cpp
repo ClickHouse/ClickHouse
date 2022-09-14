@@ -220,6 +220,35 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
     rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
+
+    /// readline insert-comment
+    auto insert_comment_action = [this](char32_t code)
+    {
+        replxx::Replxx::State state(rx.get_state());
+        const char * line = state.text();
+        const char * line_end = line + strlen(line);
+
+        std::string commented_line;
+        if (std::find(line, line_end, '\n') != line_end)
+        {
+            /// If query has multiple lines, multiline comment is used over
+            /// commenting each line separately for easier uncomment (though
+            /// with invoking editor it is simpler to uncomment multiple lines)
+            ///
+            /// Note, that using multiline comment is OK even with nested
+            /// comments, since nested comments are supported.
+            commented_line = fmt::format("/* {} */", state.text());
+        }
+        else
+        {
+            // In a simplest case use simple comment.
+            commented_line = fmt::format("-- {}", state.text());
+        }
+        rx.set_state(replxx::Replxx::State(commented_line.c_str(), commented_line.size()));
+
+        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+    };
+    rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 }
 
 ReplxxLineReader::~ReplxxLineReader()
