@@ -25,11 +25,22 @@ bool Base64EncodeFromGuid::convertImpl(String & out,IParser::Pos & pos)
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
+        
+    String guid;
 
     ++pos;
-    const String guid = getConvertedArgument(fn_name, pos);
+    if(pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    {
+        --pos;
+        const String arg = getArgument(fn_name, pos);
+        guid = kqlCallToExpression("guid", {arg}, pos.max_depth);
+    }
+    else
+    {
+        guid = getConvertedArgument(fn_name, pos);
+    }
 
-    out = std::format("base64Encode({})", guid);
+    out = std::format("base64Encode(toString({}))", guid);
 
     return true;
 }

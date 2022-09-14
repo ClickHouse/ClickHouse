@@ -193,6 +193,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         {
             "print totimespan(-1d)",
             "SELECT -86400."
+        },
+        {
+            "print totimespan('abc')",
+            "SELECT NULL"
         }
 
 })));   

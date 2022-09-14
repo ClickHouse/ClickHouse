@@ -9,6 +9,7 @@
 #include <Parsers/ParserSetQuery.h>
 
 #include <format>
+#include<regex>
 
 namespace DB
 {
@@ -113,14 +114,27 @@ bool DatatypeGuid::convertImpl(String & out, IParser::Pos & pos)
         --pos;
         guid_str = String(start->begin, pos->end);
     }
-    out = std::format("toUUID('{}')", guid_str);
+    out = std::format("toUUIDOrNull('{}')", guid_str);
     ++pos;
     return true;
 }
 
 bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "toInt32");
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    String guid_str;
+
+    ++pos;
+    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+        throw Exception("String is not parsed as double literal " , ErrorCodes::BAD_ARGUMENTS);
+    else
+    {
+        auto arg = getConvertedArgument(fn_name, pos);
+        out = std::format("toInt32({})",arg);
+    }
+    return true;
 }
 
 bool DatatypeLong::convertImpl(String & out, IParser::Pos & pos)
@@ -130,7 +144,19 @@ bool DatatypeLong::convertImpl(String & out, IParser::Pos & pos)
 
 bool DatatypeReal::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "toFloat64");
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+        throw Exception("String is not parsed as double literal " , ErrorCodes::BAD_ARGUMENTS);
+    else
+    {
+        auto arg = getConvertedArgument(fn_name, pos);
+        out = std::format("toFloat64({})",arg);
+    }
+    return true;
 }
 
 bool DatatypeString::convertImpl(String & out, IParser::Pos & pos)
@@ -187,9 +213,22 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     arg = getArgument(fn_name, pos);
 
     //NULL expr returns NULL not execption
-    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL";
+     static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
+    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(std::regex_match(arg , expr));
     if (is_string)
         throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+    
+    if (std::regex_match(arg , expr))
+    {
+        auto exponential_pos = arg.find("e");
+        if(arg[exponential_pos +1] == '+' || arg[exponential_pos +1] == '-' )
+            scale = std::stoi(arg.substr(exponential_pos+2,arg.length()));
+        else
+            scale = std::stoi(arg.substr(exponential_pos+1 , arg.length()));
+
+        out = std::format("toDecimal128({}::String,{})", arg, scale);
+        return true;
+    }
 
     auto dot_pos = arg.find(".");
     if (dot_pos != String::npos)
