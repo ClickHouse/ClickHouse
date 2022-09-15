@@ -1665,7 +1665,7 @@ void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, Tim
         LOG_IMPL(log, log_level.first, log_level.second,
                  "Update heavy metrics. "
                  "Update period {} sec. "
-                 "Update heavy metrics period {} sec.  "
+                 "Update heavy metrics period {} sec. "
                  "Heavy metrics calculation elapsed: {} sec.",
                  update_period.count(),
                  heavy_metric_update_period.count(),
