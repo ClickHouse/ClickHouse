@@ -342,7 +342,7 @@ CI_CONFIG = {
         },
         "Performance Comparison Aarch64": {
             "required_build": "package_aarch64",
-            "test_grep_exclude_filter": "constant_column_search",
+            "test_grep_exclude_filter": "",
         },
     },
 }  # type: dict
