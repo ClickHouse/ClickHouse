@@ -52,7 +52,8 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
                       << applyVisitor(FieldVisitorToString{}, max_value);
     }
 
-    if (writability) {
+    if (writability)
+    {
         switch (*writability)
         {
             case SettingConstraintWritability::WRITABLE:
