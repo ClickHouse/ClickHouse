@@ -118,7 +118,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     String temporary_database_name = "";
     TemporaryDatabaseHolder temporary_database_holder(getContext(), "", "");
-    if (create.temporary) {
+    if (create.temporary) 
+    {
         auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
        
         //here should be check that thereis currently no temporary_db with this name
@@ -347,6 +348,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         throw;
     }
+
     if (create.temporary) {
         getContext()->addTemporaryDatabase(temporary_database_name, std::move(temporary_database_holder));
     }

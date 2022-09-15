@@ -308,8 +308,8 @@ BlockIO InterpreterDropQuery::executeToDatabase(ASTDropQuery & query)
         }
         else
         {
-            query.setDatabase(db_name);
             res = executeToTemporaryDatabase(query);
+            query.setDatabase(db_name);
         }
         
     }

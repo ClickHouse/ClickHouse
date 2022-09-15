@@ -93,6 +93,8 @@ TemporaryDatabaseHolder::TemporaryDatabaseHolder(ContextPtr context_, String tem
 TemporaryDatabaseHolder::TemporaryDatabaseHolder(TemporaryDatabaseHolder && rhs) noexcept
         : WithContext(rhs.context), temporary_database_name(rhs.temporary_database_name), global_database_name(rhs.global_database_name)
 {
+    rhs.temporary_database_name = "";
+    rhs.global_database_name = "";
 }
 
 TemporaryDatabaseHolder & TemporaryDatabaseHolder::operator=(TemporaryDatabaseHolder && rhs) noexcept

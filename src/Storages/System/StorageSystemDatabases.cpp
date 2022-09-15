@@ -38,8 +38,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
     {
         if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
-
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE || database_name == "lirikl31_tmp_database")
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE ||  database_name.substr(0, strlen(DatabaseCatalog::TEMPORARY_DATABASES_PREFIX)) == DatabaseCatalog::TEMPORARY_DATABASES_PREFIX)
             continue; /// We don't want to show the internal database for temporary tables in system.databases
 
         res_columns[0]->insert(database_name);
