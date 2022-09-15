@@ -13,7 +13,7 @@ sidebar_label: file
 **Синтаксис**
 
 ``` sql
-file(path, format, structure)
+file(path [,format] [,structure])
 ```
 
 **Параметры**
