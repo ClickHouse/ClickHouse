@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/select/
 title: "Синтаксис запросов SELECT"
 sidebar_label: SELECT
 sidebar_position: 32
@@ -25,7 +24,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
+[INTO OUTFILE filename [COMPRESSION type] ]
 [FORMAT format]
 ```
 

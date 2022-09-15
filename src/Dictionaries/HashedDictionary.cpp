@@ -117,7 +117,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     extractor,
-                    [&](size_t row, StringRef value, bool is_null)
+                    [&](size_t row, const StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -127,7 +127,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     extractor,
-                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else

@@ -15,7 +15,6 @@ from env_helper import (
 )
 
 FORCE_TESTS_LABEL = "force tests"
-SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",

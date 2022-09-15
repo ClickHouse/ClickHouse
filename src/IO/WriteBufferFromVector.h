@@ -64,7 +64,7 @@ public:
     }
 
 private:
-    void finalizeImpl() override
+    void finalizeImpl() override final
     {
         vector.resize(
             ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT

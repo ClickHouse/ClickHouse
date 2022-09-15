@@ -2,8 +2,8 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <IO/ReadSettings.h>
 
 
@@ -67,7 +67,7 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
     return impl->getInfoForLog();
 }
 
-size_t AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
+std::optional<size_t> AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -168,8 +168,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
     size_t size = 0;
-    size_t bytes_read = 0;
-
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
@@ -183,17 +181,12 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
             /// If prefetch_future is valid, size should always be greater than zero.
             assert(offset <= size);
-            bytes_read = size - offset;
-
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
         prefetch_buffer.swap(memory);
-
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-        pos = working_buffer.begin();
+        setWithBytesToIgnore(memory.data(), size, offset);
     }
     else
     {
@@ -204,16 +197,12 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         auto offset = result.offset;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-
         assert(offset <= size);
-        bytes_read = size - offset;
 
-        if (bytes_read)
+        if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-            pos = working_buffer.begin();
+            setWithBytesToIgnore(memory.data(), size, offset);
         }
     }
 
@@ -228,7 +217,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     assert(file_offset_of_buffer_end <= impl->getFileSize());
 
     prefetch_future = {};
-    return bytes_read;
+    return size;
 }
 
 

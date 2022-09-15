@@ -7,10 +7,10 @@
 namespace DB
 {
 
-static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DataPartStoragePtr & data_part_storage, const String & path)
+static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
-    size_t file_size = data_part_storage->getFileSize(path);
-    return data_part_storage->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+    size_t file_size = disk->getFileSize(path);
+    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
 }
 
 PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_) : IPartMetadataManager(part_)
@@ -20,12 +20,13 @@ PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPar
 
 std::unique_ptr<SeekableReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
 {
-    return openForReading(part->data_part_storage, file_name);
+    String file_path = fs::path(part->getFullRelativePath()) / file_name;
+    return openForReading(disk, file_path);
 }
 
 bool PartMetadataManagerOrdinary::exists(const String & file_name) const
 {
-    return part->data_part_storage->exists(file_name);
+    return disk->exists(fs::path(part->getFullRelativePath()) / file_name);
 }
 
 

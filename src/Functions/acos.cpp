@@ -12,9 +12,9 @@ using FunctionAcos = FunctionMathUnary<UnaryFunctionVectorized<AcosName, acos>>;
 
 }
 
-REGISTER_FUNCTION(Acos)
+void registerFunctionAcos(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionAcos>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAcos>(FunctionFactory::CaseInsensitive);
 }
 
 }

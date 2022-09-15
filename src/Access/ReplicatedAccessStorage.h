@@ -6,7 +6,6 @@
 #include <mutex>
 #include <unordered_map>
 
-#include <base/defines.h>
 #include <base/scope_guard.h>
 
 #include <Common/ThreadPool.h>
@@ -27,7 +26,7 @@ class ReplicatedAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "replicated";
 
-    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_, bool allow_backup);
+    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_);
     virtual ~ReplicatedAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -36,10 +35,6 @@ public:
     void stopPeriodicReloading() override { stopWatchingThread(); }
 
     bool exists(const UUID & id) const override;
-
-    bool isBackupAllowed() const override { return backup_allowed; }
-    void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 private:
     String zookeeper_path;
@@ -55,7 +50,6 @@ private:
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
     bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
     bool updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
@@ -72,10 +66,10 @@ private:
     bool refresh();
     void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper);
     void refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
-    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(mutex);
+    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
 
-    void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity) TSA_REQUIRES(mutex);
-    void removeEntityNoLock(const UUID & id) TSA_REQUIRES(mutex);
+    void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity);
+    void removeEntityNoLock(const UUID & id);
 
     struct Entry
     {
@@ -88,9 +82,8 @@ private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     mutable std::mutex mutex;
-    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
+    std::unordered_map<UUID, Entry> entries_by_id;
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
     AccessChangesNotifier & changes_notifier;
-    bool backup_allowed = false;
 };
 }

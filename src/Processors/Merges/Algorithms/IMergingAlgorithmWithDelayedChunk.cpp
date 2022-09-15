@@ -22,7 +22,7 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
             header, current_inputs[source_num].chunk.getColumns(), description, source_num, current_inputs[source_num].permutation);
     }
 
-    queue = SortingQueue<SortCursor>(cursors);
+    queue = SortingHeap<SortCursor>(cursors);
 }
 
 void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t source_num)

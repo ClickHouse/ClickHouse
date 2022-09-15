@@ -15,10 +15,8 @@ class MergeTreeData;
 struct FormatSettings;
 struct MergeTreeDataPartChecksums;
 struct StorageInMemoryMetadata;
-class IDataPartStorageBuilder;
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-using DataPartStorageBuilderPtr = std::shared_ptr<IDataPartStorageBuilder>;
 
 /// This class represents a partition value of a single part and encapsulates its loading/storing logic.
 struct MergeTreePartition
@@ -44,8 +42,8 @@ public:
 
     /// Store functions return write buffer with written but not finalized data.
     /// User must call finish() for returned object.
-    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const MergeTreeData & storage, const DataPartStorageBuilderPtr & data_part_storage_builder, MergeTreeDataPartChecksums & checksums) const;
-    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const Block & partition_key_sample, const DataPartStorageBuilderPtr & data_part_storage_builder, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const;
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const;
 
     void assign(const MergeTreePartition & other) { value = other.value; }
 

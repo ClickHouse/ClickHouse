@@ -23,11 +23,11 @@ struct ReadSettings;
 *
 * Buffers chain for diskWeb:
 * AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
-* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHTTP -> ReadBufferFromIStream.
+* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHttp -> ReadBufferFromIStream.
 *
 * We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
-class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
+class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase, public WithFileSize
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
@@ -51,9 +51,7 @@ public:
 
     String getInfoForLog() override;
 
-    size_t getFileSize() override;
-
-    bool isIntegratedWithFilesystemCache() const override { return true; }
+    std::optional<size_t> getFileSize() override;
 
 private:
     bool nextImpl() override;

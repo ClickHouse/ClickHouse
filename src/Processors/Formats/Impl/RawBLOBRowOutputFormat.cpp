@@ -17,11 +17,8 @@ RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
 
 void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerialization &, size_t row_num)
 {
-    if (!column.isNullAt(row_num))
-    {
-        auto value = column.getDataAt(row_num);
-        out.write(value.data, value.size);
-    }
+    StringRef value = column.getDataAt(row_num);
+    out.write(value.data, value.size);
 }
 
 
@@ -38,3 +35,4 @@ void registerOutputFormatRawBLOB(FormatFactory & factory)
 }
 
 }
+

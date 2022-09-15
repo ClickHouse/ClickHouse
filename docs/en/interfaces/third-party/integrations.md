@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/third-party/integrations
 sidebar_position: 27
 sidebar_label: Integrations
 ---
@@ -29,9 +28,6 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
         -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
--   Batch processing
-    -   [Spark](https://spark.apache.org)
-        -   [spark-clickhouse-connector](https://github.com/housepower/spark-clickhouse-connector)
 -   Stream processing
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -103,7 +99,6 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
         -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
         -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
         -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
-        -   [Linq To DB](https://github.com/linq2db/linq2db)
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)

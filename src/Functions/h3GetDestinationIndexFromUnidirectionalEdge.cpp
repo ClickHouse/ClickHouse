@@ -85,7 +85,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3GetDestinationIndexFromUnidirectionalEdge)
+void registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3GetDestinationIndexFromUnidirectionalEdge>();
 }

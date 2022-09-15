@@ -136,16 +136,15 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
-    /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
-        const IColumn & nested = *getNestedColumn();
+        auto& nested = *getNestedColumn();
 
         for (size_t i = 0; i < nested.size(); ++i)
-            if (!nested.isNullAt(i) && nested.getDataAt(i) == value)
+            if (nested.getDataAt(i) == value)
                 return i;
 
         return {};
@@ -510,7 +509,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     if (secondary_index)
         next_position += secondary_index->size();
 
-    auto insert_key = [&](StringRef ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
+    auto insert_key = [&](const StringRef & ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
     {
         auto inserted_pos = cur_index.insert(ref);
         positions[num_added_rows] = inserted_pos;
@@ -549,6 +548,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         }
     }
 
+    // checkIndexes(*positions_column, column->size() + (overflowed_keys ? overflowed_keys->size() : 0));
     return std::move(positions_column);
 }
 

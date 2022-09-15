@@ -1,40 +1,40 @@
-{% for join_type in ['hash', 'full_sorting_merge', 'partial_merge'] -%}
+{% for join_type in ['hash', 'partial_merge'] -%}
 === {{ join_type }} ===
-= full using =
+= full =
 1	1
 2	2
 -1	1
 1	\N
 1	257
 1	-1
-= left using =
+= left =
 1	1
 2	2
-= right using =
+= right =
 1	1
 -1	1
 1	\N
 1	257
 1	-1
-= inner using =
+= inner =
 1	1
-= full on =
+= full =
 1	1	1	1
 2	2	0	\N
 0	0	-1	1
 0	0	1	\N
 0	0	1	257
 0	0	1	-1
-= left on =
+= left =
 1	1	1	1
 2	2	0	\N
-= right on =
+= right =
 1	1	1	1
 0	0	-1	1
 0	0	1	\N
 0	0	1	257
 0	0	1	-1
-= inner on =
+= inner =
 1	1	1	1
 = agg =
 5	260

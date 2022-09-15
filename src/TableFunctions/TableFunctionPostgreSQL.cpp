@@ -62,13 +62,9 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         throw Exception("Table function 'PostgreSQL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
-    const auto & settings = context->getSettingsRef();
-    connection_pool = std::make_shared<postgres::PoolWithFailover>(
-        *configuration,
-        settings.postgresql_connection_pool_size,
-        settings.postgresql_connection_pool_wait_timeout,
-        POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-        settings.postgresql_connection_pool_auto_close_connection);
+    connection_pool = std::make_shared<postgres::PoolWithFailover>(*configuration,
+        context->getSettingsRef().postgresql_connection_pool_size,
+        context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 }
 
 

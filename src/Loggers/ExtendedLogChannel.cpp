@@ -28,8 +28,8 @@ ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)
     if (current_thread)
     {
         auto query_id_ref = CurrentThread::getQueryId();
-        if (!query_id_ref.empty())
-            msg_ext.query_id.assign(query_id_ref.data(), query_id_ref.size());
+        if (query_id_ref.size)
+            msg_ext.query_id.assign(query_id_ref.data, query_id_ref.size);
     }
 
     msg_ext.thread_id = getThreadId();

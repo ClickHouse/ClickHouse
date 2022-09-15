@@ -42,7 +42,7 @@ static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFro
     return {res, type};
 }
 
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
@@ -105,7 +105,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 }
 
 
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr context)
 {
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
@@ -113,7 +113,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextPtr context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
         return std::make_shared<ASTLiteral>(id->name());
@@ -121,7 +121,7 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, cons
     return evaluateConstantExpressionAsLiteral(node, context);
 }
 
-ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const ContextPtr & context)
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr context)
 {
     ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(node, context);
     auto & literal = res->as<ASTLiteral &>();

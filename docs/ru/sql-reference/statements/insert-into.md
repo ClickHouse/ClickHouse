@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/insert-into
 sidebar_position: 33
 sidebar_label: INSERT INTO
 ---

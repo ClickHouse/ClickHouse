@@ -47,9 +47,9 @@ SELECT id, u, s FROM remote('127.0.0.{1,2}', currentDatabase(), t_sparse_full) O
 SELECT '======';
 SELECT sum(u) FROM t_sparse_full GROUP BY id % 3 AS k WITH TOTALS ORDER BY k;
 SELECT '======';
-SELECT sum(u) AS value FROM t_sparse_full GROUP BY id % 3 AS k WITH ROLLUP ORDER BY value;
+SELECT sum(u) FROM t_sparse_full GROUP BY id % 3 AS k WITH ROLLUP ORDER BY k;
 SELECT '======';
-SELECT sum(u) AS value FROM t_sparse_full GROUP BY id % 3 AS k WITH CUBE ORDER BY value;
+SELECT sum(u) FROM t_sparse_full GROUP BY id % 3 AS k WITH CUBE ORDER BY k;
 SELECT '======';
 SELECT sum(id) FROM t_sparse_full GROUP BY u % 3 AS k ORDER BY k;
 SELECT '======';

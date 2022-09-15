@@ -128,7 +128,7 @@ struct NameArrayLastIndex { static constexpr auto name = "arrayLastIndex"; };
 using ArrayLastIndexImpl = ArrayFirstLastIndexImpl<ArrayFirstLastIndexStrategy::Last>;
 using FunctionArrayLastIndex = FunctionArrayMapped<ArrayLastIndexImpl, NameArrayLastIndex>;
 
-REGISTER_FUNCTION(ArrayFirstIndex)
+void registerFunctionArrayFirstIndex(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayFirstIndex>();
     factory.registerFunction<FunctionArrayLastIndex>();

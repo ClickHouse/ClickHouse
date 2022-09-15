@@ -1,4 +1,3 @@
-#include <Storages/StorageSnapshot.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -160,16 +159,6 @@ void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_st
     }
 }
 
-void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
-{
-    if (!storage_snapshot->object_columns.empty())
-    {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
-        auto storage_columns = storage_snapshot->getColumns(options);
-        convertObjectsToTuples(block, storage_columns);
-    }
-}
-
 static bool isPrefix(const PathInData::Parts & prefix, const PathInData::Parts & parts)
 {
     if (prefix.size() > parts.size())
@@ -272,7 +261,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
                     key.getPath(), subtypes[0]->getName(), subtypes[i]->getName());
 
         tuple_paths.emplace_back(key);
-        tuple_types.emplace_back(getLeastSupertypeOrString(subtypes));
+        tuple_types.emplace_back(getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
     }
 
     if (tuple_paths.empty())

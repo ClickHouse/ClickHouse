@@ -159,7 +159,7 @@ using FunctionBitShiftLeft = BinaryArithmeticOverloadResolver<BitShiftLeftImpl, 
 
 }
 
-REGISTER_FUNCTION(BitShiftLeft)
+void registerFunctionBitShiftLeft(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitShiftLeft>();
 }

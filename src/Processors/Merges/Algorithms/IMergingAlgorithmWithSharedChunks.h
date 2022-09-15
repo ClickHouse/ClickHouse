@@ -36,7 +36,7 @@ protected:
     using Sources = std::vector<Source>;
     Sources sources;
 
-    SortingQueue<SortCursor> queue;
+    SortingHeap<SortCursor> queue;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution

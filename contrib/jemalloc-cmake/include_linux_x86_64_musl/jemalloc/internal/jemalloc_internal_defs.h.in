@@ -38,7 +38,6 @@
 #define CPU_SPINWAIT __asm__ volatile("pause")
 /* 1 if CPU_SPINWAIT is defined, 0 otherwise. */
 #define HAVE_CPU_SPINWAIT 1
-#define HAVE_RDTSCP 1
 
 /*
  * Number of significant bits in virtual addresses.  This may be less than the
@@ -165,12 +164,6 @@
 
 /* Use gcc intrinsics for profile backtracing if defined. */
 /* #undef JEMALLOC_PROF_GCC */
-
-/* JEMALLOC_PAGEID enabled page id */
-#define JEMALLOC_PAGEID
-
-/* JEMALLOC_HAVE_PRCTL checks prctl */
-#define JEMALLOC_HAVE_PRCTL
 
 /*
  * JEMALLOC_DSS enables use of sbrk(2) to allocate extents from the data storage
@@ -431,8 +424,5 @@
 
 /* Darwin VM_MAKE_TAG support */
 /* #undef JEMALLOC_HAVE_VM_MAKE_TAG */
-
-/* If defined, realloc(ptr, 0) defaults to "free" instead of "alloc". */
-#define JEMALLOC_ZERO_REALLOC_DEFAULT_FREE
 
 #endif /* JEMALLOC_INTERNAL_DEFS_H_ */

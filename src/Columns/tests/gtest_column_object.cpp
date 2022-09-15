@@ -89,7 +89,7 @@ TEST(ColumnObject, InsertRangeFrom)
 
         const auto & type_dst = subcolumn_dst.getLeastCommonType();
         const auto & type_src = subcolumn_src.getLeastCommonType();
-        auto type_res = getLeastSupertypeOrString(DataTypes{type_dst, type_src});
+        auto type_res = getLeastSupertype(DataTypes{type_dst, type_src}, true);
 
         size_t from = rng() % subcolumn_src.size();
         size_t to = rng() % subcolumn_src.size();

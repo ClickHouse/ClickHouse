@@ -1,4 +1,5 @@
 #include <memory>
+#include <Core/Types.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -13,7 +14,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/transformQueryForExternalDatabase.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 
@@ -155,11 +156,11 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
-        String index = checkAndGetLiteralArgument<String>(engine_args[1], "index");
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String index = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         String key;
         if (engine_args.size() == 3)
-            key = checkAndGetLiteralArgument<String>(engine_args[2], "key");
+            key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         return MeiliSearchConfiguration(url, index, key);
     }
 }

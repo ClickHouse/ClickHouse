@@ -106,7 +106,7 @@ public:
 struct NameURLHierarchy { static constexpr auto name = "URLHierarchy"; };
 using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
 
-REGISTER_FUNCTION(URLHierarchy)
+void registerFunctionURLHierarchy(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionURLHierarchy>();
 }

@@ -92,7 +92,7 @@ public:
     {
         /// Do not throw if found aggregate function inside another aggregate function,
         /// because it will be checked, while creating expressions.
-        if (AggregateUtils::isAggregateFunction(func))
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func.name))
             has_aggregate_function = true;
     }
 };

@@ -89,7 +89,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(AddressToLineWithInlines)
+void registerFunctionAddressToLineWithInlines(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAddressToLineWithInlines>();
 }

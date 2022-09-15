@@ -39,11 +39,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context) override;
-
     static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:

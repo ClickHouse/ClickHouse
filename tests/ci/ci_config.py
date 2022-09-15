@@ -12,8 +12,8 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
-            "static_binary_name": "amd64",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
@@ -23,7 +23,8 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
             "official": False,
@@ -33,8 +34,8 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
-            "static_binary_name": "aarch64",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
@@ -44,7 +45,8 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -53,16 +55,18 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
         "package_tsan": {
-            "compiler": "clang-15",
+            "compiler": "clang-14",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -71,7 +75,8 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -80,7 +85,8 @@ CI_CONFIG = {
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -89,7 +95,9 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "libraries": "static",
+            "static_binary_name": "amd64",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -99,16 +107,18 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "debug-amd64",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "enable",
             "with_coverage": False,
         },
-        "binary_shared": {
+        "binary_splitted": {
             "compiler": "clang-14",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "libraries": "shared",
+            "bundled": "bundled",
+            "splitted": "splitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -118,7 +128,8 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -127,7 +138,9 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "libraries": "static",
+            "static_binary_name": "aarch64",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -137,7 +150,8 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "freebsd",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -147,7 +161,8 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos-aarch64",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -157,23 +172,14 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "powerpc64le",
-            "libraries": "static",
-            "tidy": "disable",
-            "with_coverage": False,
-        },
-        "binary_amd64sse2": {
-            "compiler": "clang-14-amd64sse2",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "binary",
-            "static_binary_name": "amd64sse2",
-            "libraries": "static",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
     },
     "builds_report_config": {
-        "ClickHouse build check": [
+        "ClickHouse build check (actions)": [
             "package_release",
             "coverity",
             "package_aarch64",
@@ -184,156 +190,158 @@ CI_CONFIG = {
             "package_debug",
             "binary_release",
         ],
-        "ClickHouse special build check": [
+        "ClickHouse special build check (actions)": [
             "binary_tidy",
-            "binary_shared",
+            "binary_splitted",
             "binary_darwin",
             "binary_aarch64",
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
-            "binary_amd64sse2",
         ],
     },
     "tests_config": {
         # required_build - build name for artifacts
         # force_tests - force success status for tests
-        "Stateful tests (asan)": {
+        "Stateful tests (address, actions)": {
             "required_build": "package_asan",
         },
-        "Stateful tests (tsan)": {
+        "Stateful tests (thread, actions)": {
             "required_build": "package_tsan",
         },
-        "Stateful tests (msan)": {
+        "Stateful tests (memory, actions)": {
             "required_build": "package_msan",
         },
-        "Stateful tests (ubsan)": {
+        "Stateful tests (ubsan, actions)": {
             "required_build": "package_ubsan",
         },
-        "Stateful tests (debug)": {
+        "Stateful tests (debug, actions)": {
             "required_build": "package_debug",
         },
-        "Stateful tests (release)": {
+        "Stateful tests (release, actions)": {
             "required_build": "package_release",
         },
-        "Stateful tests (aarch64)": {
+        "Stateful tests (aarch64, actions)": {
             "required_build": "package_aarch64",
         },
-        "Stateful tests (release, DatabaseOrdinary)": {
+        "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
         },
-        "Stateful tests (release, DatabaseReplicated)": {
+        "Stateful tests (release, DatabaseReplicated, actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests (asan)": {
+        "Stateless tests (address, actions)": {
             "required_build": "package_asan",
         },
-        "Stateless tests (tsan)": {
+        "Stateless tests (thread, actions)": {
             "required_build": "package_tsan",
         },
-        "Stateless tests (msan)": {
+        "Stateless tests (memory, actions)": {
             "required_build": "package_msan",
         },
-        "Stateless tests (ubsan)": {
+        "Stateless tests (ubsan, actions)": {
             "required_build": "package_ubsan",
         },
-        "Stateless tests (debug)": {
+        "Stateless tests (debug, actions)": {
             "required_build": "package_debug",
         },
-        "Stateless tests (release)": {
+        "Stateless tests (release, actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests (aarch64)": {
+        "Stateless tests (aarch64, actions)": {
             "required_build": "package_aarch64",
         },
-        "Stateless tests (release, wide parts enabled)": {
+        "Stateless tests (release, wide parts enabled, actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, DatabaseOrdinary)": {
+        "Stateless tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, DatabaseReplicated)": {
+        "Stateless tests (release, DatabaseReplicated, actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, s3 storage)": {
+        "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests (debug, s3 storage)": {
-            "required_build": "package_debug",
-        },
-        "Stateless tests (tsan, s3 storage)": {
-            "required_build": "package_tsan",
-        },
-        "Stress test (asan)": {
+        "Stress test (address, actions)": {
             "required_build": "package_asan",
         },
-        "Stress test (tsan)": {
+        "Stress test (thread, actions)": {
             "required_build": "package_tsan",
         },
-        "Stress test (ubsan)": {
+        "Stress test (undefined, actions)": {
             "required_build": "package_ubsan",
         },
-        "Stress test (msan)": {
+        "Stress test (memory, actions)": {
             "required_build": "package_msan",
         },
-        "Stress test (debug)": {
+        "Stress test (debug, actions)": {
             "required_build": "package_debug",
         },
-        "Integration tests (asan)": {
+        "Integration tests (asan, actions)": {
             "required_build": "package_asan",
         },
-        "Integration tests (tsan)": {
+        "Integration tests (thread, actions)": {
             "required_build": "package_tsan",
         },
-        "Integration tests (release)": {
+        "Integration tests (release, actions)": {
             "required_build": "package_release",
         },
-        "Integration tests (msan)": {
+        "Integration tests (memory, actions)": {
             "required_build": "package_msan",
         },
-        "Integration tests flaky check (asan)": {
+        "Integration tests flaky check (asan, actions)": {
             "required_build": "package_asan",
         },
-        "Compatibility check": {
+        "Compatibility check (actions)": {
             "required_build": "package_release",
         },
-        "Split build smoke test": {
-            "required_build": "binary_shared",
+        "Split build smoke test (actions)": {
+            "required_build": "binary_splitted",
         },
-        "Unit tests (release-clang)": {
+        "Testflows check (actions)": {
+            "required_build": "package_release",
+        },
+        "Unit tests (release-clang, actions)": {
             "required_build": "binary_release",
         },
-        "Unit tests (asan)": {
+        "Unit tests (asan, actions)": {
             "required_build": "package_asan",
         },
-        "Unit tests (msan)": {
+        "Unit tests (msan, actions)": {
             "required_build": "package_msan",
         },
-        "Unit tests (tsan)": {
+        "Unit tests (tsan, actions)": {
             "required_build": "package_tsan",
         },
-        "Unit tests (ubsan)": {
+        "Unit tests (ubsan, actions)": {
             "required_build": "package_ubsan",
         },
-        "AST fuzzer (debug)": {
+        "AST fuzzer (debug, actions)": {
             "required_build": "package_debug",
         },
-        "AST fuzzer (asan)": {
+        "AST fuzzer (ASan, actions)": {
             "required_build": "package_asan",
         },
-        "AST fuzzer (msan)": {
+        "AST fuzzer (MSan, actions)": {
             "required_build": "package_msan",
         },
-        "AST fuzzer (tsan)": {
+        "AST fuzzer (TSan, actions)": {
             "required_build": "package_tsan",
         },
-        "AST fuzzer (ubsan)": {
+        "AST fuzzer (UBSan, actions)": {
             "required_build": "package_ubsan",
         },
-        "Stateless tests flaky check (asan)": {
+        "Release (actions)": {
+            "required_build": "package_release",
+        },
+        "Stateless tests flaky check (address, actions)": {
             "required_build": "package_asan",
         },
-        "ClickHouse Keeper Jepsen": {
+        "Stateless tests bugfix validate check (address, actions)": {
+            "required_build": "package_asan",
+        },
+        "ClickHouse Keeper Jepsen (actions)": {
             "required_build": "binary_release",
         },
         "Performance Comparison": {
@@ -346,18 +354,3 @@ CI_CONFIG = {
         },
     },
 }  # type: dict
-
-# checks required by Mergeable Check
-REQUIRED_CHECKS = [
-    "Fast test",
-    "Style Check",
-    "ClickHouse build check",
-    "ClickHouse special build check",
-    "Stateful tests (release)",
-    "Stateless tests (release)",
-    "Unit tests (release-clang)",
-    "Unit tests (asan)",
-    "Unit tests (msan)",
-    "Unit tests (tsan)",
-    "Unit tests (ubsan)",
-]

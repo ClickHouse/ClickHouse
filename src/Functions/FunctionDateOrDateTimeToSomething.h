@@ -148,10 +148,8 @@ public:
         const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
         const IFunction::Monotonicity is_not_monotonic;
 
-        const DateLUTImpl * date_lut = &DateLUT::instance();
-        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(&type))
-            date_lut = &timezone->getTimeZone();
-
+        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
+        const DateLUTImpl & date_lut = DateLUT::instance();
         if (left.isNull() || right.isNull())
             return is_not_monotonic;
 
@@ -159,20 +157,20 @@ public:
 
         if (checkAndGetDataType<DataTypeDate>(&type))
         {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), *date_lut)
-                == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), *date_lut)
+            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
+                == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
                 ? is_monotonic : is_not_monotonic;
         }
         else if (checkAndGetDataType<DataTypeDate32>(&type))
         {
-            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), *date_lut)
-                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), *date_lut)
+            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), date_lut)
+                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), date_lut)
                    ? is_monotonic : is_not_monotonic;
         }
         else
         {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), *date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), *date_lut)
+            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
+                == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), date_lut)
                 ? is_monotonic : is_not_monotonic;
         }
     }
