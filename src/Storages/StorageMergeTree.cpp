@@ -431,6 +431,14 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Validate partition IDs (if any) before starting mutation
+    auto partitions = getPartitionIdsAffectedByCommands(commands, query_context);
+    std::optional<String> partition;
+    if (partitions.size() == 1)
+    {
+        partition.emplace(std::move(*partitions.begin()));
+    }
+
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
@@ -447,7 +455,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), std::move(partition), current_tid, getContext()->getWriteSettings());
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -555,9 +563,6 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
-    /// Validate partition IDs (if any) before starting mutation
-    getPartitionIdsAffectedByCommands(commands, query_context);
-
     Int64 version = startMutation(commands, query_context);
 
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
@@ -572,13 +577,14 @@ bool StorageMergeTree::hasLightweightDeletedMask() const
 namespace
 {
 
-struct PartVersionWithName
+struct PartVersionWithPartitionIdAndName
 {
     Int64 version;
+    String partition_id;
     String name;
 };
 
-bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
+bool comparator(const PartVersionWithPartitionIdAndName & f, const PartVersionWithPartitionIdAndName & s)
 {
     return f.version < s.version;
 }
@@ -604,7 +610,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     for (const auto & data_part : data_parts)
     {
         Int64 data_version = data_part->info.getDataVersion();
-        if (data_version < mutation_version)
+        if (data_version < mutation_version && (!mutation_entry.partition_id || *mutation_entry.partition_id == data_part->info.partition_id))
         {
             if (!mutation_entry.latest_fail_reason.empty())
             {
@@ -619,9 +625,14 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                     auto mutations_begin_it = current_mutations_by_version.upper_bound(data_version);
 
                     for (auto it = mutations_begin_it; it != current_mutations_by_version.end(); ++it)
-                        /// All mutations with the same failure
+                    {
+                        if (it->second.partition_id && *it->second.partition_id != data_part->info.partition_id)
+                            continue;
+
+                        /// All applicable mutations with the same failure
                         if (it->second.latest_fail_reason == result.latest_fail_reason)
                             mutation_ids->insert(it->second.file_name);
+                    }
                 }
             }
             else if (txn)
@@ -648,27 +659,30 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    std::vector<PartVersionWithName> part_versions_with_names;
+    std::vector<PartVersionWithPartitionIdAndName> part_versions;
     auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
+    part_versions.reserve(data_parts.size());
     for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+        part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.partition_id, part->name});
+    std::sort(part_versions.begin(), part_versions.end(), comparator);
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
-        const PartVersionWithName needle{mutation_version, ""};
+        const PartVersionWithPartitionIdAndName needle{mutation_version, "", ""};
         auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+            part_versions.begin(), part_versions.end(), needle, comparator);
 
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        size_t parts_to_do = versions_it - part_versions.begin();
         Names parts_to_do_names;
         parts_to_do_names.reserve(parts_to_do);
         for (size_t i = 0; i < parts_to_do; ++i)
-            parts_to_do_names.push_back(part_versions_with_names[i].name);
+        {
+            if (!entry.partition_id || *entry.partition_id == part_versions[i].partition_id)
+                parts_to_do_names.push_back(part_versions[i].name);
+        }
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
@@ -1014,6 +1028,13 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+        while (mutations_begin_it != mutations_end_it)
+        {
+            if (!mutations_begin_it->second.partition_id || *mutations_begin_it->second.partition_id == part->info.partition_id)
+                break;
+
+            ++mutations_begin_it;
+        }
         if (mutations_begin_it == mutations_end_it)
             continue;
 
@@ -1046,6 +1067,9 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto last_mutation_to_apply = mutations_end_it;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
+            if (it->second.partition_id && *it->second.partition_id != part->info.partition_id)
+                continue;
+
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
             if (first_mutation_tid != it->second.tid)
                 break;
@@ -1824,9 +1848,16 @@ MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const Da
     std::lock_guard lock(currently_processing_in_background_mutex);
 
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-    if (it == current_mutations_by_version.end())
-        return {};
-    return it->second.commands;
+    while (it != current_mutations_by_version.end())
+    {
+        if (!it->second.partition_id || *it->second.partition_id == part->info.partition_id)
+        {
+            return it->second.commands;
+        }
+        ++it;
+    }
+
+    return {};
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()

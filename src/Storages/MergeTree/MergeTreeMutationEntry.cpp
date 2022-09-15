@@ -1,9 +1,12 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/TransactionLog.h>
 #include <Backups/BackupEntryFromMemory.h>
 
@@ -45,14 +48,22 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'", file_name_);
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+MergeTreeMutationEntry::MergeTreeMutationEntry(
+    MutationCommands commands_,
+    DiskPtr disk_,
+    const String & path_prefix_,
+    UInt64 tmp_number,
+    const std::optional<String> & partition_id_,
+    const TransactionID & tid_,
+    const WriteSettings & settings
+)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
+    , partition_id(partition_id_)
     , tid(tid_)
 {
     try
@@ -60,6 +71,12 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
+        if (partition_id)
+        {
+            *out << "partition id: ";
+            writeEscapedString(*partition_id, *out);
+            *out << "\n";
+        }
         *out << "commands: ";
         commands.writeText(*out);
         *out << "\n";
@@ -129,6 +146,14 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
+    if (checkString("partition id: ", *buf))
+    {
+        String partition_id_string;
+        readEscapedString(partition_id_string, *buf);
+        partition_id.emplace(std::move(partition_id_string));
+        *buf >> "\n";
+    }
+
     *buf >> "commands: ";
     commands.readText(*buf);
     *buf >> "\n";
@@ -172,6 +197,13 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
 {
     WriteBufferFromOwnString out;
     out << "block number: " << block_number << "\n";
+
+    if (partition_id)
+    {
+        out << "partition id: ";
+        writeEscapedString(*partition_id, out);
+        out << "\n";
+    }
 
     out << "commands: ";
     commands.writeText(out);

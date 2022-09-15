@@ -30,6 +30,9 @@ struct MergeTreeMutationEntry
     time_t latest_fail_time = 0;
     String latest_fail_reason;
 
+    /// Null value means it applies to all partitions (forward compatibility with previous format).
+    std::optional<String> partition_id;
+
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::PrehistoricTID;
     /// CSN of transaction which has created mutation
@@ -38,7 +41,7 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                            const std::optional<String> & partition_id, const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
