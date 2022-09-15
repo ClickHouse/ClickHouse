@@ -94,6 +94,8 @@ String DDLLogEntry::toString() const
         wb << "settings: " << serializeAST(ast) << "\n";
     }
 
+    wb << this->tracing_context;
+
     return wb.str();
 }
 
@@ -132,6 +134,8 @@ void DDLLogEntry::parse(const String & data)
             ASTPtr settings_ast = parseQuery(parser, settings_str, max_size, max_depth);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
+
+        rb >> this->tracing_context;
     }
 
     assertEOF(rb);
