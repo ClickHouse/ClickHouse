@@ -179,7 +179,6 @@ Pipe ReadFromMergeTree::readFromPool(
         sum_marks,
         min_marks_for_concurrent_read,
         std::move(parts_with_range),
-        data,
         storage_snapshot,
         prewhere_info,
         required_columns,

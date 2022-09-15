@@ -148,39 +148,33 @@ ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) 
 }
 
 void SerializationSparse::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * column_sparse = data.column ? &assert_cast<const ColumnSparse &>(*data.column) : nullptr;
-
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
-    path.push_back(Substream::SparseOffsets);
-    path.back().data =
-    {
-        std::make_shared<SerializationNumber<UInt64>>(),
-        data.type ? std::make_shared<DataTypeUInt64>() : nullptr,
-        column_sparse ? column_sparse->getOffsetsPtr() : nullptr,
-        data.serialization_info,
-    };
+    settings.path.push_back(Substream::SparseOffsets);
+    auto offsets_data = SubstreamData(std::make_shared<SerializationNumber<UInt64>>())
+        .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
+        .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-    callback(path);
+    settings.path.back().data = offsets_data;
+    callback(settings.path);
 
-    path.back() = Substream::SparseElements;
-    path.back().creator = std::make_shared<SubcolumnCreator>(path.back().data.column, column_size);
-    path.back().data = data;
+    settings.path.back() = Substream::SparseElements;
+    settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets_data.column, column_size);
+    settings.path.back().data = data;
 
-    SubstreamData next_data =
-    {
-        nested,
-        data.type,
-        column_sparse ? column_sparse->getValuesPtr() : nullptr,
-        data.serialization_info,
-    };
+    auto next_data = SubstreamData(nested)
+        .withType(data.type)
+        .withColumn(column_sparse ? column_sparse->getValuesPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-    nested->enumerateStreams(path, callback, next_data);
-    path.pop_back();
+    nested->enumerateStreams(settings, callback, next_data);
+    settings.path.pop_back();
 }
 
 void SerializationSparse::serializeBinaryBulkStatePrefix(
