@@ -2134,6 +2134,7 @@ void MergeTreeData::renameInMemory(const StorageID & new_table_id)
 void MergeTreeData::dropAllData()
 {
     LOG_TRACE(log, "dropAllData: waiting for locks.");
+    auto settings_ptr = getSettings();
 
     auto lock = lockParts();
 
@@ -2186,7 +2187,11 @@ void MergeTreeData::dropAllData()
         try
         {
             LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
-            disk->removeRecursive(relative_data_path);
+
+            if (disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
+                disk->removeSharedRecursive(relative_data_path, true, {});
+            else
+                disk->removeRecursive(relative_data_path);
         }
         catch (const fs::filesystem_error & e)
         {
