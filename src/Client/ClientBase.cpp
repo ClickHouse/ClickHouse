@@ -1080,6 +1080,20 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 }
 
 
+void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
+{
+    if (!global_context->hasInsertionTable() && insert_query.table)
+    {
+        String table = insert_query.table->as<ASTIdentifier &>().shortName();
+        if (!table.empty())
+        {
+            String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
+            global_context->setInsertionTable(StorageID(database, table));
+        }
+    }
+}
+
+
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     auto query = query_to_execute;
@@ -1129,6 +1143,8 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
+        setInsertionTable(parsed_insert_query);
+
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
     }
