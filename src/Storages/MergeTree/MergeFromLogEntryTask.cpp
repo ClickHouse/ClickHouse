@@ -225,10 +225,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             }
             else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
-                /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually commited from other replica
+                /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
                 ///
-                /// It's also posible just because reads in [Zoo]Keeper are not lineariazable.
+                /// It's also possible just because reads in [Zoo]Keeper are not lineariazable.
                 ///
                 /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
                 zero_copy_lock->lock->unlock();
