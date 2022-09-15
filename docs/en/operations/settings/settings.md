@@ -3669,7 +3669,17 @@ Default value: `0`.
 
 ## force_timezone {#force_timezone}
 
-Sets a default timezone for session. All DateTime/DateTime64 values that have no explicit timezone specified are treated as having this timezone instead of default.
+If specified, sets a implicit timezone (instead of server-default). All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
+Examples:
+:) SELECT timeZone(), timeZoneOf(now())
+┌─timeZone()─┬─timeZoneOf(now())─┐
+│ UTC        │ UTC               │
+└────────────┴───────────────────┘
+
+:) SELECT timeZone(), timeZoneOf(now()) SETTINGS  force_timezone = 'Europe/Amsterdam'
+┌─timeZone()─┬─timeZoneOf(now())─┐
+│ UTC        │ Europe/Amsterdam  │
+└────────────┴───────────────────┘
 
 Possible values:
 
