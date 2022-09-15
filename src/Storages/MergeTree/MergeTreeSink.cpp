@@ -23,6 +23,7 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
+    , storage_snapshot(storage.getStorageSnapshot(metadata_snapshot, context))
 {
 }
 
@@ -54,7 +55,6 @@ struct MergeTreeSink::DelayedChunk
 void MergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
-    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
 
     storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);

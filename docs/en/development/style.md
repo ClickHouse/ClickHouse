@@ -1,4 +1,5 @@
 ---
+slug: /en/development/style
 sidebar_position: 69
 sidebar_label: C++ Guide
 description: A list of recommendations regarding coding style, naming convention, formatting and more

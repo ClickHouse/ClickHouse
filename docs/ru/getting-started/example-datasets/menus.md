@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/example-datasets/menus
 sidebar_position: 21
 sidebar_label: Меню
 ---

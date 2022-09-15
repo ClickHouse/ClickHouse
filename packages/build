@@ -95,7 +95,7 @@ done
 EOF
     chmod +x "$PKG_PATH/install/doinst.sh"
     if [ -f "$PKG_PATH/DEBIAN/postinst" ]; then
-        tail +2 "$PKG_PATH/DEBIAN/postinst" > "$PKG_PATH/install/doinst.sh"
+        tail +2 "$PKG_PATH/DEBIAN/postinst" >> "$PKG_PATH/install/doinst.sh"
     fi
     rm -rf "$PKG_PATH/DEBIAN"
     if [ -f "/usr/bin/pigz" ]; then

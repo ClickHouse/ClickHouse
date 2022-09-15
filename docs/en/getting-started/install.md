@@ -4,9 +4,8 @@ sidebar_position: 1
 keywords: [clickhouse, install, installation, docs]
 description: ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
 slug: /en/getting-started/install
+title: Installation
 ---
-
-# Installation
 
 ## System Requirements {#system-requirements}
 
@@ -59,7 +58,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](../faq/operations/production.md) based on your needs.
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/stable).
 
@@ -106,7 +105,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
+You can replace `stable` with `lts` to use different [release kinds](../faq/operations/production.md) based on your needs.
 
 Then run these commands to install packages:
 
@@ -140,8 +139,6 @@ do
     || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
 done
 
-exit 0
-
 tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
@@ -152,7 +149,7 @@ sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
 tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
+sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
 sudo /etc/init.d/clickhouse-server start
 
 tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
@@ -223,7 +220,7 @@ For non-Linux operating systems and for AArch64 CPU architecture, ClickHouse bui
     curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
 
-Run `sudo ./clickhouse install` to install ClickHouse system-wide (also with needed configuration files, configuring users etc.). Then run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
+Run `sudo ./clickhouse install` to install ClickHouse system-wide (also with needed configuration files, configuring users etc.). Then run `sudo clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
 
 Use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
 

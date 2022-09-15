@@ -452,9 +452,6 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
     {
         return std::make_shared<MySQLDumpRowInputFormat>(buf, header, params, settings);
     });
-
-    factory.registerAdditionalInfoForSchemaCacheGetter(
-        "MySQLDump", [](const FormatSettings & settings) { return "Table name: " + settings.mysql_dump.table_name; });
 }
 
 void registerMySQLSchemaReader(FormatFactory & factory)
@@ -462,6 +459,12 @@ void registerMySQLSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("MySQLDump", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<MySQLDumpSchemaReader>(buf, settings);
+    });
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("MySQLDump", [](const FormatSettings & settings)
+    {
+        auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
+        return result + fmt::format(", table_name={}", settings.mysql_dump.table_name);
     });
 }
 

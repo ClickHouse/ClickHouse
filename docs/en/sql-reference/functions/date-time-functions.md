@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/date-time-functions
 sidebar_position: 39
 sidebar_label: Dates and Times
 ---
@@ -267,7 +268,13 @@ Result:
 ```
 
 :::note
-The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1900 - 2299) will give an incorrect result.
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is `Date` or `DateTime`.
+Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+In case argument is out of normal range:
+  * If the argument is smaller than 1970, the result will be calculated from the argument `1970-01-01 (00:00:00)` instead.
+  * If the return type is `DateTime` and the argument is larger than `2106-02-07 08:28:15`, the result will be calculated from the argument `2106-02-07 08:28:15` instead.
+  * If the return type is `Date` and the argument is larger than `2149-06-06`, the result will be calculated from the argument `2149-06-06` instead.
+  *  If `toLastDayOfMonth` is called with an argument greater then `2149-05-31`, the result will be calculated from the argument `2149-05-31` instead.
 :::
 
 ## toStartOfYear
@@ -291,20 +298,23 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-:::note
-The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
-:::
+## toLastDayOfMonth
+
+Rounds up a date or date with time to the last day of the month.
+Returns the date.
 
 ## toMonday
 
 Rounds down a date or date with time to the nearest Monday.
+As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` return date `1970-01-01`.
 Returns the date.
 
 ## toStartOfWeek(t\[,mode\])
 
 Rounds down a date or date with time to the nearest Sunday or Monday by mode.
 Returns the date.
-The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` (and `1970-01-05` if `mode` is `1`) return date `1970-01-01`.
+The `mode` argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
 
 ## toStartOfDay
 
@@ -630,7 +640,8 @@ Result:
 
 ## date\_diff
 
-Returns the difference between two dates or dates with time values.
+Returns the difference between two dates or dates with time values. 
+The difference is calculated using relative units, e.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for day unit (see [toRelativeDayNum](#torelativedaynum)), 1 month for month unit (see [toRelativeMonthNum](#torelativemonthnum)), 1 year for year unit (see [toRelativeYearNum](#torelativeyearnum)).
 
 **Syntax**
 
@@ -680,6 +691,25 @@ Result:
 ┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
 │                                                                                     25 │
 └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    dateDiff('day', s, e) AS day_diff,
+    dateDiff('month', s, e) AS month__diff,
+    dateDiff('year', s, e) AS year_diff;
+```
+
+Result:
+
+``` text
+┌──────────e─┬──────────s─┬─day_diff─┬─month__diff─┬─year_diff─┐
+│ 2022-01-01 │ 2021-12-29 │        3 │           1 │         1 │
+└────────────┴────────────┴──────────┴─────────────┴───────────┘
 ```
 
 ## date\_sub
@@ -1039,7 +1069,7 @@ Example:
 SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
 SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
 SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
-``` 
+```
 ``` text
 ┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
 │ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
@@ -1059,7 +1089,7 @@ Formats a Time according to the given Format string. Format is a constant expres
 **Syntax**
 
 ``` sql
-formatDateTime(Time, Format\[, Timezone\])
+formatDateTime(Time, Format[, Timezone])
 ```
 
 **Returned value(s)**
@@ -1095,6 +1125,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
+| %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
 
 **Example**

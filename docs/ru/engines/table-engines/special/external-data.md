@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/special/external-data
 sidebar_position: 45
 sidebar_label: "Внешние данные для обработки запроса"
 ---
