@@ -41,7 +41,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
-#include <Analyzer/InterpolateColumnNode.h>
+#include <Analyzer/InterpolateNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -933,9 +933,9 @@ private:
 
     void resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
-    void resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope);
+    void resolveSortColumnsNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
-    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope);
+    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
@@ -3486,7 +3486,7 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
-        case QueryTreeNodeType::INTERPOLATE_COLUMN:
+        case QueryTreeNodeType::INTERPOLATE:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Interpolate column {} is not allowed in expression. In scope {}",
@@ -3616,10 +3616,11 @@ void QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, Iden
 
 /** Resolve sort columns nodes list.
   */
-void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope)
 {
-    auto & sort_columns_node_list_typed = sort_columns_node_list->as<ListNode &>();
-    for (auto & node : sort_columns_node_list_typed.getNodes())
+    auto & sort_node_list_typed = sort_node_list->as<ListNode &>();
+
+    for (auto & node : sort_node_list_typed.getNodes())
     {
         auto & sort_node = node->as<SortNode &>();
         resolveExpressionNode(sort_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -3668,15 +3669,16 @@ void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_n
 
 /** Resolve interpolate columns nodes list.
   */
-void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & sort_columns_node_list, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope)
 {
-    auto & sort_columns_node_list_typed = sort_columns_node_list->as<ListNode &>();
-    for (auto & node : sort_columns_node_list_typed.getNodes())
-    {
-        auto & interpolate_column_node = node->as<InterpolateColumnNode &>();
+    auto & interpolate_node_list_typed = interpolate_node_list->as<ListNode &>();
 
-        resolveExpressionNode(interpolate_column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        resolveExpressionNode(interpolate_column_node.getInterpolateExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
+    {
+        auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+
+        resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        resolveExpressionNode(interpolate_node_typed.getInterpolateExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
 }
 
@@ -4531,7 +4533,7 @@ public:
         auto query_tree_node_type = node->getNodeType();
         if (query_tree_node_type == QueryTreeNodeType::CONSTANT ||
             query_tree_node_type == QueryTreeNodeType::SORT ||
-            query_tree_node_type == QueryTreeNodeType::INTERPOLATE_COLUMN)
+            query_tree_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
         auto * function_node = node->as<FunctionNode>();

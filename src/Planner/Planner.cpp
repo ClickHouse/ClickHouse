@@ -47,7 +47,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
-#include <Analyzer/InterpolateColumnNode.h>
+#include <Analyzer/InterpolateNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -1414,9 +1414,10 @@ void Planner::buildQueryPlanIfNeeded()
             {
                 auto interpolate_actions_dag = std::make_shared<ActionsDAG>();
 
-                auto & interpolate_column_list_node = query_node.getInterpolate()->as<ListNode &>();
-                auto & interpolate_column_list_nodes = interpolate_column_list_node.getNodes();
-                if (interpolate_column_list_nodes.empty())
+                auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+                auto & interpolate_list_nodes = interpolate_list_node.getNodes();
+
+                if (interpolate_list_nodes.empty())
                 {
                     auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
                     for (auto & query_plan_column : query_plan_columns)
@@ -1430,11 +1431,11 @@ void Planner::buildQueryPlanIfNeeded()
                 }
                 else
                 {
-                    for (auto & interpolate_column_node : interpolate_column_list_node.getNodes())
+                    for (auto & interpolate_node : interpolate_list_nodes)
                     {
-                        auto & interpolate_column_node_typed = interpolate_column_node->as<InterpolateColumnNode &>();
-                        auto expression_to_interpolate_expression_nodes = actions_visitor.visit(interpolate_actions_dag, interpolate_column_node_typed.getExpression());
-                        auto interpolate_expression_nodes = actions_visitor.visit(interpolate_actions_dag, interpolate_column_node_typed.getInterpolateExpression());
+                        auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+                        auto expression_to_interpolate_expression_nodes = actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getExpression());
+                        auto interpolate_expression_nodes = actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
 
                         if (expression_to_interpolate_expression_nodes.size() != 1)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");

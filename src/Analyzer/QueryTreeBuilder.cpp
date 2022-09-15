@@ -34,7 +34,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
-#include <Analyzer/InterpolateColumnNode.h>
+#include <Analyzer/InterpolateNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -344,9 +344,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateColumnList(const ASTPtr & int
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
         auto expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
         auto interpolate_expression = buildExpression(interpolate_element.expr);
-        auto interpolate_column_node = std::make_shared<InterpolateColumnNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
+        auto interpolate_node = std::make_shared<InterpolateNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 
-        list_node->getNodes().push_back(std::move(interpolate_column_node));
+        list_node->getNodes().push_back(std::move(interpolate_node));
     }
 
     return list_node;
