@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/config.h>
-#include "base/defines.h"
 #include "config_core.h"
 
 #if USE_NURAFT
@@ -37,8 +36,10 @@ private:
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
 
+#if USE_AWS_S3
     using SnapshotBackupQueue = ConcurrentBoundedQueue<std::string>;
     SnapshotBackupQueue snapshots_s3_queue;
+#endif
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -66,8 +67,10 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
+#if USE_AWS_S3
     /// Upload new snapshots to S3
     ThreadFromGlobalPool snapshot_s3_thread;
+#endif
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
 
@@ -83,9 +86,11 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
+#if USE_AWS_S3
     struct S3Configuration;
     mutable std::mutex snapshot_s3_client_mutex;
     std::shared_ptr<S3Configuration> snapshot_s3_client;
+#endif
 
     /// Thread put requests to raft
     void requestThread();
@@ -95,8 +100,10 @@ private:
     void sessionCleanerTask();
     /// Thread create snapshots in the background
     void snapshotThread();
-    /// Thread backup snapshots to S3 in the background
+#if USE_AWS_S3
+    /// Thread upload snapshots to S3 in the background
     void snapshotS3Thread();
+#endif
     /// Thread apply or wait configuration changes from leader
     void updateConfigurationThread();
 
@@ -110,7 +117,9 @@ private:
     /// Clears both arguments
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
+#if USE_AWS_S3
     std::shared_ptr<S3Configuration> getSnapshotS3Client() const;
+#endif
 
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`
@@ -137,7 +146,9 @@ public:
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+#if USE_AWS_S3
     void updateS3Configuration(const Poco::Util::AbstractConfiguration & config);
+#endif
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();

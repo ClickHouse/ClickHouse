@@ -3,6 +3,9 @@
 #include <Common/config.h>
 #include <IO/S3/PocoHTTPClient.h>
 
+#include <string>
+#include <optional>
+
 #if USE_AWS_S3
 
 #include <base/types.h>
@@ -139,12 +142,12 @@ namespace DB::S3
 
 struct AuthSettings
 {
-    static AuthSettings loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+    static AuthSettings loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
 
-    String access_key_id;
-    String secret_access_key;
-    String region;
-    String server_side_encryption_customer_key_base64;
+    std::string access_key_id;
+    std::string secret_access_key;
+    std::string region;
+    std::string server_side_encryption_customer_key_base64;
 
     HeaderCollection headers;
 
