@@ -108,7 +108,6 @@ Example of disk configuration:
                 <current_key_id>1</current_key_id>
             </disk_s3_encrypted>
         </disks>
-            
     </storage_configuration>
 </clickhouse>
 ```
