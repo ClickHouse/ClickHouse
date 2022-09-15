@@ -58,11 +58,11 @@ public:
             updateWriteStat(stat);
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-                tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size.load())), ReadableSize(static_cast<double>(stat.uncompressed_size.load())));
+                tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
         }
 
         Block block = tmp_stream.read();
-        if (!block || block.rows() == 0)
+        if (!block)
             return {};
 
         UInt64 num_rows = block.rows();
@@ -93,7 +93,7 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
-    TemporaryDataOnDiskPtr tmp_data_,
+    TemporaryDataOnDiskHolder tmp_data_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)

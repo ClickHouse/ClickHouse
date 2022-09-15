@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
-void TemporaryDataOnDisk::deltaAlloc(int comp_delta, int uncomp_delta)
+void TemporaryDataOnDiskScope::deltaAlloc(int comp_delta, int uncomp_delta)
 {
     size_t current_consuption = stat.compressed_size.fetch_add(comp_delta) + comp_delta;
     stat.uncompressed_size.fetch_add(uncomp_delta);
@@ -34,8 +34,6 @@ void TemporaryDataOnDisk::deltaAlloc(int comp_delta, int uncomp_delta)
 
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t reserve_size)
 {
-    std::lock_guard lock(mutex);
-
     DiskPtr disk = nullptr;
     ReservationPtr reservation = nullptr;
     if (reserve_size > 0)
@@ -51,17 +49,28 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, Cu
     }
 
     auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, metric_scope);
-    auto & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
+
+    std::lock_guard lock(mutex);
+    TemporaryFileStreamHolder & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
     return *tmp_stream;
 }
 
 
+std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams()
+{
+    std::vector<TemporaryFileStream *> res;
+    std::lock_guard lock(mutex);
+    for (auto & stream : streams)
+        res.push_back(stream.get());
+    return res;
+}
+
 struct TemporaryFileStream::OutputWriter
 {
-    OutputWriter(const String & path, const Block & header)
+    OutputWriter(const String & path, const Block & header_)
         : out_file_buf(path)
         , out_compressed_buf(out_file_buf)
-        , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header)
+        , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
     }
 
@@ -104,11 +113,20 @@ struct TemporaryFileStream::OutputWriter
 
 struct TemporaryFileStream::InputReader
 {
-    InputReader(const String & path, const Block & header)
+    InputReader(const String & path, const Block & header_)
         : in_file_buf(path)
         , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, header, DBMS_TCP_PROTOCOL_VERSION)
-    {}
+        , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
+    {
+        UNUSED(header_);
+    }
+
+    explicit InputReader(const String & path)
+        : in_file_buf(path)
+        , in_compressed_buf(in_file_buf)
+        , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
+    {
+    }
 
     Block read() { return in_reader.read(); }
 
@@ -117,8 +135,9 @@ struct TemporaryFileStream::InputReader
     NativeReader in_reader;
 };
 
-TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header, TemporaryDataOnDisk * parent_)
+TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_)
     : parent(parent_)
+    , header(header_)
     , file(std::move(file_))
     , out_writer(std::make_unique<OutputWriter>(file->path(), header))
 {
@@ -137,14 +156,13 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
 {
     if (out_writer)
     {
-        Block header = out_writer->out_writer.getHeader();
         out_writer->finalize();
         updateAlloc(0);
         out_writer.reset();
 
         in_reader = std::make_unique<InputReader>(file->path(), header);
     }
-    return {compressed_size, uncompressed_size};
+    return stat;
 }
 
 bool TemporaryFileStream::isWriteFinished() const
@@ -161,40 +179,30 @@ Block TemporaryFileStream::read()
     return in_reader->read();
 }
 
-Block TemporaryFileStream::getHeader() const
-{
-    if (in_reader)
-        return in_reader->in_reader.getHeader();
-    if (out_writer)
-        return out_writer->out_writer.getHeader();
-    return {};
-}
-
-
 void TemporaryFileStream::updateAlloc(size_t rows_added)
 {
     assert(out_writer);
     size_t new_compressed_size = out_writer->out_compressed_buf.getCompressedBytes();
     size_t new_uncompressed_size = out_writer->out_compressed_buf.getUncompressedBytes();
 
-    if (unlikely(new_compressed_size < compressed_size || new_uncompressed_size < uncompressed_size))
+    if (unlikely(new_compressed_size < stat.compressed_size || new_uncompressed_size < stat.uncompressed_size))
     {
         LOG_ERROR(&Poco::Logger::get("TemporaryFileStream"),
             "Temporary file {} size decreased after write: compressed: {} -> {}, uncompressed: {} -> {}",
-            file->path(), new_compressed_size, compressed_size, new_uncompressed_size, uncompressed_size);
+            file->path(), new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
     }
 
-    parent->deltaAlloc(new_compressed_size - compressed_size, new_uncompressed_size - uncompressed_size);
-    this->compressed_size = new_compressed_size;
-    this->uncompressed_size = new_uncompressed_size;
-    this->written_rows += rows_added;
+    parent->deltaAlloc(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
+    stat.compressed_size = new_compressed_size;
+    stat.uncompressed_size = new_uncompressed_size;
+    stat.written_rows += rows_added;
 }
 
 TemporaryFileStream::~TemporaryFileStream()
 {
     try
     {
-        parent->deltaAlloc(-compressed_size, -uncompressed_size);
+        parent->deltaAlloc(-stat.compressed_size, -stat.uncompressed_size);
     }
     catch (...)
     {

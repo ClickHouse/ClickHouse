@@ -214,7 +214,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
-                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDisk>(
+                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, settings.max_temp_data_on_disk_size_for_query));
             }
             thread_group->query = query_;
@@ -572,7 +572,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
     if (global_context)
     {
         size_t size_limit = global_context->getSettingsRef().max_temp_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDisk>(global_context->getSharedTempDataOnDisk(), size_limit);
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getTempDataOnDisk(), size_limit);
     }
 }
 
