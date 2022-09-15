@@ -11,10 +11,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int INVALID_CONFIG_PARAMETER;
-}
 
 void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings)
 {

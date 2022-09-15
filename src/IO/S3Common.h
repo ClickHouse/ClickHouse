@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include <IO/S3/PocoHTTPClient.h>
 
 #if USE_AWS_S3
 
@@ -8,7 +9,6 @@
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/s3/S3Errors.h>
-#include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
 
 #include <Common/Exception.h>
@@ -27,8 +27,6 @@ namespace ErrorCodes
 }
 
 class RemoteHostFilter;
-struct HttpHeader;
-using HeaderCollection = std::vector<HttpHeader>;
 
 class S3Exception : public Exception
 {
@@ -128,6 +126,17 @@ S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr
 
 size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
 
+}
+#endif
+
+namespace Poco::Util
+{
+class AbstractConfiguration;
+};
+
+namespace DB::S3
+{
+
 struct AuthSettings
 {
     static AuthSettings loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
@@ -146,5 +155,3 @@ struct AuthSettings
 };
 
 }
-
-#endif

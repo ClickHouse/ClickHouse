@@ -14,11 +14,7 @@
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
 
-
-namespace Aws::Http::Standard
-{
-class StandardHttpResponse;
-}
+#endif
 
 namespace DB
 {
@@ -32,6 +28,17 @@ struct HttpHeader
 };
 
 using HeaderCollection = std::vector<HttpHeader>;
+}
+
+#if USE_AWS_S3
+
+namespace Aws::Http::Standard
+{
+class StandardHttpResponse;
+}
+
+namespace DB
+{
 
 class Context;
 }
