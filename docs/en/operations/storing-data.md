@@ -108,6 +108,7 @@ Example of disk configuration:
                 <current_key_id>1</current_key_id>
             </disk_s3_encrypted>
         </disks>
+            
     </storage_configuration>
 </clickhouse>
 ```
@@ -134,6 +135,13 @@ Example of configuration for versions later or equal to 22.8:
                 <max_size>10000000</max_size>
             </cache>
         </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>cache</disk>
+                </main>
+            </volumes>
+        <policies>
     </storage_configuration>
 ```
 
@@ -151,6 +159,13 @@ Example of configuration for versions earlier than 22.8:
                 <data_cache_size>10000000</data_cache_size>
             </s3>
         </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
+        <policies>
     </storage_configuration>
 ```
 
