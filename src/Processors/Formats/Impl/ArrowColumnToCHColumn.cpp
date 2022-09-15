@@ -238,7 +238,8 @@ static ColumnWithTypeAndName readColumnWithTimeData(std::shared_ptr<arrow::Chunk
     auto internal_column = internal_type->createColumn();
     internal_column->reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i) {
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    {
         auto & chunk = dynamic_cast<arrow::Time32Array &>(*(arrow_column->chunk(chunk_i)));
         if (chunk.length() == 0)
             continue;
