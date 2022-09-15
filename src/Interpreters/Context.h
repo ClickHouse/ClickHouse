@@ -17,7 +17,7 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/ColumnsDescription.h>
-
+#include <Interpreters/TemporaryDatabaseHolder.h>
 
 #include "config_core.h"
 
