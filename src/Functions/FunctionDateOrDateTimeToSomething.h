@@ -88,15 +88,6 @@ public:
                     "Function " + getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-//            // if timezone not explicitly specified, but there is force_timezone set in Settings
-//            if (time_zone.empty() && !force_timezone.empty())
-//            {
-//                return std::make_shared<ToDataType>(force_timezone);
-//            }
-//            else
-//            {
-//                return std::make_shared<ToDataType>(time_zone);
-//            }
             return std::make_shared<ToDataType>(time_zone);
         }
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
@@ -126,15 +117,6 @@ public:
                     "Function " + getName() + " supports a 3rd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-//            // if timezone not explicitly specified, but there is force_timezone set in Settings
-//            if (time_zone.empty() && !force_timezone.empty())
-//            {
-//                return std::make_shared<ToDataType>(scale, force_timezone);
-//            }
-//            else
-//            {
-//                return std::make_shared<ToDataType>(scale, time_zone);
-//            }
             return std::make_shared<ToDataType>(scale, time_zone);
         }
         else
@@ -150,17 +132,17 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count, {}, force_timezone);
         else if (which.isDate32())
-            return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count, {}, force_timezone);
         else if (which.isDateTime())
-            return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count, {}, force_timezone);
         else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
 
             const TransformDateTime64<Transform> transformer(scale);
-            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
+            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer, force_timezone);
         }
         else
             throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
