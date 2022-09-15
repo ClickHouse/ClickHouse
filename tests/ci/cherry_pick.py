@@ -206,7 +206,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         )
         self.cherrypick_pr.add_to_labels(Labels.LABEL_CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.LABEL_DO_NOT_TEST)
-        self._assign_new_pr(self.cherrypick_pr)
+        self.cherrypick_pr.add_to_assignees(self.pr.assignee)
+        self.cherrypick_pr.add_to_assignees(self.pr.user)
 
     def create_backport(self):
         # Checkout the backport branch from the remote and make all changes to
@@ -237,21 +238,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             head=self.backport_branch,
         )
         self.backport_pr.add_to_labels(Labels.LABEL_BACKPORT)
-        self._assign_new_pr(self.backport_pr)
-
-    def _assign_new_pr(self, new_pr: PullRequest):
-        """Assign `new_pr` to author, merger and assignees of an original PR"""
-        # It looks there some race when multiple .add_to_assignees are executed,
-        # so we'll add all at once
-        assignees = [self.pr.user, self.pr.merged_by]
-        if self.pr.assignees:
-            assignees.extend(self.pr.assignees)
-        logging.info(
-            "Assing #%s to author and assignees of the original PR: %s",
-            new_pr.number,
-            ", ".join(user.login for user in assignees),
-        )
-        new_pr.add_to_assignees(*assignees)
+        self.backport_pr.add_to_assignees(self.pr.assignee)
+        self.backport_pr.add_to_assignees(self.pr.user)
 
     @property
     def backported(self) -> bool:

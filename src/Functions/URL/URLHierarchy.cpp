@@ -104,7 +104,7 @@ public:
 struct NameURLPathHierarchy { static constexpr auto name = "URLPathHierarchy"; };
 using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
 
-REGISTER_FUNCTION(URLPathHierarchy)
+void registerFunctionURLPathHierarchy(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionURLPathHierarchy>();
 }

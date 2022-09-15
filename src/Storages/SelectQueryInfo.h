@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
@@ -43,6 +44,9 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 struct MergeTreeDataSelectAnalysisResult;
 using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
 
+struct SubqueryForSet;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+
 struct PrewhereInfo
 {
     /// Actions for row level security filter. Applied separately before prewhere_actions.
@@ -60,24 +64,6 @@ struct PrewhereInfo
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
-
-    PrewhereInfoPtr clone() const
-    {
-        PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
-
-        if (row_level_filter)
-            prewhere_info->row_level_filter = row_level_filter->clone();
-
-        if (prewhere_actions)
-            prewhere_info->prewhere_actions = prewhere_actions->clone();
-
-        prewhere_info->row_level_column_name = row_level_column_name;
-        prewhere_info->prewhere_column_name = prewhere_column_name;
-        prewhere_info->remove_prewhere_column = remove_prewhere_column;
-        prewhere_info->need_filter = need_filter;
-
-        return prewhere_info;
-    }
 };
 
 /// Helper struct to store all the information about the filter expression.
@@ -101,33 +87,17 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
-    /// Sort description for merging of already sorted streams.
-    /// Always a prefix of ORDER BY or GROUP BY description specified in query.
-    SortDescription sort_description_for_merging;
-
-    /** Size of prefix of sorting key that is already
-     * sorted before execution of sorting or aggreagation.
-     *
-     * Contains both columns that scpecified in
-     * ORDER BY or GROUP BY clause of query
-     * and columns that turned out to be already sorted.
-     *
-     * E.g. if we have sorting key ORDER BY (a, b, c, d)
-     * and query with `WHERE a = 'x' AND b = 'y' ORDER BY c, d` clauses.
-     * sort_description_for_merging will be equal to (c, d) and
-     * used_prefix_of_sorting_key_size will be equal to 4.
-     */
-    size_t used_prefix_of_sorting_key_size;
-
+    SortDescription order_key_fixed_prefix_descr;
+    SortDescription order_key_prefix_descr;
     int direction;
     UInt64 limit;
 
     InputOrderInfo(
-        const SortDescription & sort_description_for_merging_,
-        size_t used_prefix_of_sorting_key_size_,
+        const SortDescription & order_key_fixed_prefix_descr_,
+        const SortDescription & order_key_prefix_descr_,
         int direction_, UInt64 limit_)
-        : sort_description_for_merging(sort_description_for_merging_)
-        , used_prefix_of_sorting_key_size(used_prefix_of_sorting_key_size_)
+        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
+        , order_key_prefix_descr(order_key_prefix_descr_)
         , direction(direction_), limit(limit_)
     {
     }
@@ -166,13 +136,8 @@ struct ProjectionCandidate
   *  that can be used during query processing
   *  inside storage engines.
   */
-struct SelectQueryInfo
+struct SelectQueryInfoBase
 {
-
-    SelectQueryInfo()
-        : prepared_sets(std::make_shared<PreparedSets>())
-    {}
-
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
@@ -189,11 +154,11 @@ struct SelectQueryInfo
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
-    /// This is an additional filer applied to current table.
-    ASTPtr additional_filter_ast;
+    PrewhereInfoPtr prewhere_info;
 
-    /// It is needed for PK analysis based on row_level_policy and additional_filters.
-    ASTs filter_asts;
+    /// This is an additional filer applied to current table.
+    /// It is needed only for additional PK filtering.
+    ASTPtr additional_filter_ast;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
@@ -201,13 +166,10 @@ struct SelectQueryInfo
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
-    PreparedSetsPtr prepared_sets;
+    PreparedSets sets;
 
-    /// Cached value of ExpressionAnalysisResult
+    /// Cached value of ExpressionAnalysisResult::has_window
     bool has_window = false;
-    bool has_order_by = false;
-    bool need_aggregate = false;
-    PrewhereInfoPtr prewhere_info;
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
@@ -219,10 +181,16 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
-
-    InputOrderInfoPtr getInputOrderInfo() const
-    {
-        return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
-    }
 };
+
+/// Contains non-copyable stuff
+struct SelectQueryInfo : SelectQueryInfoBase
+{
+    SelectQueryInfo() = default;
+    SelectQueryInfo(const SelectQueryInfo & other) : SelectQueryInfoBase(other) {}
+
+    /// Make subquery_for_sets reusable across different interpreters.
+    SubqueriesForSets subquery_for_sets;
+};
+
 }

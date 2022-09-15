@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const String & s = field.get<const String &>();
+    const String & s = get<const String &>(field);
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -37,7 +37,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     field = String();
-    String & s = field.get<String &>();
+    String & s = get<String &>(field);
     s.resize(n);
     istr.readStrict(s.data(), n);
 }

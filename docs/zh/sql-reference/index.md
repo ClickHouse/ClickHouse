@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/
 sidebar_label: SQL参考
 toc_hidden: true
 sidebar_position: 28

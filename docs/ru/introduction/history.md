@@ -1,5 +1,4 @@
 ---
-slug: /ru/introduction/history
 sidebar_position: 7
 sidebar_label: "История ClickHouse"
 ---

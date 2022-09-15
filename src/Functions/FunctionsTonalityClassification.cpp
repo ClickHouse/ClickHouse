@@ -81,7 +81,7 @@ struct NameDetectTonality
 
 using FunctionDetectTonality = FunctionTextClassificationFloat<FunctionDetectTonalityImpl, NameDetectTonality>;
 
-REGISTER_FUNCTION(DetectTonality)
+void registerFunctionDetectTonality(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDetectTonality>();
 }

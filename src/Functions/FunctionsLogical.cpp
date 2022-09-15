@@ -22,12 +22,12 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(Logical)
+void registerFunctionsLogical(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>(FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -386,7 +386,7 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
             std::transform(
                     x.getData().cbegin(), x.getData().cend(),
                     column->getData().cbegin(), result.begin(),
-                    [](const auto a, const auto b) { return Op::apply(static_cast<bool>(a), static_cast<bool>(b)); });
+                    [](const auto a, const auto b) { return Op::apply(!!a, !!b); });
         else
             TypedExecutorInvoker<Op, Types ...>::template apply<T>(x, y, result);
     }

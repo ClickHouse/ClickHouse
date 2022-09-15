@@ -88,7 +88,6 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
-void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorages()
 {
@@ -172,8 +171,6 @@ void registerStorages()
     #if USE_SQLITE
     registerStorageSQLite(factory);
     #endif
-
-    registerStorageKeeperMap(factory);
 }
 
 }

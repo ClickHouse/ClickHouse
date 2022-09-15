@@ -235,12 +235,6 @@ public:
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
 
-    /// Return true if there is at least one part containing lightweight deleted mask.
-    virtual bool hasLightweightDeletedMask() const { return false; }
-
-    /// Return true if storage can execute lightweight delete mutations.
-    virtual bool supportsLightweightDelete() const { return false; }
-
 private:
 
     StorageID storage_id;
@@ -282,7 +276,7 @@ public:
       *
       * SelectQueryInfo is required since the stage can depends on the query
       * (see Distributed() engine and optimize_skip_unused_shards,
-      *  see also MergeTree engine and projection optimization).
+      *  see also MergeTree engine and allow_experimental_projection_optimization).
       * And to store optimized cluster (after optimize_skip_unused_shards).
       * It will also store needed stuff for projection query pipeline.
       *

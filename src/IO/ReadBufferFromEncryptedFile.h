@@ -38,7 +38,6 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     off_t offset = 0;
-
     bool need_seek = false;
 
     Memory<> encrypted_buffer;
