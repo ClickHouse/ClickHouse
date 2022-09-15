@@ -957,7 +957,6 @@ void MergeTreeData::loadDataPartsFromDisk(
     /// Prepare data parts for parallel loading. Threads will focus on given disk first, then steal
     /// others' tasks when finish current disk part loading process.
     std::vector<std::vector<std::pair<String, DiskPtr>>> threads_parts(num_threads);
-    std::unordered_map<std::string, std::string> parts_broken_because_of_no_such_key;
     std::set<size_t> remaining_thread_parts;
     std::queue<size_t> threads_queue;
     for (size_t i = 0; i < num_threads; ++i)
@@ -1173,14 +1172,6 @@ void MergeTreeData::loadDataPartsFromDisk(
 
     if (has_lightweight_in_parts)
         has_lightweight_delete_parts.store(true);
-
-    for (const auto & [part_name, exception] : parts_broken_because_of_no_such_key)
-    {
-        if (getActiveContainingPart(part_name) == nullptr)
-            LOG_ERROR(log, "Part {} is broken because of NO_SUCH_KEY error and not covered by any part: {}", part_name, exception);
-        else
-            LOG_DEBUG(log, "Part {} was not completely removed (and NO_SUCH_KEY was thrown on part load), but covered by active part, it's Ok", part_name);
-    }
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
