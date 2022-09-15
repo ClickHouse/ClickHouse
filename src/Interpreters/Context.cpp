@@ -189,7 +189,7 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    std::shared_ptr<TemporaryDataOnDisk> temp_data_on_disk; /// Temporary files that occur when processing the request.
+    TemporaryDataOnDiskScopePtr temp_data_on_disk;          /// Temporary files that occur when processing the request accouned here.
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -690,7 +690,7 @@ VolumePtr Context::getTemporaryVolume() const
     return nullptr;
 }
 
-std::shared_ptr<TemporaryDataOnDisk> Context::getSharedTempDataOnDisk() const
+TemporaryDataOnDiskScopePtr Context::getTempDataOnDisk() const
 {
     auto lock = getLock();
     if (this->temp_data_on_disk)
@@ -698,12 +698,7 @@ std::shared_ptr<TemporaryDataOnDisk> Context::getSharedTempDataOnDisk() const
     return shared->temp_data_on_disk;
 }
 
-std::unique_ptr<TemporaryDataOnDisk> Context::getTempDataOnDisk() const
-{
-    return std::make_unique<TemporaryDataOnDisk>(getSharedTempDataOnDisk(), 0);
-}
-
-void Context::setTempDataOnDisk(std::shared_ptr<TemporaryDataOnDisk> temp_data_on_disk_)
+void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
 {
     auto lock = getLock();
     this->temp_data_on_disk = std::move(temp_data_on_disk_);
@@ -767,7 +762,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
                 "Disk '{}' is not local and can't be used for temporary files", disk->getName());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDisk>(volume, max_size);
+    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
     return volume;
 }
 

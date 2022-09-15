@@ -246,7 +246,7 @@ struct ProcessListForUser
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
 
-    std::shared_ptr<TemporaryDataOnDisk> user_temp_data_on_disk;
+    TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 
     UserOvercommitTracker user_overcommit_tracker;
 

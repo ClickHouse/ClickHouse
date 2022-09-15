@@ -53,7 +53,7 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        SourceFromNativeStream(TemporaryFileStreamHolder & tmp_stream_)
+        SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
             : ISource(tmp_stream_->getHeader())
             , tmp_stream(tmp_stream_)
         {}
@@ -62,15 +62,20 @@ namespace
 
         Chunk generate() override
         {
-            auto block = tmp_stream->read();
-            if (!block)
+            if (!tmp_stream)
                 return {};
 
+            auto block = tmp_stream->read();
+            if (!block)
+            {
+                tmp_stream = nullptr;
+                return {};
+            }
             return convertToChunk(block);
         }
 
     private:
-        TemporaryFileStreamHolder & tmp_stream;
+        TemporaryFileStream * tmp_stream;
     };
 }
 
@@ -599,10 +604,9 @@ void AggregatingTransform::initGenerate()
 
         Pipe pipe;
         {
-            auto header = params->aggregator.getHeader(false);
             Pipes pipes;
 
-            for (auto & tmp_stream : tmp_data.getStreams())
+            for (auto * tmp_stream : tmp_data.getStreams())
                 pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
 
             pipe = Pipe::unitePipes(std::move(pipes));
