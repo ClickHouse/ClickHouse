@@ -135,8 +135,9 @@ public:
      *  Additional parameter arena should be used instead of standard memory allocator if the addition requires memory allocation.
      *  By default it is equal to Add.
      */
-    virtual void addNull(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const {
-      add(place, columns, row_num, arena);
+    virtual void addNull(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
+    {
+        add(place, columns, row_num, arena);
     }
 
     /// Adds several default values of arguments into aggregation data on which place points to.
@@ -257,8 +258,9 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        ssize_t if_argument_pos = -1) const {
-          addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+        ssize_t if_argument_pos = -1) const
+        {
+            addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
         }
 
     virtual void addBatchSinglePlaceFromInterval( /// NOLINT

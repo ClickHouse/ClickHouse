@@ -1364,13 +1364,16 @@ public:
             {
                 if (flags[i])
                 {
-                  if (!null_map[i]) {
-                    this->data(place).changeIfBetter(*columns[0], i, arena);
-                  } else {
-                    this->data(place).changeIfBetterNull(*columns[0], i, arena);
-                  }
-                  if constexpr (is_any)
-                      break;
+                    if (!null_map[i])
+                    {
+                        this->data(place).changeIfBetter(*columns[0], i, arena);
+                    }
+                    else
+                    {
+                        this->data(place).changeIfBetterNull(*columns[0], i, arena);
+                    }
+                    if constexpr (is_any)
+                       break;
                 }
             }
         }
@@ -1378,13 +1381,16 @@ public:
         {
             for (size_t i = row_begin; i < row_end; ++i)
             {
-                if (!null_map[i]) {
+                if (!null_map[i])
+                {
                     this->data(place).changeIfBetter(*columns[0], i, arena);
-                  } else {
+                }
+                else
+                {
                     this->data(place).changeIfBetterNull(*columns[0], i, arena);
-                  }
-                  if constexpr (is_any)
-                      break;
+                }
+                if constexpr (is_any)
+                    break;
             }
         }
     }
