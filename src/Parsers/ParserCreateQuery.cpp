@@ -858,8 +858,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserStorage storage_p;
     ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
-    ParserIntervalOperatorExpression watermark_p;
-    ParserIntervalOperatorExpression lateness_p;
+    ParserExpression watermark_p;
+    ParserExpression lateness_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr table;
