@@ -12,13 +12,14 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Types.h>
+#include <Common/logger_useful.h>
+#include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/IFileCachePriority.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Common/StatusFile.h>
+
 
 namespace DB
 {
@@ -43,7 +44,6 @@ public:
 
     ~FileCache() = default;
 
-    /// Restore cache from local filesystem.
     void initialize();
 
     const String & getBasePath() const { return cache_base_path; }
@@ -59,7 +59,7 @@ public:
      * As long as pointers to returned file segments are hold
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent);
+    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -104,7 +104,7 @@ public:
          const Key & key,
          size_t offset,
          size_t size,
-         bool is_persistent,
+         const CreateFileSegmentSettings & create_settings,
          std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments getSnapshot() const;
@@ -132,21 +132,21 @@ public:
 private:
     String cache_base_path;
 
-    size_t max_size;
-    size_t max_element_size;
-    size_t max_file_segment_size;
+    const size_t max_size;
+    const size_t max_element_size;
+    const size_t max_file_segment_size;
 
-    bool allow_persistent_files;
-    size_t enable_cache_hits_threshold;
-    bool enable_filesystem_query_cache_limit;
+    const bool allow_persistent_files;
+    const size_t enable_cache_hits_threshold;
+    const bool enable_filesystem_query_cache_limit;
 
+    mutable std::mutex mutex;
     Poco::Logger * log;
 
     bool is_initialized = false;
     std::exception_ptr initialization_exception;
-    std::unique_ptr<StatusFile> status_file;
 
-    mutable std::mutex mutex;
+    void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 
     bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
@@ -154,7 +154,7 @@ private:
         Key key,
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+        std::unique_lock<std::mutex> & segment_lock);
 
     void remove(
         FileSegmentPtr file_segment,
@@ -164,15 +164,13 @@ private:
         const Key & key,
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+        std::unique_lock<std::mutex> & segment_lock);
 
     void reduceSizeToDownloaded(
         const Key & key,
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
-
-    void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
+        std::unique_lock<std::mutex> & segment_lock);
 
     struct FileSegmentCell : private boost::noncopyable
     {
@@ -225,7 +223,7 @@ private:
         size_t offset,
         size_t size,
         FileSegment::State state,
-        bool is_persistent,
+        const CreateFileSegmentSettings & create_settings,
         std::lock_guard<std::mutex> & cache_lock);
 
     static void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
@@ -242,7 +240,7 @@ private:
         size_t offset,
         size_t size,
         FileSegment::State state,
-        bool is_persistent,
+        const CreateFileSegmentSettings & create_settings,
         std::lock_guard<std::mutex> & cache_lock);
 
     String dumpStructureUnlocked(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
@@ -252,7 +250,7 @@ private:
         const Key & key,
         const FileSegment::Range & range,
         bool fill_with_detached_file_segments,
-        bool is_persistent,
+        const CreateFileSegmentSettings & settings,
         std::lock_guard<std::mutex> & cache_lock);
 
     size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
