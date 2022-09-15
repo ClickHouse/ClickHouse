@@ -3146,12 +3146,12 @@ Result:
 
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
-Enables or disables returning results of type Date32 for functions toStartOfYear, toStartOfISOYear, toStartOfQuarter, toStartOfMonth, toStartOfWeek, toMonday and toLastDayOfMonth.
+Enables or disables returning results of type `Date32` for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
 
 Possible values:
 
--   0 — Functions return Date for all types of arguments.
--   1 — Functions return Date32 for Date32 or DateTime64 arguments and Date otherwise.
+-   0 — Functions return `Date` for all types of arguments.
+-   1 — Functions return `Date32` for `Date32` or `DateTime64` arguments and `Date` otherwise.
 
 Default value: `0`.
 
