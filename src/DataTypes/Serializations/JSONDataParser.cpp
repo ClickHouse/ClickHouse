@@ -131,7 +131,7 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element & element, P
             auto nested_key = getNameOfNested(paths[i], values[i]);
             if (!nested_key.empty())
             {
-                size_t array_size = get<const Array &>(values[i]).size();
+                size_t array_size = values[i].template get<const Array &>().size();
                 auto & current_nested_sizes = ctx.nested_sizes_by_key[nested_key];
 
                 if (current_nested_sizes.size() == ctx.current_size)
@@ -154,7 +154,7 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element & element, P
             auto nested_key = getNameOfNested(paths[i], values[i]);
             if (!nested_key.empty())
             {
-                size_t array_size = get<const Array &>(values[i]).size();
+                size_t array_size = values[i].template get<const Array &>().size();
                 auto & current_nested_sizes = ctx.nested_sizes_by_key[nested_key];
 
                 if (current_nested_sizes.empty())
