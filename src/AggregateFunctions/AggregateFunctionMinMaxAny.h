@@ -890,6 +890,9 @@ struct AggregateFunctionMinData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeIfLess(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfLess(column, 0, arena); }
 
+    bool changeIfBetterNull(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfBetter(column, row_num, arena); }
+    bool changeIfBetterNull(const Self & to, Arena * arena)                            { return this->changeIfBetter(to, arena); }
+
     static const char * name() { return "min"; }
 
 #if USE_EMBEDDED_COMPILER
@@ -917,6 +920,9 @@ struct AggregateFunctionMaxData : Data
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfGreater(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeIfGreater(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfGreater(column, 0, arena); }
+
+    bool changeIfBetterNull(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfBetter(column, row_num, arena); }
+    bool changeIfBetterNull(const Self & to, Arena * arena)                            { return this->changeIfBetter(to, arena); }
 
     static const char * name() { return "max"; }
 
@@ -950,6 +956,9 @@ struct AggregateFunctionAnyData : Data
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeFirstTime(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeFirstTime(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeFirstTime(column, 0, arena); }
+
+    bool changeIfBetterNull(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfBetter(column, row_num, arena); }
+    bool changeIfBetterNull(const Self & to, Arena * arena)                            { return this->changeIfBetter(to, arena); }
 
     static const char * name() { return "any"; }
 
@@ -986,15 +995,13 @@ struct AggregateFunctionAnyDataRespectNulls : AggregateFunctionAnyData<Data>
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
     {
-        is_null &= Data::has() || column.isNullAt(row_num);
-
-        const IColumn & nested_column = assert_cast<const ColumnNullable &>(column).getNestedColumn();
-        return this->changeFirstTime(nested_column, row_num, arena);
+        is_null &= Data::has();
+        return this->changeFirstTime(column, row_num, arena);
     }
 
     bool changeIfBetter(const Self & to, Arena * arena)
     {
-        is_null &= Data::has() || to.is_null;
+        is_null &= Data::has();
         return this->changeFirstTime(to, arena);
     }
 
@@ -1036,6 +1043,9 @@ struct AggregateFunctionAnyLastData : Data
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeEveryTime(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeEveryTime(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeEveryTime(column, 0, arena); }
+
+    bool changeIfBetterNull(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfBetter(column, row_num, arena); }
+    bool changeIfBetterNull(const Self & to, Arena * arena)                            { return this->changeIfBetter(to, arena); }
 
     static const char * name() { return "anyLast"; }
 
@@ -1095,6 +1105,9 @@ struct AggregateFunctionSingleValueOrNullData : Data
         }
         return false;
     }
+
+    bool changeIfBetterNull(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfBetter(column, row_num, arena); }
+    bool changeIfBetterNull(const Self & to, Arena * arena)                            { return this->changeIfBetter(to, arena); }
 
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfBetter(column, 0, arena); }
 
@@ -1172,6 +1185,9 @@ struct AggregateFunctionAnyHeavyData : Data
         return false;
     }
 
+    bool changeIfBetterNull(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfBetter(column, row_num, arena); }
+    bool changeIfBetterNull(const Self & to, Arena * arena)                            { return this->changeIfBetter(to, arena); }
+
     void addManyDefaults(const IColumn & column, size_t length, Arena * arena)
     {
         for (size_t i = 0; i < length; ++i)
@@ -1237,6 +1253,11 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         this->data(place).changeIfBetter(*columns[0], row_num, arena);
+    }
+
+    void addNull(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        this->data(place).changeIfBetterNull(*columns[0], row_num, arena);
     }
 
     void addManyDefaults(
@@ -1323,6 +1344,51 @@ public:
         }
     }
 
+    void addBatchSinglePlaceHandleNulls( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (is_any)
+            if (this->data(place).has())
+                return;
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                {
+                  if (!null_map[i]) {
+                    this->data(place).changeIfBetter(*columns[0], i, arena);
+                  } else {
+                    this->data(place).changeIfBetterNull(*columns[0], i, arena);
+                  }
+                  if constexpr (is_any)
+                      break;
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!null_map[i]) {
+                    this->data(place).changeIfBetter(*columns[0], i, arena);
+                  } else {
+                    this->data(place).changeIfBetterNull(*columns[0], i, arena);
+                  }
+                  if constexpr (is_any)
+                      break;
+            }
+        }
+    }
+
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).changeIfBetter(this->data(rhs), arena);
@@ -1374,20 +1440,8 @@ public:
                     return std::make_shared<AggregateFunctionNullUnary<false, false, false>>(nested_function, arguments, params);
             }
         }
-        else
-        {
-            if (return_type_is_nullable)
-            {
-                return std::make_shared<AggregateFunctionNullVariadic<true, true, false>>(nested_function, arguments, params);
-            }
-            else
-            {
-                if (serialize_flag)
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
-                else
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
-            }
-        }
+
+        return nullptr;
     }
 
 #if USE_EMBEDDED_COMPILER

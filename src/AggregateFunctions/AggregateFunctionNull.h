@@ -299,11 +299,14 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        if (!null_is_skipped || !column->isNullAt(row_num))
+
+        if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
-            const IColumn * passed_column = null_is_skipped ? nested_column : column;
-            this->nested_function->add(this->nestedPlace(place), &passed_column, row_num, arena);
+            this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+        } else if (!null_is_skipped) {
+            this->setFlag(place);
+            this->nested_function->addNull(this->nestedPlace(place), &nested_column, row_num, arena);
         }
     }
 
@@ -319,8 +322,13 @@ public:
         const IColumn * nested_column = &column->getNestedColumn();
         const UInt8 * null_map = column->getNullMapData().data();
 
-        this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
+        if (null_is_skipped) {
+          this->nested_function->addBatchSinglePlaceNotNull(
+              row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
+        } else {
+          this->nested_function->addBatchSinglePlaceHandleNulls(
+              row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
+        }
 
         if constexpr (result_is_nullable)
             if (!memoryIsByte(null_map, row_begin, row_end, 1))

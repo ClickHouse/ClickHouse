@@ -129,6 +129,16 @@ public:
      */
     virtual void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
+    /** Adds a NULL into aggregation data on which place points to.
+     *  columns points to columns containing arguments of aggregation function.
+     *  row_num is number of row which should be added.
+     *  Additional parameter arena should be used instead of standard memory allocator if the addition requires memory allocation.
+     *  By default it is equal to Add.
+     */
+    virtual void addNull(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const {
+      add(place, columns, row_num, arena);
+    }
+
     /// Adds several default values of arguments into aggregation data on which place points to.
     /// Default values must be a the 0-th positions in columns.
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
@@ -239,6 +249,17 @@ public:
         const UInt8 * null_map,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
+
+    virtual void addBatchSinglePlaceHandleNulls( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const {
+          addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+        }
 
     virtual void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t row_begin,
