@@ -95,7 +95,7 @@ namespace
     }
 
 
-    bool parseConstraintWritabilityKeyword(IParserBase::Pos & pos, Expected & expected, SettingConstraintWritability & writability)
+    bool parseConstraintWritabilityKeyword(IParserBase::Pos & pos, Expected & expected, std::optional<SettingConstraintWritability> & writability)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -127,7 +127,7 @@ namespace
         Field & value,
         Field & min_value,
         Field & max_value,
-        SettingConstraintWritability & writability)
+        std::optional<SettingConstraintWritability> & writability)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -139,7 +139,7 @@ namespace
             Field res_value;
             Field res_min_value;
             Field res_max_value;
-            SettingConstraintWritability res_writability = SettingConstraintWritability::DEFAULT;
+            std::optional<SettingConstraintWritability> res_writability;
 
             bool has_value_or_constraint = false;
             while (parseValue(pos, expected, res_value) || parseMinMaxValue(pos, expected, res_min_value, res_max_value)
@@ -184,7 +184,7 @@ namespace
             Field value;
             Field min_value;
             Field max_value;
-            SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
+            std::optional<SettingConstraintWritability> writability;
 
             bool ok = parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, writability);
 

@@ -3,6 +3,7 @@
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Core/Settings.h>
+#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -213,7 +214,11 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     SettingsConstraints res{access_control};
     for (const auto & elem : *this)
         if (!elem.setting_name.empty() && elem.setting_name != ALLOW_BACKUP_SETTING_NAME)
-            res.set(elem.setting_name, elem.min_value, elem.max_value, elem.writability);
+            res.set(
+                elem.setting_name,
+                elem.min_value,
+                elem.max_value,
+                elem.writability ? *elem.writability : SettingConstraintWritability::WRITABLE);
     return res;
 }
 

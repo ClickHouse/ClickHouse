@@ -102,7 +102,6 @@ def test_smoke():
             110000000,
             "\\N",
             "\\N",
-            "\\N",
         ]
     ]
 
@@ -149,7 +148,7 @@ def test_smoke():
         )
     )
     assert system_settings_profile_elements(user_name="robin") == [
-        ["\\N", "robin", "\\N", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
+        ["\\N", "robin", "\\N", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
     ]
 
     instance.query("ALTER USER robin SETTINGS NONE")
@@ -216,7 +215,6 @@ def test_settings_from_granted_role():
             110000000,
             "\\N",
             "\\N",
-            "\\N",
         ],
         [
             "xyz",
@@ -229,11 +227,10 @@ def test_settings_from_granted_role():
             "\\N",
             "\\N",
             "\\N",
-            "\\N",
         ],
     ]
     assert system_settings_profile_elements(role_name="worker") == [
-        ["\\N", "\\N", "worker", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
+        ["\\N", "\\N", "worker", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
     ]
 
     instance.query("REVOKE worker FROM robin")
@@ -302,12 +299,12 @@ def test_settings_from_granted_role():
 
 def test_inheritance():
     instance.query(
-        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 READONLY"
+        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 CONST"
     )
     instance.query("CREATE SETTINGS PROFILE alpha SETTINGS PROFILE xyz TO robin")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 READONLY\n"
+        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 CONST\n"
     )
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE alpha")
@@ -338,8 +335,7 @@ def test_inheritance():
             100000002,
             "\\N",
             "\\N",
-            1,
-            "\\N",
+            "CONST",
             "\\N",
         ]
     ]
@@ -347,7 +343,7 @@ def test_inheritance():
         ["alpha", "local directory", 1, 0, "['robin']", "[]"]
     ]
     assert system_settings_profile_elements(profile_name="alpha") == [
-        ["alpha", "\\N", "\\N", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
+        ["alpha", "\\N", "\\N", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
     ]
     assert system_settings_profile_elements(user_name="robin") == []
 
@@ -431,8 +427,7 @@ def test_changeable_in_readonly():
             100000003,
             90000000,
             110000000,
-            "\\N",
-            1,
+            "CHANGEABLE_IN_READONLY",
             "\\N",
         ],
         [
@@ -442,7 +437,6 @@ def test_changeable_in_readonly():
             1,
             "readonly",
             1,
-            "\\N",
             "\\N",
             "\\N",
             "\\N",

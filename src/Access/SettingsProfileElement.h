@@ -26,7 +26,7 @@ struct SettingsProfileElement
     Field value;
     Field min_value;
     Field max_value;
-    SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
+    std::optional<SettingConstraintWritability> writability;
 
     auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, writability); }
     friend bool operator==(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() == rhs.toTuple(); }

@@ -40,7 +40,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[3]->insert(setting.getDescription());
 
         Field min, max;
-        SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
+        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(settings, setting_name, min, max, writability);
 
         /// These two columns can accept strings only.
