@@ -89,11 +89,12 @@ public:
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
 
     void backup(
-        TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries) const override;
+        BackupEntries & backup_entries,
+        bool make_temporary_hard_links,
+        TemporaryFilesOnDisks * temp_dirs) const override;
 
     DataPartStoragePtr freeze(
         const std::string & to,

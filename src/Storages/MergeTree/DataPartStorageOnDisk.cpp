@@ -650,23 +650,31 @@ bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & stor
 }
 
 void DataPartStorageOnDisk::backup(
-    TemporaryFilesOnDisks & temp_dirs,
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
     const String & path_in_backup,
-    BackupEntries & backup_entries) const
+    BackupEntries & backup_entries,
+    bool make_temporary_hard_links,
+    TemporaryFilesOnDisks * temp_dirs) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
     fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
 
     auto disk = volume->getDisk();
-    auto temp_dir_it = temp_dirs.find(disk);
-    if (temp_dir_it == temp_dirs.end())
-        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
-    auto temp_dir_owner = temp_dir_it->second;
-    fs::path temp_dir = temp_dir_owner->getPath();
-    fs::path temp_part_dir = temp_dir / part_path_in_backup.relative_path();
-    disk->createDirectories(temp_part_dir);
+
+    fs::path temp_part_dir;
+    std::shared_ptr<TemporaryFileOnDisk> temp_dir_owner;
+    if (make_temporary_hard_links)
+    {
+        assert(temp_dirs);
+        auto temp_dir_it = temp_dirs->find(disk);
+        if (temp_dir_it == temp_dirs->end())
+            temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
+        temp_dir_owner = temp_dir_it->second;
+        fs::path temp_dir = temp_dir_owner->getPath();
+        temp_part_dir = temp_dir / part_path_in_backup.relative_path();
+        disk->createDirectories(temp_part_dir);
+    }
 
     /// For example,
     /// part_path_in_backup = /data/test/table/0_1_1_0
@@ -683,13 +691,18 @@ void DataPartStorageOnDisk::backup(
             continue; /// Skip *.proj files - they're actually directories and will be handled.
         String filepath_on_disk = part_path_on_disk / filepath;
         String filepath_in_backup = part_path_in_backup / filepath;
-        String hardlink_filepath = temp_part_dir / filepath;
 
-        disk->createHardLink(filepath_on_disk, hardlink_filepath);
+        if (make_temporary_hard_links)
+        {
+            String hardlink_filepath = temp_part_dir / filepath;
+            disk->createHardLink(filepath_on_disk, hardlink_filepath);
+            filepath_on_disk = hardlink_filepath;
+        }
+
         UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
         backup_entries.emplace_back(
             filepath_in_backup,
-            std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
+            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, checksum.file_size, file_hash, temp_dir_owner));
     }
 
     for (const auto & filepath : files_without_checksums)

@@ -361,6 +361,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #endif
 
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+
 uint32_t getInode(const char * self)
 {
     std::ifstream maps("/proc/self/maps");
@@ -386,6 +388,8 @@ uint32_t getInode(const char * self)
     return 0;
 }
 
+#endif
+
 int main(int/* argc*/, char* argv[])
 {
     char self[4096] = {0};
@@ -409,6 +413,7 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path;
 
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     /// get inode of this executable
     uint32_t inode = getInode(self);
     if (inode == 0)
@@ -460,6 +465,7 @@ int main(int/* argc*/, char* argv[])
         printf("No target executable - decompression only was performed.\n");
         return 0;
     }
+#endif
 
     int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
@@ -522,19 +528,21 @@ int main(int/* argc*/, char* argv[])
 
         if (has_exec)
         {
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
             /// write one byte to the lock in case other copies of compressed are running to indicate that
             /// execution should be performed
             write(lock, "1", 1);
-
+#endif
             execv(self, argv);
 
             /// This part of code will be reached only if error happened
             perror("execv");
             return 1;
         }
-
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
         /// since inodes can be reused - it's a precaution if lock file already exists and have size of 1
         ftruncate(lock, 0);
+#endif
 
         printf("No target executable - decompression only was performed.\n");
     }

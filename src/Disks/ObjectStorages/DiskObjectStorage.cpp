@@ -127,7 +127,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, getStorageObjects(local_path));
+            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path));
         }
         catch (const Exception & e)
         {
@@ -253,6 +253,13 @@ void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
     transaction->commit();
 }
 
+void DiskObjectStorage::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    auto transaction = createObjectStorageTransaction();
+    transaction->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
+    transaction->commit();
+}
+
 UInt32 DiskObjectStorage::getRefCount(const String & path) const
 {
     return metadata_storage->getHardlinkCount(path);
@@ -275,7 +282,10 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
     if (!id.starts_with(object_storage_root_path))
+    {
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}", id, object_storage_root_path);
         return false;
+    }
 
     auto object = StoredObject::create(*object_storage, id, {}, {}, true);
     return object_storage->exists(object);

@@ -1,8 +1,15 @@
 #!/bin/bash
 # shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
 
-set -eux
+set -x
+
+# core.COMM.PID-TID
+sysctl kernel.core_pattern='core.%e.%p-%P'
+
+set -e
+set -u
 set -o pipefail
+
 trap "exit" INT TERM
 # The watchdog is in the separate process group, so we have to kill it separately
 # if the script terminates earlier.
@@ -87,6 +94,19 @@ function configure
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
+
+    cat > db/config.d/core.xml <<EOL
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+         since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+EOL
 }
 
 function watchdog
@@ -180,7 +200,6 @@ handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue
-gcore
 backtrace full
 thread apply all backtrace full
 info registers

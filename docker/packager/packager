@@ -130,6 +130,7 @@ def parse_env_variables(
     ARM_SUFFIX = "-aarch64"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
+    AMD64_SSE2_SUFFIX = "-amd64sse2"
 
     result = []
     result.append("OUTPUT_DIR=/output")
@@ -141,6 +142,7 @@ def parse_env_variables(
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
+    is_amd64_sse2 = compiler.endswith(AMD64_SSE2_SUFFIX)
 
     if is_cross_darwin:
         cc = compiler[: -len(DARWIN_SUFFIX)]
@@ -186,6 +188,10 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
         )
+    elif is_amd64_sse2:
+        cc = compiler[: -len(AMD64_SSE2_SUFFIX)]
+        result.append("DEB_ARCH=amd64")
+        cmake_flags.append("-DNO_SSE3_OR_HIGHER=1")
     else:
         cc = compiler
         result.append("DEB_ARCH=amd64")
@@ -339,6 +345,7 @@ if __name__ == "__main__":
             "clang-14-darwin-aarch64",
             "clang-14-aarch64",
             "clang-14-ppc64le",
+            "clang-14-amd64sse2",
             "clang-14-freebsd",
             "gcc-11",
         ),
