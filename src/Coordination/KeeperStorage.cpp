@@ -1,11 +1,12 @@
 #include <iterator>
 #include <variant>
-#include <Coordination/KeeperStorage.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
-#include <Poco/Base64Encoder.h>
 #include <Poco/SHA1Engine.h>
+
+#include <Common/Base64.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -13,12 +14,18 @@
 #include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/LockMemoryExceptionInThread.h>
+
 #include <Coordination/pathUtils.h>
+#include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperStorage.h>
+
 #include <sstream>
 #include <iomanip>
 #include <mutex>
 #include <functional>
 #include <base/defines.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -31,17 +38,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-String base64Encode(const String & decoded)
-{
-    std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ostr.exceptions(std::ios::failbit);
-    Poco::Base64Encoder encoder(ostr);
-    encoder.rdbuf()->setLineLength(0);
-    encoder << decoded;
-    encoder.close();
-    return ostr.str();
-}
 
 String getSHA1(const String & userdata)
 {
@@ -224,12 +220,67 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
     cached_digest = other.cached_digest;
 }
 
-KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const bool digest_enabled_)
-    : session_expiry_queue(tick_time_ms), digest_enabled(digest_enabled_), superdigest(superdigest_)
+KeeperStorage::KeeperStorage(
+    int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
+    : session_expiry_queue(tick_time_ms), keeper_context(keeper_context_), superdigest(superdigest_)
 {
     Node root_node;
     container.insert("/", root_node);
-    nodes_digest += root_node.getDigest("/");
+    addDigest(root_node, "/");
+
+    if (initialize_system_nodes)
+        initializeSystemNodes();
+}
+
+void KeeperStorage::initializeSystemNodes()
+{
+    if (initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
+
+    // insert root system path if it isn't already inserted
+    if (container.find(keeper_system_path) == container.end())
+    {
+        Node system_node;
+        container.insert(keeper_system_path, system_node);
+        // store digest for the empty node because we won't update
+        // its stats
+        addDigest(system_node, keeper_system_path);
+
+        // update root and the digest based on it
+        auto current_root_it = container.find("/");
+        assert(current_root_it != container.end());
+        removeDigest(current_root_it->value, "/");
+        auto updated_root_it = container.updateValue(
+            "/",
+            [](auto & node)
+            {
+                ++node.stat.numChildren;
+                node.addChild(getBaseName(keeper_system_path));
+            }
+        );
+        addDigest(updated_root_it->value, "/");
+    }
+
+    // insert child system nodes
+    for (const auto & [path, data] : child_system_paths_with_data)
+    {
+        assert(keeper_api_version_path.starts_with(keeper_system_path));
+        Node child_system_node;
+        child_system_node.setData(data);
+        auto [map_key, _] = container.insert(std::string{path}, child_system_node);
+        /// Take child path from key owned by map.
+        auto child_path = getBaseName(map_key->getKey());
+        container.updateValue(
+            parentPath(StringRef(path)),
+            [child_path](auto & parent)
+            {
+                // don't update stats so digest is okay
+                parent.addChild(child_path);
+            }
+        );
+    }
+
+    initialized = true;
 }
 
 template <class... Ts>
@@ -307,10 +358,18 @@ void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
 {
     for (auto & delta : new_deltas)
     {
-        if (!delta.path.empty())
-            applyDelta(delta);
+        const auto & added_delta = deltas.emplace_back(std::move(delta));
 
-        deltas.push_back(std::move(delta));
+        if (!added_delta.path.empty())
+        {
+            deltas_for_path[added_delta.path].push_back(&added_delta);
+            applyDelta(added_delta);
+        }
+        else if (const auto * auth_delta = std::get_if<AddAuthDelta>(&added_delta.operation))
+        {
+            auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
+            uncommitted_auth.emplace_back(&auth_delta->auth_id);
+        }
     }
 }
 
@@ -324,6 +383,26 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
         {
             deltas.pop_front();
             break;
+        }
+
+        auto & front_delta = deltas.front();
+
+        if (!front_delta.path.empty())
+        {
+            auto & path_deltas = deltas_for_path.at(front_delta.path);
+            assert(path_deltas.front() == &front_delta);
+            path_deltas.pop_front();
+            if (path_deltas.empty())
+                deltas_for_path.erase(front_delta.path);
+        }
+        else if (auto * add_auth = std::get_if<AddAuthDelta>(&front_delta.operation))
+        {
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id];
+            assert(!uncommitted_auth.empty() && uncommitted_auth.front() == &add_auth->auth_id);
+            uncommitted_auth.pop_front();
+            if (uncommitted_auth.empty())
+                session_and_auth.erase(add_auth->session_id);
+
         }
 
         deltas.pop_front();
@@ -346,10 +425,12 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
             deltas.back().zxid,
             rollback_zxid);
 
+    auto delta_it = deltas.rbegin();
+
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
     // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
-    for (auto delta_it = deltas.rbegin(); delta_it != deltas.rend(); ++delta_it)
+    for (; delta_it != deltas.rend(); ++delta_it)
     {
         if (delta_it->zxid < rollback_zxid)
             break;
@@ -372,35 +453,62 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                     }
                 },
                 delta_it->operation);
+
+            auto & path_deltas = deltas_for_path.at(delta_it->path);
+            if (path_deltas.back() == &*delta_it)
+            {
+                path_deltas.pop_back();
+                if (path_deltas.empty())
+                    deltas_for_path.erase(delta_it->path);
+            }
+        }
+        else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta_it->operation))
+        {
+            auto & uncommitted_auth = session_and_auth[add_auth->session_id];
+            if (uncommitted_auth.back() == &add_auth->auth_id)
+            {
+                uncommitted_auth.pop_back();
+                if (uncommitted_auth.empty())
+                    session_and_auth.erase(add_auth->session_id);
+            }
         }
     }
 
-    std::erase_if(deltas, [rollback_zxid](const auto & delta) { return delta.zxid == rollback_zxid; });
+    if (delta_it == deltas.rend())
+        deltas.clear();
+    else
+        deltas.erase(delta_it.base(), deltas.end());
 
-    std::unordered_set<std::string> deleted_nodes;
+    absl::flat_hash_set<std::string> deleted_nodes;
     std::erase_if(
         nodes,
         [&, rollback_zxid](const auto & node)
         {
             if (node.second.zxid == rollback_zxid)
             {
-                deleted_nodes.emplace(node.first);
+                deleted_nodes.emplace(std::move(node.first));
                 return true;
             }
             return false;
         });
 
     // recalculate all the uncommitted deleted nodes
-    for (const auto & delta : deltas)
+    for (const auto & deleted_node : deleted_nodes)
     {
-        if (!delta.path.empty() && deleted_nodes.contains(delta.path))
-            applyDelta(delta);
+        auto path_delta_it = deltas_for_path.find(deleted_node);
+        if (path_delta_it != deltas_for_path.end())
+        {
+            for (const auto & delta : path_delta_it->second)
+            {
+                applyDelta(*delta);
+            }
+        }
     }
 }
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(StringRef path) const
 {
-    if (auto node_it = nodes.find(std::string{path}); node_it != nodes.end())
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
         return node_it->second.node;
 
     return tryGetNodeFromStorage(path);
@@ -408,7 +516,7 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(St
 
 Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) const
 {
-    if (auto node_it = nodes.find(std::string{path}); node_it != nodes.end())
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
         return node_it->second.acls;
 
     auto node_it = storage.container.find(path);
@@ -608,7 +716,7 @@ struct KeeperStorageRequestProcessor
     explicit KeeperStorageRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_) : zk_request(zk_request_) { }
     virtual Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const = 0;
     virtual std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & /*storage*/, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/) const
+    preprocess(KeeperStorage & /*storage*/, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const
     {
         return {};
     }
@@ -656,21 +764,34 @@ struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProc
 namespace
 {
 
-    Coordination::ACLs getNodeACLs(KeeperStorage & storage, StringRef path, bool is_local)
+Coordination::ACLs getNodeACLs(KeeperStorage & storage, StringRef path, bool is_local)
+{
+    if (is_local)
     {
-        if (is_local)
-        {
-            auto node_it = storage.container.find(path);
-            if (node_it == storage.container.end())
-                return {};
+        auto node_it = storage.container.find(path);
+        if (node_it == storage.container.end())
+            return {};
 
-            return storage.acl_map.convertNumber(node_it->value.acl_id);
-        }
-
-        return storage.uncommitted_state.getACLs(path);
+        return storage.acl_map.convertNumber(node_it->value.acl_id);
     }
 
+    return storage.uncommitted_state.getACLs(path);
 }
+
+void handleSystemNodeModification(const KeeperContext & keeper_context, std::string_view error_msg)
+{
+    if (keeper_context.server_state == KeeperContext::Phase::INIT && !keeper_context.ignore_system_path_on_startup)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "{}. Ignoring it can lead to data loss. "
+            "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
+            error_msg);
+
+    LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+}
+
+}
+
 bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session_id, bool is_local)
 {
     const auto node_acls = getNodeACLs(*this, path, is_local);
@@ -701,7 +822,9 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
 void KeeperStorage::unregisterEphemeralPath(int64_t session_id, const std::string & path)
 {
     auto ephemerals_it = ephemerals.find(session_id);
-    assert(ephemerals_it != ephemerals.end());
+    if (ephemerals_it == ephemerals.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path");
+
     ephemerals_it->second.erase(path);
     if (ephemerals_it->second.empty())
         ephemerals.erase(ephemerals_it);
@@ -724,7 +847,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     }
 
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time, uint64_t & digest) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time, uint64_t & digest, const KeeperContext & keeper_context) const override
     {
         Coordination::ZooKeeperCreateRequest & request = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*zk_request);
 
@@ -748,6 +871,14 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
             path_created += seq_num_str.str();
+        }
+
+        if (Coordination::matchPath(path_created, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+        {
+            auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
+
+            handleSystemNodeModification(keeper_context, error_msg);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
         if (storage.uncommitted_state.getNode(path_created))
@@ -837,9 +968,12 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
     {
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
+
+        if (request.path == Coordination::keeper_api_version_path)
+            return {};
 
         if (!storage.uncommitted_state.getNode(request.path))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
@@ -903,11 +1037,19 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & digest) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & digest, const KeeperContext & keeper_context) const override
     {
         Coordination::ZooKeeperRemoveRequest & request = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*zk_request);
 
         std::vector<KeeperStorage::Delta> new_deltas;
+
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+        {
+            auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", request.path);
+
+            handleSystemNodeModification(keeper_context, error_msg);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         const auto update_parent_pzxid = [&]()
         {
@@ -985,7 +1127,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
     {
         Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*zk_request);
 
@@ -1049,11 +1191,19 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t time, uint64_t & digest) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t time, uint64_t & digest, const KeeperContext & keeper_context) const override
     {
         Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*zk_request);
 
         std::vector<KeeperStorage::Delta> new_deltas;
+
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+        {
+            auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
+
+            handleSystemNodeModification(keeper_context, error_msg);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         if (!storage.uncommitted_state.getNode(request.path))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
@@ -1133,7 +1283,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
     {
         Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*zk_request);
 
@@ -1161,6 +1311,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         }
 
         auto & container = storage.container;
+
         auto node_it = container.find(request.path);
         if (node_it == container.end())
         {
@@ -1178,8 +1329,33 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
 
+            const auto add_child = [&](const auto child)
+            {
+                using enum Coordination::ListRequestType;
+
+                auto list_request_type = ALL;
+                if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
+                {
+                    list_request_type = filtered_list->list_request_type;
+                }
+
+                if (list_request_type == ALL)
+                    return true;
+
+                auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
+                auto child_it = container.find(child_path);
+                if (child_it == container.end())
+                    onStorageInconsistency();
+
+                const auto is_ephemeral = child_it->value.stat.ephemeralOwner != 0;
+                return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
+            };
+
             for (const auto child : children)
-                response.names.push_back(child.toString());
+            {
+                if (add_child(child))
+                    response.names.push_back(child.toString());
+            }
 
             response.stat = node_it->value.stat;
             response.error = Coordination::Error::ZOK;
@@ -1208,7 +1384,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
     {
         Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*zk_request);
 
@@ -1286,9 +1462,17 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & digest) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & digest, const KeeperContext & keeper_context) const override
     {
         Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
+
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+        {
+            auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
+
+            handleSystemNodeModification(keeper_context, error_msg);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         auto & uncommitted_state = storage.uncommitted_state;
         if (!uncommitted_state.getNode(request.path))
@@ -1360,7 +1544,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
     {
         Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*zk_request);
 
@@ -1457,14 +1641,14 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
     }
 
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time, uint64_t & digest) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time, uint64_t & digest, const KeeperContext & keeper_context) const override
     {
         std::vector<Coordination::Error> response_errors;
         response_errors.reserve(concrete_requests.size());
         uint64_t current_digest = digest;
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto new_deltas = concrete_requests[i]->preprocess(storage, zxid, session_id, time, current_digest);
+            auto new_deltas = concrete_requests[i]->preprocess(storage, zxid, session_id, time, current_digest, keeper_context);
 
             if (!new_deltas.empty())
             {
@@ -1583,7 +1767,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::vector<KeeperStorage::Delta>
-    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & /*digest*/) const override
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
     {
         Coordination::ZooKeeperAuthRequest & auth_request = dynamic_cast<Coordination::ZooKeeperAuthRequest &>(*zk_request);
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
@@ -1623,7 +1807,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
 void KeeperStorage::finalize()
 {
     if (finalized)
-        throw DB::Exception("Testkeeper storage already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception("KeeperStorage already finalized", ErrorCodes::LOGICAL_ERROR);
 
     finalized = true;
 
@@ -1633,6 +1817,11 @@ void KeeperStorage::finalize()
     list_watches.clear();
     sessions_and_watchers.clear();
     session_expiry_queue.clear();
+}
+
+bool KeeperStorage::isFinalized() const
+{
+    return finalized;
 }
 
 
@@ -1689,6 +1878,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::Set, KeeperStorageSetRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::List, KeeperStorageListRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SimpleList, KeeperStorageListRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::FilteredList, KeeperStorageListRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
@@ -1698,10 +1888,10 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 
 UInt64 KeeperStorage::calculateNodesDigest(UInt64 current_digest, const std::vector<Delta> & new_deltas) const
 {
-    if (!digest_enabled)
+    if (!keeper_context->digest_enabled)
         return current_digest;
 
-    std::unordered_map<std::string, std::shared_ptr<Node>> updated_nodes;
+    std::unordered_map<std::string_view, std::shared_ptr<Node>> updated_nodes;
 
     for (const auto & delta : new_deltas)
     {
@@ -1765,6 +1955,9 @@ void KeeperStorage::preprocessRequest(
     bool check_acl,
     std::optional<Digest> digest)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
+
     int64_t last_zxid = getNextZXID() - 1;
 
     if (uncommitted_transactions.empty())
@@ -1789,7 +1982,7 @@ void KeeperStorage::preprocessRequest(
     TransactionInfo transaction{.zxid = new_last_zxid};
     uint64_t new_digest = getNodesDigest(false).value;
     SCOPE_EXIT({
-        if (digest_enabled)
+        if (keeper_context->digest_enabled)
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
@@ -1840,7 +2033,7 @@ void KeeperStorage::preprocessRequest(
         return;
     }
 
-    new_deltas = request_processor->preprocess(*this, transaction.zxid, session_id, time, new_digest);
+    new_deltas = request_processor->preprocess(*this, transaction.zxid, session_id, time, new_digest, *keeper_context);
 }
 
 KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
@@ -1850,6 +2043,9 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     bool check_acl,
     bool is_local)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
+
     if (new_last_zxid)
     {
         if (uncommitted_transactions.empty())
@@ -1941,8 +2137,10 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         {
             if (response->error == Coordination::Error::ZOK)
             {
-                auto & watches_type
-                    = zk_request->getOpNum() == Coordination::OpNum::List || zk_request->getOpNum() == Coordination::OpNum::SimpleList
+                static constexpr std::array list_requests{
+                    Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
+
+                auto & watches_type = std::find(list_requests.begin(), list_requests.end(), zk_request->getOpNum()) != list_requests.end()
                     ? list_watches
                     : watches;
 
@@ -1972,19 +2170,35 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     return results;
 }
 
-void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
+void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
 {
+    if (allow_missing && (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid < rollback_zxid))
+        return;
+
     if (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid != rollback_zxid)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be the last preprocessed.", rollback_zxid);
+    }
 
-    uncommitted_transactions.pop_back();
-    uncommitted_state.rollback(rollback_zxid);
+    // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
+    // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+    try
+    {
+        uncommitted_transactions.pop_back();
+        uncommitted_state.rollback(rollback_zxid);
+    }
+    catch (...)
+    {
+        LOG_FATAL(&Poco::Logger::get("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
+        std::terminate();
+    }
 }
 
 KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 {
-    if (!digest_enabled)
+    if (!keeper_context->digest_enabled)
         return {.version = DigestVersion::NO_DIGEST};
 
     if (committed || uncommitted_transactions.empty())
@@ -1995,13 +2209,13 @@ KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 
 void KeeperStorage::removeDigest(const Node & node, const std::string_view path)
 {
-    if (digest_enabled)
+    if (keeper_context->digest_enabled)
         nodes_digest -= node.getDigest(path);
 }
 
 void KeeperStorage::addDigest(const Node & node, const std::string_view path)
 {
-    if (digest_enabled)
+    if (keeper_context->digest_enabled)
     {
         node.invalidateDigestCache();
         nodes_digest += node.getDigest(path);

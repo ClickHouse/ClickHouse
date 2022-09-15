@@ -2126,9 +2126,9 @@ def materialized_database_mysql_date_type_to_date32(
     mysql_node.query(
         "CREATE TABLE test_database.a (a INT(11) NOT NULL PRIMARY KEY, b date DEFAULT NULL)"
     )
-    # can't support date that less than 1925 year for now
-    mysql_node.query("INSERT INTO test_database.a VALUES(1, '1900-04-16')")
-    # test date that is older than 1925
+    # can't support date that less than 1900 year for now
+    mysql_node.query("INSERT INTO test_database.a VALUES(1, '1899-04-16')")
+    # test date that is older than 1900
     mysql_node.query("INSERT INTO test_database.a VALUES(3, '1971-02-16')")
     mysql_node.query("INSERT INTO test_database.a VALUES(4, '2101-05-16')")
 

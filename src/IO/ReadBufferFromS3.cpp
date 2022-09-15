@@ -5,12 +5,13 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Common/Stopwatch.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 
+#include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 
@@ -33,6 +34,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
@@ -47,7 +49,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
-    : SeekableReadBuffer(nullptr, 0)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -135,6 +137,23 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
+            if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+            {
+                /// It doesn't make sense to retry Access Denied or No Such Key
+                if (!s3_exception->isRetryableError())
+                {
+                    tryLogCurrentException(log, fmt::format("while reading key: {}, from bucket: {}", key, bucket));
+                    throw;
+                }
+            }
+
+            /// It doesn't make sense to retry allocator errors
+            if (e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+            {
+                tryLogCurrentException(log);
+                throw;
+            }
+
             LOG_DEBUG(
                 log,
                 "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, Attempt: {}, Message: {}",
@@ -164,6 +183,8 @@ bool ReadBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
+    if (read_settings.remote_throttler)
+        read_settings.remote_throttler->add(working_buffer.size());
 
     return true;
 }
@@ -227,7 +248,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, false);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
 
     file_size = object_size;
     return *file_size;
@@ -299,12 +320,14 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
-
         size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
     else
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+    {
+        const auto & error = outcome.GetError();
+        throw S3Exception(error.GetMessage(), error.GetErrorType());
+    }
 }
 
 SeekableReadBufferPtr ReadBufferS3Factory::getReader()

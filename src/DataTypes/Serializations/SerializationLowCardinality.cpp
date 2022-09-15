@@ -41,30 +41,26 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 }
 
 void SerializationLowCardinality::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
-    SubstreamData dict_data =
-    {
-        dict_inner_serialization,
-        data.type ? dictionary_type : nullptr,
-        column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr,
-        data.serialization_info,
-    };
+    settings.path.push_back(Substream::DictionaryKeys);
+    auto dict_data = SubstreamData(dict_inner_serialization)
+        .withType(data.type ? dictionary_type : nullptr)
+        .withColumn(column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-    path.push_back(Substream::DictionaryKeys);
-    path.back().data = dict_data;
+    settings.path.back().data = dict_data;
+    dict_inner_serialization->enumerateStreams(settings, callback, dict_data);
 
-    dict_inner_serialization->enumerateStreams(path, callback, dict_data);
+    settings.path.back() = Substream::DictionaryIndexes;
+    settings.path.back().data = data;
 
-    path.back() = Substream::DictionaryIndexes;
-    path.back().data = data;
-
-    callback(path);
-    path.pop_back();
+    callback(settings.path);
+    settings.path.pop_back();
 }
 
 struct KeysSerializationVersion
@@ -511,8 +507,6 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         /// Insert used_keys into global dictionary and update sub_index.
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
                                                                                       settings.low_cardinality_max_dictionary_size);
-        // size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
-        // ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
@@ -655,11 +649,6 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         else
         {
             auto maps = mapIndexWithAdditionalKeys(*indexes_column, global_dictionary->size());
-
-            // ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
-
-            // ColumnLowCardinality::Index(indexes_column->getPtr()).check(
-            //         maps.dictionary_map->size() + maps.additional_keys_map->size());
 
             auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
 

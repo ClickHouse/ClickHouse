@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/special/set
 sidebar_position: 60
 sidebar_label: Set
 ---
@@ -20,4 +21,3 @@ When creating a table, the following settings are applied:
 
 -   [persistent](../../../operations/settings/settings.md#persistent)
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/set/) <!--hide-->

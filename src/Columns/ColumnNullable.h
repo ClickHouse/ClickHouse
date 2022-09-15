@@ -59,19 +59,7 @@ public:
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
-
-    /**
-     * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
-     * EMPTY_STRING_REF indicating that data is not present.
-     */
-    StringRef getDataAt(size_t n) const override
-    {
-        if (isNullAt(n))
-            return EMPTY_STRING_REF;
-
-        return getNestedColumn().getDataAt(n);
-    }
-
+    StringRef getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -199,7 +187,9 @@ public:
     /// columns.
     void applyNullMap(const ColumnNullable & other);
     void applyNullMap(const ColumnUInt8 & map);
+    void applyNullMap(const NullMap & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
+    void applyNegatedNullMap(const NullMap & map);
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
@@ -209,7 +199,7 @@ private:
     WrappedPtr null_map;
 
     template <bool negative>
-    void applyNullMapImpl(const ColumnUInt8 & map);
+    void applyNullMapImpl(const NullMap & map);
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 
@@ -221,5 +211,6 @@ private:
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);
+ColumnPtr makeNullableSafe(const ColumnPtr & column);
 
 }

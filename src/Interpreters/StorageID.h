@@ -10,7 +10,7 @@ namespace Poco
 {
 namespace Util
 {
-class AbstractConfiguration;
+class AbstractConfiguration; // NOLINT(cppcoreguidelines-virtual-class-destructor)
 }
 }
 
@@ -68,6 +68,8 @@ struct StorageID
     {
         return uuid != UUIDHelpers::Nil;
     }
+
+    bool hasDatabase() const { return !database_name.empty(); }
 
     bool operator<(const StorageID & rhs) const;
     bool operator==(const StorageID & rhs) const;

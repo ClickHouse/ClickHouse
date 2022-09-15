@@ -59,7 +59,7 @@ public:
 
 }
 
-void registerFunctionH3GetRes0Indexes(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetRes0Indexes)
 {
     factory.registerFunction<FunctionH3GetRes0Indexes>();
 }

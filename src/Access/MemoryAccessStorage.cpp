@@ -1,5 +1,6 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Backups/RestoreSettings.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
@@ -272,19 +273,24 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 }
 
 
-void MemoryAccessStorage::insertFromBackup(
-    const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup,
-    const RestoreSettings & restore_settings,
-    std::shared_ptr<IRestoreCoordination>)
+void MemoryAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 {
     if (!isRestoreAllowed())
         throwRestoreNotAllowed();
 
-    bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
+    auto entities = restorer.getAccessEntitiesToRestore();
+    if (entities.empty())
+        return;
 
-    for (const auto & [id, entity] : entities_from_backup)
-        insertWithID(id, entity, replace_if_exists, throw_if_exists);
+    auto create_access = restorer.getRestoreSettings().create_access;
+    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+
+    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    {
+        for (const auto & [id, entity] : entities)
+            insertWithID(id, entity, replace_if_exists, throw_if_exists);
+    });
 }
 
 }

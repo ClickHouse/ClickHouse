@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/table-functions/remote
+---
 # remote, remoteSecure {#remote-remotesecure}
 
 允许您访问远程服务器，而无需创建 `Distributed` 表。`remoteSecure` - 与 `remote` 相同，但是会使用加密链接。

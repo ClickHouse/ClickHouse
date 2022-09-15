@@ -7,7 +7,7 @@ struct NameCountEqual { static constexpr auto name = "countEqual"; };
 
 using FunctionCountEqual = FunctionArrayIndex<CountEqualAction, NameCountEqual>;
 
-void registerFunctionCountEqual(FunctionFactory & factory)
+REGISTER_FUNCTION(CountEqual)
 {
     factory.registerFunction<FunctionCountEqual>();
 }

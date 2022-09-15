@@ -223,7 +223,7 @@ void kerberosInit(const String & keytab_file, const String & principal, const St
 {
     // Using mutex to prevent cache file corruptions
     static std::mutex kinit_mtx;
-    std::unique_lock<std::mutex> lck(kinit_mtx);
+    std::lock_guard lck(kinit_mtx);
     KerberosInit k_init;
     k_init.init(keytab_file, principal, cache_name);
 }

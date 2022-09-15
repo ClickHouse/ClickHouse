@@ -7,9 +7,11 @@ import os
 import shutil
 from pathlib import Path
 
-import requests
+import requests  # type: ignore
 
 from compress_files import decompress_fast, compress_fast
+from env_helper import S3_DOWNLOAD, S3_BUILDS_BUCKET
+from s3_helper import S3Helper
 
 DOWNLOAD_RETRIES_COUNT = 5
 
@@ -56,12 +58,19 @@ def dowload_file_with_progress(url, path):
 
 
 def get_ccache_if_not_exists(
-    path_to_ccache_dir, s3_helper, current_pr_number, temp_path
+    path_to_ccache_dir: str,
+    s3_helper: S3Helper,
+    current_pr_number: int,
+    temp_path: str,
+    release_pr: int,
 ) -> int:
     """returns: number of PR for downloaded PR. -1 if ccache not found"""
     ccache_name = os.path.basename(path_to_ccache_dir)
     cache_found = False
     prs_to_check = [current_pr_number]
+    # Release PR is either 0 or defined
+    if release_pr:
+        prs_to_check.append(release_pr)
     ccache_pr = -1
     if current_pr_number != 0:
         prs_to_check.append(0)
@@ -73,7 +82,7 @@ def get_ccache_if_not_exists(
         for obj in objects:
             if ccache_name in obj:
                 logging.info("Found ccache on path %s", obj)
-                url = "https://s3.amazonaws.com/clickhouse-builds/" + obj
+                url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{obj}"
                 compressed_cache = os.path.join(temp_path, os.path.basename(obj))
                 dowload_file_with_progress(url, compressed_cache)
 

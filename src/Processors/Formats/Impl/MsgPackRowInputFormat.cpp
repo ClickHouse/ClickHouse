@@ -235,8 +235,10 @@ static void insertNull(IColumn & column, DataTypePtr type)
     assert_cast<ColumnNullable &>(column).insertDefault();
 }
 
-static void insertUUID(IColumn & column, DataTypePtr /*type*/, const char * value, size_t size)
+static void insertUUID(IColumn & column, DataTypePtr type, const char * value, size_t size)
 {
+    if (!isUUID(type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
     readBinaryBigEndian(uuid.toUnderType().items[0], buf);
@@ -539,6 +541,14 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<MsgPackSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("MsgPack", [](const FormatSettings & settings)
+    {
+            return fmt::format(
+                "number_of_columns={}, schema_inference_hints={}, max_rows_to_read_for_schema_inference={}",
+                settings.msgpack.number_of_columns,
+                settings.schema_inference_hints,
+                settings.max_rows_to_read_for_schema_inference);
+        });
 }
 
 }

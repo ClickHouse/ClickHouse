@@ -174,10 +174,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// When attaching old-style database during server startup, we must always use Ordinary engine
         if (create.attach)
             throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-        bool old_style_database = getContext()->getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
-        engine->name = old_style_database ? "Ordinary" : "Atomic";
+        engine->name = "Atomic";
         engine->no_empty_args = true;
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
@@ -220,8 +219,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (create_from_user)
         {
-            const auto & default_engine = getContext()->getSettingsRef().default_database_engine.value;
-            if (create.uuid == UUIDHelpers::Nil && default_engine == DefaultDatabaseEngine::Atomic)
+            if (create.uuid == UUIDHelpers::Nil)
                 create.uuid = UUIDHelpers::generateV4();    /// Will enable Atomic engine for nested database
         }
         else if (attach_from_user && create.uuid == UUIDHelpers::Nil)
@@ -275,6 +273,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -329,8 +328,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!load_database_without_tables)
         {
+
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, has_force_restore_data_flag, create.attach && force_attach}; //-V560
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode}; //-V560
             loader.loadTables();
             loader.startupTables();
         }
@@ -1046,6 +1046,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             }
         }
 
+        if (!create.cluster.empty())
+            return executeQueryOnCluster(create);
+
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
@@ -1067,6 +1070,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
+
+        /// Compatibility setting which should be enabled by default on attach
+        /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
+        getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
@@ -1178,6 +1185,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
         }
     }
+
+    if (!create.cluster.empty())
+        return executeQueryOnCluster(create);
 
     if (create.replace_table)
         return doCreateOrReplaceTable(create, properties);
@@ -1384,25 +1394,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 {
     /// Replicated database requires separate contexts for each DDL query
     ContextPtr current_context = getContext();
+    if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        txn->setIsCreateOrReplaceQuery();
     ContextMutablePtr create_context = Context::createCopy(current_context);
     create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
 
-    auto make_drop_context = [&](bool on_error) -> ContextMutablePtr
+    auto make_drop_context = [&]() -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
-        drop_context->makeQueryContext();
-        if (on_error)
-            return drop_context;
-
-        if (auto txn = current_context->getZooKeeperMetadataTransaction())
-        {
-            /// Execute drop as separate query, because [CREATE OR] REPLACE query can be considered as
-            /// successfully executed after RENAME/EXCHANGE query.
-            drop_context->resetZooKeeperMetadataTransaction();
-            auto drop_txn = std::make_shared<ZooKeeperMetadataTransaction>(txn->getZooKeeper(), txn->getDatabaseZooKeeperPath(),
-                                                                           txn->isInitialQuery(), txn->getTaskZooKeeperPath());
-            drop_context->initZooKeeperMetadataTransaction(drop_txn);
-        }
+        drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
         return drop_context;
     };
 
@@ -1478,7 +1478,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
             /// Target table was replaced with new one, drop old table
-            auto drop_context = make_drop_context(false);
+            auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
@@ -1491,7 +1491,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// Drop temporary table if it was successfully created, but was not renamed to target name
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context(true);
+            auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
         throw;
@@ -1537,6 +1537,11 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     if (cluster->maybeCrossReplication())
     {
+        auto on_cluster_version = local_context->getSettingsRef().distributed_ddl_entry_format_version;
+        if (DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION <= on_cluster_version)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Value {} of setting distributed_ddl_entry_format_version "
+                                                         "is incompatible with cross-replication", on_cluster_version);
+
         /// Check that {uuid} macro is not used in zookeeper_path for ReplicatedMergeTree.
         /// Otherwise replicas will generate different paths.
         if (!create.storage)
@@ -1569,16 +1574,25 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     }
 }
 
+BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
+{
+    prepareOnClusterQuery(create, getContext(), create.cluster);
+    DDLQueryOnClusterParams params;
+    params.access_to_check = getRequiredAccess();
+    return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+}
+
 BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
-    if (!create.cluster.empty())
+
+    bool is_create_database = create.database && !create.table;
+    if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        prepareOnClusterQuery(create, getContext(), create.cluster);
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        auto on_cluster_version = getContext()->getSettingsRef().distributed_ddl_entry_format_version;
+        if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+            return executeQueryOnCluster(create);
     }
 
     getContext()->checkAccess(getRequiredAccess());
@@ -1586,7 +1600,7 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
-    if (create.database && !create.table)
+    if (is_create_database)
         return createDatabase(create);
     else
         return createTable(create);

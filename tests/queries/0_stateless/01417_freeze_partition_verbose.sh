@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-ordinary-database
+# Tags: no-replicated-database, no-parallel
 # Tag no-replicated-database: Unsupported type of ALTER query
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO table_for_freeze SELECT number, toStri
 
 # also for old syntax
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS table_for_freeze_old_syntax;"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE table_for_freeze_old_syntax (dt Date, value String) ENGINE = MergeTree(dt, (value), 8192);"
+${CLICKHOUSE_CLIENT} --allow_deprecated_syntax_for_merge_tree=1 --query "CREATE TABLE table_for_freeze_old_syntax (dt Date, value String) ENGINE = MergeTree(dt, (value), 8192);"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO table_for_freeze_old_syntax SELECT toDate('2021-03-01'), toString(number) from numbers(10);"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze FREEZE WITH NAME 'test_01417' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \

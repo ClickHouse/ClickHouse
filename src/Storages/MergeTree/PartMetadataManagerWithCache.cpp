@@ -191,6 +191,7 @@ void PartMetadataManagerWithCache::getKeysAndCheckSums(Strings & keys, std::vect
     {
         ReadBufferFromString rbuf(values[i]);
         HashingReadBuffer hbuf(rbuf);
+        hbuf.ignoreAll();
         checksums.push_back(hbuf.getHash());
     }
 }

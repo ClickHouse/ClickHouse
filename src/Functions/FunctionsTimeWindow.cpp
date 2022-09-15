@@ -684,7 +684,7 @@ ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & a
     return TimeWindowImpl<type>::dispatchForColumns(arguments, name);
 }
 
-void registerFunctionsTimeWindow(FunctionFactory& factory)
+REGISTER_FUNCTION(TimeWindow)
 {
     factory.registerFunction<FunctionTumble>();
     factory.registerFunction<FunctionHop>();

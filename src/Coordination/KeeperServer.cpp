@@ -20,7 +20,10 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/Stopwatch.h>
+#include <Common/getMultipleKeysFromConfig.h>
 
 namespace DB
 {
@@ -105,20 +108,32 @@ KeeperServer::KeeperServer(
     SnapshotsQueue & snapshots_queue_)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
-    , state_machine(nuraft::cs_new<KeeperStateMachine>(
-          responses_queue_,
-          snapshots_queue_,
-          configuration_and_settings_->snapshot_storage_path,
-          coordination_settings,
-          checkAndGetSuperdigest(configuration_and_settings_->super_digest),
-          config.getBool("keeper_server.digest_enabled", true)))
-    , state_manager(nuraft::cs_new<KeeperStateManager>(
-          server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
-    , is_recovering(config.has("keeper_server.force_recovery") && config.getBool("keeper_server.force_recovery"))
+    , is_recovering(config.getBool("keeper_server.force_recovery", false))
+    , keeper_context{std::make_shared<KeeperContext>()}
+    , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
+
+    keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
+
+    state_machine = nuraft::cs_new<KeeperStateMachine>(
+        responses_queue_,
+        snapshots_queue_,
+        configuration_and_settings_->snapshot_storage_path,
+        coordination_settings,
+        keeper_context,
+        checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+
+    state_manager = nuraft::cs_new<KeeperStateManager>(
+        server_id,
+        "keeper_server",
+        configuration_and_settings_->log_storage_path,
+        configuration_and_settings_->state_file_path,
+        config,
+        coordination_settings);
 }
 
 /**
@@ -159,6 +174,17 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void forceReconfigure(const nuraft::ptr<nuraft::cluster_config> & new_config)
     {
         reconfigure(new_config);
+    }
+
+    void commit_in_bg() override
+    {
+        // For NuRaft, if any commit fails (uncaught exception) the whole server aborts as a safety
+        // This includes failed allocation which can produce an unknown state for the storage,
+        // making it impossible to handle correctly.
+        // We block the memory tracker for all the commit operations (including KeeperStateMachine::commit)
+        // assuming that the allocations are small
+        LockMemoryExceptionInThread blocker{VariableContext::Global};
+        nuraft::raft_server::commit_in_bg();
     }
 
     using nuraft::raft_server::raft_server;
@@ -234,7 +260,7 @@ void KeeperServer::forceRecovery()
     raft_instance->update_params(params);
 }
 
-void KeeperServer::launchRaftServer(bool enable_ipv6)
+void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     nuraft::raft_params params;
     params.heart_beat_interval_
@@ -286,10 +312,26 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
-    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
 
-    if (!asio_listener)
-        return;
+    // we use the same config as for the CH replicas because it is for internal communication between Keeper instances
+    std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
+
+    if (listen_hosts.empty())
+    {
+        auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
+        if (!asio_listener)
+            return;
+        asio_listeners.emplace_back(std::move(asio_listener));
+    }
+    else
+    {
+        for (const auto & listen_host : listen_hosts)
+        {
+            auto asio_listener = asio_service->create_rpc_listener(listen_host, state_manager->getPort(), logger);
+            if (asio_listener)
+                asio_listeners.emplace_back(std::move(asio_listener));
+        }
+    }
 
     nuraft::ptr<nuraft::delayed_task_scheduler> scheduler = asio_service;
     nuraft::ptr<nuraft::rpc_client_factory> rpc_cli_factory = asio_service;
@@ -299,17 +341,21 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx
-        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listener, logger, rpc_cli_factory, scheduler, params);
+        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
+
+    if (!raft_instance)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
     nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
-    asio_listener->listen(casted_raft_server);
 
-    if (!raft_instance)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+    for (const auto & asio_listener : asio_listeners)
+    {
+        asio_listener->listen(casted_raft_server);
+    }
 }
 
 void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
@@ -324,6 +370,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     {
         auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
 
+        size_t preprocessed = 0;
         LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
         auto idx = state_machine->last_commit_index() + 1;
         for (const auto & entry : *log_entries)
@@ -332,14 +379,21 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
                 state_machine->pre_commit(idx, entry->get_buf());
 
             ++idx;
+            ++preprocessed;
+
+            if (preprocessed % 50000 == 0)
+                LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
         }
+        LOG_INFO(log, "Preprocessing done");
     }
 
     loadLatestConfig();
 
     last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
 
-    launchRaftServer(enable_ipv6);
+    launchRaftServer(config, enable_ipv6);
+
+    keeper_context->server_state = KeeperContext::Phase::RUNNING;
 }
 
 void KeeperServer::shutdownRaftServer()
@@ -353,12 +407,21 @@ void KeeperServer::shutdownRaftServer()
     }
 
     raft_instance->shutdown();
+
+    keeper_context->server_state = KeeperContext::Phase::SHUTDOWN;
+
+    if (create_snapshot_on_exit)
+        raft_instance->create_snapshot();
+
     raft_instance.reset();
 
-    if (asio_listener)
+    for (const auto & asio_listener : asio_listeners)
     {
-        asio_listener->stop();
-        asio_listener->shutdown();
+        if (asio_listener)
+        {
+            asio_listener->stop();
+            asio_listener->shutdown();
+        }
     }
 
     if (asio_service)
@@ -379,9 +442,9 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_machine->shutdownStorage();
     state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_machine->shutdownStorage();
 }
 
 namespace
@@ -444,13 +507,11 @@ bool KeeperServer::isLeader() const
     return raft_instance->is_leader();
 }
 
-
 bool KeeperServer::isObserver() const
 {
     auto srv_config = state_manager->get_srv_config();
     return srv_config->is_learner();
 }
-
 
 bool KeeperServer::isFollower() const
 {
@@ -556,9 +617,24 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf);
                 request_for_session.zxid = next_zxid;
-                state_machine->preprocess(request_for_session);
+                if (!state_machine->preprocess(request_for_session))
+                    return nuraft::cb_func::ReturnCode::ReturnNull;
+
                 request_for_session.digest = state_machine->getNodesDigest();
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
+                break;
+            }
+            case nuraft::cb_func::AppendLogFailed:
+            {
+                // we are relying on the fact that request are being processed under a mutex
+                // and not a RW lock
+                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+
+                assert(entry->get_val_type() == nuraft::app_log);
+
+                auto & entry_buf = entry->get_buf();
+                auto request_for_session = state_machine->parseRequest(entry_buf);
+                state_machine->rollbackRequest(request_for_session, true);
                 break;
             }
             default:
@@ -576,7 +652,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
     auto set_initialized = [this]()
     {
-        std::unique_lock lock(initialized_mutex);
+        std::lock_guard lock(initialized_mutex);
         initialized_flag = true;
         initialized_cv.notify_all();
     };
@@ -804,6 +880,27 @@ bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
     else
         LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
     return true;
+}
+
+Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
+{
+    Keeper4LWInfo result;
+    result.is_leader = raft_instance->is_leader();
+
+    auto srv_config = state_manager->get_srv_config();
+    result.is_observer = srv_config->is_learner();
+
+    result.is_follower = !result.is_leader && !result.is_observer;
+    result.has_leader = result.is_leader || isLeaderAlive();
+    result.is_standalone = !result.is_follower && getFollowerCount() == 0;
+    if (result.is_leader)
+    {
+        result.follower_count = getFollowerCount();
+        result.synced_follower_count = getSyncedFollowerCount();
+    }
+    result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
+    result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
+    return result;
 }
 
 }
