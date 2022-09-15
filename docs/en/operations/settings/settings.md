@@ -3698,7 +3698,7 @@ Enabled by default.
 
 Allow parsing numbers as strings in JSON input formats.
 
-Enabled by default.
+Disabled by default.
 
 ### output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
 
