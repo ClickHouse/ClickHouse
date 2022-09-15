@@ -1007,16 +1007,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-
-        if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
+        if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
-            if (!getContext()->getClientInfo().is_replicated_database_internal)
-            {
-                auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
-                create.setDatabase(database_name);
-                guard->releaseTableLock();
-                return replicated->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
-            }
+            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
+            create.setDatabase(database_name);
+            guard->releaseTableLock();
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
         }
 
         if (!create.cluster.empty())
@@ -1150,16 +1146,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
+    if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        if (!getContext()->getClientInfo().is_replicated_database_internal)
-        {
-            chassert(!ddl_guard);
-            auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
-            assertOrSetUUID(create, database);
-            guard->releaseTableLock();
-            return replicated->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
-        }
+        chassert(!ddl_guard);
+        auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+        assertOrSetUUID(create, database);
+        guard->releaseTableLock();
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
     }
 
     if (!create.cluster.empty())

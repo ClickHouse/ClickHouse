@@ -107,7 +107,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && !getContext()->getClientInfo().is_replicated_database_internal)
+        if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (1 < descriptions.size())
                 throw Exception(

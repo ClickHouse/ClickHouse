@@ -333,6 +333,8 @@ public:
 
     virtual bool hasReplicationThread() const { return false; }
 
+    virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
+
     virtual void stopReplication()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
