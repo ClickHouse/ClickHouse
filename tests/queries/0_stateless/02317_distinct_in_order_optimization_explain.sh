@@ -58,14 +58,14 @@ $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b,
 
 echo "-- Check reading in order for distinct"
 echo "-- disabled, distinct columns match sorting key"
-$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+$CLICKHOUSE_CLIENT --max_threads=0 -nq "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 echo "-- enabled, distinct columns match sorting key"
 # read_in_order_two_level_merge_threshold is set here to avoid repeating MergeTreeInOrder in output
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns form prefix of sorting key"
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns DON't form prefix of sorting key"
-$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+$CLICKHOUSE_CLIENT --max_threads=0 -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 echo "-- enabled, distinct columns contains constant columns, non-const columns form prefix of sorting key"
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key"
@@ -74,4 +74,4 @@ $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -nq "$ENABLE_OPTI
 echo "-- check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain where a > 0" | eval $FIND_SORTING_PROPERTIES
 
-# $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
+$CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
