@@ -1,13 +1,21 @@
 #include <Coordination/KeeperDispatcher.h>
+#include <IO/S3Common.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <future>
 #include <chrono>
 #include <Poco/Path.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/hex.h>
 #include <filesystem>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
+#include "Core/UUID.h"
+#include "IO/S3/PocoHTTPClient.h"
+#include <aws/core/auth/AWSCredentials.h>
+#include <IO/WriteBufferFromS3.h>
+#include <IO/copyData.h>
+#include <aws/s3/S3Client.h>
 
 namespace CurrentMetrics
 {
@@ -197,7 +205,7 @@ void KeeperDispatcher::snapshotThread()
             if (snapshot_path.empty())
                 continue;
 
-            if (isLeader())
+            if (isLeader() && getBackupS3Client() != nullptr)
             {
                 if (!snapshots_backup_queue.push(snapshot_path))
                     LOG_WARNING(log, "Failed to add snapshot {} to backup queue", snapshot_path);
@@ -210,9 +218,98 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
+struct KeeperDispatcher::S3Configuration
+{
+    S3Configuration(S3::URI uri_, S3::AuthSettings auth_settings_, std::shared_ptr<const Aws::S3::S3Client> client_)
+        : uri(std::move(uri_))
+        , auth_settings(std::move(auth_settings_))
+        , client(std::move(client_))
+    {}
+
+    S3::URI uri;
+    S3::AuthSettings auth_settings;
+    std::shared_ptr<const Aws::S3::S3Client> client;
+};
+
+void KeeperDispatcher::updateS3Configuration(const Poco::Util::AbstractConfiguration & config)
+{
+    try
+    {
+        const std::string config_prefix = "keeper_server.s3_backup";
+
+        if (!config.has(config_prefix))
+        {
+            std::lock_guard client_lock{backup_s3_client_mutex};
+            if (backup_s3_client)
+                LOG_INFO(log, "S3 backup configuration was removed");
+            backup_s3_client = nullptr;
+            return;
+        }
+
+        auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
+
+        auto endpoint = config.getString(config_prefix + ".endpoint");
+
+        std::unique_lock client_lock{backup_s3_client_mutex};
+
+        if (backup_s3_client && backup_s3_client->client && auth_settings == backup_s3_client->auth_settings && backup_s3_client->uri.endpoint == endpoint)
+            return;
+
+        LOG_INFO(log, "S3 backup configuration was updated");
+
+        client_lock.unlock();
+
+        auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
+        HeaderCollection headers = auth_settings.headers;
+
+        static constexpr size_t s3_max_redirects = 10;
+        static constexpr bool enable_s3_requests_logging = false;
+
+        auto new_uri = S3::URI{Poco::URI(endpoint)};
+
+        if (!new_uri.key.empty())
+        {
+            LOG_ERROR(log, "Invalid endpoint defined for S3 backup, it shouldn't contain key, endpoint: {}", endpoint);
+            return;
+        }
+
+        S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+            auth_settings.region,
+            RemoteHostFilter(), s3_max_redirects,
+            enable_s3_requests_logging,
+            /* for_disk_s3 = */ false);
+
+        client_configuration.endpointOverride = new_uri.endpoint;
+
+        auto client = S3::ClientFactory::instance().create(
+            client_configuration,
+            new_uri.is_virtual_hosted_style,
+            credentials.GetAWSAccessKeyId(),
+            credentials.GetAWSSecretKey(),
+            auth_settings.server_side_encryption_customer_key_base64,
+            std::move(headers),
+            auth_settings.use_environment_credentials.value_or(false),
+            auth_settings.use_insecure_imds_request.value_or(false));
+
+        auto new_client = std::make_shared<KeeperDispatcher::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));
+
+        client_lock.lock();
+        backup_s3_client = std::move(new_client);
+        client_lock.unlock();
+        LOG_INFO(log, "S3 backup client was updated");
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to create an S3 client for backup");
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 void KeeperDispatcher::snapshotBackupThread()
 {
     setThreadName("KeeperBSnpT");
+
+    UUID uuid = UUIDHelpers::generateV4();
     while (!shutdown_called)
     {
         std::string snapshot_path;
@@ -224,8 +321,36 @@ void KeeperDispatcher::snapshotBackupThread()
 
         try
         {
+            auto backup_client = getBackupS3Client();
+            if (backup_client == nullptr)
+                continue;
+
             LOG_INFO(log, "Will try to backup snapshot on {}", snapshot_path);
             ReadBufferFromFile snapshot_file(snapshot_path);
+
+            S3Settings::ReadWriteSettings read_write_settings;
+            read_write_settings.upload_part_size_multiply_parts_count_threshold = 10000;
+
+            auto snapshot_name = fs::path(snapshot_path).filename();
+            LOG_DEBUG(log, "Trying to create a lock file");
+            WriteBufferFromS3 lock_writer
+            {
+                backup_client->client,
+                backup_client->uri.bucket,
+                fmt::format(".{}_LOCK", snapshot_path),
+                read_write_settings
+            };
+
+            WriteBufferFromS3 s3_writer
+            {
+                backup_client->client,
+                backup_client->uri.bucket,
+                fs::path(snapshot_path).filename(),
+                read_write_settings
+            };
+            copyData(snapshot_file, s3_writer);
+
+            s3_writer.finalize();
         }
         catch (...)
         {
@@ -579,6 +704,12 @@ void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, Keep
     requests_for_sessions.clear();
 }
 
+std::shared_ptr<KeeperDispatcher::S3Configuration> KeeperDispatcher::getBackupS3Client() const
+{
+    std::lock_guard lock{backup_s3_client_mutex};
+    return backup_s3_client;
+}
+
 int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 {
     /// New session id allocation is a special request, because we cannot process it in normal
@@ -718,6 +849,8 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
         if (!push_result)
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
     }
+
+    updateS3Configuration(config);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

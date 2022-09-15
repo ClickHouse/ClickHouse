@@ -8,7 +8,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
-#include <Storages/StorageS3Settings.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
@@ -23,6 +22,17 @@ class StandardHttpResponse;
 
 namespace DB
 {
+
+struct HttpHeader
+{
+    String name;
+    String value;
+
+    inline bool operator==(const HttpHeader & other) const { return name == other.name && value == other.value; }
+};
+
+using HeaderCollection = std::vector<HttpHeader>;
+
 class Context;
 }
 
