@@ -260,10 +260,12 @@ void KeeperDispatcher::updateS3Configuration(const Poco::Util::AbstractConfigura
         auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
 
         auto endpoint = config.getString(config_prefix + ".endpoint");
+        auto new_uri = S3::URI{Poco::URI(endpoint)};
 
         std::unique_lock client_lock{snapshot_s3_client_mutex};
 
-        if (snapshot_s3_client && snapshot_s3_client->client && auth_settings == snapshot_s3_client->auth_settings && snapshot_s3_client->uri.endpoint == endpoint)
+        if (snapshot_s3_client && snapshot_s3_client->client && auth_settings == snapshot_s3_client->auth_settings
+            && snapshot_s3_client->uri.uri == new_uri.uri)
             return;
 
         LOG_INFO(log, "S3 configuration was updated");
@@ -275,8 +277,6 @@ void KeeperDispatcher::updateS3Configuration(const Poco::Util::AbstractConfigura
 
         static constexpr size_t s3_max_redirects = 10;
         static constexpr bool enable_s3_requests_logging = false;
-
-        auto new_uri = S3::URI{Poco::URI(endpoint)};
 
         if (!new_uri.key.empty())
         {
