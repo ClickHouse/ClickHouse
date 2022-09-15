@@ -11,7 +11,7 @@ sidebar_label: s3Cluster
 **Синтаксис**
 
 ``` sql
-s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [,access_key_id, secret_access_key] [,format] [,structure])
 ```
 
 **Аргументы**
