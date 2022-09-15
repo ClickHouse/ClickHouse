@@ -1008,16 +1008,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
-        if (database->getEngineName() == "Replicated")
+        if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
         {
-            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
-
-            if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
-                ptr && !getContext()->getClientInfo().is_replicated_database_internal)
+            if (!getContext()->getClientInfo().is_replicated_database_internal)
             {
+                auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
                 create.setDatabase(database_name);
                 guard->releaseTableLock();
-                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+                return replicated->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
             }
         }
 
@@ -1152,17 +1150,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    if (need_add_to_database && database->getEngineName() == "Replicated")
+    if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
     {
-        chassert(!ddl_guard);
-        auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
-
-        if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
-            ptr && !getContext()->getClientInfo().is_replicated_database_internal)
+        if (!getContext()->getClientInfo().is_replicated_database_internal)
         {
+            chassert(!ddl_guard);
+            auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+            return replicated->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
         }
     }
 
