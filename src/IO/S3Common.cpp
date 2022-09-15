@@ -1,16 +1,15 @@
-#include <Common/config.h>
+#include <IO/S3Common.h>
 
+#include <Common/config.h>
+#include <Common/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #if USE_AWS_S3
-
-#    include <IO/S3Common.h>
 
 #    include <Common/quoteString.h>
 
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
-
 
 #    include <aws/core/Version.h>
 #    include <aws/core/auth/AWSCredentialsProvider.h>
@@ -851,7 +850,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-AuthSettings AuthSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
+AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     auto access_key_id = config.getString(config_elem + ".access_key_id", "");
     auto secret_access_key = config.getString(config_elem + ".secret_access_key", "");
@@ -869,13 +868,13 @@ AuthSettings AuthSettings::loadFromConfig(const String & config_elem, const Poco
     HeaderCollection headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
-    for (const String & subkey : subconfig_keys)
+    for (const std::string & subkey : subconfig_keys)
     {
         if (subkey.starts_with("header"))
         {
             auto header_str = config.getString(config_elem + "." + subkey);
             auto delimiter = header_str.find(':');
-            if (delimiter == String::npos)
+            if (delimiter == std::string::npos)
                 throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
             headers.emplace_back(HttpHeader{header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos)});
         }

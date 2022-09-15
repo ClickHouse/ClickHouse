@@ -1,4 +1,5 @@
 #include <Coordination/KeeperDispatcher.h>
+
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -8,14 +9,15 @@
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
 
+#if USE_AWS_S3
 #include <Core/UUID.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/S3/PocoHTTPClient.h>
-#include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadHelpers.h>
+#include <IO/S3/PocoHTTPClient.h>
+#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -23,6 +25,7 @@
 #include <aws/s3/S3Errors.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
+#endif
 
 #include <future>
 #include <chrono>
@@ -49,7 +52,9 @@ namespace ErrorCodes
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
+#if USE_AWS_S3
     , snapshots_s3_queue(std::numeric_limits<size_t>::max())
+#endif
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
@@ -211,8 +216,9 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
+            [[maybe_unused]] auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
 
+#if USE_AWS_S3
             if (snapshot_path.empty())
                 continue;
 
@@ -221,6 +227,7 @@ void KeeperDispatcher::snapshotThread()
                 if (!snapshots_s3_queue.push(snapshot_path))
                     LOG_WARNING(log, "Failed to add snapshot {} to S3 queue", snapshot_path);
             }
+#endif
         }
         catch (...)
         {
@@ -229,6 +236,7 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
+#if USE_AWS_S3
 struct KeeperDispatcher::S3Configuration
 {
     S3Configuration(S3::URI uri_, S3::AuthSettings auth_settings_, std::shared_ptr<const Aws::S3::S3Client> client_)
@@ -442,6 +450,7 @@ void KeeperDispatcher::snapshotS3Thread()
         }
     }
 }
+#endif
 
 void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
@@ -527,7 +536,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
+#if USE_AWS_S3
     snapshot_s3_thread = ThreadFromGlobalPool([this] { snapshotS3Thread(); });
+#endif
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
 
@@ -593,9 +604,11 @@ void KeeperDispatcher::shutdown()
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
 
+#if USE_AWS_S3
             snapshots_s3_queue.finish();
             if (snapshot_s3_thread.joinable())
                 snapshot_s3_thread.join();
+#endif
 
             update_configuration_queue.finish();
             if (update_configuration_thread.joinable())
@@ -787,11 +800,13 @@ void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, Keep
     requests_for_sessions.clear();
 }
 
+#if USE_AWS_S3
 std::shared_ptr<KeeperDispatcher::S3Configuration> KeeperDispatcher::getSnapshotS3Client() const
 {
     std::lock_guard lock{snapshot_s3_client_mutex};
     return snapshot_s3_client;
 }
+#endif
 
 int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 {
@@ -933,7 +948,9 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
     }
 
+#if USE_AWS_S3
     updateS3Configuration(config);
+#endif
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

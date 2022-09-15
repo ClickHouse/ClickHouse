@@ -2,6 +2,9 @@
 
 #include <Common/config.h>
 
+#include <string>
+#include <vector>
+
 #if USE_AWS_S3
 
 #include <Common/RemoteHostFilter.h>
@@ -21,8 +24,8 @@ namespace DB
 
 struct HttpHeader
 {
-    String name;
-    String value;
+    std::string name;
+    std::string value;
 
     inline bool operator==(const HttpHeader & other) const { return name == other.name && value == other.value; }
 };
