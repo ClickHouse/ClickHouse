@@ -128,6 +128,23 @@ S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr
 
 size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
 
+struct AuthSettings
+{
+    static AuthSettings loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+    String access_key_id;
+    String secret_access_key;
+    String region;
+    String server_side_encryption_customer_key_base64;
+
+    HeaderCollection headers;
+
+    std::optional<bool> use_environment_credentials;
+    std::optional<bool> use_insecure_imds_request;
+
+    bool operator==(const AuthSettings & other) const = default;
+};
+
 }
 
 #endif

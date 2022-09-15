@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include "base/defines.h"
 #include "config_core.h"
 
 #if USE_NURAFT
@@ -82,6 +83,10 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
+    struct S3Configuration;
+    mutable std::mutex backup_s3_client_mutex;
+    std::shared_ptr<S3Configuration> backup_s3_client;
+
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -104,6 +109,8 @@ private:
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
+
+    std::shared_ptr<S3Configuration> getBackupS3Client() const;
 
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`
@@ -130,6 +137,7 @@ public:
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateS3Configuration(const Poco::Util::AbstractConfiguration & config);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
