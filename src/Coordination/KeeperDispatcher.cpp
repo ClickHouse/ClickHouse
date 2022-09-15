@@ -1,21 +1,32 @@
 #include <Coordination/KeeperDispatcher.h>
-#include <IO/S3Common.h>
-#include <Common/setThreadName.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <future>
-#include <chrono>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
 #include <Common/hex.h>
-#include <filesystem>
+#include <Common/setThreadName.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
-#include "Core/UUID.h"
-#include "IO/S3/PocoHTTPClient.h"
-#include <aws/core/auth/AWSCredentials.h>
+
+#include <Core/UUID.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/S3/PocoHTTPClient.h>
+#include <IO/WriteHelpers.h>
+#include <IO/S3Common.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/ReadBufferFromS3.h>
 #include <IO/copyData.h>
+
+#include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
+#include <aws/s3/S3Errors.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
+
+#include <future>
+#include <chrono>
+#include <filesystem>
 
 namespace CurrentMetrics
 {
@@ -38,7 +49,7 @@ namespace ErrorCodes
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
-    , snapshots_backup_queue(std::numeric_limits<size_t>::max())
+    , snapshots_s3_queue(std::numeric_limits<size_t>::max())
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
@@ -205,10 +216,10 @@ void KeeperDispatcher::snapshotThread()
             if (snapshot_path.empty())
                 continue;
 
-            if (isLeader() && getBackupS3Client() != nullptr)
+            if (isLeader() && getSnapshotS3Client() != nullptr)
             {
-                if (!snapshots_backup_queue.push(snapshot_path))
-                    LOG_WARNING(log, "Failed to add snapshot {} to backup queue", snapshot_path);
+                if (!snapshots_s3_queue.push(snapshot_path))
+                    LOG_WARNING(log, "Failed to add snapshot {} to S3 queue", snapshot_path);
             }
         }
         catch (...)
@@ -235,14 +246,14 @@ void KeeperDispatcher::updateS3Configuration(const Poco::Util::AbstractConfigura
 {
     try
     {
-        const std::string config_prefix = "keeper_server.s3_backup";
+        const std::string config_prefix = "keeper_server.s3_snapshot";
 
         if (!config.has(config_prefix))
         {
-            std::lock_guard client_lock{backup_s3_client_mutex};
-            if (backup_s3_client)
-                LOG_INFO(log, "S3 backup configuration was removed");
-            backup_s3_client = nullptr;
+            std::lock_guard client_lock{snapshot_s3_client_mutex};
+            if (snapshot_s3_client)
+                LOG_INFO(log, "S3 configuration was removed");
+            snapshot_s3_client = nullptr;
             return;
         }
 
@@ -250,12 +261,12 @@ void KeeperDispatcher::updateS3Configuration(const Poco::Util::AbstractConfigura
 
         auto endpoint = config.getString(config_prefix + ".endpoint");
 
-        std::unique_lock client_lock{backup_s3_client_mutex};
+        std::unique_lock client_lock{snapshot_s3_client_mutex};
 
-        if (backup_s3_client && backup_s3_client->client && auth_settings == backup_s3_client->auth_settings && backup_s3_client->uri.endpoint == endpoint)
+        if (snapshot_s3_client && snapshot_s3_client->client && auth_settings == snapshot_s3_client->auth_settings && snapshot_s3_client->uri.endpoint == endpoint)
             return;
 
-        LOG_INFO(log, "S3 backup configuration was updated");
+        LOG_INFO(log, "S3 configuration was updated");
 
         client_lock.unlock();
 
@@ -269,7 +280,7 @@ void KeeperDispatcher::updateS3Configuration(const Poco::Util::AbstractConfigura
 
         if (!new_uri.key.empty())
         {
-            LOG_ERROR(log, "Invalid endpoint defined for S3 backup, it shouldn't contain key, endpoint: {}", endpoint);
+            LOG_ERROR(log, "Invalid endpoint defined for S3, it shouldn't contain key, endpoint: {}", endpoint);
             return;
         }
 
@@ -294,26 +305,26 @@ void KeeperDispatcher::updateS3Configuration(const Poco::Util::AbstractConfigura
         auto new_client = std::make_shared<KeeperDispatcher::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));
 
         client_lock.lock();
-        backup_s3_client = std::move(new_client);
+        snapshot_s3_client = std::move(new_client);
         client_lock.unlock();
-        LOG_INFO(log, "S3 backup client was updated");
+        LOG_INFO(log, "S3 client was updated");
     }
     catch (...)
     {
-        LOG_ERROR(log, "Failed to create an S3 client for backup");
+        LOG_ERROR(log, "Failed to create an S3 client for snapshots");
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
-void KeeperDispatcher::snapshotBackupThread()
+void KeeperDispatcher::snapshotS3Thread()
 {
-    setThreadName("KeeperBSnpT");
+    setThreadName("KeeperS3SnpT");
 
-    UUID uuid = UUIDHelpers::generateV4();
+    auto uuid = UUIDHelpers::generateV4();
     while (!shutdown_called)
     {
         std::string snapshot_path;
-        if (!snapshots_backup_queue.pop(snapshot_path))
+        if (!snapshots_s3_queue.pop(snapshot_path))
             break;
 
         if (shutdown_called)
@@ -321,40 +332,112 @@ void KeeperDispatcher::snapshotBackupThread()
 
         try
         {
-            auto backup_client = getBackupS3Client();
-            if (backup_client == nullptr)
+            auto s3_client = getSnapshotS3Client();
+            if (s3_client == nullptr)
                 continue;
 
-            LOG_INFO(log, "Will try to backup snapshot on {}", snapshot_path);
+            LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
             ReadBufferFromFile snapshot_file(snapshot_path);
 
             S3Settings::ReadWriteSettings read_write_settings;
             read_write_settings.upload_part_size_multiply_parts_count_threshold = 10000;
 
-            auto snapshot_name = fs::path(snapshot_path).filename();
+            const auto create_writer = [&](const auto & key)
+            {
+                return WriteBufferFromS3
+                {
+                    s3_client->client,
+                    s3_client->uri.bucket,
+                    key,
+                    read_write_settings
+                };
+            };
+
+            auto snapshot_name = fs::path(snapshot_path).filename().string();
+            auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
+
+            const auto file_exists = [&](const auto & key)
+            {
+                Aws::S3::Model::HeadObjectRequest request;
+                request.SetBucket(s3_client->uri.bucket);
+                request.SetKey(key);
+                auto outcome = s3_client->client->HeadObject(request);
+
+                if (outcome.IsSuccess())
+                    return true;
+
+                const auto & error = outcome.GetError();
+                if (error.GetErrorType() != Aws::S3::S3Errors::NO_SUCH_KEY && error.GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
+                    throw S3Exception(error.GetErrorType(), "Failed to verify existence of lock file: {}", error.GetMessage());
+
+                return false;
+            };
+
+            if (file_exists(snapshot_name))
+            {
+                LOG_ERROR(log, "Snapshot {} already exists", snapshot_name);
+                continue;
+            }
+
+            // First we need to verify that there isn't already a lock file for the snapshot we want to upload
+            if (file_exists(lock_file))
+            {
+                LOG_ERROR(log, "Lock file for {} already, exists. Probably a different node is already uploading the snapshot", snapshot_name);
+                continue;
+            }
+
+            // We write our UUID to lock file
             LOG_DEBUG(log, "Trying to create a lock file");
-            WriteBufferFromS3 lock_writer
+            WriteBufferFromS3 lock_writer = create_writer(lock_file);
+            writeUUIDText(uuid, lock_writer);
+            lock_writer.finalize();
+
+            const auto read_lock_file = [&]() -> std::string
             {
-                backup_client->client,
-                backup_client->uri.bucket,
-                fmt::format(".{}_LOCK", snapshot_path),
-                read_write_settings
+                ReadBufferFromS3 lock_reader
+                {
+                    s3_client->client,
+                    s3_client->uri.bucket,
+                    lock_file,
+                    "",
+                    1,
+                    {}
+                };
+
+                std::string read_uuid;
+                readStringUntilEOF(read_uuid, lock_reader);
+
+                return read_uuid;
             };
 
-            WriteBufferFromS3 s3_writer
-            {
-                backup_client->client,
-                backup_client->uri.bucket,
-                fs::path(snapshot_path).filename(),
-                read_write_settings
-            };
-            copyData(snapshot_file, s3_writer);
+            // We read back the written UUID, if it's the same we can upload the file
+            auto read_uuid = read_lock_file();
 
-            s3_writer.finalize();
+            if (read_uuid != toString(uuid))
+            {
+                LOG_ERROR(log, "Failed to create a lock file");
+                continue;
+            }
+
+            WriteBufferFromS3 snapshot_writer = create_writer(snapshot_name);
+            copyData(snapshot_file, snapshot_writer);
+            snapshot_writer.finalize();
+
+            LOG_INFO(log, "Successfully uploaded {} to S3", snapshot_path);
+
+            LOG_INFO(log, "Removing lock file");
+            Aws::S3::Model::DeleteObjectRequest delete_request;
+            delete_request.SetBucket(s3_client->uri.bucket);
+            delete_request.SetKey(lock_file);
+            auto delete_outcome = s3_client->client->DeleteObject(delete_request);
+
+            if (!delete_outcome.IsSuccess())
+                throw S3Exception(delete_outcome.GetError().GetMessage(), delete_outcome.GetError().GetErrorType());
+
         }
         catch (...)
         {
-            LOG_INFO(log, "Failed to backup {}", snapshot_path);
+            LOG_INFO(log, "Failure during upload of {} to S3", snapshot_path);
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
@@ -444,7 +527,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
-    snapshot_backup_thread = ThreadFromGlobalPool([this] { snapshotBackupThread(); });
+    snapshot_s3_thread = ThreadFromGlobalPool([this] { snapshotS3Thread(); });
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
 
@@ -510,9 +593,9 @@ void KeeperDispatcher::shutdown()
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
 
-            snapshots_backup_queue.finish();
-            if (snapshot_backup_thread.joinable())
-                snapshot_backup_thread.join();
+            snapshots_s3_queue.finish();
+            if (snapshot_s3_thread.joinable())
+                snapshot_s3_thread.join();
 
             update_configuration_queue.finish();
             if (update_configuration_thread.joinable())
@@ -704,10 +787,10 @@ void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, Keep
     requests_for_sessions.clear();
 }
 
-std::shared_ptr<KeeperDispatcher::S3Configuration> KeeperDispatcher::getBackupS3Client() const
+std::shared_ptr<KeeperDispatcher::S3Configuration> KeeperDispatcher::getSnapshotS3Client() const
 {
-    std::lock_guard lock{backup_s3_client_mutex};
-    return backup_s3_client;
+    std::lock_guard lock{snapshot_s3_client_mutex};
+    return snapshot_s3_client;
 }
 
 int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
