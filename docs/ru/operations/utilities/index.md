@@ -1,7 +1,7 @@
 ---
-slug: /ru/operations/utilities/
-sidebar_label: "Утилиты"
-sidebar_position: 56
+toc_folder_title: "Утилиты"
+toc_priority: 56
+toc_title: "Обзор"
 ---
 
 # Утилиты ClickHouse {#utility-clickhouse}

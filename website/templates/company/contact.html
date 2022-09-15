@@ -1,0 +1,53 @@
+<div id="contact" class="section bg-light-orange pb-8 pb-lg-10 pt-8 pt-lg-10 mb-medium-5 mb-lg-10">
+    <div class="container">
+        
+        <h2 class="display-2 text-center mb-3 mb-lg-5">
+            {{ _('Contact Us') }}
+        </h2>
+
+        <div class="pb-5 pt-5 mb-5 position-relative">
+            <div class="bg-gradient-light-orange bg-offset-right"></div>
+
+            <form action="https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8" method="POST">
+
+                <input type=hidden name="oid" value="00D5f000000JueF">
+                <input type=hidden name="retURL" value="https://clickhouse.com/thank-you/">
+
+                <div class="mb-5 mx-auto" style="max-width:860px;">
+                    <div class="row">
+                        <div class="form-group col-md-6 mb-3">
+                            <input class="form-control" id="first_name" placeholder="First Name*" maxlength="40" name="first_name" size="20" type="text" required>
+                        </div>
+                        <div class="form-group col-md-6 mb-3">
+                            <input class="form-control" id="last_name" placeholder="Last Name*" maxlength="80" name="last_name" size="20" type="text" required>
+                        </div>
+                        <div class="form-group col-md-6 mb-3">
+                            <input class="form-control" id="email" placeholder="Email*" maxlength="80" name="email" size="20" type="text" required>
+                        </div>
+                        <div class="form-group col-md-6 mb-3">
+                            <input class="form-control" id="company" placeholder="Company" maxlength="40" name="company" size="20" type="text">
+                        </div>
+                        <div class="form-group col-md-6 mb-3 mb-md-0">
+                            <input class="form-control" id="00N5f000006YIf5" name="00N5f000006YIf5" placeholder="Country" maxlength="80" size="20" type="text">
+                        </div>
+                        <div class="form-group col-md-6">
+                            <textarea class="form-control" id="00N5f000000lOdD" placeholder="Tell us about your use case, other example..." name="00N5f000000lOdD" rows="1" type="text" wrap="soft" required></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-center">
+                    <input type="submit" name="submit" value="Submit" class="btn btn-lg btn-secondary">
+                </div>
+                
+            </form>
+
+        </div>
+        
+        <p class="text-center text-muted mx-auto w-75">
+            {{ _('If you have any more thoughts or questions, feel free to contact the ClickHouse team directly at') }}
+            <a class="text-blue text-decoration-underline" href="mailto:feedback@clickhouse.com">feedback@clickhouse.com</a>
+        </p>
+
+    </div>
+</div>

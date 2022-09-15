@@ -6,7 +6,7 @@
 
 #include <Poco/DOM/Document.h>
 #include "Poco/DOM/AutoPtr.h"
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #if USE_YAML_CPP
 

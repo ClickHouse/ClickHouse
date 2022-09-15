@@ -15,18 +15,13 @@ namespace ErrorCodes
 
 IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
 
-void MySQLSettings::loadFromQuery(const ASTSetQuery & settings_def)
-{
-    applyChanges(settings_def.changes);
-}
-
 void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            applyChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
         {
@@ -44,3 +39,4 @@ void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
 }
 
 }
+

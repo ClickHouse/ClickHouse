@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/tables
----
 # system.tables {#system-tables}
 
 Содержит метаданные каждой таблицы, о которой знает сервер.
@@ -15,13 +12,11 @@ slug: /ru/operations/system-tables/tables
 
 -   `name` ([String](../../sql-reference/data-types/string.md)) — имя таблицы.
 
--   `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Uuid таблицы (Atomic database).
-
 -   `engine` ([String](../../sql-reference/data-types/string.md)) — движок таблицы (без параметров).
 
 -   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, указывающий на то, временная это таблица или нет.
 
--   `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — пути к данным таблицы в файловых системах.
+-   `data_path` ([String](../../sql-reference/data-types/string.md)) — путь к данным таблицы в файловой системе.
 
 -   `metadata_path` ([String](../../sql-reference/data-types/string.md)) — путь к табличным метаданным в файловой системе.
 
@@ -65,14 +60,6 @@ slug: /ru/operations/system-tables/tables
 
 -   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, показывающий хранит ли таблица сама какие-то данные на диске или только обращается к какому-то другому источнику.
 
--   `loading_dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - базы данных необходимые для загрузки объекта.
-
--   `loading_dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - таблицы необходимые для загрузки объекта.
-
--   `loading_dependent_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - базы данных, которым объект необходим для загрузки.
-
--   `loading_dependent_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - таблицы, которым объект необходим для загрузки.
-
 Таблица `system.tables` используется при выполнении запроса `SHOW TABLES`.
 
 **Пример**
@@ -108,10 +95,6 @@ lifetime_rows:              ᴺᵁᴸᴸ
 lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
 has_own_data:               0
-loading_dependencies_database: []
-loading_dependencies_table:    []
-loading_dependent_database:    []
-loading_dependent_table:       []
 
 Row 2:
 ──────
@@ -139,8 +122,4 @@ lifetime_rows:              ᴺᵁᴸᴸ
 lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
 has_own_data:               0
-loading_dependencies_database: []
-loading_dependencies_table:    []
-loading_dependent_database:    []
-loading_dependent_table:       []
 ```

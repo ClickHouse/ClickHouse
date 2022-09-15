@@ -1,7 +1,6 @@
 ---
-slug: /zh/commercial/support
-sidebar_position: 3
-sidebar_label: 支持
+toc_priority: 3
+toc_title: 支持
 ---
 
 # ClickHouse 商业支持服务提供商 {#clickhouse-commercial-support-service-providers}

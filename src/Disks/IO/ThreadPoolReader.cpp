@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 #include <sys/syscall.h>
 #include <sys/uio.h>
@@ -96,7 +96,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
     /// Check if data is already in page cache with preadv2 syscall.
 
     /// We don't want to depend on new Linux kernel.
@@ -165,7 +165,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 {
                     ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                     promise.set_exception(std::make_exception_ptr(ErrnoException(
-                        fmt::format("Cannot read from file {}, {}", fd, errnoToString()),
+                        fmt::format("Cannot read from file {}, {}", fd,
+                            errnoToString(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)),
                         ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)));
                     return future;
                 }
@@ -200,9 +201,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    ThreadGroupStatusPtr running_group;
-    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
-        running_group = CurrentThread::get().getThreadGroup();
+    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+            ? CurrentThread::get().getThreadGroup()
+            : MainThreadStatus::getInstance().getThreadGroup();
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
@@ -212,16 +213,11 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     {
         ThreadStatus thread_status;
 
-        SCOPE_EXIT({
-            if (running_group)
-                thread_status.detachQuery();
-        });
+        if (query_context)
+            thread_status.attachQueryContext(query_context);
 
         if (running_group)
             thread_status.attachQuery(running_group);
-
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
 
         setThreadName("ThreadPoolRead");
 
@@ -256,6 +252,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+
+        if (running_group)
+            thread_status.detachQuery();
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     });

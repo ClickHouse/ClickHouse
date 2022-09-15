@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 

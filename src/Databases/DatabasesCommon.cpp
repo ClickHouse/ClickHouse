@@ -10,8 +10,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 
 
 namespace DB
@@ -25,7 +23,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
@@ -157,26 +154,6 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
 }
 
 
-void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
-{
-    query.as_database.clear();
-    query.as_table.clear();
-    query.if_not_exists = false;
-    query.is_populate = false;
-    query.is_create_empty = false;
-    query.replace_view = false;
-    query.replace_table = false;
-    query.create_or_replace = false;
-
-    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!query.isView())
-        query.select = nullptr;
-
-    query.format = nullptr;
-    query.out_file = nullptr;
-}
-
-
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
         : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
 {
@@ -219,11 +196,11 @@ bool DatabaseWithOwnTablesBase::empty() const
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
-    std::lock_guard lock(mutex);
-    return detachTableUnlocked(table_name);
+    std::unique_lock lock(mutex);
+    return detachTableUnlocked(table_name, lock);
 }
 
-StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
+StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &)
 {
     StoragePtr res;
 
@@ -246,11 +223,11 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
-    std::lock_guard lock(mutex);
-    attachTableUnlocked(table_name, table);
+    std::unique_lock lock(mutex);
+    attachTableUnlocked(table_name, table, lock);
 }
 
-void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
+void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> &)
 {
     auto table_id = table->getStorageID();
     if (table_id.database_name != database_name)
@@ -314,43 +291,13 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     }
 }
 
-StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name) const
+StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &) const
 {
     auto it = tables.find(table_name);
     if (it != tables.end())
         return it->second;
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
-}
-
-std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
-{
-    std::vector<std::pair<ASTPtr, StoragePtr>> res;
-
-    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
-    {
-        auto create_table_query = tryGetCreateTableQuery(it->name(), local_context);
-        if (!create_table_query)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for table {}.{}", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
-
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        if (create.getTable() != it->name())
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for table {}.{}", backQuoteIfNeed(create.getTable()), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
-
-        auto storage = it->table();
-        storage->adjustCreateQueryForBackup(create_table_query);
-        res.emplace_back(create_table_query, storage);
-    }
-
-    return res;
-}
-
-void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination>, UInt64)
-{
-    /// Creates a table by executing a "CREATE TABLE" query.
-    InterpreterCreateQuery interpreter{create_table_query, local_context};
-    interpreter.setInternal(true);
-    interpreter.execute();
 }
 
 }

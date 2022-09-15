@@ -7,7 +7,7 @@ import os
 import shutil
 from pathlib import Path
 
-import requests  # type: ignore
+import requests
 
 from compress_files import decompress_fast, compress_fast
 from env_helper import S3_DOWNLOAD, S3_BUILDS_BUCKET
@@ -82,7 +82,7 @@ def get_ccache_if_not_exists(
         for obj in objects:
             if ccache_name in obj:
                 logging.info("Found ccache on path %s", obj)
-                url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{obj}"
+                url = "https://s3.amazonaws.com/clickhouse-builds/" + obj
                 compressed_cache = os.path.join(temp_path, os.path.basename(obj))
                 dowload_file_with_progress(url, compressed_cache)
 
@@ -98,7 +98,6 @@ def get_ccache_if_not_exists(
                 decompress_fast(compressed_cache, path_to_decompress)
                 logging.info("Files on path %s", os.listdir(path_to_decompress))
                 cache_found = True
-                ccache_pr = pr_number
                 break
         if cache_found:
             break
@@ -109,8 +108,6 @@ def get_ccache_if_not_exists(
             logging.info("But at least we have some local cache")
     else:
         logging.info("ccache downloaded")
-
-    return ccache_pr
 
 
 def upload_ccache(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):

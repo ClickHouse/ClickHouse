@@ -7,16 +7,17 @@
 #include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentThread.h>
-#include <Common/config.h>
+
 #include <IO/SeekableReadBuffer.h>
 
 #include <future>
+#include <iostream>
 
 
 namespace ProfileEvents
 {
-    extern const Event ThreadpoolReaderTaskMicroseconds;
-    extern const Event ThreadpoolReaderReadBytes;
+    extern const Event RemoteFSReadMicroseconds;
+    extern const Event RemoteFSReadBytes;
 }
 
 namespace CurrentMetrics
@@ -26,7 +27,8 @@ namespace CurrentMetrics
 
 namespace DB
 {
-IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
+
+ReadBufferFromRemoteFSGather::ReadResult ThreadPoolRemoteFSReader::RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     return reader->readInto(data, size, offset, ignore);
 }
@@ -40,9 +42,9 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ThreadGroupStatusPtr running_group;
-    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
-        running_group = CurrentThread::get().getThreadGroup();
+    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+            ? CurrentThread::get().getThreadGroup()
+            : MainThreadStatus::getInstance().getThreadGroup();
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
@@ -52,18 +54,13 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     {
         ThreadStatus thread_status;
 
-        SCOPE_EXIT({
-            if (running_group)
-                thread_status.detachQuery();
-        });
+        /// Save query context if any, because cache implementation needs it.
+        if (query_context)
+            thread_status.attachQueryContext(query_context);
 
         /// To be able to pass ProfileEvents.
         if (running_group)
             thread_status.attachQuery(running_group);
-
-        /// Save query context if any, because cache implementation needs it.
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
 
         setThreadName("VFSRead");
 
@@ -71,15 +68,16 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
         Stopwatch watch(CLOCK_MONOTONIC);
-
-        Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
-
+        auto [bytes_read, offset] = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
         watch.stop();
 
-        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, result.offset ? result.size - result.offset : result.size);
+        ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
 
-        return Result{ .size = result.size, .offset = result.offset };
+        if (running_group)
+            thread_status.detachQuery();
+
+        return Result{ .size = bytes_read, .offset = offset };
     });
 
     auto future = task->get_future();
@@ -89,5 +87,4 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
     return future;
 }
-
 }
