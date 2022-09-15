@@ -134,6 +134,11 @@ public:
     bool isSettingNameAllowed(const std::string_view name) const;
     void checkSettingNameIsAllowed(const std::string_view name) const;
 
+    /// Allows implicit user creation without password (by default it's allowed).
+    /// In other words, allow 'CREATE USER' queries without 'IDENTIFIED WITH' clause.
+    void setImplicitNoPasswordAllowed(const bool allow_implicit_no_password_);
+    bool isImplicitNoPasswordAllowed() const;
+
     /// Allows users without password (by default it's allowed).
     void setNoPasswordAllowed(const bool allow_no_password_);
     bool isNoPasswordAllowed() const;
@@ -219,6 +224,7 @@ private:
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
+    std::atomic_bool allow_implicit_no_password = true;
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;
