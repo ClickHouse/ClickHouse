@@ -113,9 +113,33 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.getDatabase();
+    if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Atomic") {
+        throw Exception("Temporary database must have Atomic engine", ErrorCodes::INCORRECT_QUERY); ///Probably needs new error code
+    }
+    String temporary_database_name = "";
+    TemporaryDatabaseHolder temporary_database_holder(getContext(), "", "");
+    if (create.temporary) {
+        auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+       
+        //here should be check that thereis currently no temporary_db with this name
+        /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
+        if (DatabaseCatalog::instance().isDatabaseExist(database_name) || getContext()->resolveTemporaryDatabase(database_name) != database_name)
+        {
+            if (create.if_not_exists)
+                return {};
+            else
+                throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+        }
+        temporary_database_name = database_name;
+        auto id = UUIDHelpers::generateV4();
+        database_name = DatabaseCatalog::TEMPORARY_DATABASES_PREFIX + toString(id);
+        create.setDatabase(database_name);
+        temporary_database_holder = TemporaryDatabaseHolder(getContext(), temporary_database_name, database_name);
+        //create.uuid = UUIDHelpers::generateV4();
+    }
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-
+    
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (DatabaseCatalog::instance().isDatabaseExist(database_name))
     {
@@ -322,6 +346,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
 
         throw;
+    }
+    if (create.temporary) {
+        getContext()->addTemporaryDatabase(temporary_database_name, std::move(temporary_database_holder));
     }
 
     return {};
@@ -861,12 +888,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_materialized_view && create.to_table_id)
         return;
 
-    if (create.temporary)
+    if (create.temporary)   
     {
         if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables can only be created with ENGINE = Memory, not {}",
-                create.storage->engine->name);
-
+               create.storage->engine->name);
+        
         /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
         /// It makes sense when default_table_engine setting is used, but not for temporary tables.
         /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
@@ -999,7 +1026,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     String current_database = getContext()->getCurrentDatabase();
-    auto database_name = create.database ? create.getDatabase() : current_database;
+    auto database_name = getContext()->resolveDatabase(create.getDatabase());
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
@@ -1079,8 +1106,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                          create.getTable(), create.getTable(), create.getTable());
     }
 
-    if (!create.temporary && !create.database)
-        create.setDatabase(current_database);
+    if (!create.temporary)
+        create.setDatabase(database_name);
+    //to_table_if may be a problem
     if (create.to_table_id && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = current_database;
 

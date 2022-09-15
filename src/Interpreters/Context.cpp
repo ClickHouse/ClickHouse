@@ -553,9 +553,21 @@ const ReplicatedFetchList & Context::getReplicatedFetchList() const { return sha
 String Context::resolveDatabase(const String & database_name) const
 {
     String res = database_name.empty() ? getCurrentDatabase() : database_name;
+    res = resolveTemporaryDatabase(res);    
     if (res.empty())
         throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
     return res;
+}
+
+String Context::resolveTemporaryDatabase(const String & database_name) const
+{
+    auto session_context_ptr = session_context.lock();
+    //maybe not here
+        
+    if (session_context_ptr && session_context_ptr->temporary_databases_mapping.find(database_name) != session_context_ptr->temporary_databases_mapping.end())
+        return session_context_ptr->temporary_databases_mapping[database_name]->getGlobalDatabaseName();
+    else
+        return database_name;
 }
 
 String Context::getPath() const
@@ -968,6 +980,37 @@ const Block * Context::tryGetSpecialScalar(const String & name) const
         return nullptr;
     return &it->second;
 }
+TemporaryDatabasesNamesMapping Context::getTemporaryDatabases() const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
+    auto session_context_ptr = session_context.lock();
+    if (session_context_ptr.get() != this)
+    {
+        return session_context_ptr->getTemporaryDatabases();
+    } 
+    else 
+    {
+        auto lock = getLock();
+        TemporaryDatabasesNamesMapping res;
+        for (const auto & database : temporary_databases_mapping)
+            res[database.first] = database.second->getGlobalDatabaseName();
+        return res;
+    }
+}
+
+void Context::addTemporaryDatabase(const String & temp_database_name, TemporaryDatabaseHolder && db_holder) 
+{
+    getLock();
+    session_context.lock()->temporary_databases_mapping.emplace(temp_database_name, std::make_shared<TemporaryDatabaseHolder>(std::move(db_holder)));
+}
+void Context::removeTemporaryDatabase(const String & database_name) 
+{
+    getLock();
+    session_context.lock()->temporary_databases_mapping.erase(database_name);
+}
+
 
 Tables Context::getExternalTables() const
 {
@@ -994,7 +1037,6 @@ Tables Context::getExternalTables() const
     }
     return res;
 }
-
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
@@ -3091,6 +3133,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 
     if (!storage_id.database_name.empty())
     {
+        if (const auto session_context_ptr = session_context.lock())
+            storage_id.database_name = session_context_ptr->resolveTemporaryDatabase(storage_id.database_name);
         if (in_specified_database)
             return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
         if (exception)

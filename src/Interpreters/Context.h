@@ -162,11 +162,13 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+using TemporaryDatabasesNamesMapping = std::map<String, String>; //Change value, used for TemporayDatabaes
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
 using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 #endif
+
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -219,7 +221,8 @@ private:
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
-    Settings settings;  /// Setting for query execution.
+    String current_tmp_database;  ///For temp table without database
+    Settings settings;  /// Setting for query execution
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
@@ -234,6 +237,7 @@ private:
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
+    TemporaryDatabasesMapping  temporary_databases_mapping;
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
@@ -530,6 +534,7 @@ public:
     };
 
     String resolveDatabase(const String & database_name) const;
+    String resolveTemporaryDatabase(const String & database_name) const;
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
@@ -537,6 +542,11 @@ public:
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
+
+
+    TemporaryDatabasesNamesMapping getTemporaryDatabases() const;
+    void addTemporaryDatabase(const String & temp_database_name, TemporaryDatabaseHolder && db_holder);
+    void removeTemporaryDatabase(const String & table_name);
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;

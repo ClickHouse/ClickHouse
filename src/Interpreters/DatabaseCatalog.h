@@ -5,6 +5,7 @@
 #include <Interpreters/StorageID.h>
 #include <Databases/TablesLoader.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <boost/noncopyable.hpp>
@@ -81,6 +82,25 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
+struct TemporaryDatabaseHolder : boost::noncopyable, WithContext
+{
+    TemporaryDatabaseHolder(ContextPtr context_, String temp_name, String global_name);
+    TemporaryDatabaseHolder(TemporaryDatabaseHolder && rhs) noexcept;
+    TemporaryDatabaseHolder & operator=(TemporaryDatabaseHolder && rhs) noexcept;
+
+    ~TemporaryDatabaseHolder();
+
+    void executeToTableImpl(ContextPtr context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
+    String getTemporaryDatabaseName() const {return temporary_database_name;}
+    String getGlobalDatabaseName() const {return global_database_name;}
+    operator bool () const { return global_database_name != "";} /// NOLINT
+
+
+    String temporary_database_name;
+    String global_database_name;
+};
+
+using TemporaryDatabasesMapping = std::map<String, std::shared_ptr<TemporaryDatabaseHolder>>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -129,6 +149,7 @@ public:
     static constexpr const char * SYSTEM_DATABASE = "system";
     static constexpr const char * INFORMATION_SCHEMA = "information_schema";
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
+    static constexpr const char * TEMPORARY_DATABASES_PREFIX = "_temporary_databases_";
 
     /// Returns true if a passed string is one of the predefined databases' names
     static bool isPredefinedDatabaseName(const std::string_view & database_name);

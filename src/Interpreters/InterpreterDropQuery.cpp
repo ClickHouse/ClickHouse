@@ -289,14 +289,24 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 }
 
 
-BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
+BlockIO InterpreterDropQuery::executeToDatabase(ASTDropQuery & query)
 {
     DatabasePtr database;
     std::vector<UUID> tables_to_wait;
     BlockIO res;
     try
     {
-        res = executeToDatabaseImpl(query, database, tables_to_wait);
+        String db_name = getContext()->resolveTemporaryDatabase(query.getDatabase());
+        if (db_name == query.getDatabase())
+        {
+            res = executeToDatabaseImpl(query, database, tables_to_wait);
+        }
+        else
+        {
+            query.setDatabase(db_name);
+            res = executeToTemporaryDatabase(query);
+        }
+        
     }
     catch (...)
     {
@@ -316,9 +326,15 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     return res;
 }
 
+BlockIO InterpreterDropQuery::executeToTemporaryDatabase(const ASTDropQuery & query)
+{
+    getContext()->removeTemporaryDatabase(query.getDatabase());
+    return {};
+}
+
 BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait)
 {
-    const auto & database_name = query.getDatabase();
+    const auto & database_name = getContext()->resolveDatabase(query.getDatabase());
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     database = tryGetDatabase(database_name, query.if_exists);
@@ -388,7 +404,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     return {};
 }
-
 
 AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() const
 {

@@ -28,7 +28,7 @@ StorageID::StorageID(const ASTTableIdentifier & table_identifier_node)
 {
     DatabaseAndTableWithAlias database_table(table_identifier_node);
     database_name = database_table.database;
-    table_name = database_table.table;
+   table_name = database_table.table;
     uuid = database_table.uuid;
     assertNotEmpty();
 }
