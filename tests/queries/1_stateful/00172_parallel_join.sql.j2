@@ -1,5 +1,7 @@
 {% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge', 'grace_hash'] -%}
 
+SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}5K{% else %}0{% endif %}';
+
 SELECT '--- {{ join_algorithm }} ---';
 
 SET join_algorithm = '{{ join_algorithm }}';

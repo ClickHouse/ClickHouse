@@ -77,7 +77,7 @@ public:
     /// Must be called after all @joinBlock calls.
     std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor) override;
 
-    static bool isSupported(const std::shared_ptr<TableJoin> & table_join, bool for_auto = false);
+    static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
 private:
     /// Split block into multiple shards by hash.

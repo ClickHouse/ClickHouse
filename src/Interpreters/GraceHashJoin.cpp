@@ -323,7 +323,7 @@ GraceHashJoin::GraceHashJoin(
     , max_block_size{context->getSettingsRef().max_block_size}
     , first_bucket{makeInMemoryJoin()}
 {
-    if (!GraceHashJoin::isSupported(table_join, false))
+    if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
 
     initial_num_buckets = roundUpToPowerOfTwoOrZero(initial_num_buckets);
@@ -336,44 +336,10 @@ GraceHashJoin::GraceHashJoin(
     LOG_TRACE(log, "Initialize {} buckets", initial_num_buckets);
 }
 
-bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join, bool for_auto)
+bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-    if (!table_join->oneDisjunct())
-        return false;
-
-    switch (table_join->kind())
-    {
-        case JoinKind::Inner:
-        case JoinKind::Left:
-        case JoinKind::Right:
-        case JoinKind::Full:
-            break;
-        default:
-            return false;
-    }
-
-    switch (table_join->strictness())
-    {
-        case JoinStrictness::RightAny:
-        case JoinStrictness::All:
-        case JoinStrictness::Any:
-        case JoinStrictness::Semi:
-        case JoinStrictness::Anti:
-            break;
-        default:
-            return false;
-    }
-
-    if (for_auto)
-    {
-        const auto & kind = table_join->kind();
-        bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
-        bool is_right_or_full = isRight(kind) || isFull(kind);
-
-        return !is_right_or_full && !is_asof && !isCrossOrComma(kind) && table_join->oneDisjunct();
-    }
-
-    return true;
+    bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
+    return !is_asof && isInnerOrLeft(table_join->kind()) && table_join->oneDisjunct();
 }
 
 GraceHashJoin::~GraceHashJoin() = default;
@@ -426,8 +392,8 @@ GraceHashJoin::BucketsSnapshot GraceHashJoin::rehash(size_t desired_size)
 
     if (next_size > max_num_buckets)
     {
-        throw Exception(
-            ErrorCodes::LIMIT_EXCEEDED, "Too many grace hash join buckets, consider increasing max_rows_in_join/max_bytes_in_join");
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+            "Too many grace hash join buckets, consider increasing grace_hash_join_max_buckets or max_rows_in_join/max_bytes_in_join");
     }
 
     next_snapshot->reserve(next_size);
