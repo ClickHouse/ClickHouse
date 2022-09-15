@@ -130,16 +130,15 @@ void SpanHolder::finish() noexcept
     try
     {
         auto log = current_thread_trace_context.span_log.lock();
-        if (!log)
+
+        /// The log might be disabled, check it before use
+        if (log)
         {
-            // The log might be disabled.
-            return;
+            this->finish_time_us
+                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+            log->add(OpenTelemetrySpanLogElement(*this));
         }
-
-        this->finish_time_us
-            = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-        log->add(OpenTelemetrySpanLogElement(*this));
     }
     catch (...)
     {
