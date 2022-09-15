@@ -463,7 +463,8 @@
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
     <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
-    <!-- <allow_no_password>0</allow_no_password> -->`
+    <!-- <allow_no_password>0</allow_no_password> -->
+    <!-- <allow_implicit_no_password>0</allow_implicit_no_password> -->
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.

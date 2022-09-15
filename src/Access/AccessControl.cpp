@@ -162,6 +162,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     if (config_.has("custom_settings_prefixes"))
         setCustomSettingsPrefixes(config_.getString("custom_settings_prefixes"));
 
+    setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
 
@@ -498,6 +499,15 @@ void AccessControl::checkSettingNameIsAllowed(const std::string_view setting_nam
     custom_settings_prefixes->checkSettingNameIsAllowed(setting_name);
 }
 
+void AccessControl::setImplicitNoPasswordAllowed(bool allow_implicit_no_password_)
+{
+    allow_implicit_no_password = allow_implicit_no_password_;
+}
+
+bool AccessControl::isImplicitNoPasswordAllowed() const
+{
+    return allow_implicit_no_password;
+}
 
 void AccessControl::setNoPasswordAllowed(bool allow_no_password_)
 {
