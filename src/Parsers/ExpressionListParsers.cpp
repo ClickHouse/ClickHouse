@@ -304,24 +304,6 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     }
 }
 
-
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
-    : impl(std::make_unique<ParserWithOptionalAlias>(
-        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
-        allow_alias_without_as_keyword))
-{
-}
-
-
-bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function),
-        std::make_unique<ParserToken>(TokenType::Comma))
-        .parse(pos, node, expected);
-}
-
-
 bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
@@ -444,6 +426,7 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 enum class Action
 {
+    NONE,
     OPERAND,
     OPERATOR
 };
@@ -742,12 +725,14 @@ protected:
 };
 
 
-class SingleElementLayer : public Layer
+class ExpressionLayer : public Layer
 {
 public:
 
-    SingleElementLayer() : Layer(false, false)
+    ExpressionLayer(bool allow_alias_, bool allow_alias_without_as_keyword_, bool is_table_function_)
+        : Layer(allow_alias_, allow_alias_without_as_keyword_)
     {
+        is_table_function = is_table_function_;
     }
 
     bool getResult(ASTPtr & node) override
@@ -775,6 +760,44 @@ public:
     }
 };
 
+
+class ExpressionListLayer : public Layer
+{
+public:
+
+    ExpressionListLayer(bool allow_alias_without_as_keyword_, bool is_table_function_)
+        : Layer(true, allow_alias_without_as_keyword_)
+    {
+        is_table_function = is_table_function_;
+    }
+
+    bool getResult(ASTPtr & node) override
+    {
+        /// We can exit the main cycle outside the parse() function,
+        ///  so we need to merge the element here
+        if (!mergeElement())
+            return false;
+
+        node = std::make_shared<ASTExpressionList>();
+        node->children = std::move(elements);
+
+        return true;
+    }
+
+    bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & action) override
+    {
+        if (pos->type == TokenType::Comma)
+        {
+            if (!mergeElement())
+                return false;
+
+            ++pos;
+            action = Action::OPERAND;
+        }
+
+        return true;
+    }
+};
 
 /// Basic layer for a function with certain separator and end tokens:
 ///  1. If we parse a separator we should merge current operands and operators
@@ -1761,7 +1784,7 @@ private:
 class ViewLayer : public Layer
 {
 public:
-    ViewLayer(bool if_permitted_) : if_permitted(if_permitted_) {}
+    explicit ViewLayer(bool if_permitted_) : if_permitted(if_permitted_) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -2079,38 +2102,36 @@ struct ParserExpressionImpl
 
     bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
 
-    enum class ParseResult
-    {
-        OPERAND,
-        OPERATOR,
-        ERROR,
-        END,
-    };
-
     using Layers = std::vector<std::unique_ptr<Layer>>;
 
-    ParseResult tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
-    static ParseResult tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
+    Action tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
+    static Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
 };
+
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<SingleElementLayer>();
+    auto start = std::make_unique<ExpressionLayer>(false, false, false);
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<SingleElementLayer>();
+    auto start = std::make_unique<ExpressionLayer>(false, false, true);
     start->is_table_function = true;
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
-bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserExpressionWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<IntervalLayer>();
-    return ParserKeyword("INTERVAL").parse(pos, node, expected)
-        && ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+    auto start = std::make_unique<ExpressionLayer>(true, allow_alias_without_as_keyword, is_table_function);
+    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+}
+
+bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto start = std::make_unique<ExpressionListLayer>(allow_alias_without_as_keyword, is_table_function);
+    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
 bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2219,21 +2240,13 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
                 continue;
             }
 
-            ParseResult result;
-
             if (next == Action::OPERAND)
-                result = tryParseOperand(layers, pos, expected);
+                next = tryParseOperand(layers, pos, expected);
             else
-                result = tryParseOperator(layers, pos, expected);
+                next = tryParseOperator(layers, pos, expected);
 
-            if (result == ParseResult::END)
+            if (next == Action::NONE)
                 break;
-            else if (result == ParseResult::ERROR)
-                break;
-            else if (result == ParseResult::OPERATOR)
-                next = Action::OPERATOR;
-            else if (result == ParseResult::OPERAND)
-                next = Action::OPERAND;
         }
 
         /// When we exit the loop we should be on the 1st level
@@ -2260,7 +2273,7 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
     }
 }
 
-typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
+Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2272,9 +2285,9 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
                 layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
-                return ParseResult::OPERAND;
+                return Action::OPERAND;
             }
-            return ParseResult::ERROR;
+            return Action::NONE;
         }
 
         /// Current element should be empty (there should be no other operands or operators)
@@ -2289,7 +2302,7 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
                 if (parser_settings.parse(pos, tmp, expected))
                 {
                     layers.back()->pushOperand(tmp);
-                    return ParseResult::OPERAND;
+                    return Action::OPERAND;
                 }
                 else
                 {
@@ -2304,7 +2317,7 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
         ParseCastExpression(pos, tmp, expected))
     {
         layers.back()->pushOperand(std::move(tmp));
-        return ParseResult::OPERATOR;
+        return Action::OPERATOR;
     }
 
     if (layers.back()->previousType() == OperatorType::Comparison)
@@ -2322,17 +2335,17 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
             ASTPtr function, argument;
 
             if (!layers.back()->popOperator(prev_op))
-                return ParseResult::ERROR;
+                return Action::NONE;
             if (!layers.back()->popOperand(argument))
-                return ParseResult::ERROR;
+                return Action::NONE;
 
             function = makeASTFunction(prev_op.function_name, argument, tmp);
 
             if (!modifyAST(function, subquery_function_type))
-                return ParseResult::ERROR;
+                return Action::NONE;
 
             layers.back()->pushOperand(std::move(function));
-            return ParseResult::OPERATOR;
+            return Action::OPERATOR;
         }
     }
 
@@ -2347,7 +2360,7 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
     if (cur_op != unary_operators_table.end())
     {
         layers.back()->pushOperator(cur_op->second);
-        return ParseResult::OPERAND;
+        return Action::OPERAND;
     }
 
     auto old_pos = pos;
@@ -2358,13 +2371,13 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Interval};
         layers.push_back(std::make_unique<IntervalLayer>());
-        return ParseResult::OPERAND;
+        return Action::OPERAND;
     }
     else if (current_checkpoint != Checkpoint::Case && parseOperator(pos, "CASE", expected))
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Case};
         layers.push_back(std::make_unique<CaseLayer>());
-        return ParseResult::OPERAND;
+        return Action::OPERAND;
     }
 
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
@@ -2385,7 +2398,7 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
         {
             ++pos;
             layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
-            return ParseResult::OPERAND;
+            return Action::OPERAND;
         }
         else
         {
@@ -2401,18 +2414,18 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
         if (subquery_parser.parse(pos, tmp, expected))
         {
             layers.back()->pushOperand(std::move(tmp));
-            return ParseResult::OPERATOR;
+            return Action::OPERATOR;
         }
 
         ++pos;
         layers.push_back(std::make_unique<RoundBracketsLayer>());
-        return ParseResult::OPERAND;
+        return Action::OPERAND;
     }
     else if (pos->type == TokenType::OpeningSquareBracket)
     {
         ++pos;
         layers.push_back(std::make_unique<ArrayLayer>());
-        return ParseResult::OPERAND;
+        return Action::OPERAND;
     }
     else if (mysql_global_variable_parser.parse(pos, tmp, expected))
     {
@@ -2420,13 +2433,13 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
     }
     else
     {
-        return ParseResult::END;
+        return Action::NONE;
     }
 
-    return ParseResult::OPERATOR;
+    return Action::OPERATOR;
 }
 
-typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
+Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
 
@@ -2437,7 +2450,7 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperato
     Expected stub;
     for (const char ** it = overlapping_operators_to_skip; *it; ++it)
         if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
-            return ParseResult::END;
+            return Action::NONE;
 
     /// Try to find operators from 'operators_table'
     auto cur_op = operators_table.begin();
@@ -2452,11 +2465,11 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperato
         if (layers.back()->allow_alias && ParserAlias(layers.back()->allow_alias_without_as_keyword).parse(pos, tmp, expected))
         {
             if (!layers.back()->insertAlias(tmp))
-                return ParseResult::ERROR;
+                return Action::NONE;
 
-            return ParseResult::OPERATOR;
+            return Action::OPERATOR;
         }
-        return ParseResult::END;
+        return Action::NONE;
     }
 
     auto op = cur_op->second;
@@ -2464,10 +2477,10 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperato
     if (op.type == OperatorType::Lambda)
     {
         if (!layers.back()->parseLambda())
-            return ParseResult::ERROR;
+            return Action::NONE;
 
         layers.back()->pushOperator(op);
-        return ParseResult::OPERAND;
+        return Action::OPERAND;
     }
 
     /// 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
@@ -2495,16 +2508,16 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperato
         {
             Operator tmp_op;
             if (!layers.back()->popOperator(tmp_op))
-                return ParseResult::ERROR;
+                return Action::NONE;
 
             if (tmp_op.type != OperatorType::StartBetween && tmp_op.type != OperatorType::StartNotBetween)
-                return ParseResult::ERROR;
+                return Action::NONE;
 
             bool negative = tmp_op.type == OperatorType::StartNotBetween;
 
             ASTs arguments;
             if (!layers.back()->popLastNOperands(arguments, 3))
-                return ParseResult::ERROR;
+                return Action::NONE;
 
             function = makeBetweenOperator(negative, arguments);
         }
@@ -2513,33 +2526,34 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperato
             function = makeASTFunction(prev_op.function_name);
 
             if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
-                return ParseResult::ERROR;
+                return Action::NONE;
         }
 
         layers.back()->pushOperand(function);
     }
+
     layers.back()->pushOperator(op);
 
     if (op.type == OperatorType::ArrayElement)
         layers.push_back(std::make_unique<ArrayElementLayer>());
 
 
-    ParseResult next = ParseResult::OPERAND;
+    Action next = Action::OPERAND;
 
     /// isNull & isNotNull are postfix unary operators
     if (op.type == OperatorType::IsNull)
-        next = ParseResult::OPERATOR;
+        next = Action::OPERATOR;
 
     if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
         layers.back()->between_counter++;
 
     if (op.type == OperatorType::Cast)
     {
-        next = ParseResult::OPERATOR;
+        next = Action::OPERATOR;
 
         ASTPtr type_ast;
         if (!ParserDataType().parse(pos, type_ast, expected))
-            return ParseResult::ERROR;
+            return Action::NONE;
 
         layers.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
     }

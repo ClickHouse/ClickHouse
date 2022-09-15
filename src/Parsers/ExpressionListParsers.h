@@ -116,48 +116,7 @@ private:
     SelectUnionModes union_modes;
 };
 
-/** An expression with an infix binary left-associative operator.
-  * For example, a + b - c + d.
-  */
-class ParserLeftAssociativeBinaryOperatorList : public IParserBase
-{
-private:
-    Operators_t operators;
-    ParserPtr elem_parser;
 
-public:
-    /** `operators_` - allowed operators and their corresponding functions
-      */
-    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && elem_parser_)
-        : operators(operators_), elem_parser(std::move(elem_parser_))
-    {
-    }
-
-protected:
-    const char * getName() const override { return "list, delimited by binary operators"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/// Optional conversion to INTERVAL data type. Example: "INTERVAL x SECOND" parsed as "toIntervalSecond(x)".
-class ParserIntervalOperatorExpression : public IParserBase
-{
-protected:
-    const char * getName() const  override { return "INTERVAL operator expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-class ParserExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "lambda expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// TODO: ?
 class ParserArray : public IParserBase
 {
 protected:
@@ -187,6 +146,39 @@ protected:
 };
 
 
+/** An expression with an infix binary left-associative operator.
+  * For example, a + b - c + d.
+  */
+class ParserLeftAssociativeBinaryOperatorList : public IParserBase
+{
+private:
+    Operators_t operators;
+    ParserPtr elem_parser;
+
+public:
+    /** `operators_` - allowed operators and their corresponding functions
+      */
+    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && elem_parser_)
+        : operators(operators_), elem_parser(std::move(elem_parser_))
+    {
+    }
+
+protected:
+    const char * getName() const override { return "list, delimited by binary operators"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "lambda expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 // It's used to parse expressions in table function.
 class ParserTableFunctionExpression : public IParserBase
 {
@@ -200,16 +192,14 @@ protected:
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function = false);
+    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword_, bool is_table_function_ = false)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), is_table_function(is_table_function_) {}
 protected:
-    ParserPtr impl;
+    bool allow_alias_without_as_keyword;
+    bool is_table_function;
 
     const char * getName() const override { return "expression with optional alias"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return impl->parse(pos, node, expected);
-    }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 
