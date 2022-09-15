@@ -9,14 +9,6 @@
 #include <base/StringRef.h>
 #include <Common/JNIUtils.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TYPE;
-}
-}
-
 namespace local_engine
 {
 using namespace DB;

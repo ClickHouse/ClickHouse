@@ -4,9 +4,15 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TYPE;
+}
+}
+
 using namespace DB;
-
-
 
 namespace local_engine
 {
@@ -148,6 +154,5 @@ Block * local_engine::SparkRowToCHColumn::getWrittenBlock(SparkRowToCHColumnHelp
     }
     return block;
 }
-
 
 }
