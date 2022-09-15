@@ -38,6 +38,20 @@
                 <path>/jbod1/</path>
                 <max_size>1000000000</max_size>
             </s3_with_cache_and_jbod>
+            <s3_r>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </s3_r>
+            <s3_cache_r>
+                <type>cache</type>
+                <disk>s3_r</disk>
+                <path>/s3_cache_r/</path>
+                <max_size>1000000000</max_size>
+                <do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>
+            </s3_cache_r>
         </disks>
         <policies>
             <s3>
@@ -78,6 +92,13 @@
                     </main>
                 </volumes>
             </s3_with_cache_and_jbod>
+            <s3_cache_r>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_r</disk>
+                    </main>
+                </volumes>
+            </s3_cache_r>
         </policies>
     </storage_configuration>
 
