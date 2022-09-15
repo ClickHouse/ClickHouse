@@ -483,16 +483,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     return temp_part;
 }
 
-void MergeTreeDataWriter::deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
-{
-    if (!storage_snapshot->object_columns.empty())
-    {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
-        auto storage_columns = storage_snapshot->getColumns(options);
-        convertObjectsToTuples(block, storage_columns);
-    }
-}
-
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     MergeTreeDataPartType part_type,
