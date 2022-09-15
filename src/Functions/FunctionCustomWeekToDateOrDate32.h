@@ -27,7 +27,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        this->checkArguments(arguments, true);
+        this->checkArguments(arguments, /*is_result_type_date_or_date32*/ true);
 
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
@@ -47,7 +47,7 @@ public:
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDate32())
             if (enable_date32_results)
-                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, true>::execute(
+                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, /*is_compat*/ true>::execute(
                     arguments, result_type, input_rows_count, Transform{});
             else
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(
@@ -58,7 +58,7 @@ public:
         else if (which.isDateTime64())
         {
             if (enable_date32_results)
-                return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate32, true>::execute(
+                return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate32, /*is_compat*/ true>::execute(
                     arguments, result_type, input_rows_count,
                     TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
             else

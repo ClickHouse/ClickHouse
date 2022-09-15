@@ -79,14 +79,15 @@ public:
         }
     }
 
-    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date) const
+protected:
+    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
     {
         if (arguments.size() == 1)
         {
             if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
-                        + ". Should be a date or a date with time",
+                        + ". Should be Date, Date32, DateTime or DateTime64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else if (arguments.size() == 2)
@@ -94,17 +95,16 @@ public:
             if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
-                        + ". Should be a date or a date with time",
+                        + ". Should be Date, Date32, DateTime or DateTime64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!isString(arguments[1].type))
                 throw Exception(
-                    "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
-                          "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant string with timezone name",
+                    "Function " + getName() + " supports 1 or 2 arguments. The optional 2nd argument must be "
+                    "a constant string with a timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date)
+            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date_or_date32)
                 throw Exception(
-                    "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
+                    "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime or DateTime64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else

@@ -64,7 +64,8 @@ public:
         }
     }
 
-    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_date = false) const
+protected:
+    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32 = false) const
     {
         if (arguments.size() == 1)
         {
@@ -104,7 +105,7 @@ public:
                     "Illegal type of 3rd (optional) argument of function " + getName()
                         + ". Must be constant string (timezone name).",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_date)
+            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date_or_date32)
                 throw Exception(
                     "The timezone argument of function " + getName() + " is allowed only when the 1st argument is DateTime or DateTime64.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
