@@ -1040,31 +1040,6 @@ void MergeTreeData::loadDataPartsFromDisk(
         {
             part->loadColumnsChecksumsIndexes(require_part_metadata, true);
         }
-#if USE_AWS_S3
-        /// This code looks really strange. Why can it happen? When we remove something from S3 we can receive different kinds of errors during
-        /// interaction with [Zoo]Keeper, S3 and even local disk. In such way we can get into situation where part is partially removed (at least we
-        /// had an intention to remove it) but server was restarted and now we are trying to load this partially removed part. It can throw an exception
-        /// but if this part is actually covered by some other part it's Ok and we should react to it with <Error> message.
-        ///
-        /// The only known case is related to zookeeper connection loss in zero-copy replication during part unlock from [Zoo]Keeper before removal.
-        catch (const S3Exception & e)
-        {
-            broken = true;
-            if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
-            {
-                {
-                    std::lock_guard loading_lock(mutex);
-                    parts_broken_because_of_no_such_key[part->name] = e.displayText();
-                }
-                LOG_WARNING(log, "Part {} on path {} is broken because of NO_SUCH_KEY error in S3. It's Ok if we had [Zoo]Keeper connection failures during part removal."
-                            " Will check that part is covered", part->name, part_path);
-            }
-            else
-            {
-                tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part->name, part_path));
-            }
-        }
-#endif
         catch (const Exception & e)
         {
             /// Don't count the part as broken if there is not enough memory to load it.
@@ -1669,11 +1644,10 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
                         /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
                         /// or not. So we are not doing it
                         bool keep_shared = false;
-                        if (it->path().find("fetch") != std::string::npos)
+                        if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
                         {
-                            keep_shared = disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication;
-                            if (keep_shared)
-                                LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
+                            LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
+                            keep_shared = true;
                         }
 
                         disk->removeSharedRecursive(it->path(), keep_shared, {});
