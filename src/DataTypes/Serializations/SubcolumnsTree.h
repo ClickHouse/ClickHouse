@@ -184,6 +184,9 @@ public:
 private:
     const Node * findImpl(const PathInData & path, bool find_exact) const
     {
+        if (empty())
+            return nullptr;
+
         const auto & parts = path.getParts();
         const auto * current_node = root.get();
 
