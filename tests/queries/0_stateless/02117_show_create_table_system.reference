@@ -968,7 +968,7 @@ CREATE TABLE system.settings_profile_elements
     `value` Nullable(String),
     `min` Nullable(String),
     `max` Nullable(String),
-    `writability` Nullable(Enum8('WRITABLE' = 0, 'CONST' = 1, 'CHANGEABLE_IN_READONLY' = 2))
+    `writability` Nullable(Enum8('WRITABLE' = 0, 'CONST' = 1, 'CHANGEABLE_IN_READONLY' = 2)),
     `inherit_profile` Nullable(String)
 )
 ENGINE = SystemSettingsProfileElements
