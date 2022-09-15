@@ -4,15 +4,10 @@
     <fill_query>INSERT INTO distinct_cardinality_high SELECT number % 1e6, number % 1e4, number % 1e2 FROM numbers_mt(1e8)</fill_query>
 
     <query>SELECT DISTINCT high FROM distinct_cardinality_high FORMAT Null</query>
-    <query>SELECT DISTINCT high, low FROM distinct_cardinality_high FORMAT Null</query>
     <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high FORMAT Null</query>
-    <query>SELECT DISTINCT high, medium, low FROM distinct_cardinality_high FORMAT Null</query>
 
     <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY high, medium FORMAT Null</query>
     <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY high FORMAT Null</query>
-    <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY medium FORMAT Null</query>
-    <query>SELECT DISTINCT high, low FROM distinct_cardinality_high ORDER BY low FORMAT Null</query>
-    <query>SELECT DISTINCT high, medium, low FROM distinct_cardinality_high ORDER BY low FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS distinct_cardinality_high</drop_query>
 
@@ -22,14 +17,9 @@
 
     <query>SELECT DISTINCT low FROM distinct_cardinality_low FORMAT Null</query>
     <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low FORMAT Null</query>
-    <query>SELECT DISTINCT low, high FROM distinct_cardinality_low FORMAT Null</query>
-    <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low FORMAT Null</query>
 
     <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY low, medium FORMAT Null</query>
     <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY low FORMAT Null</query>
-    <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY medium FORMAT Null</query>
-    <query>SELECT DISTINCT low, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
-    <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS distinct_cardinality_low</drop_query>
 </test>
