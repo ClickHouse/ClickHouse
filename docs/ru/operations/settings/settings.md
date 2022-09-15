@@ -3801,12 +3801,12 @@ Exception: Total regexp lengths too large.
 
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
-Включает и отключает возвращение результатов типа Date32 для функций toStartOfYear, toStartOfISOYear, toStartOfQuarter, toStartOfMonth, toStartOfWeek, toMonday и toLastDayOfMonth
+Включает и отключает возвращение результатов типа `Date32` для функций [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) и [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
 
 Возможные значения:
 
--   0 — Функции возвращают результаты типа Date для всех типов аргументов.
--   1 — Функции возвращают результаты типа Date32 для аргументов типа Date32 или DateTime64 и возвращают Date в других случаях.
+-   0 — Функции возвращают результаты типа `Date` для всех типов аргументов.
+-   1 — Функции возвращают результаты типа `Date32` для аргументов типа `Date32` или `DateTime64` и возвращают `Date` в других случаях.
 
 Значение по умолчанию: `0`.
 
