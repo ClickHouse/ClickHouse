@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-  extern const int ILLEGAL_AGGREGATION;
+    extern const int ILLEGAL_AGGREGATION;
 }
 
 namespace
