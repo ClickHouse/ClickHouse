@@ -194,6 +194,21 @@ public:
         return nested_function->isState();
     }
 
+    bool isVersioned() const override
+    {
+        return nested_function->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_function->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_function->getDefaultVersion();
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
 #if USE_EMBEDDED_COMPILER

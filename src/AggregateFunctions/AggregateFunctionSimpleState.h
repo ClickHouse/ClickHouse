@@ -61,6 +61,11 @@ public:
         return nested_func->isState();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     void create(AggregateDataPtr __restrict place) const override { nested_func->create(place); }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override { nested_func->destroy(place); }

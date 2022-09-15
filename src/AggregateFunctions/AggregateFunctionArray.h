@@ -64,6 +64,11 @@ public:
         return nested_func->isVersioned();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
