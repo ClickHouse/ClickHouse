@@ -1,4 +1,4 @@
-#include <Analyzer/InterpolateColumnNode.h>
+#include <Analyzer/InterpolateNode.h>
 
 #include <Common/SipHash.h>
 
@@ -10,14 +10,14 @@
 namespace DB
 {
 
-InterpolateColumnNode::InterpolateColumnNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_)
+InterpolateNode::InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_)
 {
     children.resize(children_size);
     children[expression_child_index] = std::move(expression_);
     children[interpolate_expression_child_index] = std::move(interpolate_expression_);
 }
 
-String InterpolateColumnNode::getName() const
+String InterpolateNode::getName() const
 {
     String result = getExpression()->getName();
     result += " AS ";
@@ -26,7 +26,7 @@ String InterpolateColumnNode::getName() const
     return result;
 }
 
-void InterpolateColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
+void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "INTERPOLATE_COLUMN id: " << format_state.getNodeId(this);
 
@@ -37,18 +37,18 @@ void InterpolateColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & for
     getInterpolateExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool InterpolateColumnNode::isEqualImpl(const IQueryTreeNode &) const
+bool InterpolateNode::isEqualImpl(const IQueryTreeNode &) const
 {
     /// No state in interpolate column node
     return true;
 }
 
-void InterpolateColumnNode::updateTreeHashImpl(HashState &) const
+void InterpolateNode::updateTreeHashImpl(HashState &) const
 {
     /// No state in interpolate column node
 }
 
-ASTPtr InterpolateColumnNode::toASTImpl() const
+ASTPtr InterpolateNode::toASTImpl() const
 {
     auto result = std::make_shared<ASTInterpolateElement>();
     result->column = getExpression()->toAST()->getColumnName();
@@ -58,9 +58,9 @@ ASTPtr InterpolateColumnNode::toASTImpl() const
     return result;
 }
 
-QueryTreeNodePtr InterpolateColumnNode::cloneImpl() const
+QueryTreeNodePtr InterpolateNode::cloneImpl() const
 {
-    return std::make_shared<InterpolateColumnNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
+    return std::make_shared<InterpolateNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
 }
 
 }

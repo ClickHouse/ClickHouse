@@ -6,19 +6,19 @@
 namespace DB
 {
 
-/** Interpolate column node represents single column interpolation in INTERPOLATE section that part of ORDER BY in query tree.
+/** Interpolate node represents expression interpolation in INTERPOLATE section that is part of ORDER BY section in query tree.
   * Example: SELECT * FROM test_table ORDER BY id WITH FILL INTERPOLATE value AS value + 1;
   * value - expression to interpolate.
   * value + 1 - interpolate expression.
   */
-class InterpolateColumnNode;
-using InterpolateColumnNodePtr = std::shared_ptr<InterpolateColumnNode>;
+class InterpolateNode;
+using InterpolateNodePtr = std::shared_ptr<InterpolateNode>;
 
-class InterpolateColumnNode final : public IQueryTreeNode
+class InterpolateNode final : public IQueryTreeNode
 {
 public:
-    /// Initialize interpolate column node with expression and interpolate expression
-    explicit InterpolateColumnNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_);
+    /// Initialize interpolate node with expression and interpolate expression
+    explicit InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_);
 
     /// Get expression
     const QueryTreeNodePtr & getExpression() const
@@ -46,7 +46,7 @@ public:
 
     QueryTreeNodeType getNodeType() const override
     {
-        return QueryTreeNodeType::INTERPOLATE_COLUMN;
+        return QueryTreeNodeType::INTERPOLATE;
     }
 
     String getName() const override;
