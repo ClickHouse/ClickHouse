@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
 
@@ -75,6 +76,7 @@ struct DDLLogEntry
     std::vector<HostID> hosts;
     String initiator; // optional
     std::optional<SettingsChanges> settings;
+    OpenTelemetry::TracingContext tracing_context;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
