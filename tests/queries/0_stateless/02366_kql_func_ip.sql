@@ -83,6 +83,7 @@ print format_ipv4_mask('192.168.1.255', 24);
 print format_ipv4_mask(3232236031, 24);
 print format_ipv4_mask('192.168.1.1', 24);
 print format_ipv4_mask('192.168.1.1', 32);
+print format_ipv4_mask('192.168.1.1/24', 32);
 print format_ipv4_mask('192.168.1.1/24', -1) == '';
 print format_ipv4_mask('abc', 24) == '';
 print '-- parse_ipv6_mask()';
