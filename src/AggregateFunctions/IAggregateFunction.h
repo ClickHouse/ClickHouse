@@ -182,10 +182,6 @@ public:
       */
     virtual bool isState() const { return false; }
 
-    /** Same as isState but also returns true when the final value of this aggregate function contains
-      * State of other aggregate function inside (when some other combinators are used after -State)
-      */
-
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
