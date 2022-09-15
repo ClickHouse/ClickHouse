@@ -267,8 +267,8 @@ Result:
 └────────────────┘
 ```
 
-:::Attention
-The return type of the `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `false` by default.
+:::note
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `false` by default.
 
 Behavior for
 * `enable_extended_results_for_datetime_functions = false`: Functions `toStartOf*`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results. In case argument is out of normal range:
@@ -643,6 +643,7 @@ Result:
 ## date\_diff
 
 Returns the difference between two dates or dates with time values.
+The difference is calculated using relative units, e.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for day unit (see [toRelativeDayNum](#torelativedaynum)), 1 month for month unit (see [toRelativeMonthNum](#torelativemonthnum)), 1 year for year unit (see [toRelativeYearNum](#torelativeyearnum)).
 
 **Syntax**
 
@@ -692,6 +693,25 @@ Result:
 ┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
 │                                                                                     25 │
 └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    dateDiff('day', s, e) AS day_diff,
+    dateDiff('month', s, e) AS month__diff,
+    dateDiff('year', s, e) AS year_diff;
+```
+
+Result:
+
+``` text
+┌──────────e─┬──────────s─┬─day_diff─┬─month__diff─┬─year_diff─┐
+│ 2022-01-01 │ 2021-12-29 │        3 │           1 │         1 │
+└────────────┴────────────┴──────────┴─────────────┴───────────┘
 ```
 
 ## date\_sub
@@ -1208,6 +1228,8 @@ Result:
 ## FROM\_UNIXTIME
 
 Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
+
+Alias: `fromUnixTimestamp`.
 
 **Example:**
 

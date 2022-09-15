@@ -335,6 +335,13 @@ void StorageMergeTree::alter(
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
         }
 
+        {
+            /// Reset Object columns, because column of type
+            /// Object may be added or dropped by alter.
+            auto parts_lock = lockParts();
+            resetObjectColumnsFromActiveParts(parts_lock);
+        }
+
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())
@@ -963,7 +970,7 @@ bool StorageMergeTree::merge(
     if (!merge_mutate_entry)
         return false;
 
-    /// Copying a vector of columns `deduplicate bu columns.
+    /// Copying a vector of columns `deduplicate by columns.
     IExecutableTask::TaskResultCallback f = [](bool) {};
     auto task = std::make_shared<MergePlainMergeTreeTask>(
         *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, f);
@@ -1202,7 +1209,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
                 if (getSettings()->merge_tree_enable_clear_old_broken_detached)
-                    cleared_count += clearOldBrokenPartsFromDetachedDirecory();
+                    cleared_count += clearOldBrokenPartsFromDetachedDirectory();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
@@ -1785,7 +1792,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     for (const auto & data_part : data_parts)
         min_data_version = std::min(min_data_version, data_part->info.getDataVersion());
 
-    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup));
+    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, local_context));
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version + 1, data_path_in_backup));
 }
 

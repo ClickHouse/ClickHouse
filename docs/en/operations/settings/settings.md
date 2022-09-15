@@ -1176,8 +1176,9 @@ Enables the quorum writes.
 
 -   If `insert_quorum < 2`, the quorum writes are disabled.
 -   If `insert_quorum >= 2`, the quorum writes are enabled.
+-   If `insert_quorum = 'auto'`, use majority number (`number_of_replicas / 2 + 1`) as quorum number.
 
-Default value: 0.
+Default value: 0 - disabled.
 
 Quorum writes
 

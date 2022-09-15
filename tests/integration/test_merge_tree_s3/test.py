@@ -6,7 +6,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 
-
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
@@ -17,6 +16,7 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=[
+                "configs/config.xml",
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
             ],
@@ -35,6 +35,7 @@ def cluster():
                 "/jbod1:size=2M",
             ],
         )
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -531,6 +532,8 @@ def test_freeze_unfreeze(cluster, node_name):
     # Unfreeze all partitions from backup2.
     node.query("ALTER TABLE s3_test UNFREEZE WITH NAME 'backup2'")
 
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD)
+
     # Data should be removed from S3.
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/"))) == FILES_OVERHEAD
@@ -562,6 +565,8 @@ def test_freeze_system_unfreeze(cluster, node_name):
 
     # Unfreeze all data from backup3.
     node.query("SYSTEM UNFREEZE WITH NAME 'backup3'")
+
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD)
 
     # Data should be removed from S3.
     assert (
@@ -737,3 +742,79 @@ def test_store_cleanup_disk_s3(cluster, node_name):
         "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
     )
     node.query("INSERT INTO s3_test SELECT 1")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_setting_compatibility(cluster, node_name):
+    node = cluster.instances[node_name]
+
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+
+    node.query(
+        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r';"
+    )
+    node.query(
+        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500"
+    )
+
+    result = node.query("SYSTEM DROP FILESYSTEM CACHE")
+
+    result = node.query(
+        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
+    )
+    assert int(result) == 0
+
+    node.query("SELECT * FROM s3_test")
+
+    result = node.query(
+        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
+    )
+    assert int(result) > 0
+
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        f"./{cluster.instances_dir_name}/node/configs/config.d/storage_conf.xml",
+    )
+
+    replace_config(
+        config_path,
+        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
+        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
+    )
+
+    result = node.query("DESCRIBE CACHE 's3_cache_r'")
+    assert result.strip().endswith("1")
+
+    node.restart_clickhouse()
+
+    result = node.query("DESCRIBE CACHE 's3_cache_r'")
+    assert result.strip().endswith("0")
+
+    result = node.query(
+        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
+    )
+    assert int(result) > 0
+
+    node.query("SELECT * FROM s3_test FORMAT Null")
+
+    assert not node.contains_in_log("No such file or directory: Cache info:")
+
+    replace_config(
+        config_path,
+        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
+        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
+    )
+
+    result = node.query(
+        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
+    )
+    assert int(result) > 0
+
+    node.restart_clickhouse()
+
+    result = node.query("DESCRIBE CACHE 's3_cache_r'")
+    assert result.strip().endswith("1")
+
+    node.query("SELECT * FROM s3_test FORMAT Null")
+
+    assert not node.contains_in_log("No such file or directory: Cache info:")
