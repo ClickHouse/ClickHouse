@@ -3125,7 +3125,8 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
                     "Function GROUPING can have up to 64 arguments, but {} provided",
                     function_arguments_size);
 
-            auto grouping_function = std::make_shared<FunctionGrouping>();
+            bool force_grouping_standard_compatibility = context->getSettingsRef().force_grouping_standard_compatibility;
+            auto grouping_function = std::make_shared<FunctionGrouping>(force_grouping_standard_compatibility);
             auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
             function_node.resolveAsFunction(std::move(grouping_function_adaptor), std::make_shared<DataTypeUInt64>());
             return;

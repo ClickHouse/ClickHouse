@@ -8,6 +8,8 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/CollectAggregateFunctionNodes.h>
 
+#include <Interpreters/Context.h>
+
 #include <Planner/PlannerActionsVisitor.h>
 
 namespace DB
@@ -99,18 +101,20 @@ public:
         auto grouping_set_argument_column = std::make_shared<ColumnNode>(NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()}, column_source);
         function_node->getArguments().getNodes().clear();
 
+        bool force_grouping_standard_compatibility = data.planner_context.getQueryContext()->getSettingsRef().force_grouping_standard_compatibility;
+
         switch (data.group_by_kind)
         {
             case GroupByKind::ORDINARY:
             {
-                auto grouping_ordinary_function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes);
+                auto grouping_ordinary_function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
                 function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
                 break;
             }
             case GroupByKind::ROLLUP:
             {
-                auto grouping_ordinary_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes, aggregation_keys_size);
+                auto grouping_ordinary_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
                 function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
@@ -118,7 +122,7 @@ public:
             }
             case GroupByKind::CUBE:
             {
-                auto grouping_ordinary_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes, aggregation_keys_size);
+                auto grouping_ordinary_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
                 function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
@@ -126,7 +130,7 @@ public:
             }
             case GroupByKind::GROUPING_SETS:
             {
-                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes, data.grouping_sets_keys_indices);
+                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes, data.grouping_sets_keys_indices, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
                 function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));

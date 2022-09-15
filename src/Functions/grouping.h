@@ -79,8 +79,8 @@ public:
 class FunctionGrouping : public FunctionGroupingBase
 {
 public:
-    explicit FunctionGrouping()
-        : FunctionGroupingBase(ColumnNumbers())
+    explicit FunctionGrouping(bool force_compatibility_)
+        : FunctionGroupingBase(ColumnNumbers(), force_compatibility_)
     {}
 
     String getName() const override { return "grouping"; }

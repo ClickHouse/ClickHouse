@@ -83,7 +83,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
                 "Invalid type in set. Expected tuple, got {}",
                 value.getTypeName());
 
-        const auto & tuple = DB::get<const Tuple &>(value);
+        const auto & tuple = value.template get<const Tuple &>();
         size_t tuple_size = tuple.size();
 
         if (tuple_size != columns_size)
