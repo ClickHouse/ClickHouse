@@ -1129,7 +1129,6 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
-        std::cerr << "database: " << global_context->resolveStorageID(parsed_insert_query.table_id).getDatabaseName() << "\n";
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
     }
