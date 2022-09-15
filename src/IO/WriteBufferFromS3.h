@@ -84,6 +84,7 @@ private:
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
+    void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
     String bucket;
     String key;

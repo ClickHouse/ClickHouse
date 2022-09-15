@@ -430,5 +430,119 @@ Result:
 └────────────────────────────┘
 ```  
   
+## mapApply  
+  
+**Syntax**
+
+```sql
+mapApply(func, map)
+```  
+  
+**Parameters**
+  
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `map` — [Map](../../sql-reference/data-types/map.md).
+
+**Returned value**
+
+- Returns a map obtained from the original map by application of `func(map1[i], …, mapN[i])` for each element.
+  
+**Example**
+
+Query:
+
+```sql
+SELECT mapApply((k, v) -> (k, v * 10), _map) AS r
+FROM
+(
+    SELECT map('key1', number, 'key2', number * 2) AS _map
+    FROM numbers(3)
+)
+```  
+  
+Result:  
+  
+```text
+┌─r─────────────────────┐
+│ {'key1':0,'key2':0}   │
+│ {'key1':10,'key2':20} │
+│ {'key1':20,'key2':40} │
+└───────────────────────┘
+```  
+
+## mapFilter  
+  
+**Syntax**
+
+```sql
+mapFilter(func, map)
+```  
+  
+**Parameters**
+
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `map` — [Map](../../sql-reference/data-types/map.md).  
+
+**Returned value**
+
+- Returns a map containing only the elements in `map` for which `func(map1[i], …, mapN[i])` returns something other than 0.
+  
+  
+**Example**
+
+Query:
+
+```sql
+SELECT mapFilter((k, v) -> ((v % 2) = 0), _map) AS r
+FROM
+(
+    SELECT map('key1', number, 'key2', number * 2) AS _map
+    FROM numbers(3)
+)
+```  
+  
+Result:  
+  
+```text
+┌─r───────────────────┐
+│ {'key1':0,'key2':0} │
+│ {'key2':2}          │
+│ {'key1':2,'key2':4} │
+└─────────────────────┘
+```  
+
+
+## mapUpdate  
+  
+**Syntax**
+
+```sql
+mapUpdate(map1, map2)
+```  
+  
+**Parameters**
+
+-   `map1` [Map](../../sql-reference/data-types/map.md).
+-   `map2` [Map](../../sql-reference/data-types/map.md).
+
+**Returned value**
+
+- Returns a map1 with values updated of values for the corresponding keys in map2.
+  
+**Example**
+
+Query:
+
+```sql
+SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10)) AS map;
+```  
+  
+Result:  
+  
+```text
+┌─map────────────────────────────┐
+│ {'key3':0,'key1':10,'key2':10} │
+└────────────────────────────────┘
+```  
 
 [Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->
