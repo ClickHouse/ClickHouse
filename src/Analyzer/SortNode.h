@@ -8,12 +8,12 @@
 namespace DB
 {
 
-/** Sort column node represents sort column descripion that is part of ORDER BY in query tree.
+/** Sort node represents sort description for expression that is part of ORDER BY in query tree.
   * Example: SELECT * FROM test_table ORDER BY sort_column_1, sort_column_2;
-  * Sort column optionally contain collation, fill from, fill to, and fill step.
+  * Sort node optionally contain collation, fill from, fill to, and fill step.
   */
-class SortColumnNode;
-using SortColumnNodePtr = std::shared_ptr<SortColumnNode>;
+class SortNode;
+using SortNodePtr = std::shared_ptr<SortNode>;
 
 enum class SortDirection
 {
@@ -23,11 +23,11 @@ enum class SortDirection
 
 const char * toString(SortDirection sort_direction);
 
-class SortColumnNode final : public IQueryTreeNode
+class SortNode final : public IQueryTreeNode
 {
 public:
-    /// Initialize sort column node with sort expression
-    explicit SortColumnNode(QueryTreeNodePtr expression_,
+    /// Initialize sort node with sort expression
+    explicit SortNode(QueryTreeNodePtr expression_,
         SortDirection sort_direction_ = SortDirection::ASCENDING,
         std::optional<SortDirection> nulls_sort_direction_ = {},
         std::shared_ptr<Collator> collator_ = nullptr,
@@ -122,7 +122,7 @@ public:
 
     QueryTreeNodeType getNodeType() const override
     {
-        return QueryTreeNodeType::SORT_COLUMN;
+        return QueryTreeNodeType::SORT;
     }
 
     String getName() const override;

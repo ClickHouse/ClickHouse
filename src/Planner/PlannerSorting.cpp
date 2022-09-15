@@ -7,7 +7,7 @@
 #include <Interpreters/Context.h>
 
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/SortColumnNode.h>
+#include <Analyzer/SortNode.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -50,40 +50,40 @@ std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const Que
     return {constant_value.getValue(), {}};
 }
 
-FillColumnDescription extractWithFillDescription(const SortColumnNode & sort_column_node)
+FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 {
     FillColumnDescription fill_column_description;
 
-    if (sort_column_node.hasFillFrom())
+    if (sort_node.hasFillFrom())
     {
-        auto extract_result = extractWithFillValue(sort_column_node.getFillFrom());
+        auto extract_result = extractWithFillValue(sort_node.getFillFrom());
         fill_column_description.fill_from = std::move(extract_result.first);
         fill_column_description.fill_from_type = std::move(extract_result.second);
     }
 
-    if (sort_column_node.hasFillTo())
+    if (sort_node.hasFillTo())
     {
-        auto extract_result = extractWithFillValue(sort_column_node.getFillTo());
+        auto extract_result = extractWithFillValue(sort_node.getFillTo());
         fill_column_description.fill_to = std::move(extract_result.first);
         fill_column_description.fill_to_type = std::move(extract_result.second);
     }
 
-    if (sort_column_node.hasFillStep())
+    if (sort_node.hasFillStep())
     {
-        auto extract_result = extractWithFillStepValue(sort_column_node.getFillStep());
+        auto extract_result = extractWithFillStepValue(sort_node.getFillStep());
         fill_column_description.fill_step = std::move(extract_result.first);
         fill_column_description.step_kind = std::move(extract_result.second);
     }
     else
     {
-        fill_column_description.fill_step = Field(sort_column_node.getSortDirection() == SortDirection::ASCENDING ? 1 : -1);
+        fill_column_description.fill_step = Field(sort_node.getSortDirection() == SortDirection::ASCENDING ? 1 : -1);
     }
 
     if (applyVisitor(FieldVisitorAccurateEquals(), fill_column_description.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
             "WITH FILL STEP value cannot be zero");
 
-    if (sort_column_node.getSortDirection() == SortDirection::ASCENDING)
+    if (sort_node.getSortDirection() == SortDirection::ASCENDING)
     {
         if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_step, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
@@ -122,22 +122,22 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
     SortDescription sort_column_description;
     sort_column_description.reserve(order_by_list_node.getNodes().size());
 
-    for (const auto & sort_column_node : order_by_list_node.getNodes())
+    for (const auto & sort_node : order_by_list_node.getNodes())
     {
-        auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
+        auto & sort_node_typed = sort_node->as<SortNode &>();
 
-        auto column_name = calculateActionNodeName(sort_column_node_typed.getExpression(), planner_context);
-        std::shared_ptr<Collator> collator = sort_column_node_typed.getCollator();
-        int direction = sort_column_node_typed.getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
+        auto column_name = calculateActionNodeName(sort_node_typed.getExpression(), planner_context);
+        std::shared_ptr<Collator> collator = sort_node_typed.getCollator();
+        int direction = sort_node_typed.getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
         int nulls_direction = direction;
 
-        auto nulls_sort_direction = sort_column_node_typed.getNullsSortDirection();
+        auto nulls_sort_direction = sort_node_typed.getNullsSortDirection();
         if (nulls_sort_direction)
             nulls_direction = *nulls_sort_direction == SortDirection::ASCENDING ? 1 : -1;
 
-        if (sort_column_node_typed.withFill())
+        if (sort_node_typed.withFill())
         {
-            FillColumnDescription fill_description = extractWithFillDescription(sort_column_node_typed);
+            FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed);
             sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
         }
         else

@@ -30,7 +30,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::FUNCTION: return "FUNCTION";
         case QueryTreeNodeType::COLUMN: return "COLUMN";
         case QueryTreeNodeType::LAMBDA: return "LAMBDA";
-        case QueryTreeNodeType::SORT_COLUMN: return "SORT_COLUMN";
+        case QueryTreeNodeType::SORT: return "SORT";
         case QueryTreeNodeType::INTERPOLATE_COLUMN: return "INTERPOLATE_COLUMN";
         case QueryTreeNodeType::WINDOW: return "WINDOW";
         case QueryTreeNodeType::TABLE: return "TABLE";

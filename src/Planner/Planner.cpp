@@ -46,7 +46,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortColumnNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateColumnNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
@@ -990,10 +990,10 @@ void Planner::buildQueryPlanIfNeeded()
               * WITH fill expressions must be constant nodes.
               */
             auto & order_by_node_list = window_node.getOrderBy();
-            for (auto & sort_column_node : order_by_node_list.getNodes())
+            for (auto & sort_node : order_by_node_list.getNodes())
             {
-                auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
-                expression_dag_nodes = actions_visitor.visit(before_window_actions_dag, sort_column_node_typed.getExpression());
+                auto & sort_node_typed = sort_node->as<SortNode &>();
+                expression_dag_nodes = actions_visitor.visit(before_window_actions_dag, sort_node_typed.getExpression());
 
                 for (auto & expression_dag_node : expression_dag_nodes)
                 {
@@ -1065,14 +1065,14 @@ void Planner::buildQueryPlanIfNeeded()
 
         std::unordered_set<std::string_view> before_order_by_actions_dag_outputs_node_names;
 
-        /** We add only sort column sort expression in before ORDER BY actions DAG.
+        /** We add only sort node sort expression in before ORDER BY actions DAG.
           * WITH fill expressions must be constant nodes.
           */
         auto & order_by_node_list = query_node.getOrderBy();
-        for (auto & sort_column_node : order_by_node_list.getNodes())
+        for (auto & sort_node : order_by_node_list.getNodes())
         {
-            auto & sort_column_node_typed = sort_column_node->as<SortColumnNode &>();
-            auto expression_dag_nodes = actions_visitor.visit(before_order_by_actions_dag, sort_column_node_typed.getExpression());
+            auto & sort_node_typed = sort_node->as<SortNode &>();
+            auto expression_dag_nodes = actions_visitor.visit(before_order_by_actions_dag, sort_node_typed.getExpression());
 
             for (auto & action_dag_node : expression_dag_nodes)
             {

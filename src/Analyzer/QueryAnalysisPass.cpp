@@ -40,7 +40,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortColumnNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateColumnNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
@@ -3479,10 +3479,10 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
             /// Lambda must be resolved by caller
             break;
         }
-        case QueryTreeNodeType::SORT_COLUMN:
+        case QueryTreeNodeType::SORT:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Sort column {} is not allowed in expression. In scope {}",
+                "Sort {} is not allowed in expression. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
@@ -3621,38 +3621,38 @@ void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_n
     auto & sort_columns_node_list_typed = sort_columns_node_list->as<ListNode &>();
     for (auto & node : sort_columns_node_list_typed.getNodes())
     {
-        auto & sort_column_node = node->as<SortColumnNode &>();
-        resolveExpressionNode(sort_column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        auto & sort_node = node->as<SortNode &>();
+        resolveExpressionNode(sort_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        if (sort_column_node.hasFillFrom())
+        if (sort_node.hasFillFrom())
         {
-            resolveExpressionNode(sort_column_node.getFillFrom(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            resolveExpressionNode(sort_node.getFillFrom(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            const auto * constant_node = sort_column_node.getFillFrom()->as<const ConstantNode>();
+            const auto * constant_node = sort_node.getFillFrom()->as<const ConstantNode>();
             if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "WITH FILL FROM expression must be constant with numeric type. Actual {}. In scope {}",
-                    sort_column_node.getFillFrom()->formatASTForErrorMessage(),
+                    sort_node.getFillFrom()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
         }
-        if (sort_column_node.hasFillTo())
+        if (sort_node.hasFillTo())
         {
-            resolveExpressionNode(sort_column_node.getFillTo(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            const auto * constant_node = sort_column_node.getFillTo()->as<const ConstantNode>();
+            resolveExpressionNode(sort_node.getFillTo(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            const auto * constant_node = sort_node.getFillTo()->as<const ConstantNode>();
             if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "WITH FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
-                    sort_column_node.getFillFrom()->formatASTForErrorMessage(),
+                    sort_node.getFillFrom()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
         }
-        if (sort_column_node.hasFillStep())
+        if (sort_node.hasFillStep())
         {
-            resolveExpressionNode(sort_column_node.getFillStep(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            const auto * constant_node = sort_column_node.getFillStep()->as<const ConstantNode>();
+            resolveExpressionNode(sort_node.getFillStep(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            const auto * constant_node = sort_node.getFillStep()->as<const ConstantNode>();
             if (!constant_node)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "WITH FILL TO expression must be constant with numeric or interval type. Actual {}. In scope {}",
-                    sort_column_node.getFillStep()->formatASTForErrorMessage(),
+                    sort_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
             bool is_number = isColumnedAsNumber(constant_node->getResultType());
@@ -3660,7 +3660,7 @@ void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_columns_n
             if (!is_number && !is_interval)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "WITH FILL TO expression must be constant with numeric or interval type. Actual {}. In scope {}",
-                    sort_column_node.getFillStep()->formatASTForErrorMessage(),
+                    sort_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
         }
     }
@@ -4530,7 +4530,8 @@ public:
     {
         auto query_tree_node_type = node->getNodeType();
         if (query_tree_node_type == QueryTreeNodeType::CONSTANT ||
-            query_tree_node_type == QueryTreeNodeType::SORT_COLUMN)
+            query_tree_node_type == QueryTreeNodeType::SORT ||
+            query_tree_node_type == QueryTreeNodeType::INTERPOLATE_COLUMN)
             return;
 
         auto * function_node = node->as<FunctionNode>();

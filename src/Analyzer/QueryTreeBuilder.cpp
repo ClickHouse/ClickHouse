@@ -33,7 +33,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortColumnNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateColumnNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
@@ -82,7 +82,7 @@ private:
 
     QueryTreeNodePtr buildSelectExpression(const ASTPtr & select_query, bool is_subquery, const std::string & cte_name) const;
 
-    QueryTreeNodePtr buildSortColumnList(const ASTPtr & order_by_expression_list) const;
+    QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list) const;
 
     QueryTreeNodePtr buildInterpolateColumnList(const ASTPtr & interpolate_expression_list) const;
 
@@ -262,7 +262,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
-        current_query_tree->getOrderByNode() = buildSortColumnList(select_order_by_list);
+        current_query_tree->getOrderByNode() = buildSortList(select_order_by_list);
 
     auto interpolate_list = select_query_typed.interpolate();
     if (interpolate_list)
@@ -291,7 +291,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     return current_query_tree;
 }
 
-QueryTreeNodePtr QueryTreeBuilder::buildSortColumnList(const ASTPtr & order_by_expression_list) const
+QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_expression_list) const
 {
     auto list_node = std::make_shared<ListNode>();
 
@@ -313,20 +313,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortColumnList(const ASTPtr & order_by_e
 
         const auto & sort_expression_ast = order_by_element.children.at(0);
         auto sort_expression = buildExpression(sort_expression_ast);
-        auto sort_column_node = std::make_shared<SortColumnNode>(std::move(sort_expression),
+        auto sort_node = std::make_shared<SortNode>(std::move(sort_expression),
             sort_direction,
             nulls_sort_direction,
             std::move(collator),
             order_by_element.with_fill);
 
         if (order_by_element.fill_from)
-            sort_column_node->getFillFrom() = buildExpression(order_by_element.fill_from);
+            sort_node->getFillFrom() = buildExpression(order_by_element.fill_from);
         if (order_by_element.fill_to)
-            sort_column_node->getFillTo() = buildExpression(order_by_element.fill_to);
+            sort_node->getFillTo() = buildExpression(order_by_element.fill_to);
         if (order_by_element.fill_step)
-            sort_column_node->getFillStep() = buildExpression(order_by_element.fill_step);
+            sort_node->getFillStep() = buildExpression(order_by_element.fill_step);
 
-        list_node->getNodes().push_back(std::move(sort_column_node));
+        list_node->getNodes().push_back(std::move(sort_node));
     }
 
     return list_node;
@@ -582,7 +582,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindow(const ASTPtr & window_definition)
         window_node->getPartitionByNode() = buildExpressionList(window_definition_typed.partition_by);
 
     if (window_definition_typed.order_by)
-        window_node->getOrderByNode() = buildSortColumnList(window_definition_typed.order_by);
+        window_node->getOrderByNode() = buildSortList(window_definition_typed.order_by);
 
     if (window_definition_typed.frame_begin_offset)
         window_node->getFrameBeginOffsetNode() = buildExpression(window_definition_typed.frame_begin_offset);
