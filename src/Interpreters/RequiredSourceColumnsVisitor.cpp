@@ -124,30 +124,6 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
     }
 
 
-    if (auto interpolate_list = select.interpolate())
-    {
-        auto find_columns = [&data, &select_columns](IAST * function)
-        {
-            auto f_impl = [&data, &select_columns](IAST * fn, auto fi)
-            {
-                if (auto * ident = fn->as<ASTIdentifier>())
-                {
-                    if (!select_columns.contains(ident->getColumnName()))
-                        data.addColumnIdentifier(*ident);
-                    return;
-                }
-                if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
-                    for (const auto & ch : fn->children)
-                        fi(ch.get(), fi);
-                return;
-            };
-            f_impl(function, f_impl);
-        };
-
-        for (const auto & interpolate : interpolate_list->children)
-            find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
-    }
-
     std::vector<ASTPtr *> out;
     for (const auto & node : select.children)
     {
