@@ -408,6 +408,11 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     query_context.reset();
     thread_trace_context.trace_id = 0;
     thread_trace_context.span_id = 0;
+
+    /// Avoid leaking of ThreadGroupStatus::finished_threads_counters_memory
+    /// (this is in case someone uses system thread but did not call getProfileEventsCountersAndMemoryForThreads())
+    thread_group->getProfileEventsCountersAndMemoryForThreads();
+
     thread_group.reset();
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;

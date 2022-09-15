@@ -86,7 +86,6 @@ void WriteBufferFromS3::nextImpl()
     temporary_buffer->write(working_buffer.begin(), offset());
 
     ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
-
     last_part_size += offset();
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
