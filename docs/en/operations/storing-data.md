@@ -134,6 +134,13 @@ Example of configuration for versions later or equal to 22.8:
                 <max_size>10000000</max_size>
             </cache>
         </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>cache</disk>
+                </main>
+            </volumes>
+        <policies>
     </storage_configuration>
 ```
 
@@ -151,6 +158,13 @@ Example of configuration for versions earlier than 22.8:
                 <data_cache_size>10000000</data_cache_size>
             </s3>
         </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
+        <policies>
     </storage_configuration>
 ```
 
