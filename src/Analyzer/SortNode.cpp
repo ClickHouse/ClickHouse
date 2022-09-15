@@ -1,4 +1,4 @@
-#include <Analyzer/SortColumnNode.h>
+#include <Analyzer/SortNode.h>
 
 #include <Common/SipHash.h>
 
@@ -21,7 +21,7 @@ const char * toString(SortDirection sort_direction)
     }
 }
 
-SortColumnNode::SortColumnNode(QueryTreeNodePtr expression_,
+SortNode::SortNode(QueryTreeNodePtr expression_,
     SortDirection sort_direction_,
     std::optional<SortDirection> nulls_sort_direction_,
     std::shared_ptr<Collator> collator_,
@@ -35,7 +35,7 @@ SortColumnNode::SortColumnNode(QueryTreeNodePtr expression_,
     children[sort_expression_child_index] = std::move(expression_);
 }
 
-String SortColumnNode::getName() const
+String SortNode::getName() const
 {
     String result = getExpression()->getName();
 
@@ -67,9 +67,9 @@ String SortColumnNode::getName() const
     return result;
 }
 
-void SortColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
+void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "SORT_COLUMN id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ') << "SORT id: " << format_state.getNodeId(this);
 
     buffer << ", sort_direction: " << toString(sort_direction);
     if (nulls_sort_direction)
@@ -102,9 +102,9 @@ void SortColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_sta
     }
 }
 
-bool SortColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool SortNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
-    const auto & rhs_typed = assert_cast<const SortColumnNode &>(rhs);
+    const auto & rhs_typed = assert_cast<const SortNode &>(rhs);
     if (sort_direction != rhs_typed.sort_direction ||
         nulls_sort_direction != rhs_typed.nulls_sort_direction ||
         with_fill != rhs_typed.with_fill)
@@ -120,7 +120,7 @@ bool SortColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
     return collator->getLocale() == rhs_typed.collator->getLocale();
 }
 
-void SortColumnNode::updateTreeHashImpl(HashState & hash_state) const
+void SortNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(sort_direction);
     hash_state.update(nulls_sort_direction);
@@ -135,7 +135,7 @@ void SortColumnNode::updateTreeHashImpl(HashState & hash_state) const
     }
 }
 
-ASTPtr SortColumnNode::toASTImpl() const
+ASTPtr SortNode::toASTImpl() const
 {
     auto result = std::make_shared<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;
@@ -156,9 +156,9 @@ ASTPtr SortColumnNode::toASTImpl() const
     return result;
 }
 
-QueryTreeNodePtr SortColumnNode::cloneImpl() const
+QueryTreeNodePtr SortNode::cloneImpl() const
 {
-    return std::make_shared<SortColumnNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
 }
 
 }

@@ -6,7 +6,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortColumnNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -669,32 +669,32 @@ String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const Planne
 
         for (size_t i = 0; i < order_by_nodes_size; ++i)
         {
-            auto & sort_column_node = order_by_nodes[i]->as<SortColumnNode &>();
+            auto & sort_node = order_by_nodes[i]->as<SortNode &>();
+            buffer << calculateActionNodeName(sort_node.getExpression(), planner_context, node_to_name);
 
-            buffer << calculateActionNodeName(sort_column_node.getExpression(), planner_context, node_to_name);
-            auto sort_direction = sort_column_node.getSortDirection();
+            auto sort_direction = sort_node.getSortDirection();
             buffer << (sort_direction == SortDirection::ASCENDING ? " ASC" : " DESC");
 
-            auto nulls_sort_direction = sort_column_node.getNullsSortDirection();
+            auto nulls_sort_direction = sort_node.getNullsSortDirection();
 
             if (nulls_sort_direction)
                 buffer << " NULLS " << (nulls_sort_direction == sort_direction ? "LAST" : "FIRST");
 
-            if (auto collator = sort_column_node.getCollator())
+            if (auto collator = sort_node.getCollator())
                 buffer << " COLLATE " << collator->getLocale();
 
-            if (sort_column_node.withFill())
+            if (sort_node.withFill())
             {
                 buffer << " WITH FILL";
 
-                if (sort_column_node.hasFillFrom())
-                    buffer << " FROM " << calculateActionNodeName(sort_column_node.getFillFrom(), planner_context, node_to_name);
+                if (sort_node.hasFillFrom())
+                    buffer << " FROM " << calculateActionNodeName(sort_node.getFillFrom(), planner_context, node_to_name);
 
-                if (sort_column_node.hasFillTo())
-                    buffer << " TO " << calculateActionNodeName(sort_column_node.getFillTo(), planner_context, node_to_name);
+                if (sort_node.hasFillTo())
+                    buffer << " TO " << calculateActionNodeName(sort_node.getFillTo(), planner_context, node_to_name);
 
-                if (sort_column_node.hasFillStep())
-                    buffer << " STEP " << calculateActionNodeName(sort_column_node.getFillStep(), planner_context, node_to_name);
+                if (sort_node.hasFillStep())
+                    buffer << " STEP " << calculateActionNodeName(sort_node.getFillStep(), planner_context, node_to_name);
             }
 
             if (i + 1 != order_by_nodes_size)
