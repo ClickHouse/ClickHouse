@@ -288,51 +288,20 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 
 ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
 {
-    // subject = arguments[0], left = arguments[1], right = arguments[2]
-    auto f_combined_expression = std::make_shared<ASTFunction>();
-    auto args_combined_expression = std::make_shared<ASTExpressionList>();
-
-    /// [NOT] BETWEEN left AND right
-    auto f_left_expr = std::make_shared<ASTFunction>();
-    auto args_left_expr = std::make_shared<ASTExpressionList>();
-
-    auto f_right_expr = std::make_shared<ASTFunction>();
-    auto args_right_expr = std::make_shared<ASTExpressionList>();
-
-    args_left_expr->children.emplace_back(arguments[0]);
-    args_left_expr->children.emplace_back(arguments[1]);
-
-    args_right_expr->children.emplace_back(arguments[0]);
-    args_right_expr->children.emplace_back(arguments[2]);
+    // SUBJECT = arguments[0], LEFT = arguments[1], RIGHT = arguments[2]
 
     if (negative)
     {
-        /// NOT BETWEEN
-        f_left_expr->name = "less";
-        f_right_expr->name = "greater";
-        f_combined_expression->name = "or";
+        auto f_left_expr = makeASTFunction("less", arguments[0], arguments[1]);
+        auto f_right_expr = makeASTFunction("greater", arguments[0], arguments[2]);
+        return makeASTFunction("or", f_left_expr, f_right_expr);
     }
     else
     {
-        /// BETWEEN
-        f_left_expr->name = "greaterOrEquals";
-        f_right_expr->name = "lessOrEquals";
-        f_combined_expression->name = "and";
+        auto f_left_expr = makeASTFunction("greaterOrEquals", arguments[0], arguments[1]);
+        auto f_right_expr = makeASTFunction("lessOrEquals", arguments[0], arguments[2]);
+        return makeASTFunction("and", f_left_expr, f_right_expr);
     }
-
-    f_left_expr->arguments = args_left_expr;
-    f_left_expr->children.emplace_back(f_left_expr->arguments);
-
-    f_right_expr->arguments = args_right_expr;
-    f_right_expr->children.emplace_back(f_right_expr->arguments);
-
-    args_combined_expression->children.emplace_back(f_left_expr);
-    args_combined_expression->children.emplace_back(f_right_expr);
-
-    f_combined_expression->arguments = args_combined_expression;
-    f_combined_expression->children.emplace_back(f_combined_expression->arguments);
-
-    return f_combined_expression;
 }
 
 
@@ -616,7 +585,7 @@ public:
         return operators.back().type;
     }
 
-    int empty() const
+    int isCurrentElementEmpty() const
     {
         return operators.empty() && operands.empty();
     }
@@ -696,7 +665,7 @@ public:
         if (!popOperand(node))
             return false;
 
-        bool res = empty();
+        bool res = isCurrentElementEmpty();
 
         if (push_to_elements)
             pushResult(node);
@@ -709,7 +678,7 @@ public:
     bool parseLambda()
     {
         // 0. If empty - create function tuple with 0 args
-        if (empty())
+        if (isCurrentElementEmpty())
         {
             auto function = makeASTFunction("tuple");
             pushOperand(function);
@@ -762,7 +731,7 @@ public:
     bool allow_alias_without_as_keyword = true;
 
     std::optional<std::pair<IParser::Pos, Checkpoint>> saved_checkpoint;
-    Checkpoint current_checkpoint;
+    Checkpoint current_checkpoint = Checkpoint::None;
 
 protected:
     std::vector<Operator> operators;
@@ -828,7 +797,7 @@ public:
         {
             action = Action::OPERATOR;
 
-            if (!empty() || !elements.empty())
+            if (!isCurrentElementEmpty() || !elements.empty())
                 if (!mergeElement())
                     return false;
 
@@ -904,7 +873,7 @@ public:
             {
                 action = Action::OPERATOR;
 
-                if (!empty() || !elements.empty())
+                if (!isCurrentElementEmpty() || !elements.empty())
                     if (!mergeElement())
                         return false;
 
@@ -1070,7 +1039,7 @@ public:
         {
             action = Action::OPERATOR;
 
-            if (!empty())
+            if (!isCurrentElementEmpty())
                 if (!mergeElement())
                     return false;
 
@@ -2310,7 +2279,7 @@ typename ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand
 
         /// Current element should be empty (there should be no other operands or operators)
         /// to parse SETTINGS in table function
-        if (layers.back()->empty())
+        if (layers.back()->isCurrentElementEmpty())
         {
             auto old_pos = pos;
             ParserKeyword s_settings("SETTINGS");
