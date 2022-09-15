@@ -204,8 +204,7 @@ DataPartStorageBuilderPtr DataPartStorageOnDisk::getBuilder() const
 }
 
 void DataPartStorageOnDisk::remove(
-    bool can_remove_shared_data,
-    const NameSet & names_not_to_remove,
+    CanRemoveCallback && can_remove_callback,
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
     bool is_temp,
@@ -239,13 +238,16 @@ void DataPartStorageOnDisk::remove(
 
     fs::path to = fs::path(root_path) / part_dir_without_slash;
 
+    std::optional<CanRemoveDescription> can_remove_description;
+
     auto disk = volume->getDisk();
     if (disk->exists(to))
     {
         LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
         try
         {
-            disk->removeSharedRecursive(fs::path(to) / "", !can_remove_shared_data, names_not_to_remove);
+            can_remove_description.emplace(can_remove_callback());
+            disk->removeSharedRecursive(fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
         }
         catch (...)
         {
@@ -268,6 +270,11 @@ void DataPartStorageOnDisk::remove(
         throw;
     }
 
+    if (!can_remove_description)
+    {
+        can_remove_description.emplace(can_remove_callback());
+    }
+
     // Record existing projection directories so we don't remove them twice
     std::unordered_set<String> projection_directories;
     std::string proj_suffix = ".proj";
@@ -278,7 +285,7 @@ void DataPartStorageOnDisk::remove(
 
         clearDirectory(
             fs::path(to) / proj_dir_name,
-            can_remove_shared_data, names_not_to_remove, projection.checksums, {}, is_temp, state, log, true);
+            can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove, projection.checksums, {}, is_temp, state, log, true);
     }
 
     /// It is possible that we are removing the part which have a written but not loaded projection.
@@ -305,7 +312,7 @@ void DataPartStorageOnDisk::remove(
 
                     clearDirectory(
                         fs::path(to) / name,
-                        can_remove_shared_data, names_not_to_remove, tmp_checksums, {}, is_temp, state, log, true);
+                        can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove, tmp_checksums, {}, is_temp, state, log, true);
                 }
                 catch (...)
                 {
@@ -315,7 +322,7 @@ void DataPartStorageOnDisk::remove(
         }
     }
 
-    clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, is_temp, state, log, false);
+    clearDirectory(to, can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove, checksums, projection_directories, is_temp, state, log, false);
 }
 
 void DataPartStorageOnDisk::clearDirectory(

@@ -45,8 +45,7 @@ public:
     void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
     void remove(
-        bool can_remove_shared_data,
-        const NameSet & names_not_to_remove,
+        CanRemoveCallback && can_remove_callback,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
