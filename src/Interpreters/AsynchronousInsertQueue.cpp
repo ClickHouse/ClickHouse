@@ -457,17 +457,20 @@ try
 
     format->addBuffer(std::move(last_buffer));
 
-    auto chunk = Chunk(executor.getResultColumns(), total_rows);
-    size_t total_bytes = chunk.bytes();
+    if (total_rows)
+    {
+        auto chunk = Chunk(executor.getResultColumns(), total_rows);
+        size_t total_bytes = chunk.bytes();
 
-    auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
-    pipeline.complete(Pipe(std::move(source)));
+        auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+        pipeline.complete(Pipe(std::move(source)));
 
-    CompletedPipelineExecutor completed_executor(pipeline);
-    completed_executor.execute();
+        CompletedPipelineExecutor completed_executor(pipeline);
+        completed_executor.execute();
 
-    LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'",
-        total_rows, total_bytes, queryToString(key.query));
+        LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'",
+            total_rows, total_bytes, queryToString(key.query));
+    }
 
     for (const auto & entry : data->entries)
         if (!entry->isFinished())
