@@ -3799,7 +3799,7 @@ Exception: Total regexp lengths too large.
 
 Значение по умолчанию: `1`.
 
-## enable_date32_results {#enable-date32-results}
+## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Включает и отключает возвращение результатов типа Date32 для функций toStartOfYear, toStartOfISOYear, toStartOfQuarter, toStartOfMonth, toStartOfWeek, toMonday и toLastDayOfMonth
 

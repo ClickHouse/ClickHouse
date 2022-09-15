@@ -3144,7 +3144,7 @@ Result:
 └─────┴─────┴───────┘
 ```
 
-## enable_date32_results {#enable-date32-results}
+## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type Date32 for functions toStartOfYear, toStartOfISOYear, toStartOfQuarter, toStartOfMonth, toStartOfWeek, toMonday and toLastDayOfMonth.
 

@@ -13,14 +13,14 @@ template <typename Transform>
 class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>, WithContext
 {
 public:
-    const bool enable_date32_results = false;
+    const bool enable_extended_results_for_datetime_functions = false;
 
     static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionDateOrDateTimeToDateOrDate32>(context_);
     }
 
-    explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_) : WithContext(context_), enable_date32_results(context_->getSettingsRef().enable_date32_results) { }
+    explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_) : WithContext(context_), enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions) { }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -37,12 +37,12 @@ public:
                 throw Exception(
                     "Function " + this->getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (which.isDateTime64() && enable_date32_results)
+            if (which.isDateTime64() && enable_extended_results_for_datetime_functions)
                 return std::make_shared<DataTypeDate32>();
             else
                 return std::make_shared<DataTypeDate>();
         }
-        if (which.isDate32() && enable_date32_results)
+        if (which.isDate32() && enable_extended_results_for_datetime_functions)
             return std::make_shared<DataTypeDate32>();
         else
             return std::make_shared<DataTypeDate>();
@@ -56,8 +56,8 @@ public:
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDate32())
-            if (enable_date32_results)
-                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_compat*/ true>::execute(arguments, result_type, input_rows_count);
+            if (enable_extended_results_for_datetime_functions)
+                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
             else
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
@@ -67,8 +67,8 @@ public:
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
 
             const TransformDateTime64<Transform> transformer(scale);
-            if (enable_date32_results)
-                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), /*is_compat*/ true>::execute(arguments, result_type, input_rows_count, transformer);
+            if (enable_extended_results_for_datetime_functions)
+                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count, transformer);
             else
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
