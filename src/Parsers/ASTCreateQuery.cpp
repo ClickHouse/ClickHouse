@@ -226,7 +226,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (database && !table)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
+            << (attach ? "ATTACH " : "CREATE ")
+            << (temporary ? "TEMPORARY DATABASE " : "DATABASE ")
             << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
             << backQuoteIfNeed(getDatabase());

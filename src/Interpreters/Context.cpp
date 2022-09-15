@@ -1054,6 +1054,7 @@ Tables Context::getExternalTables() const
     return res;
 }
 
+
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
     if (isGlobalContext())

@@ -85,7 +85,7 @@ void executeToTableImpl(ContextPtr context_, ASTDropQuery & query, DatabasePtr &
 
 
 TemporaryDatabaseHolder::TemporaryDatabaseHolder(ContextPtr context_, String temp_name, String global_name)
-    : WithContext(context_->getSessionContext()), temporary_database_name(temp_name), global_database_name(global_name)
+    : WithContext(context_->getGlobalContext()), temporary_database_name(temp_name), global_database_name(global_name)
 {
 }
 

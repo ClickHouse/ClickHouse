@@ -1152,6 +1152,7 @@ bool ParserTableOverridesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Ex
 bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
+    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
@@ -1167,6 +1168,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
+    bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -1175,6 +1177,8 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         else
             return false;
     }
+    if (s_temporary.ignore(pos, expected))
+        is_temporary = true;
 
     if (!s_database.ignore(pos, expected))
         return false;
@@ -1211,6 +1215,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
+    query->temporary = is_temporary;
 
     query->uuid = uuid;
     query->cluster = cluster_str;
