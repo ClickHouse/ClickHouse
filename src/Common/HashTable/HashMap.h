@@ -190,6 +190,7 @@ public:
     using Self = HashMapTable;
     using Base = HashTable<Key, Cell, Hash, Grower, Allocator>;
     using LookupResult = typename Base::LookupResult;
+    using Iterator = typename Base::iterator;
 
     using Base::Base;
     using Base::prefetch;
@@ -301,7 +302,7 @@ public:
     }
 
 private:
-    auto advanceIterator(auto it, size_t n)
+    Iterator advanceIterator(Iterator it, size_t n)
     {
         size_t i = 0;
         while (i++ < n && it != this->end())

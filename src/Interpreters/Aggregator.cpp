@@ -290,7 +290,7 @@ DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Agg
 template <typename HashTable, typename KeyHolder>
 concept HasPrefetchMemberFunc = requires
 {
-    {std::declval<HashTable>().prefetch(std::declval<KeyHolder>())} -> std::same_as<void>;
+    {std::declval<HashTable>().prefetch(std::declval<KeyHolder>())};
 };
 
 size_t getL2CacheSize()
@@ -1037,7 +1037,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
-    /// During processing of row #i we will prefetch HashTable cell for row #(row + prefetch_look_ahead).
+    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
     PrefetchingHelper prefetching;
     size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
 
