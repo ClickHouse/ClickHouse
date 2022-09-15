@@ -125,7 +125,7 @@ if __name__ == "__main__":
 
     logging.info("Will try to fetch cache for our build")
     ccache_for_pr = get_ccache_if_not_exists(
-        cache_path, s3_helper, pr_info.number, temp_path
+        cache_path, s3_helper, pr_info.number, temp_path, pr_info.release_pr
     )
     upload_master_ccache = ccache_for_pr in (-1, 0)
 
