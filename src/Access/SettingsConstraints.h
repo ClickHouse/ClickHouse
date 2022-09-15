@@ -90,7 +90,7 @@ private:
 
     struct Constraint
     {
-        SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
+        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         Field min_value;
         Field max_value;
 
@@ -114,7 +114,7 @@ private:
             , code(code_)
         {}
 
-        // Allow of forbid depending on range defined by constraint, also used to return stored constraint
+        // Allow or forbid depending on range defined by constraint, also used to return stored constraint
         Checker(const Constraint & constraint_)
             : constraint(constraint_)
         {}

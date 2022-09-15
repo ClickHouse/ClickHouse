@@ -52,22 +52,23 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
                       << applyVisitor(FieldVisitorToString{}, max_value);
     }
 
-    switch (writability)
-    {
-        case SettingConstraintWritability::DEFAULT:
-            break;
-        case SettingConstraintWritability::WRITABLE:
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
-                          << (settings.hilite ? IAST::hilite_none : "");
-            break;
-        case SettingConstraintWritability::CONST:
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CONST"
-                          << (settings.hilite ? IAST::hilite_none : "");
-            break;
-        case SettingConstraintWritability::CHANGEABLE_IN_READONLY:
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
-                          << (settings.hilite ? IAST::hilite_none : "");
-            break;
+    if (writability) {
+        switch (*writability)
+        {
+            case SettingConstraintWritability::WRITABLE:
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
+                            << (settings.hilite ? IAST::hilite_none : "");
+                break;
+            case SettingConstraintWritability::CONST:
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CONST"
+                            << (settings.hilite ? IAST::hilite_none : "");
+                break;
+            case SettingConstraintWritability::CHANGEABLE_IN_READONLY:
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
+                            << (settings.hilite ? IAST::hilite_none : "");
+                break;
+            case SettingConstraintWritability::MAX: break;
+        }
     }
 }
 

@@ -17,7 +17,7 @@ public:
     Field value;
     Field min_value;
     Field max_value;
-    SettingConstraintWritability writability = SettingConstraintWritability::DEFAULT;
+    std::optional<SettingConstraintWritability> writability;
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
     bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.
 

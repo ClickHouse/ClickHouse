@@ -37,8 +37,6 @@ void SettingsConstraints::clear()
 
 void SettingsConstraints::set(const String & setting_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability)
 {
-    if (min_value.isNull() && max_value.isNull() && writability == SettingConstraintWritability::DEFAULT)
-        return; // Do not even create entry to avoid issues during profile inheritance
     auto & constraint = constraints[setting_name];
     if (!min_value.isNull())
         constraint.min_value = Settings::castValueUtil(setting_name, min_value);
