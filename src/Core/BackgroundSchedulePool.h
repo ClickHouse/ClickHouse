@@ -57,7 +57,9 @@ public:
     ~BackgroundSchedulePool();
 
 private:
-    using Threads = std::vector<ThreadFromGlobalPool>;
+    /// BackgroundSchedulePool schedules a task on its own task queue, there's no need to construct/restore tracing context on this level.
+    /// This is also how ThreadPool class treats the tracing context. See ThreadPool for more information.
+    using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
 
     void threadFunction();
     void delayExecutionThreadFunction();
@@ -83,7 +85,7 @@ private:
     std::condition_variable delayed_tasks_cond_var;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
-    ThreadFromGlobalPool delayed_thread;
+    ThreadFromGlobalPoolNoTracingContextPropagation delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
 
