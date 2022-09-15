@@ -38,7 +38,7 @@ private:
     SnapshotsQueue snapshots_queue{1};
 
     using SnapshotBackupQueue = ConcurrentBoundedQueue<std::string>;
-    SnapshotBackupQueue snapshots_backup_queue;
+    SnapshotBackupQueue snapshots_s3_queue;
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -66,8 +66,8 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
-    /// Backup new snapshots to S3
-    ThreadFromGlobalPool snapshot_backup_thread;
+    /// Upload new snapshots to S3
+    ThreadFromGlobalPool snapshot_s3_thread;
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
 
@@ -84,8 +84,8 @@ private:
     std::atomic<int64_t> internal_session_id_counter{0};
 
     struct S3Configuration;
-    mutable std::mutex backup_s3_client_mutex;
-    std::shared_ptr<S3Configuration> backup_s3_client;
+    mutable std::mutex snapshot_s3_client_mutex;
+    std::shared_ptr<S3Configuration> snapshot_s3_client;
 
     /// Thread put requests to raft
     void requestThread();
@@ -96,7 +96,7 @@ private:
     /// Thread create snapshots in the background
     void snapshotThread();
     /// Thread backup snapshots to S3 in the background
-    void snapshotBackupThread();
+    void snapshotS3Thread();
     /// Thread apply or wait configuration changes from leader
     void updateConfigurationThread();
 
@@ -110,7 +110,7 @@ private:
     /// Clears both arguments
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
-    std::shared_ptr<S3Configuration> getBackupS3Client() const;
+    std::shared_ptr<S3Configuration> getSnapshotS3Client() const;
 
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`
