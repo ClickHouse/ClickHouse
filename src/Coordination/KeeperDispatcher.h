@@ -125,6 +125,8 @@ private:
 
     void finalizeRequestsThread();
 
+    void processReadRequests(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestsForSessions & read_requests);
+
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
     /// Add error responses for requests to responses queue.
