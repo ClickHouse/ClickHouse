@@ -6,6 +6,7 @@
 #include <functional>
 #include <filesystem>
 
+#include "Common/ZooKeeper/Types.h"
 #include <Common/randomSeed.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
@@ -1202,6 +1203,20 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     auto request = std::make_shared<Coordination::CheckRequest>();
     request->path = path;
     request->version = version;
+    return request;
+}
+
+Coordination::RequestPtr makeGetRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::GetRequest>();
+    request->path = path;
+    return request;
+}
+
+Coordination::RequestPtr makeListRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ListRequest>();
+    request->path = path;
     return request;
 }
 
