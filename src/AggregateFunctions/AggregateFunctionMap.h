@@ -104,11 +104,6 @@ public:
         return nested_func->getDefaultVersion();
     }
 
-    bool hasTrivialDestructor() const override
-    {
-        return false;
-    }
-
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
     {
         if (types.empty())
