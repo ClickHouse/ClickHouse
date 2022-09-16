@@ -25,9 +25,9 @@ public:
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
-    void reload() override;
     void startPeriodicReloading() override { startWatchingThread(); }
     void stopPeriodicReloading() override { stopWatchingThread(); }
+    void reload(ReloadMode reload_mode) override;
 
     bool exists(const UUID & id) const override;
 

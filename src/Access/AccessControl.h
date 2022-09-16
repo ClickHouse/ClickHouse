@@ -99,8 +99,8 @@ public:
                                    const String & config_path,
                                    const zkutil::GetZooKeeper & get_zookeeper_function);
 
-    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
-    void reload() override;
+    /// Reloads and updates all access entities.
+    void reload(ReloadMode reload_mode) override;
 
     using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
 

@@ -421,15 +421,13 @@ void DiskAccessStorage::removeAllExceptInMemory(const boost::container::flat_set
 }
 
 
-
-void DiskAccessStorage::reload()
+void DiskAccessStorage::reload(ReloadMode reload_mode)
 {
-    /// TODO: Disabled because reload() is called by SYSTEM RELOAD CONFIG and replicated access storage is not a config-based.
-    /// We need a separate SYSTEM RELOAD USERS command.
-#if 0
+    if (reload_mode != ReloadMode::ALL)
+        return;
+
     std::lock_guard lock{mutex};
     reloadAllAndRebuildLists();
-#endif
 }
 
 
