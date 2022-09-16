@@ -1,11 +1,8 @@
 #include <memory>
-#include <Interpreters/ExpressionActions.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
