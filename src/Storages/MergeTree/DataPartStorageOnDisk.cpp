@@ -209,7 +209,7 @@ void DataPartStorageOnDisk::remove(
     std::list<ProjectionChecksums> projections,
     bool is_temp,
     MergeTreeDataPartState state,
-    Poco::Logger * log) const
+    Poco::Logger * log)
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
@@ -259,6 +259,7 @@ void DataPartStorageOnDisk::remove(
     try
     {
         disk->moveDirectory(from, to);
+        onRename(root_path, part_dir_without_slash);
     }
     catch (const fs::filesystem_error & e)
     {
@@ -271,9 +272,7 @@ void DataPartStorageOnDisk::remove(
     }
 
     if (!can_remove_description)
-    {
         can_remove_description.emplace(can_remove_callback());
-    }
 
     // Record existing projection directories so we don't remove them twice
     std::unordered_set<String> projection_directories;
