@@ -20,7 +20,11 @@ public:
         return std::make_shared<FunctionDateOrDateTimeToDateOrDate32>(context_);
     }
 
-    explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_) : WithContext(context_), enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions) { }
+    explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_)
+        : WithContext(context_)
+        , enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
+    {
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -30,19 +34,14 @@ public:
         WhichDataType which(from_type);
 
         /// If the time zone is specified but empty, throw an exception.
-        if (which.isDateTime() || which.isDateTime64())
-        {
-            /// only validate the time_zone part if the number of arguments is 2.
-            if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0).empty())
-                throw Exception(
-                    "Function " + this->getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (which.isDateTime64() && enable_extended_results_for_datetime_functions)
-                return std::make_shared<DataTypeDate32>();
-            else
-                return std::make_shared<DataTypeDate>();
-        }
-        if (which.isDate32() && enable_extended_results_for_datetime_functions)
+        /// only validate the time_zone part if the number of arguments is 2.
+        if ((which.isDateTime() || which.isDateTime64()) && arguments.size() == 2
+            && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0).empty())
+            throw Exception(
+                "Function " + this->getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
             return std::make_shared<DataTypeDate32>();
         else
             return std::make_shared<DataTypeDate>();
