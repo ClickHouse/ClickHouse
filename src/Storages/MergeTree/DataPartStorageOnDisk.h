@@ -50,7 +50,7 @@ public:
         std::list<ProjectionChecksums> projections,
         bool is_temp,
         MergeTreeDataPartState state,
-        Poco::Logger * log) const override;
+        Poco::Logger * log) override;
 
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
 

@@ -1433,7 +1433,7 @@ void IMergeTreeDataPart::remove() const
     assert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
-    auto can_remove_callback = [&] ()
+    auto can_remove_callback = [this] ()
     {
         auto [can_remove, files_not_to_remove] = canRemovePart();
         if (!can_remove)
