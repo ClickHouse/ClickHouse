@@ -27,7 +27,7 @@ public:
     void setReadOnly(bool readonly_) { readonly = readonly_; }
     bool isReadOnly() const override { return readonly; }
 
-    void reload() override;
+    void reload(ReloadMode reload_mode) override;
 
     bool exists(const UUID & id) const override;
 
