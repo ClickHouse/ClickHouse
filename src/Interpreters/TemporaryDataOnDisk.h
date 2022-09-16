@@ -22,7 +22,7 @@ using TemporaryFileStreamHolder = std::unique_ptr<TemporaryFileStream>;
 /*
  * Used to account amount of temporary data written to dicsk.
  * If limit is set, throws exception if limit is exceeded.
- * Data can be nested, so parent scope accounts all data written by childrens.
+ * Data can be nested, so parent scope accounts all data written by children.
  * Scopes are: global -> per-user -> per-query -> per-purpose (sorting, aggregation, etc).
  */
 class TemporaryDataOnDiskScope : boost::noncopyable
