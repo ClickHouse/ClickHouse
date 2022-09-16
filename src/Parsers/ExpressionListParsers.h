@@ -192,14 +192,16 @@ protected:
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword_, bool is_table_function_ = false)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), is_table_function(is_table_function_) {}
+    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword_, bool is_table_function_ = false);
 protected:
-    bool allow_alias_without_as_keyword;
-    bool is_table_function;
+    ParserPtr impl;
 
     const char * getName() const override { return "expression with optional alias"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return impl->parse(pos, node, expected);
+    }
 };
 
 
