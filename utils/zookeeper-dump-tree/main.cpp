@@ -41,6 +41,7 @@ int main(int argc, char ** argv)
         std::list<std::pair<std::vector<std::string>, std::future<Coordination::MultiResponse>>> multi_futures;
         Coordination::Requests requests;
         requests.emplace_back(zkutil::makeListRequest(initial_path));
+        requests.emplace_back(zkutil::makeGetRequest(initial_path));
         multi_futures.emplace_back(std::vector<std::string>{initial_path}, zookeeper->asyncMulti(requests));
 
         size_t num_reconnects = 0;
@@ -84,6 +85,7 @@ int main(int argc, char ** argv)
                     for (const auto & path : paths)
                     {
                         new_requests.emplace_back(zkutil::makeListRequest(path));
+                        new_requests.emplace_back(zkutil::makeGetRequest(path));
                     }
                     multi_futures.emplace_back(std::move(paths), zookeeper->asyncMulti(new_requests));
                     continue;
@@ -95,10 +97,12 @@ int main(int argc, char ** argv)
             for (size_t i = 0; i < it->first.size(); ++i)
             {
                 const auto & path = it->first[i];
-                const auto & list_response = dynamic_cast<const Coordination::ListResponse &>(*response.responses[i]);
+                const auto & list_response = dynamic_cast<const Coordination::ListResponse &>(*response.responses[2 * i]);
+                const auto & get_response = dynamic_cast<const Coordination::GetResponse &>(*response.responses[2 * i + 1]);
                 std::cout << path << '\t' << list_response.stat.numChildren << '\t' << list_response.stat.dataLength;
                 if (dump_ctime)
                     std::cout << '\t' << list_response.stat.ctime;
+                std::cout << '\t' << get_response.data;
                 std::cout << '\n';
 
                 Coordination::Requests new_requests;
@@ -110,6 +114,7 @@ int main(int argc, char ** argv)
 
                     ensure_session();
                     new_requests.emplace_back(zkutil::makeListRequest(child_path));
+                    new_requests.emplace_back(zkutil::makeGetRequest(child_path));
                     children.push_back(std::move(child_path));
                 }
 
