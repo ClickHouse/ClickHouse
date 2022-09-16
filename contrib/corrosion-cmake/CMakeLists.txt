@@ -11,9 +11,6 @@ if(NOT ENABLE_RUST)
   return()
 endif()
 
-# Define function corrosion_import_crate()
-include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
-
 message(STATUS "Checking Rust toolchain for current target")
 
 if(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64")
@@ -47,6 +44,9 @@ if(CMAKE_TOOLCHAIN_FILE MATCHES "ppc64le")
     execute_process(COMMAND rustup target add powerpc64le-unknown-linux-gnu)
 endif()
 
-execute_process(rustup target default ${Rust_CARGO_TARGET})
+execute_process(COMMAND rustup default stable-${Rust_CARGO_TARGET})
 
 message(STATUS "Switched Rust target to ${Rust_CARGO_TARGET}")
+
+# Define function corrosion_import_crate()
+include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")

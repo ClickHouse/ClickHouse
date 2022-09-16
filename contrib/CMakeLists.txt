@@ -92,9 +92,7 @@ add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 
-if (ENABLE_RUST)
-    add_contrib (corrosion-cmake corrosion)
-endif()
+add_contrib (corrosion-cmake corrosion)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
