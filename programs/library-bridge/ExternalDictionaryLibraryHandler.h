@@ -50,6 +50,6 @@ private:
     void * lib_data;
 };
 
-using SharedLibraryHandlerPtr = std::shared_ptr<ExternalDictionaryLibraryHandler>;
+using ExternalDictionaryLibraryHandlerPtr = std::shared_ptr<ExternalDictionaryLibraryHandler>;
 
 }
