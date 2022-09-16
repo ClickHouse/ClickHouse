@@ -170,6 +170,8 @@ private:
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
         DataPartStorageBuilderPtr data_part_storage_builder;
 
+        /// If lightweight delete mask is present then some input rows are filtered out right after reading.
+        std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
@@ -178,6 +180,8 @@ private:
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
 
         MergeTreeTransactionPtr txn;
+
+        scope_guard temporary_directory_lock;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;

@@ -160,9 +160,8 @@ function run_cmake
         "-DENABLE_REPLXX=1"
     )
 
-    # TODO remove this? we don't use ccache anyway. An option would be to download it
-    # from S3 simultaneously with cloning.
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
+    export CCACHE_COMPRESSLEVEL=5
     export CCACHE_BASEDIR="$FASTTEST_SOURCE"
     export CCACHE_NOHASHDIR=true
     export CCACHE_COMPILERCHECK=content
@@ -191,6 +190,7 @@ function build
             gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
+        ccache --evict-older-than 1d ||:
     )
 }
 

@@ -1,12 +1,13 @@
 #pragma once
 
-#include <base/types.h>
+#include <Core/UUID.h>
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Interpreters/Context_fwd.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
-#include <Core/UUID.h>
 
 #include <ctime>
 #include <functional>
@@ -132,18 +133,15 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
         ContextMutablePtr /*context*/,
-        bool /*force_restore*/,
-        bool /*force_attach*/ = false,
-        bool /* skip_startup_tables */ = false)
+        LoadingStrictnessLevel /*mode*/,
+        bool /* skip_startup_tables */)
     {
     }
 
     virtual bool supportsLoadingInTopologicalOrder() const { return false; }
 
     virtual void beforeLoadingMetadata(
-        ContextMutablePtr /*context*/,
-        bool /*force_restore*/,
-        bool /*force_attach*/)
+        ContextMutablePtr /*context*/, LoadingStrictnessLevel /*mode*/)
     {
     }
 
@@ -152,12 +150,13 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/, bool /*force_restore*/)
+    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/,
+        LoadingStrictnessLevel /*mode*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void startupTables(ThreadPool & /*thread_pool*/, bool /*force_restore*/, bool /*force_attach*/) {}
+    virtual void startupTables(ThreadPool & /*thread_pool*/, LoadingStrictnessLevel /*mode*/) {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -221,6 +220,13 @@ public:
     virtual void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
     {
         throw Exception("There is no DETACH TABLE PERMANENTLY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Returns list of table names that were permanently detached.
+    /// This list may not be updated in runtime and may be filled only on server startup
+    virtual Strings getNamesOfPermanentlyDetachedTables() const
+    {
+        throw Exception("Cannot get names of permanently detached tables for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Rename the table and possibly move the table to another database.

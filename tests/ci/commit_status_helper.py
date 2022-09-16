@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 
-import time
-import os
 import csv
+import os
+import time
+from typing import Optional
+import logging
+
+from ci_config import CI_CONFIG, REQUIRED_CHECKS
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
-from ci_config import CI_CONFIG
-from pr_info import SKIP_SIMPLE_CHECK_LABEL
+from github import Github
+from github.Commit import Commit
+from pr_info import SKIP_MERGEABLE_CHECK_LABEL
 
 RETRY = 5
 
@@ -22,7 +27,9 @@ def override_status(status, check_name, invert=False):
     return status
 
 
-def get_commit(gh, commit_sha, retry_count=RETRY):
+def get_commit(
+    gh: Github, commit_sha: str, retry_count: int = RETRY
+) -> Optional[Commit]:
     for i in range(retry_count):
         try:
             repo = gh.get_repo(GITHUB_REPOSITORY)
@@ -76,26 +83,59 @@ def post_labels(gh, pr_info, labels_names):
         pull_request.add_to_labels(label)
 
 
-def fail_simple_check(gh, pr_info, description):
-    if SKIP_SIMPLE_CHECK_LABEL in pr_info.labels:
-        return
-    commit = get_commit(gh, pr_info.sha)
+def fail_mergeable_check(commit, description):
     commit.create_status(
-        context="Simple Check",
+        context="Mergeable Check",
         description=description,
         state="failure",
         target_url=GITHUB_RUN_URL,
     )
 
 
-def create_simple_check(gh, pr_info):
-    commit = get_commit(gh, pr_info.sha)
-    for status in commit.get_statuses():
-        if "Simple Check" in status.context:
-            return
+def reset_mergeable_check(commit, description=""):
     commit.create_status(
-        context="Simple Check",
-        description="Skipped",
+        context="Mergeable Check",
+        description=description,
         state="success",
         target_url=GITHUB_RUN_URL,
     )
+
+
+def update_mergeable_check(gh, pr_info, check_name):
+    if SKIP_MERGEABLE_CHECK_LABEL in pr_info.labels:
+        return
+
+    logging.info("Update Mergeable Check by %s", check_name)
+
+    commit = get_commit(gh, pr_info.sha)
+    checks = {
+        check.context: check.state
+        for check in filter(
+            lambda check: (check.context in REQUIRED_CHECKS),
+            # get_statuses() returns generator, which cannot be reversed - we need comprehension
+            # pylint: disable=unnecessary-comprehension
+            reversed([status for status in commit.get_statuses()]),
+        )
+    }
+
+    success = []
+    fail = []
+    for name, state in checks.items():
+        if state == "success":
+            success.append(name)
+        else:
+            fail.append(name)
+
+    if fail:
+        description = "failed: " + ", ".join(fail)
+        if success:
+            description += "; succeeded: " + ", ".join(success)
+        if len(description) > 140:
+            description = description[:137] + "..."
+        fail_mergeable_check(commit, description)
+        return
+
+    description = ", ".join(success)
+    if len(description) > 140:
+        description = description[:137] + "..."
+    reset_mergeable_check(commit, description)

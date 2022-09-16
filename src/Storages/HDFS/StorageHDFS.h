@@ -6,6 +6,7 @@
 
 #include <Processors/ISource.h>
 #include <Storages/IStorage.h>
+#include <Storages/Cache/SchemaCache.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 
@@ -65,11 +66,27 @@ public:
         const String & compression_method,
         ContextPtr ctx);
 
+    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
 protected:
     friend class HDFSSource;
 
 private:
-    std::vector<const String> uris;
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & paths,
+        const String & uri_without_path,
+        std::unordered_map<String, time_t> & last_mod_time,
+        const String & format_name,
+        const ContextPtr & ctx);
+
+    static void addColumnsToCache(
+        const Strings & paths,
+        const String & uri_without_path,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const ContextPtr & ctx);
+
+    std::vector<String> uris;
     String format_name;
     String compression_method;
     const bool distributed_processing;
@@ -99,7 +116,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<const String> & uris_, ContextPtr context);
+            URISIterator(const std::vector<String> & uris_, ContextPtr context);
             String next();
         private:
             class Impl;

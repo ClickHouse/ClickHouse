@@ -113,14 +113,14 @@ public:
                 const auto & null_map_column = nullable_column->getNullMapColumn();
 
                 auto nested_column_raw_data = nested_column.getRawData();
-                __msan_unpoison(nested_column_raw_data.data, nested_column_raw_data.size);
+                __msan_unpoison(nested_column_raw_data.data(), nested_column_raw_data.size());
 
                 auto null_map_column_raw_data = null_map_column.getRawData();
-                __msan_unpoison(null_map_column_raw_data.data, null_map_column_raw_data.size);
+                __msan_unpoison(null_map_column_raw_data.data(), null_map_column_raw_data.size());
             }
             else
             {
-                __msan_unpoison(result_column->getRawData().data, result_column->getRawData().size);
+                __msan_unpoison(result_column->getRawData().data(), result_column->getRawData().size());
             }
 
             #endif
@@ -551,10 +551,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
             node_to_data[child].all_parents_compilable &= node_is_valid_for_compilation;
     }
 
-    for (const auto & node : index)
+    for (const auto & output_node : outputs)
     {
-        /// Force result nodes to compile
-        node_to_data[node].all_parents_compilable = false;
+        /// Force output nodes to compile
+        node_to_data[output_node].all_parents_compilable = false;
     }
 
     std::vector<Node *> nodes_to_compile;

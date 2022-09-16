@@ -94,7 +94,7 @@ public:
 
 }
 
-void registerFunctionAddressToSymbol(FunctionFactory & factory)
+REGISTER_FUNCTION(AddressToSymbol)
 {
     factory.registerFunction<FunctionAddressToSymbol>();
 }

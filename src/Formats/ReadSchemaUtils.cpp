@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -75,12 +74,13 @@ ColumnsDescription readSchemaFromFormat(
         SchemaReaderPtr schema_reader;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
         size_t iterations = 0;
+        ColumnsDescription cached_columns;
         while (true)
         {
             bool is_eof = false;
             try
             {
-                buf = read_buffer_iterator();
+                buf = read_buffer_iterator(cached_columns);
                 if (!buf)
                     break;
                 is_eof = buf->eof();
@@ -88,8 +88,13 @@ ColumnsDescription readSchemaFromFormat(
             catch (...)
             {
                 auto exception_message = getCurrentExceptionMessage(false);
-                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file: {}. You can specify the structure manually", format_name, exception_message);
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file:\n{}\nYou can specify the structure manually",
+                    format_name,
+                    exception_message);
             }
+
             ++iterations;
 
             if (is_eof)
@@ -136,6 +141,9 @@ ColumnsDescription readSchemaFromFormat(
                 exception_messages += "\n" + exception_message;
             }
         }
+
+        if (!cached_columns.empty())
+            return cached_columns;
 
         if (names_and_types.empty())
             throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:{}\nYou can specify the structure manually", exception_messages);
@@ -229,6 +237,30 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
     for (auto & [name, type] : header.getNamesAndTypesList())
         result.emplace_back(name, makeNullableRecursivelyAndCheckForNothing(type));
     return result;
+}
+
+SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    return getKeysForSchemaCache({source}, format, format_settings, context).front();
+}
+
+static SchemaCache::Key makeSchemaCacheKey(const String & source, const String & format, const String & additional_format_info)
+{
+    return SchemaCache::Key{source, format, additional_format_info};
+}
+
+SchemaCache::Keys getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    /// For some formats data schema depends on some settings, so it's possible that
+    /// two queries to the same source will get two different schemas. To process this
+    /// case we add some additional information specific for the format to the cache key.
+    /// For example, for Protobuf format additional information is the path to the schema
+    /// and message name.
+    String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
+    SchemaCache::Keys cache_keys;
+    cache_keys.reserve(sources.size());
+    std::transform(sources.begin(), sources.end(), std::back_inserter(cache_keys), [&](const auto & source){ return makeSchemaCacheKey(source, format, additional_format_info); });
+    return cache_keys;
 }
 
 }

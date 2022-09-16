@@ -9,10 +9,16 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// A Storage that allows reading from a single MergeTree data part.
 class StorageFromMergeTreeDataPart final : public IStorage
@@ -103,14 +109,26 @@ public:
 
     bool materializeTTLRecalculateOnly() const
     {
+        if (parts.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
         return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
     }
 
+    bool hasLightweightDeletedMask() const override
+    {
+        return !parts.empty() && parts.front()->hasLightweightDelete();
+    }
+
+    bool supportsLightweightDelete() const override
+    {
+        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
+    }
+
 private:
-    MergeTreeData::DataPartsVector parts;
+    const MergeTreeData::DataPartsVector parts;
     const MergeTreeData & storage;
-    String partition_id;
-    MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
+    const String partition_id;
+    const MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {

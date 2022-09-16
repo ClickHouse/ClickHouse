@@ -18,10 +18,10 @@ SELECT toDateTime64(toFloat32(bitShiftLeft(toUInt64(1),33)), 2, 'Asia/Istanbul')
 SELECT toDateTime64(toFloat64(bitShiftLeft(toUInt64(1),33)), 2, 'Asia/Istanbul') FORMAT Null;
 -- These are outsize of extended range and hence clamped
 SELECT toDateTime64(-1 * bitShiftLeft(toUInt64(1), 35), 2, 'Asia/Istanbul');
-1925-01-01 02:00:00.00
+1900-01-01 01:56:56.00
 SELECT CAST(-1 * bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Asia/Istanbul'));
-1925-01-01 02:00:00.000
+1900-01-01 01:56:56.000
 SELECT CAST(bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Asia/Istanbul'));
-2282-12-31 03:00:00.000
+2299-12-31 23:59:59.000
 SELECT toDateTime64(bitShiftLeft(toUInt64(1), 35), 2, 'Asia/Istanbul');
-2282-12-31 03:00:00.00
+2299-12-31 23:59:59.00

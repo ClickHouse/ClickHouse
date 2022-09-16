@@ -103,7 +103,7 @@ void NativeWriter::write(const Block & block)
             mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
         }
 
-        ColumnWithTypeAndName column = block.safeGetByPosition(i);
+        auto column = block.safeGetByPosition(i);
 
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
@@ -145,7 +145,7 @@ void NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            auto info = column.column->getSerializationInfo();
+            auto info = column.type->getSerializationInfo(*column.column);
             serialization = column.type->getSerialization(*info);
 
             bool has_custom = info->hasCustomSerialization();

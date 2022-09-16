@@ -4,13 +4,11 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/assert_cast.h>
-#include "Columns/IColumn.h"
 #include <base/unaligned.h>
 
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
@@ -43,12 +41,12 @@ struct HashMethodOneNumber
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
-        vec = key_columns[0]->getRawData().data;
+        vec = key_columns[0]->getRawData().data();
     }
 
     explicit HashMethodOneNumber(const IColumn * column)
     {
-        vec = column->getRawData().data;
+        vec = column->getRawData().data();
     }
 
     /// Creates context. Method is called once and result context is used in all threads.
@@ -85,11 +83,8 @@ struct HashMethodString
 
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
-        const IColumn * column = key_columns[0];
-        if (isColumnConst(*column))
-            column = &assert_cast<const ColumnConst &>(*column).getDataColumn();
-
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
+        const IColumn & column = *key_columns[0];
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
     }
@@ -193,7 +188,7 @@ public:
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
 
 private:
-    using Cache = LRUCache<DictionaryKey, CachedValues, DictionaryKeyHash>;
+    using Cache = CacheBase<DictionaryKey, CachedValues, DictionaryKeyHash>;
     Cache cache;
 };
 
@@ -582,7 +577,7 @@ struct HashMethodKeysFixed
             columns_data.reset(new const char*[keys_size]);
 
             for (size_t i = 0; i < keys_size; ++i)
-                columns_data[i] = Base::getActualColumns()[i]->getRawData().data;
+                columns_data[i] = Base::getActualColumns()[i]->getRawData().data();
         }
 #endif
     }

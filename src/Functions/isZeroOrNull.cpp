@@ -115,7 +115,7 @@ private:
 
 }
 
-void registerFunctionIsZeroOrNull(FunctionFactory & factory)
+REGISTER_FUNCTION(IsZeroOrNull)
 {
     factory.registerFunction<FunctionIsZeroOrNull>();
 }

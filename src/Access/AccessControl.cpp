@@ -79,7 +79,7 @@ public:
             /// No user, probably the user has been dropped while it was in the cache.
             cache.remove(params);
         }
-        auto res = std::shared_ptr<ContextAccess>(new ContextAccess(access_control, params));
+        auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
         return res;

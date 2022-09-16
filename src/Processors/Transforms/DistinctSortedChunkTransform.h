@@ -32,9 +32,10 @@ public:
         const SizeLimits & output_size_limits_,
         UInt64 limit_hint_,
         const SortDescription & sorted_columns_descr_,
-        const Names & source_columns_);
+        const Names & source_columns_,
+        bool sorted_stream_);
 
-    String getName() const override { return "DistinctSortedChunkTransform"; }
+    String getName() const override { return (!sorted_stream ? "DistinctSortedChunkTransform" : "DistinctSortedStreamTransform"); }
 
 protected:
     void transform(Chunk & chunk) override;
@@ -42,13 +43,16 @@ protected:
 private:
     void initChunkProcessing(const Columns & input_columns);
     std::pair<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumn::Filter & filter);
-    size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
-    inline void setCurrentKey(size_t row_pos);
-    inline bool isCurrentKey(size_t row_pos) const;
-    inline size_t getRangeEnd(size_t range_begin, size_t range_end) const;
+    template<bool clear_data>
+    size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end);
+    inline void saveLatestKey(size_t row_pos);
+    inline bool isLatestKeyFromPrevChunk(size_t row_pos) const;
+    inline bool isKey(size_t key_pos, size_t row_pos) const;
+    template<typename Predicate>
+    inline size_t getRangeEnd(size_t range_begin, size_t range_end, Predicate pred) const;
 
     template <typename Method>
-    size_t buildFilterForRange(Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
+    size_t buildFilterForRange(Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end);
 
 
     ClearableSetVariants data;
@@ -66,7 +70,8 @@ private:
     Sizes other_columns_sizes;
     ColumnRawPtrs other_columns; // used during processing
 
-    MutableColumns current_key;
+    MutableColumns prev_chunk_latest_key;
+    const bool sorted_stream = false;
 };
 
 }

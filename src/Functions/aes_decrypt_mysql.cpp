@@ -19,7 +19,7 @@ struct DecryptMySQLModeImpl
 namespace DB
 {
 
-void registerFunctionAESDecryptMysql(FunctionFactory & factory)
+REGISTER_FUNCTION(AESDecryptMysql)
 {
     factory.registerFunction<FunctionDecrypt<DecryptMySQLModeImpl>>();
 }

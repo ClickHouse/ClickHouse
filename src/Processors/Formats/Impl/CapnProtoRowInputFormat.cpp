@@ -49,6 +49,11 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
     in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    /// Don't allow large amount of segments as it's done in capnproto library:
+    /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
+    /// Large amount of segments can indicate that corruption happened.
+    if (segment_count >= 512)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Message has too many segments. Most likely, data was corrupted");
 
     // one for segmentCount and one because segmentCount starts from 0
     const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
@@ -299,7 +304,7 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
 
     auto schema_parser = CapnProtoSchemaParser();
     auto schema = schema_parser.getMessageSchema(schema_info);
-    return capnProtoSchemaToCHSchema(schema);
+    return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
 }
 
 void registerInputFormatCapnProto(FormatFactory & factory)
@@ -313,6 +318,8 @@ void registerInputFormatCapnProto(FormatFactory & factory)
         });
     factory.markFormatSupportsSubsetOfColumns("CapnProto");
     factory.registerFileExtension("capnp", "CapnProto");
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "CapnProto", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 void registerCapnProtoSchemaReader(FormatFactory & factory)

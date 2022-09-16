@@ -1,5 +1,6 @@
 #include "CompressedReadBufferBase.h"
 
+#include <bit>
 #include <cstring>
 #include <cassert>
 #include <city.h>
@@ -93,8 +94,8 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.
-    size_t difference = __builtin_popcountll(expected_checksum.first ^ calculated_checksum.first)
-        + __builtin_popcountll(expected_checksum.second ^ calculated_checksum.second);
+    size_t difference = std::popcount(expected_checksum.first ^ calculated_checksum.first)
+        + std::popcount(expected_checksum.second ^ calculated_checksum.second);
 
     if (difference == 1)
     {

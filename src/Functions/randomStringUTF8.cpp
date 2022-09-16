@@ -148,7 +148,7 @@ public:
 
 }
 
-void registerFunctionRandomStringUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(RandomStringUTF8)
 {
     factory.registerFunction<FunctionRandomStringUTF8>();
 }

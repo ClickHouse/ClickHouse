@@ -647,7 +647,7 @@ public:
 
 }
 
-void registerFunctionsMap(FunctionFactory & factory)
+REGISTER_FUNCTION(Map)
 {
     factory.registerFunction<FunctionMap>();
     factory.registerFunction<FunctionMapContains>();

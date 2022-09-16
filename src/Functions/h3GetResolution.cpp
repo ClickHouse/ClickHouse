@@ -84,7 +84,7 @@ public:
 
 }
 
-void registerFunctionH3GetResolution(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetResolution)
 {
     factory.registerFunction<FunctionH3GetResolution>();
 }

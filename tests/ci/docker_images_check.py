@@ -460,7 +460,7 @@ def main():
     with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     s3_path_prefix = (
         str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(" ", "_")
@@ -477,7 +477,7 @@ def main():
     if not args.reports:
         return
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

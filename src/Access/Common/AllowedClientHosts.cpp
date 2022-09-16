@@ -110,7 +110,7 @@ namespace
     }
 
     /// Returns the host name by its address.
-    Strings getHostsByAddress(const IPAddress & address)
+    std::unordered_set<String> getHostsByAddress(const IPAddress & address)
     {
         auto hosts = DNSResolver::instance().reverseResolve(address);
 
@@ -526,7 +526,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             return true;
 
     /// Check `name_regexps`.
-    std::optional<Strings> resolved_hosts;
+    std::optional<std::unordered_set<String>> resolved_hosts;
     auto check_name_regexp = [&](const String & name_regexp_)
     {
         try

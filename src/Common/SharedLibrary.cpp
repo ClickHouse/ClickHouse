@@ -17,7 +17,7 @@ SharedLibrary::SharedLibrary(std::string_view path, int flags)
 {
     handle = dlopen(path.data(), flags);
     if (!handle)
-        throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror());
+        throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror()); // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
 
     updatePHDRCache();
 
@@ -33,11 +33,11 @@ SharedLibrary::~SharedLibrary()
 
 void * SharedLibrary::getImpl(std::string_view name, bool no_throw)
 {
-    dlerror();
+    dlerror(); // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
 
     auto * res = dlsym(handle, name.data());
 
-    if (char * error = dlerror())
+    if (char * error = dlerror()) // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
     {
         if (no_throw)
             return nullptr;

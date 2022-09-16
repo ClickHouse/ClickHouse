@@ -345,6 +345,7 @@ struct Checker
 ;
 
 
+#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -365,10 +366,10 @@ void checkHarmfulEnvironmentVariables(char ** argv)
     bool require_reexec = false;
     for (const auto * var : harmful_env_variables)
     {
-        if (const char * value = getenv(var); value && value[0])
+        if (const char * value = getenv(var); value && value[0]) // NOLINT(concurrency-mt-unsafe)
         {
             /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
-            if (setenv(var, "", true))
+            if (setenv(var, "", true)) // NOLINT(concurrency-mt-unsafe) // this is safe if not called concurrently
             {
                 fmt::print(stderr, "Cannot override {} environment variable", var);
                 _exit(1);
@@ -396,6 +397,7 @@ void checkHarmfulEnvironmentVariables(char ** argv)
         _exit(error);
     }
 }
+#endif
 
 }
 
@@ -422,7 +424,9 @@ int main(int argc_, char ** argv_)
     ///  will work only after additional call of this function.
     updatePHDRCache();
 
+#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
     checkHarmfulEnvironmentVariables(argv_);
+#endif
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

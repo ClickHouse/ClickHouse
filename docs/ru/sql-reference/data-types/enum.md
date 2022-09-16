@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/enum
 sidebar_position: 50
 sidebar_label: Enum
 ---

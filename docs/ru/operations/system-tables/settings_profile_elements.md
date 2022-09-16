@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/settings_profile_elements
+---
 # system.settings_profile_elements {#system_tables-settings_profile_elements}
 
 Описывает содержимое профиля настроек:

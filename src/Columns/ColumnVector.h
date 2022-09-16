@@ -301,7 +301,7 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(DB::get<T>(x));
+        data.push_back(x.get<T>());
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -332,9 +332,9 @@ public:
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
-    StringRef getRawData() const override
+    std::string_view getRawData() const override
     {
-        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
+        return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
     StringRef getDataAt(size_t n) const override

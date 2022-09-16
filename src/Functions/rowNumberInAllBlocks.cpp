@@ -74,7 +74,7 @@ public:
 
 }
 
-void registerFunctionRowNumberInAllBlocks(FunctionFactory & factory)
+REGISTER_FUNCTION(RowNumberInAllBlocks)
 {
     factory.registerFunction<FunctionRowNumberInAllBlocks>();
 }
