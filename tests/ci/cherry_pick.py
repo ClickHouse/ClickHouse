@@ -46,7 +46,7 @@ from ssh import SSHKey
 class Labels:
     LABEL_MUST_BACKPORT = "pr-must-backport"
     LABEL_BACKPORT = "pr-backport"
-    LABEL_BACKPORTED = "pr-backported"
+    LABEL_BACKPORTS_CREATED = "pr-backports-created"
     LABEL_CHERRYPICK = "pr-cherrypick"
     LABEL_DO_NOT_TEST = "do not test"
 
@@ -321,7 +321,7 @@ class Backport:
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
         self.prs_for_backport = self.gh.get_pulls_from_search(
-            query=f"{self._query} -label:pr-backported",
+            query=f"{self._query} -label:{Labels.LABEL_BACKPORTS_CREATED}",
             label=",".join(self.labels_to_backport + [Labels.LABEL_MUST_BACKPORT]),
             merged=[since_date, tomorrow],
         )
@@ -407,11 +407,11 @@ class Backport:
         if self.dry_run:
             logging.info("DRY RUN: would mark PR #%s as done", pr.number)
             return
-        pr.add_to_labels(Labels.LABEL_BACKPORTED)
+        pr.add_to_labels(Labels.LABEL_BACKPORTS_CREATED)
         logging.info(
             "PR #%s is successfully labeled with `%s`",
             pr.number,
-            Labels.LABEL_BACKPORTED,
+            Labels.LABEL_BACKPORTS_CREATED,
         )
 
     @property
