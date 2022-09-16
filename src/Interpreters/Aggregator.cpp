@@ -1756,6 +1756,9 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
       *  and ColumnAggregateFunction will take ownership of this state.
       * So, for aggregate functions with "-State" modifier, only states of all combinators that are used
       *  after -State will be destroyed after result has been transferred to ColumnAggregateFunction.
+      *  For example, if we have function `uniqStateForEachMap` after aggregation we should destroy all states that
+      *  were created by combinators `-ForEach` and `-Map`, because resulting ColumnAggregateFunction will be
+      *  responsible only for destruction of the states created by `uniq` function.
       * But we should mark that the data no longer owns these states.
       */
 
