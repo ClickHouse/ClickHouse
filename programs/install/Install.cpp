@@ -446,8 +446,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fs::path ulimits_file = ulimits_dir / fmt::format("{}.conf", user);
                 fmt::print("Will set ulimits for {} user in {}.\n", user, ulimits_file.string());
                 std::string ulimits_content = fmt::format(
-                    "{0}\tsoft\tnofile\t262144\n"
-                    "{0}\thard\tnofile\t262144\n", user);
+                    "{0}\tsoft\tnofile\t1048576\n"
+                    "{0}\thard\tnofile\t1048576\n", user);
 
                 fs::create_directories(ulimits_dir);
 
