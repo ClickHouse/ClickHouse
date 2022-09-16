@@ -572,7 +572,7 @@ void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, Ac
     for (size_t pos = 0; pos != entities.size(); ++pos)
     {
         const auto & [id, entity] = entities[pos];
-        
+
         if (auto it = positions_by_id.find(id); it == positions_by_id.end())
         {
             positions_by_id[id] = pos;

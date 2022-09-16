@@ -246,7 +246,7 @@ void MemoryAccessStorage::removeAllExceptNoLock(const boost::container::flat_set
     for (auto it = entries_by_id.begin(); it != entries_by_id.end();)
     {
         const auto & id = it->first;
-        ++it;
+        ++it; /// We must go to the next element in the map `entries_by_id` here because otherwise removeNoLock() can invalidate our iterator.
         if (!ids_to_keep.contains(id))
             removeNoLock(id, /* throw_if_not_exists */ true);
     }
