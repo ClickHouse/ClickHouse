@@ -292,6 +292,8 @@ https
 wasd
 
 asd
+-- trim, trim_start, trim_end all at once
+--https://bing.com--	--	https://bing.com--	--https://bing.com	https://bing.com
 -- replace_regex
 Number was: 1
 -- has_any_index()
