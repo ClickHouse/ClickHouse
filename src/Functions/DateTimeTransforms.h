@@ -163,8 +163,7 @@ struct ToMondayImpl
     }
     static inline Int64 execute_extended_result(Int64 t, const DateLUTImpl & time_zone)
     {
-        //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
-        return time_zone.toFirstDayNumOfWeek(t);
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
     }
     static inline Int32 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
     {

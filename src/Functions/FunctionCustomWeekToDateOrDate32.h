@@ -20,9 +20,10 @@ public:
         return std::make_shared<FunctionCustomWeekToDateOrDate32>(context_);
     }
 
-    explicit FunctionCustomWeekToDateOrDate32(ContextPtr context_) : WithContext(context_)
+    explicit FunctionCustomWeekToDateOrDate32(ContextPtr context_)
+        : WithContext(context_)
+        , enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
     {
-        enable_extended_results_for_datetime_functions = context_->getSettingsRef().enable_extended_results_for_datetime_functions;
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
