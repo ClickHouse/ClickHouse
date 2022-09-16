@@ -21,7 +21,7 @@ namespace DB
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     if (channels.empty() && (logs_queue == nullptr || !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
@@ -89,7 +89,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             channel.first->log(msg); // ordinary child
     }
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     /// Log to "TCP queue" if message is not too noisy
@@ -150,7 +150,7 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std
     channels.emplace(name, ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get())));
 }
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
 void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     std::lock_guard<std::mutex> lock(text_log_mutex);

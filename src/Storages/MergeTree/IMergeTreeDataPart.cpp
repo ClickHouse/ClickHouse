@@ -445,11 +445,11 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
-    for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
 
     for (const auto & column : columns)
     {
+        column_name_to_position.emplace(column.name, pos++);
+
         auto it = serialization_infos.find(column.name);
         auto serialization = it == serialization_infos.end()
             ? IDataType::getSerialization(column)
@@ -461,7 +461,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         {
             auto full_name = Nested::concatenateName(column.name, subname);
             serializations.emplace(full_name, subdata.serialization);
-        }, {serialization, nullptr, nullptr, nullptr});
+        }, ISerialization::SubstreamData(serialization));
     }
 
     columns_description = ColumnsDescription(columns);
@@ -1291,7 +1291,7 @@ catch (Exception & e)
 
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 {
-    assert(!version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
+    assert(!storage.data_parts_loading_finished || !version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
     bool created_by_transaction = !version.creation_tid.isPrehistoric();
     bool removed_by_transaction = version.isRemovalTIDLocked() && version.removal_tid_lock != Tx::PrehistoricTID.getHash();
     return created_by_transaction || removed_by_transaction;
@@ -1351,7 +1351,6 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         return false;
     }
 }
-
 
 void IMergeTreeDataPart::appendFilesOfColumns(Strings & files)
 {

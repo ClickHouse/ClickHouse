@@ -1,9 +1,12 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
+#include <Common/config.h>
+
 #include <Formats/NativeWriter.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
 #include <IO/HTTPCommon.h>
+#include <IO/S3Common.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
@@ -422,8 +425,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     const auto data_settings = data.getSettings();
 
-    if (data_settings->allow_remote_fs_zero_copy_replication && !try_zero_copy)
-        LOG_WARNING(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
+    if (data.canUseZeroCopyReplication() && !try_zero_copy)
+        LOG_INFO(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
 
     /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
     /// but detached part name prefix should not contain underscore.
@@ -479,8 +482,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     }
     else
     {
-        if (data_settings->allow_remote_fs_zero_copy_replication)
-            LOG_WARNING(log, "Cannot select any zero-copy disk for {}", part_name);
+        if (data.canUseZeroCopyReplication())
+            LOG_INFO(log, "Cannot select any zero-copy disk for {}", part_name);
 
         try_zero_copy = false;
     }
@@ -572,10 +575,24 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         {
             return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix, disk, *in, throttler);
         }
+
         catch (const Exception & e)
         {
             if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
                 throw;
+
+
+#if USE_AWS_S3
+            if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+            {
+                /// It doesn't make sense to retry Access Denied or No Such Key
+                if (!s3_exception->isRetryableError())
+                {
+                    tryLogCurrentException(log, fmt::format("while fetching part: {}", part_name));
+                    throw;
+                }
+            }
+#endif
 
             LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
 
