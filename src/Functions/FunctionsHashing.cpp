@@ -56,7 +56,7 @@ It returns a BLAKE3 hash as a byte array with type FixedString(32).
             {"hash", "SELECT hex(BLAKE3('ABC'))"}},
         Documentation::Categories{"Hash"}
     },
-    FunctionFactory::CaseInsensitive);
+    FunctionFactory::CaseSensitive);
 #endif
 }
 }
