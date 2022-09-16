@@ -13,7 +13,7 @@ template <typename Transform>
 class FunctionCustomWeekToDateOrDate32 : public IFunctionCustomWeek<Transform>, WithContext
 {
 public:
-    bool enable_extended_results_for_datetime_functions = false;
+    const bool enable_extended_results_for_datetime_functions = false;
 
     static FunctionPtr create(ContextPtr context_)
     {
