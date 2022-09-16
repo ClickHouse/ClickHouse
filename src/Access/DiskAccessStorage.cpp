@@ -254,12 +254,12 @@ bool DiskAccessStorage::readLists()
     for (auto type : collections::range(AccessEntityType::MAX))
         entries_by_name_and_type[static_cast<size_t>(type)].clear();
 
-    for (const auto & [id, name, type] : ids_names_types)
+    for (auto & [id, name, type] : ids_names_types)
     {
         auto & entry = entries_by_id[id];
         entry.id = id;
         entry.type = type;
-        entry.name = name;
+        entry.name = std::move(name);
         auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
         entries_by_name[entry.name] = &entry;
     }
@@ -414,7 +414,7 @@ void DiskAccessStorage::removeAllExceptInMemory(const boost::container::flat_set
     for (auto it = entries_by_id.begin(); it != entries_by_id.end();)
     {
         const auto & id = it->first;
-        ++it;
+        ++it; /// We must go to the next element in the map `entries_by_id` here because otherwise removeNoLock() can invalidate our iterator.
         if (!ids_to_keep.contains(id))
             removeNoLock(id, /* throw_if_not_exists */ true, /* write_on_disk= */ false);
     }
