@@ -931,7 +931,7 @@ struct ToStartOfISOYearImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfISOYear(time_zone.toDayNum(t));
+        return t < 0 ? 0 : time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(std::min(Int32(time_zone.toDayNum(t)), Int32(DATE_LUT_MAX_DAY_NUM))));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -939,7 +939,7 @@ struct ToStartOfISOYearImpl
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
+        return d < 0 ? 0 : time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(std::min(d, Int32(DATE_LUT_MAX_DAY_NUM))));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
