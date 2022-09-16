@@ -26,11 +26,10 @@ void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
             writeString(values[i], out);
         else
             writeEscapedString(values[i], out);
-        if (i + 1 == values.size())
-            writeRowEndDelimiter();
-        else
+        if (i + 1 != values.size())
             writeFieldDelimiter();
     }
+    writeRowEndDelimiter();
 }
 
 void TabSeparatedRowOutputFormat::writePrefix()
@@ -38,10 +37,16 @@ void TabSeparatedRowOutputFormat::writePrefix()
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
+    {
         writeLine(header.getNames());
+        writeRowBetweenDelimiter();
+    }
 
     if (with_types)
+    {
         writeLine(header.getDataTypeNames());
+        writeRowBetweenDelimiter();
+    }
 }
 
 

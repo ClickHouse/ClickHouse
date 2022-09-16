@@ -24,11 +24,10 @@ void CSVRowOutputFormat::writeLine(const std::vector<String> & values)
     for (size_t i = 0; i < values.size(); ++i)
     {
         writeCSVString(values[i], out);
-        if (i + 1 == values.size())
-            writeRowEndDelimiter();
-        else
+        if (i + 1 != values.size())
             writeFieldDelimiter();
     }
+    writeRowEndDelimiter();
 }
 
 void CSVRowOutputFormat::writePrefix()
@@ -36,10 +35,16 @@ void CSVRowOutputFormat::writePrefix()
     const auto & sample = getPort(PortKind::Main).getHeader();
 
     if (with_names)
+    {
         writeLine(sample.getNames());
+        writeRowBetweenDelimiter();
+    }
 
     if (with_types)
+    {
         writeLine(sample.getDataTypeNames());
+        writeRowBetweenDelimiter();
+    }
 }
 
 

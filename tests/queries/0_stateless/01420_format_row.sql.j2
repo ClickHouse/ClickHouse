@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 {% for format in ['CSV', 'TSV', 'JSONEachRow', 'JSONEachRowWithProgress', 'JSONCompactEachRow', 'TSKV', 'XML', 'Markdown', 'CustomSeparated', 'SQLInsert', 'Vertical', 'JSON', 'JSONCompact', 'Values'] -%}
 
 select '{{ format }}';
