@@ -28,6 +28,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -84,10 +89,13 @@ void SortedBlocksWriter::insert(Block && block)
     size_t bytes = 0;
     size_t flush_no = 0;
 
+    if (!block.rows())
+        return;
+
     {
         std::lock_guard lock{insert_mutex};
 
-        /// insert bock into BlocksList undef lock
+        /// insert block into BlocksList under lock
         inserted_blocks.insert(std::move(block));
 
         size_t total_row_count = inserted_blocks.row_count + row_count_in_flush;
@@ -145,7 +153,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), num_rows)));
 
     if (pipes.empty())
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty block");
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
