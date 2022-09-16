@@ -981,4 +981,18 @@ Field FieldVisitorFoldDimension::operator()(const Array & x) const
     return res;
 }
 
+DataTypePtr makeDummyTupleTypeForObject()
+{
+    return  std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeUInt8>()},
+                Names{ColumnObject::COLUMN_NAME_DUMMY});
+}
+
+void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)
+{
+    for (auto & column : columns)
+        if (column.type->hasDynamicSubcolumns())
+            column.type = createConcreteEmptyDynamicColumn(column.type);
+}
+
 }
