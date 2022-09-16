@@ -56,6 +56,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/hasNullable.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -481,9 +482,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
-            if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
-                aggregate_function_type->setVersion(0, /* if_empty */true);
+            auto callback = [&](DataTypePtr & type)
+            {
+                const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
+                if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
+                    aggregate_function_type->setVersion(0, /* if_empty */true);
+            };
+            callOnNestedSimpleTypes(column_type, callback);
 
             if (col_decl.null_modifier)
             {
