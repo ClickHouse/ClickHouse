@@ -2,7 +2,7 @@
 
 #include <Access/IAccessStorage.h>
 #include <base/defines.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <mutex>
 
 
@@ -63,7 +63,7 @@ private:
     std::shared_ptr<const Storages> getStoragesInternal() const;
 
     std::shared_ptr<const Storages> nested_storages TSA_GUARDED_BY(mutex);
-    mutable LRUCache<UUID, Storage> ids_cache TSA_GUARDED_BY(mutex);
+    mutable CacheBase<UUID, Storage> ids_cache TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 

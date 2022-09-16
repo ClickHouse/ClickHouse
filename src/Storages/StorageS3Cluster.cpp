@@ -129,7 +129,7 @@ Pipe StorageS3Cluster::read(
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.cluster, node.cluster_secret,
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
                 "S3ClusterInititiator",
                 node.compression,
                 node.secure

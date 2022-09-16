@@ -193,11 +193,18 @@ def compare_states(zk1, zk2, path="/", exclude_paths=[]):
     second_children = list(sorted(zk2.get_children(path)))
     print("Got children left", first_children)
     print("Got children rigth", second_children)
-    assert first_children == second_children, "Childrens are not equal on path " + path
+
+    if path == "/":
+        assert set(first_children) ^ set(second_children) == set(["keeper"])
+    else:
+        assert first_children == second_children, (
+            "Childrens are not equal on path " + path
+        )
 
     for children in first_children:
-        print("Checking child", os.path.join(path, children))
-        compare_states(zk1, zk2, os.path.join(path, children), exclude_paths)
+        if path != "/" or children != "keeper":
+            print("Checking child", os.path.join(path, children))
+            compare_states(zk1, zk2, os.path.join(path, children), exclude_paths)
 
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])

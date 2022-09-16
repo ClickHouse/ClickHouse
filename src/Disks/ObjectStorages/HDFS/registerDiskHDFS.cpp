@@ -38,7 +38,7 @@ void registerDiskHDFS(DiskFactory & factory)
         /// FIXME Cache currently unsupported :(
         ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
 
-        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context_);
+        auto [_, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context_);
 
         auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
@@ -49,23 +49,8 @@ void registerDiskHDFS(DiskFactory & factory)
             "DiskHDFS",
             std::move(metadata_storage),
             std::move(hdfs_storage),
-            DiskType::HDFS,
             /* send_metadata = */ false,
             copy_thread_pool_size);
-
-#ifdef NDEBUG
-        bool use_cache = true;
-#else
-        /// Current S3 cache implementation lead to allocations in destructor of
-        /// read buffer.
-        bool use_cache = false;
-#endif
-
-        if (config.getBool(config_prefix + ".cache_enabled", use_cache))
-        {
-            String cache_path = config.getString(config_prefix + ".cache_path", context_->getPath() + "disks/" + name + "/cache/");
-            disk_result = wrapWithCache(disk_result, "hdfs-cache", cache_path, metadata_path);
-        }
 
         return std::make_shared<DiskRestartProxy>(disk_result);
     };

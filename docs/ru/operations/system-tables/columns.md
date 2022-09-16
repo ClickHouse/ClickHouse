@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/columns
+---
 # system.columns {#system-columns}
 
 Содержит информацию о столбцах всех таблиц.

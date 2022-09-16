@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/ssl-zookeeper
 sidebar_position: 45
 sidebar_label: Secured Communication with Zookeeper
 ---

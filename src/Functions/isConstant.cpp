@@ -52,7 +52,7 @@ public:
 
 }
 
-void registerFunctionIsConstant(FunctionFactory & factory)
+REGISTER_FUNCTION(IsConstant)
 {
     factory.registerFunction<FunctionIsConstant>();
 }

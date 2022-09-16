@@ -252,7 +252,7 @@ namespace DB
         }
     };
 
-    void registerFunctionIsIPAddressContainedIn(FunctionFactory & factory)
+    REGISTER_FUNCTION(IsIPAddressContainedIn)
     {
         factory.registerFunction<FunctionIsIPAddressContainedIn>();
     }

@@ -74,7 +74,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = DB::get<Map &>(res);
+    auto & map = res.get<Map &>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -98,7 +98,7 @@ void ColumnMap::insertData(const char *, size_t)
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = DB::get<const Map &>(x);
+    const auto & map = x.get<const Map &>();
     nested->insert(Array(map.begin(), map.end()));
 }
 

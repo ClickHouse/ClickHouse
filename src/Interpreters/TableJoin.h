@@ -5,11 +5,10 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/join_common.h>
-#include <Interpreters/asof.h>
+#include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Storages/IKVStorage.h>
+#include <Interpreters/IKeyValueEntity.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -29,10 +28,10 @@ class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
-class DictionaryReader;
+class DictionaryJoinAdapter;
 class StorageJoin;
 class StorageDictionary;
-class IKeyValueStorage;
+class IKeyValueEntity;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -41,12 +40,6 @@ struct Settings;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
-
-enum class JoinTableSide
-{
-    Left,
-    Right
-};
 
 class TableJoin
 {
@@ -80,15 +73,31 @@ public:
             return key_names_right.size();
         }
 
-        String formatDebug() const
+        String formatDebug(bool short_format = false) const
         {
-            return fmt::format("Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
-                               fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "),
-                               condColumnNames().first, condColumnNames().second);
+            const auto & [left_cond, right_cond] = condColumnNames();
+
+            if (short_format)
+            {
+                return fmt::format("({}) = ({}){}{}", fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "),
+                                   !left_cond.empty() ? " AND " + left_cond : "", !right_cond.empty() ? " AND " + right_cond : "");
+            }
+
+            return fmt::format(
+                "Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
+                 fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
     };
 
     using Clauses = std::vector<JoinOnClause>;
+
+    static std::string formatClauses(const Clauses & clauses, bool short_format = false)
+    {
+        std::vector<std::string> res;
+        for (const auto & clause : clauses)
+            res.push_back("[" + clause.formatDebug(short_format) + "]");
+        return fmt::format("{}", fmt::join(res, "; "));
+    }
 
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
@@ -125,7 +134,7 @@ private:
 
     ASTTableJoin table_join;
 
-    ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
+    ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -147,10 +156,9 @@ private:
 
     std::shared_ptr<StorageJoin> right_storage_join;
 
-    std::shared_ptr<StorageDictionary> right_storage_dictionary;
-    std::shared_ptr<DictionaryReader> dictionary_reader;
+    std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    std::shared_ptr<IKeyValueStorage> right_kv_storage;
+    std::string right_storage_name;
 
     Names requiredJoinedNames() const;
 
@@ -176,7 +184,7 @@ public:
     TableJoin(const Settings & settings, VolumePtr tmp_volume_);
 
     /// for StorageJoin
-    TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
+    TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
               const Names & key_names_right)
         : size_limits(limits)
         , default_max_bytes(0)
@@ -188,9 +196,9 @@ public:
         table_join.strictness = strictness;
     }
 
-    ASTTableJoin::Kind kind() const { return table_join.kind; }
-    ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
-    bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
+    JoinKind kind() const { return table_join.kind; }
+    JoinStrictness strictness() const { return table_join.strictness; }
+    bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
 
@@ -280,8 +288,8 @@ public:
         const ColumnsWithTypeAndName & left_sample_columns,
         const ColumnsWithTypeAndName & right_sample_columns);
 
-    void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
-    ASOF::Inequality getAsofInequality() { return asof_inequality; }
+    void setAsofInequality(ASOFJoinInequality inequality) { asof_inequality = inequality; }
+    ASOFJoinInequality getAsofInequality() { return asof_inequality; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
@@ -308,18 +316,18 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
-    void setStorageJoin(std::shared_ptr<IKeyValueStorage> storage);
+    /// Remember storage name in case of joining with dictionary or another special storage
+    void setRightStorageName(const std::string & storage_name);
+    const std::string & getRightStorageName() const;
+
+    void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
-    void setStorageJoin(std::shared_ptr<StorageDictionary> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
 
-    bool tryInitDictJoin(const Block & sample_block, ContextPtr context);
+    bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
-    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join || right_kv_storage; }
-    const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
-
-    std::shared_ptr<IKeyValueStorage> getStorageKeyValue() { return right_kv_storage; }
+    std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 };
 
 }

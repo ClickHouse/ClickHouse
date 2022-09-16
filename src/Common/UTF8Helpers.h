@@ -83,7 +83,7 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     const auto threshold = vdupq_n_s8(0xBF);
 
     for (; data < src_end_sse; data += bytes_sse)
-        res += __builtin_popcountll(get_nibble_mask(vcgtq_s8(vld1q_s8(reinterpret_cast<const int8_t *>(data)), threshold)));
+        res += std::popcount(get_nibble_mask(vcgtq_s8(vld1q_s8(reinterpret_cast<const int8_t *>(data)), threshold)));
     res >>= 2;
 #endif
 

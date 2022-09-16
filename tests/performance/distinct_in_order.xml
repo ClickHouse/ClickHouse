@@ -8,8 +8,9 @@
     <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high FORMAT Null</query>
     <query>SELECT DISTINCT high, medium, low FROM distinct_cardinality_high FORMAT Null</query>
 
-    <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY medium FORMAT Null</query>
+    <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY high, medium FORMAT Null</query>
     <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY high FORMAT Null</query>
+    <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY medium FORMAT Null</query>
     <query>SELECT DISTINCT high, low FROM distinct_cardinality_high ORDER BY low FORMAT Null</query>
     <query>SELECT DISTINCT high, medium, low FROM distinct_cardinality_high ORDER BY low FORMAT Null</query>
 
@@ -24,8 +25,9 @@
     <query>SELECT DISTINCT low, high FROM distinct_cardinality_low FORMAT Null</query>
     <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low FORMAT Null</query>
 
-    <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY medium FORMAT Null</query>
+    <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY low, medium FORMAT Null</query>
     <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY low FORMAT Null</query>
+    <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY medium FORMAT Null</query>
     <query>SELECT DISTINCT low, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
     <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
 

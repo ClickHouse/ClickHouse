@@ -73,13 +73,19 @@ public:
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
     virtual DataTypePtr getStateType() const;
 
+    /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
+    virtual DataTypePtr getNormalizedStateType() const { return getStateType(); }
+
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
     /// Examples:
     ///  - quantile(x), quantile(a)(x), quantile(b)(x) - parameter doesn't affect state and used for finalization only
     ///  - foo(x) and fooIf(x) - If combinator doesn't affect state
     /// By default returns true only if functions have exactly the same names, combinators and parameters.
-    virtual bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
+    virtual bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const;
+
+    virtual const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const { return *this; }
 
     bool haveEqualArgumentTypes(const IAggregateFunction & rhs) const;
 

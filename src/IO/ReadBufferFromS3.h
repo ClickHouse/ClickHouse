@@ -73,6 +73,8 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
+    bool supportsRightBoundedReads() const override { return true; }
+
     String getFileName() const override { return bucket + "/" + key; }
 
 private:

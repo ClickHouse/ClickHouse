@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 ---
@@ -302,7 +303,7 @@ SHOW USERS
 
 ## SHOW ROLES
 
-Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role_grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
 ### Syntax
 

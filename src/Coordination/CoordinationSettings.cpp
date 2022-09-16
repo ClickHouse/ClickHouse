@@ -36,7 +36,7 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
 }
 
 
-const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr";
+const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
@@ -188,6 +188,9 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
     ret->state_file_path = getStateFilePathFromConfig(config, standalone_keeper_);
 
     ret->coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
+
+    if (ret->coordination_settings->quorum_reads)
+        LOG_WARNING(&Poco::Logger::get("KeeperConfigurationAndSettings"), "Setting 'quorum_reads' is deprecated. Please use 'read_mode'");
 
     return ret;
 }

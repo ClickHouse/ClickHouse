@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/custom-partitioning-key
 sidebar_position: 30
 sidebar_label: Custom Partitioning Key
 ---

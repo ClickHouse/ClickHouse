@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/use-cases/time-series
 title: 我能把 ClickHouse 当做时序数据库来使用吗?
 toc_hidden: true
 sidebar_position: 101
@@ -10,7 +11,7 @@ ClickHouse是一个通用的数据存储解决方案[OLAP](../../faq/general/ola
 
 
 
-首先，有 **[specialized codecs](../../sql-reference/statements/create/table.md#create-query-specialized-codecs)**，这是典型的时间序列。无论是常见的算法，如“DoubleDelta”和“Gorilla”，或特定的ClickHouse 数据类型如“T64”。
+首先，有 **[specialized codecs](../../sql-reference/statements/create/table.mdx#create-query-specialized-codecs)**，这是典型的时间序列。无论是常见的算法，如“DoubleDelta”和“Gorilla”，或特定的ClickHouse 数据类型如“T64”。
 
 
 

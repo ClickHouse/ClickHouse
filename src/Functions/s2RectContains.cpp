@@ -125,7 +125,7 @@ public:
 
 }
 
-void registerFunctionS2RectContains(FunctionFactory & factory)
+REGISTER_FUNCTION(S2RectContains)
 {
     factory.registerFunction<FunctionS2RectContains>();
 }

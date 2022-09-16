@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/access-rights
 sidebar_position: 48
 sidebar_label: "Управление доступом"
 ---

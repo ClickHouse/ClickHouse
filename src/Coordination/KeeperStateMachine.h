@@ -6,6 +6,7 @@
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/logger_useful.h>
+#include <Coordination/KeeperContext.h>
 
 
 namespace DB
@@ -19,29 +20,38 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
+    using CommitCallback = std::function<void(const KeeperStorage::RequestForSession &, uint64_t, uint64_t)>;
+    using ApplySnapshotCallback = std::function<void(uint64_t, uint64_t)>;
+
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
         const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
+        const KeeperContextPtr & keeper_context_,
         const std::string & superdigest_ = "",
-        bool digest_enabled_ = true);
+        CommitCallback commit_callback_ = [](const KeeperStorage::RequestForSession &, uint64_t, uint64_t){},
+        ApplySnapshotCallback apply_snapshot_callback_ = [](uint64_t, uint64_t){});
 
     /// Read state from the latest snapshot
     void init();
 
     static KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
 
-    void preprocess(const KeeperStorage::RequestForSession & request_for_session);
+    bool preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
-    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
+    nuraft::ptr<nuraft::buffer> commit_ext(const ext_op_params & params) override; /// NOLINT
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
     void rollback(uint64_t log_idx, nuraft::buffer & data) override;
+
+    // allow_missing - whether the transaction we want to rollback can be missing from storage
+    // (can happen in case of exception during preprocessing)
+    void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
@@ -140,7 +150,12 @@ private:
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
-    const bool digest_enabled;
+    /// call when a request is committed
+    const CommitCallback commit_callback;
+    /// call when snapshot is applied
+    const ApplySnapshotCallback apply_snapshot_callback;
+
+    KeeperContextPtr keeper_context;
 };
 
 }
