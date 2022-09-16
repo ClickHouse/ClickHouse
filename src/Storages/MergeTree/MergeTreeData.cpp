@@ -1560,6 +1560,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     calculateColumnAndSecondaryIndexSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
+    data_parts_loading_finished = true;
 }
 
 /// Is the part directory old.
