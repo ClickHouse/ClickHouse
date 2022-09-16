@@ -11,10 +11,10 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 namespace DB
 {
@@ -116,19 +116,24 @@ void NativeWriter::write(const Block & block)
         writeStringBinary(column.name, ostr);
 
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        auto callback = [&](DataTypePtr & type)
         {
-            if (include_version)
+            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
+            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
             {
-                auto version = aggregate_function_data_type->getVersionFromRevision(client_revision);
-                aggregate_function_data_type->setVersion(version, /* if_empty */true);
+                if (include_version)
+                {
+                    auto version = aggregate_function_data_type->getVersionFromRevision(client_revision);
+                    aggregate_function_data_type->setVersion(version, /* if_empty */true);
+                }
+                else
+                {
+                    aggregate_function_data_type->setVersion(0, /* if_empty */false);
+                }
             }
-            else
-            {
-                aggregate_function_data_type->setVersion(0, /* if_empty */false);
-            }
-        }
+        };
+
+        callOnNestedSimpleTypes(column.type, callback);
 
         /// Type
         String type_name = column.type->getName();
