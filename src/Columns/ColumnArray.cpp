@@ -151,21 +151,29 @@ void ColumnArray::get(size_t n, Field & res) const
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
+    assert(n < size());
+
     /** Returns the range of memory that covers all elements of the array.
       * Works for arrays of fixed length values.
       * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
       *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t offset_of_first_elem = offsetAt(n);
-    StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
-
     size_t array_size = sizeAt(n);
-    if (array_size == 0)
-        return StringRef(first.data, 0);
 
+    if (array_size == 0)
+        return StringRef(nullptr, 0);
+
+    size_t offset_of_first_elem = offsetAt(n);
     size_t offset_of_last_elem = getOffsets()[n] - 1;
+
+    StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
     StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
+
+    if (first.empty())
+        return last;
+    if (last.empty())
+        return first;
 
     return StringRef(first.data, last.data + last.size - first.data);
 }
