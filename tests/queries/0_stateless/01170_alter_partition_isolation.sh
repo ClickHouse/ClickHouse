@@ -42,7 +42,7 @@ tx 3                                            "insert into mt values (9)"
 tx 4 "insert into mt values (8)"
 tx 4 "select 7, n from mt order by n"
 tx 3                                            "select 8, n from mt order by n"
-tx 3                                            "alter table mt drop partition id 'all'" | grep -Eo "SERIALIZATION_ERROR" | uniq
+tx 3                                            "alter table mt drop partition id 'all'" | grep -Eo "PART_IS_TEMPORARILY_LOCKED" | uniq
 tx 3                                            "insert into mt values (10)" | grep -Eo "INVALID_TRANSACTION" | uniq
 tx 4 "select 9, n from mt order by n"
 tx 3                                            "rollback"
