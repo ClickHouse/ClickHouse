@@ -160,7 +160,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             ddl_guard->releaseTableLock();
             table.reset();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query.clone(), context_);
+            return database->tryEnqueueReplicatedDDL(query.clone(), context_);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)

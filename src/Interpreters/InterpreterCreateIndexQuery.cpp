@@ -42,7 +42,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return assert_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, current_context);
+        return database->tryEnqueueReplicatedDDL(query_ptr, current_context);
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);
