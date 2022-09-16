@@ -304,6 +304,22 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     }
 }
 
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
+    : impl(std::make_unique<ParserWithOptionalAlias>(
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
+        allow_alias_without_as_keyword))
+{
+}
+
+
+bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function),
+        std::make_unique<ParserToken>(TokenType::Comma))
+        .parse(pos, node, expected);
+}
+
 bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
@@ -698,11 +714,8 @@ public:
 
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(operands.back().get()))
         {
-            if (ast_with_alias->alias.empty())
-            {
-                tryGetIdentifierNameInto(node, ast_with_alias->alias);
-                return true;
-            }
+            tryGetIdentifierNameInto(node, ast_with_alias->alias);
+            return true;
         }
 
         return false;
@@ -733,8 +746,7 @@ class ExpressionLayer : public Layer
 {
 public:
 
-    ExpressionLayer(bool allow_alias_, bool allow_alias_without_as_keyword_, bool is_table_function_)
-        : Layer(allow_alias_, allow_alias_without_as_keyword_)
+    ExpressionLayer(bool is_table_function_) : Layer(false, false)
     {
         is_table_function = is_table_function_;
     }
@@ -764,45 +776,6 @@ public:
     }
 };
 
-
-class ExpressionListLayer : public Layer
-{
-public:
-
-    ExpressionListLayer(bool allow_alias_without_as_keyword_, bool is_table_function_)
-        : Layer(true, allow_alias_without_as_keyword_)
-    {
-        is_table_function = is_table_function_;
-    }
-
-    bool getResult(ASTPtr & node) override
-    {
-        /// We can exit the main cycle outside the parse() function,
-        ///  so we need to merge the element here
-        if (!isCurrentElementEmpty() || !elements.empty())
-            if (!mergeElement())
-                return false;
-
-        node = std::make_shared<ASTExpressionList>();
-        node->children = std::move(elements);
-
-        return true;
-    }
-
-    bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & action) override
-    {
-        if (pos->type == TokenType::Comma)
-        {
-            if (!mergeElement())
-                return false;
-
-            ++pos;
-            action = Action::OPERAND;
-        }
-
-        return true;
-    }
-};
 
 /// Basic layer for a function with certain separator and end tokens:
 ///  1. If we parse a separator we should merge current operands and operators
@@ -2116,26 +2089,13 @@ struct ParserExpressionImpl
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<ExpressionLayer>(false, false, false);
+    auto start = std::make_unique<ExpressionLayer>(false);
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<ExpressionLayer>(false, false, true);
-    start->is_table_function = true;
-    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
-}
-
-bool ParserExpressionWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto start = std::make_unique<ExpressionLayer>(true, allow_alias_without_as_keyword, is_table_function);
-    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
-}
-
-bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto start = std::make_unique<ExpressionListLayer>(allow_alias_without_as_keyword, is_table_function);
+    auto start = std::make_unique<ExpressionLayer>(true);
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
