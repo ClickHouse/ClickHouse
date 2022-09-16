@@ -1440,7 +1440,7 @@ RangesWithContinuousBlocks groupByRangesWithContinuousBlocks(DataPartsVector par
 
     std::sort(parts.begin(), parts.end(), MergeTreeData::LessDataPart());
 
-    for (auto part: parts)
+    for (const auto & part: parts)
     {
         if (result.empty())
         {
@@ -1539,7 +1539,7 @@ void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_part
     {
         DataPartsVector changed_parts;
 
-        for (auto part: old_parts)
+        for (const auto & part: old_parts)
             if (part->getState() != DataPartState::Active)
                 changed_parts.push_back(part);
 
@@ -1573,7 +1573,7 @@ void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_part
     transaction.commit(&part_lock);
 
     if (deduplication_log)
-        for (auto part: covered_parts)
+        for (const auto & part: covered_parts)
             deduplication_log->dropPart(part->info);
 }
 
@@ -1636,7 +1636,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
             PartLog::addNewParts(query_context, new_parts, watch.elapsed());
 
-            auto op = detach ? "Detached" : "Dropped";
+            const auto * op = detach ? "Detached" : "Dropped";
             LOG_INFO(log, "{} {} part by replacing it with new empty {} part.",
                  op, part->name, new_parts[0]->name);
         }
@@ -1647,9 +1647,9 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
     clearOldPartsFromFilesystem();
 }
 
-void StorageMergeTree::dropPartition(const ASTPtr & query, bool detach, ContextPtr query_context)
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
 {
-    const auto * partition_ast = query->as<ASTPartition>();
+    const auto * partition_ast = partition->as<ASTPartition>();
 
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -1668,13 +1668,13 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, bool detach, ContextP
                 parts = getVisibleDataPartsVector(query_context);
             else
             {
-                String partition_id = getPartitionIDFromQuery(query, query_context);
+                String partition_id = getPartitionIDFromQuery(partition, query_context);
                 parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
             }
         }
 
         if (detach)
-            for (auto part: parts)
+            for (const auto & part: parts)
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr();
                 LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
@@ -1687,7 +1687,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, bool detach, ContextP
 
         PartLog::addNewParts(query_context, new_parts, watch.elapsed());
 
-        auto op = detach ? "Detached" : "Dropped";
+        const auto * op = detach ? "Detached" : "Dropped";
         LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts",
              op, parts.size(), new_parts.size());
     }
