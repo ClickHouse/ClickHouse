@@ -60,7 +60,7 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     if (zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
 
-    initZooKeeperIfNeeded();
+    initZooKeeperWithRetries(/* max_retries= */ 2);
 }
 
 ReplicatedAccessStorage::~ReplicatedAccessStorage()
@@ -412,6 +412,33 @@ void ReplicatedAccessStorage::resetAfterError()
     /// Make watching thread reinitialize ZooKeeper and reread everything.
     std::lock_guard lock{cached_zookeeper_mutex};
     cached_zookeeper = nullptr;
+}
+
+void ReplicatedAccessStorage::initZooKeeperWithRetries(size_t max_retries)
+{
+    for (size_t attempt = 0; attempt < max_retries; ++attempt)
+    {
+        try
+        {
+            initZooKeeperIfNeeded();
+            break; /// If we're here the initialization has been successful.
+        }
+        catch (const Exception & e)
+        {
+            bool need_another_attempt = false;
+
+            if (const auto * coordination_exception = dynamic_cast<const Coordination::Exception *>(&e);
+                coordination_exception && Coordination::isHardwareError(coordination_exception->code))
+            {
+                /// In case of a network error we'll try to initialize again.
+                LOG_ERROR(getLogger(), "Initialization failed. Error: {}", e.message());
+                need_another_attempt = (attempt + 1 < max_retries);
+            }
+
+            if (!need_another_attempt)
+                throw;
+        }
+    }
 }
 
 void ReplicatedAccessStorage::initZooKeeperIfNeeded()
