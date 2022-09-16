@@ -10,7 +10,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
 #endif
 
@@ -34,7 +34,7 @@ static std::string createDirectory(const std::string & file)
     return path;
 }
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
 void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     text_log = log;
@@ -44,7 +44,7 @@ void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     if (split)
         if (auto log = text_log.lock())
             split->addTextLog(log, text_log_max_priority);

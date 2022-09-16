@@ -53,7 +53,6 @@ class AccessRightsElements;
 enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
-class ExternalModelsLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
@@ -612,6 +611,7 @@ public:
 
     void killCurrentQuery();
 
+    bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
     const StorageID & getInsertionTable() const { return insertion_table; }
 
@@ -644,19 +644,15 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
-    const ExternalModelsLoader & getExternalModelsLoader() const;
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
-    ExternalModelsLoader & getExternalModelsLoader();
-    ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
-    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
