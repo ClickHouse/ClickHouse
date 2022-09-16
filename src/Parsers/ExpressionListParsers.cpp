@@ -746,7 +746,7 @@ class ExpressionLayer : public Layer
 {
 public:
 
-    ExpressionLayer(bool is_table_function_) : Layer(false, false)
+    explicit ExpressionLayer(bool is_table_function_) : Layer(false, false)
     {
         is_table_function = is_table_function_;
     }
