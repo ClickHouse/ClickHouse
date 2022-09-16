@@ -14,7 +14,7 @@
 namespace DB
 {
 
-using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
+using RaftResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
 class KeeperServer
 {
@@ -71,7 +71,9 @@ public:
         const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_);
+        SnapshotsQueue & snapshots_queue_,
+        KeeperStateMachine::CommitCallback commit_callback,
+        KeeperStateMachine::ApplySnapshotCallback apply_snapshot_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -84,7 +86,7 @@ public:
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
-    RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
+    RaftResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
@@ -119,6 +121,17 @@ public:
 
     int getServerID() const { return server_id; }
 
+    struct NodeInfo
+    {
+        uint64_t term;
+        uint64_t last_committed_index;
+
+        bool operator==(const NodeInfo &) const = default;
+    };
+
+    RaftResult getLeaderInfo();
+    NodeInfo getNodeInfo();
+
     /// Get configuration diff between current configuration in RAFT and in XML file
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
 
@@ -126,10 +139,23 @@ public:
     /// Synchronously check for update results with retries.
     void applyConfigurationUpdate(const ConfigUpdateAction & task);
 
-
     /// Wait configuration update for action. Used by followers.
     /// Return true if update was successfully received.
     bool waitConfigurationUpdate(const ConfigUpdateAction & task);
 };
 
+}
+namespace std
+{
+    template <>
+    struct hash<DB::KeeperServer::NodeInfo>
+    {
+        size_t operator()(const DB::KeeperServer::NodeInfo & info) const
+        {
+            SipHash hash_state;
+            hash_state.update(info.term);
+            hash_state.update(info.last_committed_index);
+            return hash_state.get64();
+        }
+    };
 }
