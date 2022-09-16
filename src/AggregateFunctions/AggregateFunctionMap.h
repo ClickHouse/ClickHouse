@@ -225,8 +225,7 @@ public:
                 nested_func->destroy(nested_place);
         }
 
-        auto to_destroy = std::move(state.merged_maps);
-        this->data(place).~Data();
+        state.~Data();
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override

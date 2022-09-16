@@ -145,7 +145,7 @@ public:
         return nested_func->getDefaultVersion();
     }
 
-    template <bool up_tp_state>
+    template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
         AggregateFunctionForEachData & state = data(place);
@@ -153,7 +153,7 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            if constexpr (up_tp_state)
+            if constexpr (up_to_state)
                 nested_func->destroyUpToState(nested_state);
             else
                 nested_func->destroy(nested_state);
