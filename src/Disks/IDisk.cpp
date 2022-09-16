@@ -92,7 +92,7 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
     WriteSettings settings;
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
-    settings.allow_parallel_write_to_object_storage = false;
+    settings.s3_allow_parallel_part_upload = false;
 
     asyncCopy(*this, from_path, *to_disk, to_path, exec, results, copy_root_dir, settings);
 

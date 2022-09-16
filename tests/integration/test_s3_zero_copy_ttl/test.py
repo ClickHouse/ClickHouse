@@ -110,6 +110,9 @@ def started_single_node_cluster():
 
 
 def test_move_and_s3_memory_usage(started_single_node_cluster):
+    if small_node.is_built_with_sanitizer() or small_node.is_debug_build():
+        pytest.skip("Disabled for debug and sanitizers. Too slow.")
+
     small_node.query(
         "CREATE TABLE s3_test_with_ttl (x UInt32, a String codec(NONE), b String codec(NONE), c String codec(NONE), d String codec(NONE), e String codec(NONE)) engine = MergeTree order by x partition by x SETTINGS storage_policy='s3_and_default'"
     )

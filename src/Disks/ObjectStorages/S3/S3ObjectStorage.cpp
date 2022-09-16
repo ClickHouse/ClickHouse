@@ -206,7 +206,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 
     auto settings_ptr = s3_settings.get();
     ScheduleFunc scheduler;
-    if (write_settings.allow_parallel_write_to_object_storage)
+    if (write_settings.s3_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunner(getThreadPoolWriter());
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
