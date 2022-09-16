@@ -10,7 +10,7 @@ CREATE TABLE t_json_empty_parts (id UInt64, s Int8, data JSON) ENGINE = Collapsi
 INSERT INTO t_json_empty_parts VALUES (1, 1, '{"k1": "aaa"}') (1, -1, '{"k2": "bbb"}');
 
 SELECT count() FROM t_json_empty_parts;
-SELECT count() FROM system.parts WHERE table = 't_json_empty_parts' AND active;
+SELECT count() FROM system.parts WHERE table = 't_json_empty_parts' AND database = currentDatabase() AND active;
 DESC TABLE t_json_empty_parts SETTINGS describe_extend_object_types = 1;
 
 DROP TABLE t_json_empty_parts;
