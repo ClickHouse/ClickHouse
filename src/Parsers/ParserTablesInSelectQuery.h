@@ -13,7 +13,7 @@ struct ASTTableJoin;
 class ParserTablesInSelectQuery : public IParserBase
 {
 public:
-    ParserTablesInSelectQuery(bool allow_alias_without_as_keyword_ = true)
+    explicit ParserTablesInSelectQuery(bool allow_alias_without_as_keyword_ = true)
         : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 
 protected:
