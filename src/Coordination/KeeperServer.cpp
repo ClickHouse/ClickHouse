@@ -105,7 +105,9 @@ KeeperServer::KeeperServer(
     const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_)
+    SnapshotsQueue & snapshots_queue_,
+    KeeperStateMachine::CommitCallback commit_callback,
+    KeeperStateMachine::ApplySnapshotCallback apply_snapshot_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
@@ -113,7 +115,7 @@ KeeperServer::KeeperServer(
     , keeper_context{std::make_shared<KeeperContext>()}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
-    if (coordination_settings->quorum_reads)
+    if (coordination_settings->quorum_reads || coordination_settings->read_mode.toString() == "quorum")
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
     keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
@@ -125,7 +127,9 @@ KeeperServer::KeeperServer(
         configuration_and_settings_->snapshot_storage_path,
         coordination_settings,
         keeper_context,
-        checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+        checkAndGetSuperdigest(configuration_and_settings_->super_digest),
+        std::move(commit_callback),
+        std::move(apply_snapshot_callback));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
@@ -174,6 +178,13 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void forceReconfigure(const nuraft::ptr<nuraft::cluster_config> & new_config)
     {
         reconfigure(new_config);
+    }
+
+    RaftResult getLeaderInfo()
+    {
+        nuraft::ptr<nuraft::req_msg> req
+            = nuraft::cs_new<nuraft::req_msg>(0ull, nuraft::msg_type::leader_status_request, 0, 0, 0ull, 0ull, 0ull);
+        return send_msg_to_leader(req);
     }
 
     void commit_in_bg() override
@@ -269,6 +280,20 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+
+    params.leadership_expiry_ = getValueOrMaxInt32AndLogWarning(coordination_settings->leadership_expiry.totalMilliseconds(), "leadership_expiry", log);
+
+    if (coordination_settings->read_mode.toString() == "fastlinear")
+    {
+        if (params.leadership_expiry_ == 0)
+            params.leadership_expiry_ = params.election_timeout_lower_bound_;
+        else if (params.leadership_expiry_ > params.election_timeout_lower_bound_)
+        {
+            LOG_WARNING(log, "To use fast linearizable reads, leadership_expiry should be set to a value that is less or equal to the election_timeout_upper_bound_ms. "
+                    "Based on current settings, there are no guarantees for linearizability of reads.");
+        }
+    }
+
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
@@ -442,9 +467,9 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_machine->shutdownStorage();
     state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_machine->shutdownStorage();
 }
 
 namespace
@@ -487,7 +512,7 @@ void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & 
     state_machine->processReadRequest(request_for_session);
 }
 
-RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
+RaftResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     for (const auto & request_for_session : requests_for_sessions)
@@ -617,7 +642,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf);
                 request_for_session.zxid = next_zxid;
-                state_machine->preprocess(request_for_session);
+                if (!state_machine->preprocess(request_for_session))
+                    return nuraft::cb_func::ReturnCode::ReturnNull;
+
                 request_for_session.digest = state_machine->getNodesDigest();
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 break;
@@ -709,6 +736,20 @@ void KeeperServer::waitInit()
 std::vector<int64_t> KeeperServer::getDeadSessions()
 {
     return state_machine->getDeadSessions();
+}
+
+RaftResult KeeperServer::getLeaderInfo()
+{
+    std::lock_guard lock{server_write_mutex};
+    if (is_recovering)
+        return nullptr;
+
+    return raft_instance->getLeaderInfo();
+}
+
+KeeperServer::NodeInfo KeeperServer::getNodeInfo()
+{
+    return { .term = raft_instance->get_term(), .last_committed_index = state_machine->last_commit_index() };
 }
 
 ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config)

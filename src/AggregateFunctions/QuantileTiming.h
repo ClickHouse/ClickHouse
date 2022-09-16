@@ -178,7 +178,7 @@ namespace detail
             if (!elems.empty())
             {
                 size_t n = level < 1
-                    ? level * elems.size()
+                    ? static_cast<size_t>(level * elems.size())
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
@@ -201,7 +201,7 @@ namespace detail
                 auto level = levels[level_index];
 
                 size_t n = level < 1
-                    ? level * elems.size()
+                    ? static_cast<size_t>(level * elems.size())
                     : (elems.size() - 1);
 
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
