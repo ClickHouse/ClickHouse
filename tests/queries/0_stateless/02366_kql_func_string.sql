@@ -214,6 +214,8 @@ print trim_end("[^\w]+", strcat("- ","Te st", "1", "// $"));
 print trim_end("^asd", "wasd");
 print trim_end("^asd", "asd");
 print trim_end("^a", "asd");
+print '-- trim, trim_start, trim_end all at once';
+print str = "--https://bing.com--", pattern = '--' | extend start = trim_start(pattern, str), end = trim_end(pattern, str), both = trim(pattern, str);
 print '-- replace_regex';
 print replace_regex(strcat('Number is ', '1'), 'is (\d+)', 'was: \1');
 print '-- has_any_index()';
