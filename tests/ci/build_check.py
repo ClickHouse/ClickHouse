@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from shutil import rmtree
 from typing import List, Optional, Tuple
 
 from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH, GITHUB_JOB
