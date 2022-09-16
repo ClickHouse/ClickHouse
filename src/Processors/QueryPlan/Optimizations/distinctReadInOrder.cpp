@@ -29,12 +29,13 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     while (!node->children.empty())
     {
         const auto * step = dynamic_cast<const ITransformingStep *>(node->step.get());
-        if (step)
-        {
-            const ITransformingStep::DataStreamTraits & traits = step->getDataStreamTraits();
-            if (!traits.preserves_sorting)
-                return 0;
-        }
+        if (!step)
+            return 0;
+
+        const ITransformingStep::DataStreamTraits & traits = step->getDataStreamTraits();
+        if (!traits.preserves_sorting)
+            return 0;
+
         node = node->children.front();
     }
 
@@ -43,24 +44,18 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (!read_from_merge_tree)
         return 0;
 
-    /// check if reading in order is already there
-    const DataStream & output = read_from_merge_tree->getOutputStream();
-    if (output.sort_scope != DataStream::SortScope::Chunk)
-        return 0;
-
     /// find non-const columns in DISTINCT
     const auto & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
-    std::vector<std::string_view> non_const_columns;
-    non_const_columns.reserve(distinct_columns.size());
+    std::set<std::string_view> non_const_columns;
     for (const auto & column : distinct_columns)
     {
         if (!isColumnConst(*column.column))
-            non_const_columns.emplace_back(column.name);
+            non_const_columns.emplace(column.name);
     }
 
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
-    const SortDescription & sort_desc = output.sort_description;
+    const SortDescription & sort_desc = read_from_merge_tree->getOutputStream().sort_description;
     if (sort_desc.size() < non_const_columns.size())
         return 0;
 
@@ -69,7 +64,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     distinct_sort_desc.reserve(sort_desc.size());
     for (const auto & column_desc : sort_desc)
     {
-        if (non_const_columns.end() == std::find(begin(non_const_columns), end(non_const_columns), column_desc.column_name))
+        if (non_const_columns.end() == non_const_columns.find(column_desc.column_name))
             break;
 
         distinct_sort_desc.push_back(column_desc);
@@ -89,8 +84,8 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     while (node && node->step.get() != read_from_merge_tree)
     {
         auto * transform = dynamic_cast<ITransformingStep *>(node->step.get());
-        if (transform)
-            steps2update.push_back(transform);
+        assert(transform);  /// all nodes contain transformations, we checked it before
+        steps2update.push_back(transform);
 
         if (!node->children.empty())
             node = node->children.front();
