@@ -566,7 +566,7 @@ const ReplicatedFetchList & Context::getReplicatedFetchList() const { return sha
 String Context::resolveDatabase(const String & database_name) const
 {
     String res = database_name.empty() ? getCurrentDatabase() : database_name;
-    res = resolveTemporaryDatabase(res);    
+    res = resolveTemporaryDatabase(res);
     if (res.empty())
         throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
     return res;
@@ -576,7 +576,7 @@ String Context::resolveTemporaryDatabase(const String & database_name) const
 {
     auto session_context_ptr = session_context.lock();
     //maybe not here
-        
+
     if (session_context_ptr && session_context_ptr->temporary_databases_mapping.find(database_name) != session_context_ptr->temporary_databases_mapping.end())
         return session_context_ptr->temporary_databases_mapping[database_name]->getGlobalDatabaseName();
     else
@@ -1005,8 +1005,8 @@ TemporaryDatabasesNamesMapping Context::getTemporaryDatabases() const
     if (session_context_ptr.get() != this)
     {
         return session_context_ptr->getTemporaryDatabases();
-    } 
-    else 
+    }
+    else
     {
         auto lock = getLock();
         TemporaryDatabasesNamesMapping res;
@@ -1016,12 +1016,12 @@ TemporaryDatabasesNamesMapping Context::getTemporaryDatabases() const
     }
 }
 
-void Context::addTemporaryDatabase(const String & temp_database_name, TemporaryDatabaseHolder && db_holder) 
+void Context::addTemporaryDatabase(const String & temp_database_name, TemporaryDatabaseHolder && db_holder)
 {
     getLock();
     session_context.lock()->temporary_databases_mapping.emplace(temp_database_name, std::make_shared<TemporaryDatabaseHolder>(std::move(db_holder)));
 }
-void Context::removeTemporaryDatabase(const String & database_name) 
+void Context::removeTemporaryDatabase(const String & database_name)
 {
     getLock();
     session_context.lock()->temporary_databases_mapping.erase(database_name);
