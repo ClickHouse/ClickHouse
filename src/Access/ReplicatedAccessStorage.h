@@ -55,6 +55,7 @@ private:
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
     bool updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 
+    void initZooKeeperWithRetries(size_t max_retries);
     void initZooKeeperIfNeeded();
     zkutil::ZooKeeperPtr getZooKeeper();
     zkutil::ZooKeeperPtr getZooKeeperNoLock() TSA_REQUIRES(cached_zookeeper_mutex);
