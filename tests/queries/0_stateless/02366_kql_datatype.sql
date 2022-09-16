@@ -53,11 +53,13 @@ print bool(null), int(null), long(null), real(null), double(null);
 print '-- decimal';
 print decimal(null);
 print decimal(123.345);
-print '-- dynamic'; -- only support 1D array at the moment
-print dynamic([1,2,3]);
-print dynamic(['a', 'b', 'c']);
+print '-- dynamic'; -- no support for mixed types and bags for now
 print dynamic(null);
-
+print dynamic(1);
+print dynamic(timespan(1d));
+print dynamic([1,2,3]);
+print dynamic([[1], [2], [3]]);
+print dynamic(['a', "b", 'c']);
 print '-- cast functions'
 print '--tobool("true")'; -- == true
 print tobool('true'); -- == true
