@@ -266,11 +266,6 @@ public:
         return nested_func->getDefaultVersion();
     }
 
-    bool hasTrivialDestructor() const override
-    {
-        return nested_func->hasTrivialDestructor();
-    }
-
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
