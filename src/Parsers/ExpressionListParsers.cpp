@@ -697,11 +697,15 @@ public:
             return false;
 
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(operands.back().get()))
-            tryGetIdentifierNameInto(node, ast_with_alias->alias);
-        else
-            return false;
+        {
+            if (ast_with_alias->alias.empty())
+            {
+                tryGetIdentifierNameInto(node, ast_with_alias->alias);
+                return true;
+            }
+        }
 
-        return true;
+        return false;
     }
 
     bool is_table_function = false;
@@ -775,8 +779,9 @@ public:
     {
         /// We can exit the main cycle outside the parse() function,
         ///  so we need to merge the element here
-        if (!mergeElement())
-            return false;
+        if (!isCurrentElementEmpty() || !elements.empty())
+            if (!mergeElement())
+                return false;
 
         node = std::make_shared<ASTExpressionList>();
         node->children = std::move(elements);
@@ -2462,13 +2467,13 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (cur_op == operators_table.end())
     {
+        auto old_pos = pos;
         if (layers.back()->allow_alias && ParserAlias(layers.back()->allow_alias_without_as_keyword).parse(pos, tmp, expected))
         {
-            if (!layers.back()->insertAlias(tmp))
-                return Action::NONE;
-
-            return Action::OPERATOR;
+            if (layers.back()->insertAlias(tmp))
+                return Action::OPERATOR;
         }
+        pos = old_pos;
         return Action::NONE;
     }
 
