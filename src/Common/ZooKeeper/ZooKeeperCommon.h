@@ -488,16 +488,16 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
     void createLogElements(LogElements & elems) const override;
 
-private:
     enum class OperationType : UInt8
     {
-        READ,
-        WRITE
+        Read,
+        Write
     };
 
+    std::optional<OperationType> operation_type;
+private:
     void checkOperationType(OperationType type);
 
-    std::optional<OperationType> operation_type;
 };
 
 struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
