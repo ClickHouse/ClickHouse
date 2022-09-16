@@ -10,7 +10,6 @@
 
 namespace DB::QueryPlanOptimizations
 {
-
 size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
     /// check if it is preliminary distinct node
@@ -24,17 +23,21 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         return 0;
 
     /// walk through the plan
-    /// check if nodes below preliminary distinct preserve sorting
+    /// (1) check if nodes below preliminary distinct preserve sorting
+    /// (2) gather transforming steps to update their sorting properties later
+    std::vector<ITransformingStep *> steps2update;
     QueryPlan::Node * node = parent_node;
     while (!node->children.empty())
     {
-        const auto * step = dynamic_cast<const ITransformingStep *>(node->step.get());
+        auto * step = dynamic_cast<ITransformingStep *>(node->step.get());
         if (!step)
             return 0;
 
         const ITransformingStep::DataStreamTraits & traits = step->getDataStreamTraits();
         if (!traits.preserves_sorting)
             return 0;
+
+        steps2update.push_back(step);
 
         node = node->children.front();
     }
@@ -69,7 +72,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         distinct_sort_desc.push_back(column_desc);
     }
-    if (distinct_sort_desc.empty())
+    if (distinct_sort_desc.size() != non_const_columns.size())
         return 0;
 
     /// update input order info in read_from_merge_tree step
@@ -77,21 +80,6 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     InputOrderInfoPtr order_info
         = std::make_shared<const InputOrderInfo>(distinct_sort_desc, distinct_sort_desc.size(), direction, pre_distinct->getLimitHint());
     read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
-
-    /// find all transforms between preliminary distinct step and ReadFromMergeTree
-    std::vector<ITransformingStep *> steps2update;
-    node = parent_node;
-    while (node && node->step.get() != read_from_merge_tree)
-    {
-        auto * transform = dynamic_cast<ITransformingStep *>(node->step.get());
-        assert(transform);  /// all nodes contain transformations, we checked it before
-        steps2update.push_back(transform);
-
-        if (!node->children.empty())
-            node = node->children.front();
-        else
-            node = nullptr;
-    }
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
