@@ -1,0 +1,9 @@
+[package]
+name = "_ch_rust_rust_function"
+version = "0.1.0"
+
+[dependencies]
+itoa = "1.0"
+
+[lib]
+crate-type=["staticlib"]

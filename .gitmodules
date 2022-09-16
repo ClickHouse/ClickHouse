@@ -280,3 +280,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
+[submodule "contrib/corrosion"]
+	path = contrib/corrosion
+	url = https://github.com/corrosion-rs/corrosion.git

@@ -409,6 +409,10 @@ if (TARGET ch_contrib::nuraft)
     dbms_target_link_libraries(PUBLIC ch_contrib::nuraft)
 endif()
 
+#if (TARGET ch_rust::rust_function)
+dbms_target_link_libraries (PUBLIC ch_rust::rust_function)
+#endif()
+
 dbms_target_link_libraries (
     PRIVATE
         boost::filesystem
