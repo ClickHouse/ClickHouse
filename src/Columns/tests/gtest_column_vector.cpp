@@ -106,7 +106,7 @@ static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
     return column;
 }
 
-template <typename T, typename IndexT>
+template <typename T, typename IndexType>
 static void testIndex()
 {
     static const std::vector<size_t> column_sizes = {64, 128, 196, 256, 512};
@@ -114,19 +114,19 @@ static void testIndex()
     auto test_case = [&](size_t rows, size_t index_rows, size_t limit)
     {
         auto vector_column = createColumn<T>(rows);
-        auto index_column = createIndexColumn<IndexT>(rows, index_rows);
+        auto index_column = createIndexColumn<IndexType>(rows, index_rows);
         auto res_column = vector_column->index(*index_column, limit);
         if (limit == 0)
             limit = index_column->size();
 
         /// check results
         if (limit != res_column->size())
-            throw Exception(error_code, "ColumnVector index size not match to limit: {} {}", typeid(T).name(), typeid(IndexT).name());
+            throw Exception(error_code, "ColumnVector index size not match to limit: {} {}", typeid(T).name(), typeid(IndexType).name());
         for (size_t i = 0; i < limit; ++i)
         {
             /// vector_column data is the same as index, so indexed column's value will equals to index_column.
             if (res_column->get64(i) != index_column->get64(i))
-                throw Exception(error_code, "ColumnVector index fail: {} {}", typeid(T).name(), typeid(IndexT).name());
+                throw Exception(error_code, "ColumnVector index fail: {} {}", typeid(T).name(), typeid(IndexType).name());
         }
     };
 
