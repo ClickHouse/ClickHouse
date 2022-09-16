@@ -1038,12 +1038,8 @@ void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
     }
 
     /// update sort info for output stream
-    SortDescription & current_sort_desc = output_stream->sort_description;
-    if (current_sort_desc.hasPrefix(order_info->sort_description_for_merging))
-    {
-        current_sort_desc.resize(order_info->sort_description_for_merging.size());
-        output_stream->sort_scope = DataStream::SortScope::Stream;
-    }
+    output_stream->sort_description = order_info->sort_description_for_merging;
+    output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
