@@ -7253,7 +7253,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(MergeTreePartIn
 
     auto block = metadata_snapshot->getSampleBlock();
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    extendObjectColumns(columns, object_columns, /*with_subcolumns*/ false);
+    setAllObjectsToDummyTupleType(columns);
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
