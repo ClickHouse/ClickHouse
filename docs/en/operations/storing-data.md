@@ -134,6 +134,13 @@ Example of configuration for versions later or equal to 22.8:
                 <max_size>10000000</max_size>
             </cache>
         </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>cache</disk>
+                </main>
+            </volumes>
+        <policies>
     </storage_configuration>
 ```
 
@@ -151,6 +158,13 @@ Example of configuration for versions earlier than 22.8:
                 <data_cache_size>10000000</data_cache_size>
             </s3>
         </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
+        <policies>
     </storage_configuration>
 ```
 
@@ -166,7 +180,7 @@ Cache **configuration settings**:
 
 - `enable_cache_hits_threshold` - a number, which defines how many times some data needs to be read before it will be cached. Default: `0`, e.g. the data is cached at the first attempt to read it.
 
-- `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `true`.
+- `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `false`. This setting was added in version 22.8. If you used filesystem cache before this version, then it will not work on versions starting from 22.8 if this setting is set to `true`. If you want to use this setting, clear old cache created before version 22.8 before upgrading.
 
 - `max_file_segment_size` - a maximum size of a single cache file. Default: `104857600` (100 Mb).
 
