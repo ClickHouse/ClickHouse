@@ -86,7 +86,10 @@ bool ArrayRotateLeft::convertImpl(String & out, IParser::Pos & pos)
     const auto array = getArgument(function_name, pos);
     const auto count = getArgument(function_name, pos);
     out = std::format(
-        "arrayMap(x -> {0}[(x + length({0}) + {1} % toInt64(length({0}))) % length({0}) + 1], range(0, length({0})))", array, count);
+        "arrayMap(x -> {0}[moduloOrZero(x + length({0}) + moduloOrZero({1}, toInt64(length({0}))), length({0})) + 1], "
+        "range(0, length({0})))",
+        array,
+        count);
 
     return true;
 }
@@ -115,7 +118,8 @@ bool ArrayShiftLeft::convertImpl(String & out, IParser::Pos & pos)
     const auto fill = getOptionalArgument(function_name, pos);
     out = std::format(
         "arrayResize(if({1} > 0, arraySlice({0}, {1} + 1), arrayConcat(arrayWithConstant(abs({1}), fill_value_{3}), {0})), "
-        "length({0}), ifNull({2}, if(toTypeName({0}) = 'Array(String)', defaultValueOfArgumentType({0}[1]), null)) as fill_value_{3})",
+        "length({0}), if(isNull({2}) and (extract(toTypeName({0}), 'Array\\((.*)\\)') as element_type_{3}) = 'String', "
+        "defaultValueOfTypeName(if(element_type_{3} = 'Nothing', 'Nullable(Nothing)', element_type_{3})), {2}) as fill_value_{3})",
         array,
         count,
         fill ? *fill : "null",
