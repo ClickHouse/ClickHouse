@@ -20,7 +20,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_event_time_microseconds_field(started_cluster):
+def test_numbers_of_detached_parts(started_cluster):
     cluster.start()
     query_create = """
     CREATE TABLE t
@@ -70,7 +70,7 @@ def test_event_time_microseconds_field(started_cluster):
     node1.query("ALTER TABLE t DETACH PARTITION '20220901';")
 
     assert 2 == int(node1.query(query_count_detached_parts))
-    assert 1 == int(node1.query(query_count_active_parts))
+    assert 3 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
@@ -82,15 +82,15 @@ def test_event_time_microseconds_field(started_cluster):
     # detach the rest parts and wait until asynchronous metrics notice it
     node1.query("ALTER TABLE t DETACH PARTITION ALL")
 
-    assert 3 == int(node1.query(query_count_detached_parts))
-    assert 0 == int(node1.query(query_count_active_parts))
+    assert 5 == int(node1.query(query_count_detached_parts))
+    assert 3 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
         query_number_detached_parts_in_async_metric,
-        "3\n",
+        "5\n",
     )
-    assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
+    assert 5 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # inject some data directly and wait until asynchronous metrics notice it
     node1.exec_in_container(
@@ -101,15 +101,15 @@ def test_event_time_microseconds_field(started_cluster):
         ]
     )
 
-    assert 4 == int(node1.query(query_count_detached_parts))
-    assert 0 == int(node1.query(query_count_active_parts))
+    assert 6 == int(node1.query(query_count_detached_parts))
+    assert 3 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
         query_number_detached_parts_in_async_metric,
-        "4\n",
+        "6\n",
     )
-    assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
+    assert 5 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # drop some data directly and wait asynchronous metrics notice it
     node1.exec_in_container(
@@ -122,12 +122,12 @@ def test_event_time_microseconds_field(started_cluster):
         ]
     )
 
-    assert 3 == int(node1.query(query_count_detached_parts))
-    assert 0 == int(node1.query(query_count_active_parts))
+    assert 5 == int(node1.query(query_count_detached_parts))
+    assert 3 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
         query_number_detached_parts_in_async_metric,
-        "3\n",
+        "5\n",
     )
-    assert 2 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
+    assert 4 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
