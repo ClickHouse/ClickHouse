@@ -445,7 +445,7 @@ void ZooKeeperMultiRequest::checkOperationType(OperationType type)
 
 OpNum ZooKeeperMultiRequest::getOpNum() const
 {
-    return *operation_type == OperationType::READ ? OpNum::MultiRead : OpNum::Multi;
+    return !operation_type.has_value() || *operation_type == OperationType::Write ? OpNum::Multi : OpNum::MultiRead;
 }
 
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
@@ -459,7 +459,7 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
     {
         if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
         {
-            checkOperationType(WRITE);
+            checkOperationType(Write);
             auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
             if (create->acls.empty())
                 create->acls = default_acls;
@@ -467,28 +467,28 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
         }
         else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
         {
-            checkOperationType(WRITE);
+            checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
         }
         else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
         {
-            checkOperationType(WRITE);
+            checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
         }
         else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
         {
-            checkOperationType(WRITE);
+            checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
         }
         else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
         {
-            checkOperationType(READ);
+            checkOperationType(Read);
             requests.push_back(std::make_shared<ZooKeeperGetRequest>(*concrete_request_get));
         }
         else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
         {
-            checkOperationType(READ);
-            requests.push_back(std::make_shared<ZooKeeperSimpleListRequest>(*concrete_request_list));
+            checkOperationType(Read);
+            requests.push_back(std::make_shared<ZooKeeperListRequest>(*concrete_request_list));
         }
         else
             throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
@@ -563,8 +563,7 @@ std::string ZooKeeperMultiRequest::toStringImpl() const
 
 bool ZooKeeperMultiRequest::isReadRequest() const
 {
-    /// Possibly we can do better
-    return false;
+    return getOpNum() == OpNum::MultiRead;
 }
 
 void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
@@ -911,6 +910,12 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
     {
         auto res = std::make_shared<RequestT>();
         res->request_created_time_ns = clock_gettime_ns();
+
+        if constexpr (num == OpNum::MultiRead)
+            res->operation_type = ZooKeeperMultiRequest::OperationType::Read;
+        else if constexpr (num == OpNum::Multi)
+            res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
+
         return res;
     });
 }
