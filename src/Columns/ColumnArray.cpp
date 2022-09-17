@@ -162,22 +162,13 @@ StringRef ColumnArray::getDataAt(size_t n) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 
     size_t array_size = sizeAt(n);
-
     if (array_size == 0)
         return StringRef(nullptr, 0);
 
     size_t offset_of_first_elem = offsetAt(n);
-    size_t offset_of_last_elem = getOffsets()[n] - 1;
+    StringRef first = getData().getDataAt(offset_of_first_elem);
 
-    StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
-    StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
-
-    if (first.empty())
-        return last;
-    if (last.empty())
-        return first;
-
-    return StringRef(first.data, last.data + last.size - first.data);
+    return StringRef(first.data, first.size * array_size);
 }
 
 
