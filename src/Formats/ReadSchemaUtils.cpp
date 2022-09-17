@@ -63,9 +63,10 @@ ColumnsDescription readSchemaFromFormat(
         {
             names_and_types = external_schema_reader->readSchema();
         }
-        catch (const DB::Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, e.message());
+            e.addMessage("Cannot extract table structure from {} format file. You can specify the structure manually", format_name);
+            throw;
         }
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
