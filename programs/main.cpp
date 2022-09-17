@@ -452,6 +452,7 @@ int main(int argc_, char ** argv_)
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
+    /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
 #ifndef DISABLE_HARMFUL_ENV_VAR_CHECK

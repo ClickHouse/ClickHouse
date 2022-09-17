@@ -9,6 +9,7 @@ set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     LibraryBridge.cpp
     LibraryBridgeHandlerFactory.cpp
     LibraryBridgeHandlers.cpp
+    SharedLibrary.cpp
     library-bridge.cpp
 )
 

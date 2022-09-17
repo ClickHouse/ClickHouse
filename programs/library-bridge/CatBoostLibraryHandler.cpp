@@ -98,7 +98,7 @@ void placeStringColumn(const ColumnString & column, const char ** buffer, size_t
     size_t size = column.size();
     for (size_t i = 0; i < size; ++i)
     {
-        *buffer = const_cast<char *>(column.getDataAtWithTerminatingZero(i).data);
+        *buffer = const_cast<char *>(column.getDataAt(i).data);
         buffer += features_count;
     }
 }
