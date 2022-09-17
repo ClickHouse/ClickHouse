@@ -26,7 +26,6 @@ struct Settings;
     M(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
     M(Milliseconds, election_timeout_lower_bound_ms, 1000, "Lower bound of election timer (avoid too often leader elections)", 0) \
     M(Milliseconds, election_timeout_upper_bound_ms, 2000, "Upper bound of election timer (avoid too often leader elections)", 0) \
-    M(Milliseconds, leadership_expiry, 0, "How often will leader node check if it still has majority. Set it lower or equal to election_timeout_lower_bound_ms to have linearizable reads.", 0) \
     M(UInt64, reserved_log_items, 100000, "How many log items to store (don't remove during compaction)", 0) \
     M(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
     M(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
@@ -39,12 +38,11 @@ struct Settings;
     M(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     M(UInt64, max_requests_batch_size, 100, "Max size of batch in requests count before it will be sent to RAFT", 0) \
-    M(Bool, quorum_reads, false, "Deprecated - use read_mode. Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
+    M(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
     M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0) \
     M(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
-    M(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0) \
-    M(String, read_mode, "nonlinear", "How should reads be processed. Valid values: 'nonlinear', 'fastlinear', 'quorum'. 'nonlinear' is the fastest option because there are no consistency requirements", 0)
+    M(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 
