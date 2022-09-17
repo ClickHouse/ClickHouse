@@ -114,12 +114,6 @@ public:
         return sizeAt(n) == 1;
     }
 
-/// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
     void insert(const Field & x) override
     {
         const String & s = x.get<const String &>();
@@ -131,10 +125,6 @@ public:
         memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
     }
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
     void insertFrom(const IColumn & src_, size_t n) override
     {
