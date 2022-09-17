@@ -415,7 +415,7 @@ extern "C"
         return nullptr;
     }
 
-    void * dlmopen(long, const char *, int)
+    void * dlmopen(long, const char *, int) // NOLINT
     {
         return nullptr;
     }
