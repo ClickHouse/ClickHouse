@@ -353,7 +353,7 @@ void WriteBufferFromS3::completeMultipartUpload()
         {
             /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
             /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
-            LOG_WARNING(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
+            LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
         }
         else
         {
@@ -454,7 +454,7 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
         else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
             /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            LOG_WARNING(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
+            LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
         }
         else
             throw S3Exception(
