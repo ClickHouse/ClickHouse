@@ -21,16 +21,33 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-
-template <typename T = UInt64>
-class AggregateFunctionCategoricalIV final : public IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>>
+/** The function takes arguments x1, x2, ... xn, y. All arguments are bool.
+  * x arguments represents the fact that some category is true.
+  *
+  * It calculates how many times y was true and how many times y was false when every n-th category was true
+  * and the total number of times y was true and false.
+  *
+  * So, the size of the state is (n + 1) * 2 cells.
+  */
+class AggregateFunctionCategoricalIV final : public IAggregateFunctionHelper<AggregateFunctionCategoricalIV>
 {
 private:
+    using Counter = UInt64;
     size_t category_count;
+
+    Counter & counter(AggregateDataPtr __restrict place, size_t i, bool what) const
+    {
+        return reinterpret_cast<Counter *>(place)[i * 2 + (what ? 1 : 0)];
+    }
+
+    const Counter & counter(ConstAggregateDataPtr __restrict place, size_t i, bool what) const
+    {
+        return reinterpret_cast<const Counter *>(place)[i * 2 + (what ? 1 : 0)];
+    }
 
 public:
     AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_) :
-        IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>>{arguments_, params_},
+        IAggregateFunctionHelper<AggregateFunctionCategoricalIV>{arguments_, params_},
         category_count{arguments_.size() - 1}
     {
         // notice: argument types has been checked before
@@ -60,12 +77,12 @@ public:
 
     size_t sizeOfData() const override
     {
-        return sizeof(T) * (category_count + 1) * 2;
+        return sizeof(Counter) * (category_count + 1) * 2;
     }
 
     size_t alignOfData() const override
     {
-        return alignof(T);
+        return alignof(Counter);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -79,18 +96,18 @@ public:
             bool x = x_col->getData()[row_num];
 
             if (x)
-                reinterpret_cast<T *>(place)[i * 2 + size_t(y)] += 1;
+                ++counter(place, i, y);
         }
 
-        reinterpret_cast<T *>(place)[category_count * 2 + size_t(y)] += 1;
+        ++counter(place, category_count, y);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         for (size_t i = 0; i <= category_count; ++i)
         {
-            reinterpret_cast<T *>(place)[i * 2] += reinterpret_cast<const T *>(rhs)[i * 2];
-            reinterpret_cast<T *>(place)[i * 2 + 1] += reinterpret_cast<const T *>(rhs)[i * 2 + 1];
+            counter(place, i, false) += counter(rhs, i, false);
+            counter(place, i, true) += counter(rhs, i, true);
         }
     }
 
@@ -118,18 +135,15 @@ public:
 
         data_col.reserve(data_col.size() + category_count);
 
-        T sum_no = reinterpret_cast<const T *>(place)[category_count * 2];
-        T sum_yes = reinterpret_cast<const T *>(place)[category_count * 2 + 1];
-
-        Float64 rev_no = 1. / sum_no;
-        Float64 rev_yes = 1. / sum_yes;
+        Float64 sum_no = static_cast<Float64>(counter(place, category_count, false));
+        Float64 sum_yes = static_cast<Float64>(counter(place, category_count, true));
 
         for (size_t i = 0; i < category_count; ++i)
         {
-            T no = reinterpret_cast<const T *>(place)[i * 2];
-            T yes = reinterpret_cast<const T *>(place)[i * 2 + 1];
+            Float64 no = static_cast<Float64>(counter(place, i, false));
+            Float64 yes = static_cast<Float64>(counter(place, i, true));
 
-            data_col.insertValue((no * rev_no - yes * rev_yes) * (log(no * rev_no) - log(yes * rev_yes)));
+            data_col.insertValue((no / sum_no - yes / sum_yes) * (log((no / sum_no) / (yes / sum_yes))));
         }
 
         offset_col.insertValue(data_col.size());
@@ -161,7 +175,7 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    return std::make_shared<AggregateFunctionCategoricalIV<>>(arguments, params);
+    return std::make_shared<AggregateFunctionCategoricalIV>(arguments, params);
 }
 
 }
