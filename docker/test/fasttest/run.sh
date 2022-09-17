@@ -234,6 +234,8 @@ function run_tests
         --order random
         --print-time
         --jobs "${NPROC}"
+        --query_cache_active_usage false
+        --query_cache_passive_usage false
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
