@@ -155,9 +155,11 @@ StringRef ColumnArray::getDataAt(size_t n) const
 
     /** Returns the range of memory that covers all elements of the array.
       * Works for arrays of fixed length values.
-      * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
-      *  since it contains only the data laid in succession, but not the offsets.
       */
+
+    /// We are using pointer arithmetic on the addresses of the array elements.
+    if (!data->isFixedAndContiguous())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 
     size_t array_size = sizeAt(n);
 
@@ -191,7 +193,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
     /** Similarly - only for arrays of fixed length values.
       */
     if (!data->isFixedAndContiguous())
-        throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
 
