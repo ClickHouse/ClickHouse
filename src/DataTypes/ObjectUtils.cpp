@@ -1,3 +1,4 @@
+#include <Storages/StorageSnapshot.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -156,6 +157,16 @@ void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_st
 
         /// Check that constructed Tuple type and type in storage are compatible.
         getLeastCommonTypeForObject({column.type, it->second}, true);
+    }
+}
+
+void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
+{
+    if (!storage_snapshot->object_columns.empty())
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+        auto storage_columns = storage_snapshot->getColumns(options);
+        convertObjectsToTuples(block, storage_columns);
     }
 }
 

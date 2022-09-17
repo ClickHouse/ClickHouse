@@ -115,7 +115,10 @@ private:
     const Milliseconds busy_timeout;
     const Milliseconds stale_timeout;
 
-    std::atomic<bool> shutdown{false};
+    std::mutex shutdown_mutex;
+    std::condition_variable shutdown_cv;
+    bool shutdown{false};
+
     ThreadPool pool;  /// dump the data only inside this pool.
     ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
     ThreadFromGlobalPool dump_by_last_update_thread;   /// uses stale_timeout and staleCheck()
@@ -135,6 +138,10 @@ private:
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
+
+    /// @param timeout - time to wait
+    /// @return true if shutdown requested
+    bool waitForShutdown(const Milliseconds & timeout);
 
 public:
     auto getQueueLocked() const

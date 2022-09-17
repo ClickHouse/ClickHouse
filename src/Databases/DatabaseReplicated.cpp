@@ -811,7 +811,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
                 /// Yep, I hate inner tables of materialized views.
                 auto mv_drop_inner_table_context = make_query_context();
-                table->dropInnerTableIfAny(sync, mv_drop_inner_table_context);
+                table->dropInnerTableIfAny(/* sync */ true, mv_drop_inner_table_context);
                 mv_drop_inner_table_context->getZooKeeperMetadataTransaction()->commit();
             }
 

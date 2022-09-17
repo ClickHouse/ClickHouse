@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const Array & a = get<const Array &>(field);
+    const Array & a = field.get<const Array &>();
     writeVarUInt(a.size(), ostr);
     for (size_t i = 0; i < a.size(); ++i)
     {
@@ -38,7 +38,7 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr) con
     size_t size;
     readVarUInt(size, istr);
     field = Array();
-    Array & arr = get<Array &>(field);
+    Array & arr = field.get<Array &>();
     arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
         nested->deserializeBinary(arr.emplace_back(), istr);

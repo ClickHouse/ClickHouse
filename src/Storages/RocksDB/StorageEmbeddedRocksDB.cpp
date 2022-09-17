@@ -523,8 +523,7 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr();
-    return metadata ? metadata->getSampleBlock() : Block();
+    return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
 Chunk StorageEmbeddedRocksDB::getBySerializedKeys(

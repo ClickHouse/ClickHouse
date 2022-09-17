@@ -1158,18 +1158,20 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     return predefined_query;
 }
 
-HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix)
 {
-    auto query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
     std::optional<String> content_type_override;
-    if (server.config().has(config_prefix + ".handler.content_type"))
-        content_type_override = server.config().getString(config_prefix + ".handler.content_type");
+    if (config.has(config_prefix + ".handler.content_type"))
+        content_type_override = config.getString(config_prefix + ".handler.content_type");
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
         server, std::move(query_param_name), std::move(content_type_override));
 
-    factory->addFiltersFromConfig(server.config(), config_prefix);
+    factory->addFiltersFromConfig(config, config_prefix);
 
     return factory;
 }
@@ -1197,23 +1199,23 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     return compiled_regex;
 }
 
-HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix)
 {
-    Poco::Util::AbstractConfiguration & configuration = server.config();
-
-    if (!configuration.has(config_prefix + ".handler.query"))
+    if (!config.has(config_prefix + ".handler.query"))
         throw Exception("There is no path '" + config_prefix + ".handler.query' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    std::string predefined_query = configuration.getString(config_prefix + ".handler.query");
+    std::string predefined_query = config.getString(config_prefix + ".handler.query");
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
     Poco::Util::AbstractConfiguration::Keys headers_name;
-    configuration.keys(config_prefix + ".headers", headers_name);
+    config.keys(config_prefix + ".headers", headers_name);
 
     for (const auto & header_name : headers_name)
     {
-        auto expression = configuration.getString(config_prefix + ".headers." + header_name);
+        auto expression = config.getString(config_prefix + ".headers." + header_name);
 
         if (!startsWith(expression, "regex:"))
             continue;
@@ -1225,14 +1227,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
     }
 
     std::optional<String> content_type_override;
-    if (configuration.has(config_prefix + ".handler.content_type"))
-        content_type_override = configuration.getString(config_prefix + ".handler.content_type");
+    if (config.has(config_prefix + ".handler.content_type"))
+        content_type_override = config.getString(config_prefix + ".handler.content_type");
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
-    if (configuration.has(config_prefix + ".url"))
+    if (config.has(config_prefix + ".url"))
     {
-        auto url_expression = configuration.getString(config_prefix + ".url");
+        auto url_expression = config.getString(config_prefix + ".url");
 
         if (startsWith(url_expression, "regex:"))
             url_expression = url_expression.substr(6);
@@ -1247,7 +1249,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
                 std::move(regex),
                 std::move(headers_name_with_regex),
                 std::move(content_type_override));
-            factory->addFiltersFromConfig(configuration, config_prefix);
+            factory->addFiltersFromConfig(config, config_prefix);
             return factory;
         }
     }
@@ -1259,7 +1261,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
         CompiledRegexPtr{},
         std::move(headers_name_with_regex),
         std::move(content_type_override));
-    factory->addFiltersFromConfig(configuration, config_prefix);
+    factory->addFiltersFromConfig(config, config_prefix);
 
     return factory;
 }
