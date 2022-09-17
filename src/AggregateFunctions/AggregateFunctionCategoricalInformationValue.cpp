@@ -182,7 +182,8 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
 
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("categoricalInformationValue", createAggregateFunctionCategoricalIV);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    factory.registerFunction("categoricalInformationValue", { createAggregateFunctionCategoricalIV, properties });
 }
 
 }
