@@ -6,45 +6,6 @@ sidebar_label: SYSTEM
 
 # SYSTEM Statements
 
-The list of available `SYSTEM` statements:
-
--   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
--   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
--   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
--   [RELOAD MODELS](#query_language-system-reload-models)
--   [RELOAD MODEL](#query_language-system-reload-model)
--   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
--   [RELOAD FUNCTION](#query_language-system-reload-functions)
--   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
--   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
--   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
--   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
--   [DROP REPLICA](#query_language-system-drop-replica)
--   [FLUSH LOGS](#query_language-system-flush_logs)
--   [RELOAD CONFIG](#query_language-system-reload-config)
--   [SHUTDOWN](#query_language-system-shutdown)
--   [KILL](#query_language-system-kill)
--   [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
--   [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
--   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
--   [STOP MERGES](#query_language-system-stop-merges)
--   [START MERGES](#query_language-system-start-merges)
--   [STOP TTL MERGES](#query_language-stop-ttl-merges)
--   [START TTL MERGES](#query_language-start-ttl-merges)
--   [STOP MOVES](#query_language-stop-moves)
--   [START MOVES](#query_language-start-moves)
--   [SYSTEM UNFREEZE](#query_language-system-unfreeze)
--   [STOP FETCHES](#query_language-system-stop-fetches)
--   [START FETCHES](#query_language-system-start-fetches)
--   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
--   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
--   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
--   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
--   [SYNC REPLICA](#query_language-system-sync-replica)
--   [RESTART REPLICA](#query_language-system-restart-replica)
--   [RESTORE REPLICA](#query_language-system-restore-replica)
--   [RESTART REPLICAS](#query_language-system-restart-replicas)
-
 ## RELOAD EMBEDDED DICTIONARIES
 
 Reload all [Internal dictionaries](../../sql-reference/dictionaries/internal-dicts.md).
@@ -69,7 +30,12 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS
 
-Reloads all [CatBoost](../../guides/developer/apply-catboost-model.md) models if the configuration was updated without restarting the server.
+:::note
+This statement and `SYSTEM RELOAD MODEL` merely unload catboost models from the clickhouse-library-bridge. The function `catboostEvaluate()`
+loads a model upon first access if it is not loaded yet.
+:::
+
+Unloads all CatBoost models.
 
 **Syntax**
 
@@ -79,12 +45,12 @@ SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
 
 ## RELOAD MODEL
 
-Completely reloads a CatBoost model `model_name` if the configuration was updated without restarting the server.
+Unloads a CatBoost model at `model_path`.
 
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_name>
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 ```
 
 ## RELOAD FUNCTIONS

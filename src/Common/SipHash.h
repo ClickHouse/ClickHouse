@@ -55,7 +55,7 @@ private:
     ALWAYS_INLINE void finalize()
     {
         /// In the last free byte, we write the remainder of the division by 256.
-        current_bytes[7] = cnt;
+        current_bytes[7] = static_cast<UInt8>(cnt);
 
         v3 ^= current_word;
         SIPROUND;
