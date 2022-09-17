@@ -65,7 +65,7 @@ ColumnsDescription readSchemaFromFormat(
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot extract table structure from {} format file. You can specify the structure manually", format_name);
+            e.addMessage(fmt::format("Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
             throw;
         }
     }
@@ -85,6 +85,12 @@ ColumnsDescription readSchemaFromFormat(
                 if (!buf)
                     break;
                 is_eof = buf->eof();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format(
+                    "Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
+                throw;
             }
             catch (...)
             {
@@ -137,7 +143,21 @@ ColumnsDescription readSchemaFromFormat(
                 }
 
                 if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
-                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
+                {
+                    try
+                    {
+                        throw;
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage(fmt::format("Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
+                        throw;
+                    }
+                    catch (...)
+                    {
+                        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
+                    }
+                }
 
                 exception_messages += "\n" + exception_message;
             }
