@@ -98,7 +98,6 @@
                          #"\{srv2\}" (get nodes 1)
                          #"\{srv3\}" (get nodes 2)
                          #"\{id\}" (str (inc (.indexOf nodes node)))
-                         #"\{quorum_reads\}" (str (boolean (:quorum test)))
                          #"\{snapshot_distance\}" (str (:snapshot-distance test))
                          #"\{stale_log_gap\}" (str (:stale-log-gap test))
                          #"\{reserved_log_items\}" (str (:reserved-log-items test))}]

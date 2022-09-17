@@ -30,7 +30,12 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS
 
-Reloads all [CatBoost](../../guides/developer/apply-catboost-model.md) models if the configuration was updated without restarting the server.
+:::note
+This statement and `SYSTEM RELOAD MODEL` merely unload catboost models from the clickhouse-library-bridge. The function `catboostEvaluate()`
+loads a model upon first access if it is not loaded yet.
+:::
+
+Unloads all CatBoost models.
 
 **Syntax**
 
@@ -40,12 +45,12 @@ SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
 
 ## RELOAD MODEL
 
-Completely reloads a CatBoost model `model_name` if the configuration was updated without restarting the server.
+Unloads a CatBoost model at `model_path`.
 
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_name>
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 ```
 
 ## RELOAD FUNCTIONS
