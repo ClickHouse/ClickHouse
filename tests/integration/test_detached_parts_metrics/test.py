@@ -2,6 +2,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts, wait_for_delete_empty_parts
 
 
 cluster = ClickHouseCluster(__file__)
@@ -30,7 +31,8 @@ def test_numbers_of_detached_parts(started_cluster):
     )
     Engine=MergeTree()
     PARTITION BY toYYYYMMDD(event_time)
-    ORDER BY id;
+    ORDER BY id
+    SETTINGS old_parts_lifetime=1;
     """
     node1.query(query_create)
 
@@ -68,9 +70,11 @@ def test_numbers_of_detached_parts(started_cluster):
 
     # detach some parts and wait until asynchronous metrics notice it
     node1.query("ALTER TABLE t DETACH PARTITION '20220901';")
+    wait_for_delete_inactive_parts(node1, "t")
+    wait_for_delete_empty_parts(node1, "t")
 
     assert 2 == int(node1.query(query_count_detached_parts))
-    assert 3 == int(node1.query(query_count_active_parts))
+    assert 1 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
@@ -81,16 +85,18 @@ def test_numbers_of_detached_parts(started_cluster):
 
     # detach the rest parts and wait until asynchronous metrics notice it
     node1.query("ALTER TABLE t DETACH PARTITION ALL")
+    wait_for_delete_inactive_parts(node1, "t")
+    wait_for_delete_empty_parts(node1, "t")
 
-    assert 5 == int(node1.query(query_count_detached_parts))
-    assert 3 == int(node1.query(query_count_active_parts))
+    assert 3 == int(node1.query(query_count_detached_parts))
+    assert 0 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
         query_number_detached_parts_in_async_metric,
-        "5\n",
+        "3\n",
     )
-    assert 5 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
+    assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # inject some data directly and wait until asynchronous metrics notice it
     node1.exec_in_container(
@@ -101,15 +107,15 @@ def test_numbers_of_detached_parts(started_cluster):
         ]
     )
 
-    assert 6 == int(node1.query(query_count_detached_parts))
-    assert 3 == int(node1.query(query_count_active_parts))
+    assert 4 == int(node1.query(query_count_detached_parts))
+    assert 0 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
         query_number_detached_parts_in_async_metric,
-        "6\n",
+        "4\n",
     )
-    assert 5 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
+    assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # drop some data directly and wait asynchronous metrics notice it
     node1.exec_in_container(
@@ -122,12 +128,12 @@ def test_numbers_of_detached_parts(started_cluster):
         ]
     )
 
-    assert 5 == int(node1.query(query_count_detached_parts))
-    assert 3 == int(node1.query(query_count_active_parts))
+    assert 3 == int(node1.query(query_count_detached_parts))
+    assert 0 == int(node1.query(query_count_active_parts))
 
     assert_eq_with_retry(
         node1,
         query_number_detached_parts_in_async_metric,
-        "5\n",
+        "3\n",
     )
-    assert 4 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
+    assert 2 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
