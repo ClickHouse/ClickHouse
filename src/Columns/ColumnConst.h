@@ -81,11 +81,6 @@ public:
         return data->getDataAt(0);
     }
 
-    StringRef getDataAtWithTerminatingZero(size_t) const override
-    {
-        return data->getDataAtWithTerminatingZero(0);
-    }
-
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
