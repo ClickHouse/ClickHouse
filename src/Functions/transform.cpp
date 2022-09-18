@@ -1,6 +1,7 @@
 #include <mutex>
 #include <base/bit_cast.h>
 
+#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
@@ -920,8 +921,7 @@ private:
         ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            T key = src[i];
-            const auto * it = table.find(key);
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             StringRef ref;
 
             if (it)
@@ -1180,6 +1180,8 @@ private:
                     Field key = convertFieldToType(from[i], from_type);
                     if (key.isNull())
                         continue;
+
+                    std::cerr << applyVisitor(FieldVisitorDump(), key) << ": " << bitCastToUInt64(key) << "\n";
 
                     const String & str_to = to[i].get<const String &>();
                     StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
