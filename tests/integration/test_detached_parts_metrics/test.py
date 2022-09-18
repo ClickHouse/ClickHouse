@@ -2,7 +2,8 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts, wait_for_delete_empty_parts
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts
+from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 
 cluster = ClickHouseCluster(__file__)

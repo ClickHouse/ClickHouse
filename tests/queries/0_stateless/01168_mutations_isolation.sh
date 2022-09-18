@@ -45,7 +45,7 @@ tx 6                                            "begin transaction"
 tx 6                                            "alter table mt delete where n%2=1"
 tx 6                                            "alter table mt drop part 'all_10_10_0_11'"
 tx 5 "select 5, n, _part from mt order by n"
-tx 5 "alter table mt drop partition id 'all'" | grep -Eo "SERIALIZATION_ERROR" | uniq
+tx 5 "alter table mt drop partition id 'all'" | grep -Eo "PART_IS_TEMPORARILY_LOCKED" | uniq
 tx 6                                            "select 6, n, _part from mt order by n"
 tx 5 "rollback"
 tx 6                                            "insert into mt values (8)"
