@@ -32,8 +32,10 @@
         v2 += v1; v1 = ROTL(v1, 17); v1 ^= v2; v2 = ROTL(v2, 32); \
     } while(0)
 
+/// Define macro CURRENT_BYTES_IDX for building index used in current_bytes array
+/// to ensure correct byte order on different endian machines
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define CURRENT_BYTES_IDX(i) (7-i)
+#define CURRENT_BYTES_IDX(i) (7 - i)
 #else
 #define CURRENT_BYTES_IDX(i) (i)
 #endif
@@ -230,3 +232,5 @@ inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());
 }
+
+#undef CURRENT_BYTES_IDX
