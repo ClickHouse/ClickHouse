@@ -175,7 +175,7 @@ private:
             throw std::runtime_error("No more data to read");
         }
 
-        current_value = unalignedLoad<T>(data);
+        current_value = unalignedLoadLE<T>(data);
         data = reinterpret_cast<const char *>(data) + sizeof(T);
     }
 };
@@ -371,7 +371,7 @@ CodecTestSequence makeSeq(Args && ... args)
     char * write_pos = data.data();
     for (const auto & v : vals)
     {
-        unalignedStore<T>(write_pos, v);
+        unalignedStoreLE<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -393,7 +393,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     {
         const T v = gen(static_cast<T>(i));
 
-        unalignedStore<T>(write_pos, v);
+        unalignedStoreLE<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 

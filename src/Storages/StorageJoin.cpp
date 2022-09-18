@@ -14,7 +14,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/ISource.h>

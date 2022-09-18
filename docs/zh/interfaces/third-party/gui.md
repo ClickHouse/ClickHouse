@@ -1,3 +1,6 @@
+---
+slug: /zh/interfaces/third-party/gui
+---
 # 第三方开发的可视化界面 {#di-san-fang-kai-fa-de-ke-shi-hua-jie-mian}
 
 ## 开源 {#kai-yuan}

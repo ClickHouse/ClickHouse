@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/table-engines/integrations/odbc
 sidebar_position: 35
 sidebar_label: ODBC
 ---

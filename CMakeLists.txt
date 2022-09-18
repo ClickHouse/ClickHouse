@@ -77,10 +77,9 @@ option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
 # DEVELOPER ONLY.
 # Faster linking if turned on.
 option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files" OFF)
-option(CLICKHOUSE_SPLIT_BINARY "Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled" OFF)
 
-if (USE_STATIC_LIBRARIES AND (SPLIT_SHARED_LIBRARIES OR CLICKHOUSE_SPLIT_BINARY))
-    message(FATAL_ERROR "SPLIT_SHARED_LIBRARIES=1 or CLICKHOUSE_SPLIT_BINARY=1 must not be used together with USE_STATIC_LIBRARIES=1")
+if (USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+    message(FATAL_ERROR "SPLIT_SHARED_LIBRARIES=1 must not be used together with USE_STATIC_LIBRARIES=1")
 endif()
 
 if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
@@ -144,6 +143,8 @@ include (cmake/add_warning.cmake)
 if (COMPILER_CLANG)
     # generate ranges for fast "addr2line" search
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        # NOTE: that clang has a bug because of it does not emit .debug_aranges
+        # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 
@@ -154,6 +155,8 @@ if (COMPILER_CLANG)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
         endif()
     endif()
+
+    no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 endif ()
 
 # If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
@@ -163,7 +166,6 @@ if (HAS_RESERVED_IDENTIFIER)
     add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
 
-# If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
@@ -199,8 +201,8 @@ endif ()
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # Can be lld or ld-lld.
-    if (LINKER_NAME MATCHES "lld$")
+    # Can be lld or ld-lld or lld-13 or /path/to/lld.
+    if (LINKER_NAME MATCHES "lld")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
@@ -245,7 +247,8 @@ else ()
 endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
-if (LINKER_NAME MATCHES "lld$")
+# (NOTE: LINKER_NAME can be either path or name, and in different variants)
+if (LINKER_NAME MATCHES "lld")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
@@ -502,7 +505,7 @@ endif ()
 message (STATUS
     "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ;
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
-    SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}")
+    SPLIT_SHARED_LIBRARIES=${SPLIT_SHARED_LIBRARIES}")
 
 include (GNUInstallDirs)
 
@@ -599,6 +602,8 @@ if (NATIVE_BUILD_TARGETS
         COMMAND ${CMAKE_COMMAND}
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DENABLE_CCACHE=${ENABLE_CCACHE}"
+            "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
         ${CMAKE_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT)
@@ -607,4 +612,3 @@ if (NATIVE_BUILD_TARGETS
         COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" --target ${NATIVE_BUILD_TARGETS}
         COMMAND_ECHO STDOUT)
 endif ()
-

@@ -81,11 +81,6 @@ public:
         return data->getDataAt(0);
     }
 
-    StringRef getDataAtWithTerminatingZero(size_t) const override
-    {
-        return data->getDataAtWithTerminatingZero(0);
-    }
-
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
@@ -263,18 +258,13 @@ public:
         }
     }
 
-    SerializationInfoPtr getSerializationInfo() const override
-    {
-        return data->getSerializationInfo();
-    }
-
     bool isNullable() const override { return isColumnNullable(*data); }
     bool onlyNull() const override { return data->isNullAt(0); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
-    StringRef getRawData() const override { return data->getRawData(); }
+    std::string_view getRawData() const override { return data->getRawData(); }
 
     /// Not part of the common interface.
 

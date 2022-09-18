@@ -484,6 +484,35 @@ TEST(Common, PODArrayInsertFromItself)
     }
 }
 
+TEST(Common, PODArrayAssign)
+{
+    {
+        PaddedPODArray<UInt64> array;
+        array.push_back(1);
+        array.push_back(2);
+
+        array.assign({1, 2, 3});
+
+        ASSERT_EQ(array.size(), 3);
+        ASSERT_EQ(array, PaddedPODArray<UInt64>({1, 2, 3}));
+    }
+    {
+        PaddedPODArray<UInt64> array;
+        array.push_back(1);
+        array.push_back(2);
+
+        array.assign({});
+
+        ASSERT_TRUE(array.empty());
+    }
+    {
+        PaddedPODArray<UInt64> array;
+        array.assign({});
+
+        ASSERT_TRUE(array.empty());
+    }
+}
+
 TEST(Common, PODNoOverallocation)
 {
     /// Check that PaddedPODArray allocates for smaller number of elements than the power of two due to padding.

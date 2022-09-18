@@ -1,4 +1,4 @@
-name: ReleaseWorkflow
+name: PublishedReleaseCI
 # - Gets artifacts from S3
 # - Sends it to JFROG Artifactory
 # - Adds them to the release assets
@@ -15,7 +15,7 @@ jobs:
     - name: Set envs
       run: |
         cat >> "$GITHUB_ENV" << 'EOF'
-        JFROG_API_KEY=${{ secrets.JFROG_KEY_API_PACKAGES }}
+        JFROG_API_KEY=${{ secrets.JFROG_ARTIFACTORY_API_KEY }}
         TEMP_PATH=${{runner.temp}}/release_packages
         REPO_COPY=${{runner.temp}}/release_packages/ClickHouse
         EOF
@@ -29,8 +29,13 @@ jobs:
         rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
         cd "$REPO_COPY"
-        python3 ./tests/ci/push_to_artifactory.py --release "${{ github.ref }}" \
-          --commit '${{ github.sha }}' --all
+        # Download and push packages to artifactory
+        python3 ./tests/ci/push_to_artifactory.py --release '${{ github.ref }}' \
+          --commit '${{ github.sha }}' --artifactory-url '${{ secrets.JFROG_ARTIFACTORY_URL }}' --all
+        # Download macos binaries to ${{runner.temp}}/download_binary
+        python3 ./tests/ci/download_binary.py --version '${{ github.ref }}' \
+          --commit '${{ github.sha }}' binary_darwin binary_darwin_aarch64
+        mv '${{runner.temp}}/download_binary/'clickhouse-* '${{runner.temp}}/push_to_artifactory'
     - name: Upload packages to release assets
       uses: svenstaro/upload-release-action@v2
       with:
@@ -61,8 +66,6 @@ jobs:
     - name: Cleanup
       if: always()
       run: |
-        # shellcheck disable=SC2046
-        docker kill $(docker ps -q) ||:
-        # shellcheck disable=SC2046
-        docker rm -f $(docker ps -a -q) ||:
+        docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+        docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
         sudo rm -fr "$TEMP_PATH"

@@ -18,6 +18,8 @@ elseif(WIN32)
     set(NATS_PLATFORM_INCLUDE "apple")
 endif()
 
+add_definitions(-DNATS_HAS_TLS)
+
 file(GLOB PS_SOURCES "${NATS_IO_SOURCE_DIR}/${NATS_PLATFORM_INCLUDE}/*.c")
 set(SRCS
     "${NATS_IO_SOURCE_DIR}/asynccb.c"

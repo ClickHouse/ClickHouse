@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/utilities/clickhouse-copier
+---
 # clickhouse-copier {#clickhouse-copier}
 
 将数据从一个群集中的表复制到另一个（或相同）群集中的表。

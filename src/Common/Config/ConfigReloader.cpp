@@ -13,8 +13,6 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_interval;
-
 ConfigReloader::ConfigReloader(
         const std::string & path_,
         const std::string & include_from_path_,

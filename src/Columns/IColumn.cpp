@@ -64,11 +64,6 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & defa
     return res;
 }
 
-SerializationInfoPtr IColumn::getSerializationInfo() const
-{
-    return std::make_shared<SerializationInfo>(ISerialization::getKind(*this), SerializationInfo::Settings{});
-}
-
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);

@@ -142,7 +142,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
         if (query->as<ASTSelectWithUnionQuery>())
         {
-            QueryWithOutputSettingsPushDownVisitor::Data data{query_with_output.settings_ast};
+            auto settings = query_with_output.settings_ast->clone();
+            assert_cast<ASTSetQuery *>(settings.get())->print_in_format = false;
+            QueryWithOutputSettingsPushDownVisitor::Data data{settings};
             QueryWithOutputSettingsPushDownVisitor(data).visit(query);
         }
     }

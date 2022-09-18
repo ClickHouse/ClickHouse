@@ -3,9 +3,9 @@
 #if USE_HDFS
 #include <mutex>
 #include <Common/logger_useful.h>
-#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+
 
 namespace CurrentMetrics
 {

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/
 sidebar_label: "Типы данных"
 sidebar_position: 37
 ---

@@ -242,10 +242,6 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
-    if (CurrentThread::isInitialized())
-    {
-        modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
-    }
 
     {
         std::lock_guard lock(duplicated_part_uuids_mutex);

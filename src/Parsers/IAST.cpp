@@ -26,6 +26,70 @@ const char * IAST::hilite_substitution = "\033[1;36m";
 const char * IAST::hilite_none         = "\033[0m";
 
 
+IAST::~IAST()
+{
+    /** Create intrusive linked list of children to delete.
+      * Each ASTPtr child contains pointer to next child to delete.
+      */
+    ASTPtr delete_list_head_holder = nullptr;
+    const bool delete_directly = next_to_delete_list_head == nullptr;
+    ASTPtr & delete_list_head_reference = next_to_delete_list_head ? *next_to_delete_list_head : delete_list_head_holder;
+
+    /// Move children into intrusive list
+    for (auto & child : children)
+    {
+        /** If two threads remove ASTPtr concurrently,
+          * it is possible that neither thead will see use_count == 1.
+          * It is ok. Will need one more extra stack frame in this case.
+          */
+        if (child.use_count() != 1)
+            continue;
+
+        ASTPtr child_to_delete;
+        child_to_delete.swap(child);
+
+        if (!delete_list_head_reference)
+        {
+            /// Initialize list first time
+            delete_list_head_reference = std::move(child_to_delete);
+            continue;
+        }
+
+        ASTPtr previous_head = std::move(delete_list_head_reference);
+        delete_list_head_reference = std::move(child_to_delete);
+        delete_list_head_reference->next_to_delete = std::move(previous_head);
+    }
+
+    if (!delete_directly)
+        return;
+
+    while (delete_list_head_reference)
+    {
+        /** Extract child to delete from current list head.
+          * Child will be destroyed at the end of scope.
+          */
+        ASTPtr child_to_delete;
+        child_to_delete.swap(delete_list_head_reference);
+
+        /// Update list head
+        delete_list_head_reference = std::move(child_to_delete->next_to_delete);
+
+        /** Pass list head into child before destruction.
+          * It is important to properly handle cases where subclass has member same as one of its children.
+          *
+          * class ASTSubclass : IAST
+          * {
+          *     ASTPtr first_child; /// Same as first child
+          * }
+          *
+          * In such case we must move children into list only in IAST destructor.
+          * If we try to move child to delete children into list before subclasses desruction,
+          * first child use count will be 2.
+          */
+        child_to_delete->next_to_delete_list_head = &delete_list_head_reference;
+    }
+}
+
 size_t IAST::size() const
 {
     size_t res = 1;
