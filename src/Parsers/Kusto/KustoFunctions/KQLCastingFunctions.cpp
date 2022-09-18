@@ -116,29 +116,6 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     else
         out = std::format("{}" , arg);
 
-    /*    
-    if(pos->type == TokenType::StringLiteral || pos->type == TokenType::QuotedIdentifier)
-    {
-        --pos;
-        String result;
-        auto arg = getArgument(function_name,pos);
-        try
-        {
-            result =  kqlCallToExpression("time", {arg}, pos.max_depth);
-            out = std::format("{}" , result);
-        }
-        catch(...)
-        {
-            out = std::format("NULL");
-        }
-
-    }
-    else
-    {
-        auto arg = getConvertedArgument(function_name,pos);
-        out = std::format("{}" , arg);
-    }
-*/
     return true;
 }
 

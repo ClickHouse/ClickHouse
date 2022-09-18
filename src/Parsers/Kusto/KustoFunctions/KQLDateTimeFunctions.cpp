@@ -166,7 +166,7 @@ bool DayOfWeek::convertImpl(String & out, IParser::Pos & pos)
     
     const String datetime_str = getConvertedArgument(fn_name, pos);
     
-    out = std::format("toDayOfWeek({})%7",datetime_str);
+    out = std::format("concat((toDayOfWeek({})%7)::String , '.00:00:00')",datetime_str);
     return true;
 }
 
@@ -345,7 +345,6 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
     
     return true;
 }
-
 bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)  
 {
     const String fn_name = getKQLFunctionName(pos); 
@@ -369,6 +368,11 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     size_t pad = 0;
     std::string::size_type i = 0;
 
+
+    bool is_day_in_format = false;
+    String day_val = std::to_string(std::stoi(datetime)/86400);
+    bool is_hour_zero = std::stoi(datetime)%86400 >3600 ? false : true;
+
     while (i < format.size())
     {
         char c = format[i];
@@ -391,16 +395,18 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
             else if (arg == "m" || arg == "mm")
                   formatspecifier = formatspecifier + "%M";
             else if (arg == "h" || arg == "hh")
-                  formatspecifier = formatspecifier + "%I";
+            {
+                if(is_hour_zero) //To handle the CH limit for 12hr format(01-12). If not handled , 1.00:00:00 returned as 1.12:00:00(in 12 hr format)
+                    formatspecifier = formatspecifier + "%H";
+                else
+                    formatspecifier = formatspecifier + "%I";
+            }
             else if (arg == "H" || arg == "HH")
                   formatspecifier = formatspecifier + "%H";
-            else if (arg == "d")
-                  formatspecifier = formatspecifier + "%e";
-            else if (arg == "dd")
-                  formatspecifier = formatspecifier + "%d";
-            else if (arg.starts_with('d') && arg.size() >2)
-            {       formatspecifier = formatspecifier + "%d";
-                   pad = arg.size() - 2 ;
+            else if (arg.starts_with('d')) //&& arg.size() >2)
+            {
+                   pad = std::max(arg.size(),day_val.length());
+                   is_day_in_format = true;
             }
             else if (arg.starts_with('f') || arg.starts_with('F'))
                 decimal = arg.size();
@@ -410,15 +416,36 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
             i = i + arg.size();
         }  
     }
-    if(decimal > 0 && formatspecifier.find('.')!=String::npos )
-    {  
-        out = std::format("leftPad(concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),1, position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'.')),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'.')+1,length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))))),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))+{3}+{2},'0')", datetime,formatspecifier,decimal,pad);
-    }
-    else if (decimal == 0 && formatspecifier.find('.')==String::npos)
-        out = std::format("leftPad(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))+{2},'0')", datetime,formatspecifier,pad);
-    else 
-        out = std::format("formatDateTime(toDateTime64({0},9,'UTC'),'{1}')", datetime,formatspecifier);
+    auto last_delim = formatspecifier.substr(formatspecifier.length()-1,formatspecifier.length());
     
+    if(!is_day_in_format)
+    {
+        if(decimal > 0)
+        {
+        if(format.substr(format.length()- decimal -1,1) == last_delim)
+            out = std::format("concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}')+1),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'{4}'),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))))", datetime,formatspecifier,decimal,last_delim);
+        else
+            out = std::format("concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}')),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'{4}'),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))))", datetime,formatspecifier,decimal,last_delim);
+        }
+        else 
+            out = std::format("formatDateTime(toDateTime64({0},9,'UTC'),'{1}')", datetime,formatspecifier);
+
+    }
+    else
+    {
+        if(decimal > 0)
+        {  
+            String  heena = format.substr(format.length()- decimal - 1, 1);
+            if(heena == last_delim)
+                std::cout <<"yes";
+            if(format.substr(format.length()- decimal - 1, 1) == last_delim)
+                out = std::format("concat( leftPad('{5}' , {3} ,'0'),substring(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}') +1),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}))", datetime,formatspecifier,decimal,pad,last_delim,day_val);
+            else
+                out = std::format("concat( leftPad('{5}' , {3} ,'0') ,substring(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}')),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'{4}'),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))))", datetime,formatspecifier,decimal,pad,last_delim,day_val);
+        }
+        else if (decimal == 0)
+            out = std::format("concat( leftPad('{3}' , {2} ,'0'),toString(formatDateTime(toDateTime64({0},9,'UTC') ,'{1}')))", datetime,formatspecifier,pad,day_val);
+    }
     return true;
 }
 
@@ -687,9 +714,15 @@ bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     ++pos;
-    const String value = getConvertedArgument(fn_name, pos);
+    if(pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+        throw Exception("String Literal is not accepted." + fn_name + " accepts only long, int and double " , ErrorCodes::BAD_ARGUMENTS);
+        
+    const String expression = getConvertedArgument(fn_name, pos);
 
-    out = std::format("toDateTime64({},9,'UTC')", value);
+    if(std::any_of(expression.begin(), expression.end(), ::isalpha))
+        throw Exception("String Literal is not accepted." + fn_name + " accepts only long, int and double " , ErrorCodes::BAD_ARGUMENTS);
+
+    out = std::format("toDateTime64({0},9,'UTC')", expression);
 
     return true;
 }
