@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-s3-storage
 
 SET joined_subquery_requires_alias = 0;
 
