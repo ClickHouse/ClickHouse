@@ -44,6 +44,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (!read_from_merge_tree)
         return 0;
 
+    /// if some `read in order` optimization is already applied - do not proceed
+    /// todo: check later case with several read in order optimizations
+    if (read_from_merge_tree->getOutputStream().sort_scope != DataStream::SortScope::Chunk)
+        return 0;
+
     /// find non-const columns in DISTINCT
     const auto & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
     std::set<std::string_view> non_const_columns;
@@ -75,7 +80,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     /// update input order info in read_from_merge_tree step
     const int direction = 1; /// default direction, ASC
     InputOrderInfoPtr order_info
-        = std::make_shared<const InputOrderInfo>(distinct_sort_desc, distinct_sort_desc.size(), direction, pre_distinct->getLimitHint());
+        = std::make_shared<const InputOrderInfo>(SortDescription{}, distinct_sort_desc.size(), direction, pre_distinct->getLimitHint());
     read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
 
     /// update data stream's sorting properties for found transforms
