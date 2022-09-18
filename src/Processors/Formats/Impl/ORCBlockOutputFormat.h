@@ -42,7 +42,7 @@ private:
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
 
-    ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type);
+    std::unique_ptr<orc::Type> getORCType(const DataTypePtr & type);
 
     /// ConvertFunc is needed for type UInt8, because firstly UInt8 (char8_t) must be
     /// converted to unsigned char (bugprone-signed-char-misuse in clang).
@@ -75,8 +75,8 @@ private:
     const FormatSettings format_settings;
     ORCOutputStream output_stream;
     DataTypes data_types;
-    ORC_UNIQUE_PTR<orc::Writer> writer;
-    ORC_UNIQUE_PTR<orc::Type> schema;
+    std::unique_ptr<orc::Writer> writer;
+    std::unique_ptr<orc::Type> schema;
     orc::WriterOptions options;
 };
 
