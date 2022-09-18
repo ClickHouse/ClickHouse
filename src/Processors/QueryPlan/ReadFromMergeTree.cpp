@@ -143,7 +143,12 @@ ReadFromMergeTree::ReadFromMergeTree(
         {
             auto const & settings = context->getSettingsRef();
             if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
+            {
                 output_stream->sort_scope = DataStream::SortScope::Stream;
+                const size_t used_prefix_of_sorting_key_size = query_info.getInputOrderInfo()->used_prefix_of_sorting_key_size;
+                if (sort_description.size() > used_prefix_of_sorting_key_size)
+                    sort_description.resize(used_prefix_of_sorting_key_size);
+            }
             else
                 output_stream->sort_scope = DataStream::SortScope::Chunk;
         }
@@ -1038,7 +1043,24 @@ void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
     }
 
     /// update sort info for output stream
-    output_stream->sort_description = order_info->sort_description_for_merging;
+    SortDescription sort_description;
+    const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+    const Block & header = output_stream->header;
+    const int sort_direction = getSortDirection();
+    for (const auto & column_name : sorting_key_columns)
+    {
+        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+            == header.end())
+            break;
+        sort_description.emplace_back(column_name, sort_direction);
+    }
+    if (sort_description.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort desctiption can't be empty when reading in order");
+
+    const size_t used_prefix_of_sorting_key_size = order_info->used_prefix_of_sorting_key_size;
+    if (sort_description.size() > used_prefix_of_sorting_key_size)
+        sort_description.resize(used_prefix_of_sorting_key_size);
+    output_stream->sort_description = std::move(sort_description);
     output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
