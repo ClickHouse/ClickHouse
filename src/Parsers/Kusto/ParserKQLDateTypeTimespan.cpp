@@ -19,14 +19,23 @@ bool ParserKQLDateTypeTimespan :: parseImpl(Pos & pos,  [[maybe_unused]] ASTPtr 
 
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral )
         token = String(pos->begin + 1, pos->end -1);
-
     else
-        token = String(pos->begin, pos->end);
+    {
+        auto start = pos;
+        while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        {
+            ++pos;
+            if  (pos->type == TokenType::ClosingRoundBracket)
+                break;
+        }
+        --pos;
+        token = String(start->begin,pos->end);
+    }
 
     if (!parseConstKQLTimespan(token))
         return false;
 
-     return true;
+    return true;
 }
 
 double ParserKQLDateTypeTimespan :: toSeconds()
@@ -124,13 +133,13 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
             hours = std::stoi(String(ptr + number_len + 1, ptr + number_len + 1 + fractionLen));
             number_len += fractionLen + 1;
         }
-        else
-        {
-            hours = days;
-            days = 0;
-        }
     }
-
+    else
+    {
+        hours = days;
+        days = 0;
+    }
+    
     if (hours > 23)
         return false;
 
@@ -147,6 +156,7 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
 
         return true;
     }
+    
 
     auto min_len = scanDigit(ptr + number_len + 1);
     if (min_len < 0)
