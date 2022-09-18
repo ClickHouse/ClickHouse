@@ -115,6 +115,7 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("TCPHandler"))
     , forwarded_for(stack_data.forwarded_for)
+    , certificate(stack_data.certificate)
     , server_display_name(std::move(server_display_name_))
 {
 }
@@ -1065,7 +1066,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 {
     auto interface = is_interserver_mode ? ClientInfo::Interface::TCP_INTERSERVER : ClientInfo::Interface::TCP;
 
-    auto res = std::make_unique<Session>(server.context(), interface, socket().secure());
+    auto res = std::make_unique<Session>(server.context(), interface, socket().secure(), certificate);
 
     auto & client_info = res->getClientInfo();
     client_info.forwarded_for = forwarded_for;

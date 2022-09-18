@@ -43,6 +43,7 @@ public:
             ctx = new Context(Context::Usage::SERVER_USE, key, certificate, ctx->getCAPaths().caLocation);
         socket() = SecureStreamSocket::attach(socket(), ctx);
         stack_data.socket = socket();
+        stack_data.certificate = certificate;
 #else
         throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
