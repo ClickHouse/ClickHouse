@@ -354,18 +354,11 @@ void DataPartStorageOnDisk::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
 
-#if !defined(__clang__)
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
         for (const auto & [file, _] : checksums.files)
         {
             if (skip_directories.find(file) == skip_directories.end())
                 request.emplace_back(fs::path(dir) / file);
         }
-#if !defined(__clang__)
-#    pragma GCC diagnostic pop
-#endif
 
         for (const auto & file : {"checksums.txt", "columns.txt"})
             request.emplace_back(fs::path(dir) / file);
