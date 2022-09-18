@@ -11,11 +11,15 @@ namespace ProfileEvents
 {
     extern const Event CachedWriteBufferCacheWriteBytes;
     extern const Event CachedWriteBufferCacheWriteMicroseconds;
-    extern const Event FileSegmentWriteMicroseconds;
 }
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
