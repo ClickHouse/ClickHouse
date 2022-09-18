@@ -1,3 +1,5 @@
+include(CMakePrintHelpers)
+
 if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
@@ -110,3 +112,6 @@ add_library (_llvm INTERFACE)
 target_link_libraries (_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})
 target_include_directories (_llvm SYSTEM BEFORE INTERFACE ${LLVM_INCLUDE_DIRS})
 add_library(ch_contrib::llvm ALIAS _llvm)
+
+# cmake_print_variables()
+# message(FATAL_ERROR "XXX")
