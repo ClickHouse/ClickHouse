@@ -425,16 +425,6 @@ public:
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
 
-    template <typename T>
-    T & reinterpret();
-
-    template <typename T>
-    const T & reinterpret() const
-    {
-        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
-        return mutable_this->reinterpret<T>();
-    }
-
     template <typename T> bool tryGet(T & result)
     {
         const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
@@ -552,7 +542,7 @@ public:
             case Types::Float64:
             {
                 // Compare as UInt64 so that NaNs compare as equal.
-                return reinterpret<UInt64>() == rhs.reinterpret<UInt64>();
+                return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
             }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::String:  return get<String>()  == rhs.get<String>();
@@ -842,15 +832,6 @@ auto & Field::safeGet()
     return get<T>();
 }
 
-
-template <typename T>
-T & Field::reinterpret()
-{
-    assert(which != Types::String);
-    using ValueType = std::decay_t<T>;
-    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
-    return *ptr;
-}
 
 template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
