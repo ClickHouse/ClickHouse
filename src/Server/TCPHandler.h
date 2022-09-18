@@ -153,6 +153,7 @@ private:
     Poco::Logger * log;
 
     String forwarded_for;
+    String certificate;
 
     String client_name;
     UInt64 client_version_major = 0;
