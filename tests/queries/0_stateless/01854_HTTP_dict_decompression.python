@@ -158,7 +158,7 @@ def test_select(dict_name="", schema="word String, counter UInt32", requests=[],
 
         COMPRESS_METHOD = requests[i]
         print(i, COMPRESS_METHOD, ADDING_ENDING, SEND_ENCODING)
-        check_answers("SELECT * FROM {} ORDER BY word".format(dict_name), answers[i])
+        check_answers("SELECT * FROM {} ORDER BY word settings query_cache_passive_usage=false, query_cache_active_usage=false".format(dict_name), answers[i])
 
 def main():
     # first three for encoding, second three for url
