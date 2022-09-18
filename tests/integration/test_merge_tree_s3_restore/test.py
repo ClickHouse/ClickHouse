@@ -6,6 +6,7 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts, wait_for_delete_empty_parts
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -103,7 +104,7 @@ def create_table(
         ORDER BY (dt, id)
         SETTINGS
             storage_policy='s3',
-            old_parts_lifetime=600,
+            old_parts_lifetime=1,
             index_granularity=512
         """.format(
         create="ATTACH" if attach else "CREATE",
@@ -593,6 +594,8 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
 
     # Detach some partition.
     node.query("ALTER TABLE s3.test DETACH PARTITION '2020-01-07'")
+    wait_for_delete_inactive_parts(node, "s3.test")
+    wait_for_delete_empty_parts(node, "s3.test")
 
     node.query("ALTER TABLE s3.test FREEZE")
     revision = get_revision_counter(node, 1)
@@ -623,10 +626,10 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
     node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-04'")
     node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-05'")
     node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-06'")
-
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
     ) == "({})".format(4096 * 4)
+
     assert node_another_bucket.query(
         "SELECT sum(id) FROM s3.test FORMAT Values"
     ) == "({})".format(0)
