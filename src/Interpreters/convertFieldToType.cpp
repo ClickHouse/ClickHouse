@@ -29,7 +29,6 @@
 #include <Common/DateLUT.h>
 
 
-
 namespace DB
 {
 
