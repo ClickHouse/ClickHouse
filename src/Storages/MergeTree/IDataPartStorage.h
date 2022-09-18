@@ -12,6 +12,13 @@ namespace DB
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
+struct CanRemoveDescription
+{
+    bool can_remove_anything;
+    NameSet files_not_to_remove;
+
+};
+using CanRemoveCallback = std::function<CanRemoveDescription()>;
 
 class IDataPartStorageIterator
 {
@@ -113,13 +120,12 @@ public:
     /// can_remove_shared_data, names_not_to_remove are specific for DiskObjectStorage.
     /// projections, checksums are needed to avoid recursive listing
     virtual void remove(
-        bool can_remove_shared_data,
-        const NameSet & names_not_to_remove,
+        CanRemoveCallback && can_remove_callback,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
         MergeTreeDataPartState state,
-        Poco::Logger * log) const = 0;
+        Poco::Logger * log) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
