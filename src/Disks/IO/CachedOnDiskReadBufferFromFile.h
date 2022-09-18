@@ -68,7 +68,7 @@ private:
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(size_t offset) const;
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
 

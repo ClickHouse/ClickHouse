@@ -1034,6 +1034,8 @@ protected:
     /// True if at least one part was created/removed with transaction.
     mutable std::atomic_bool transactions_enabled = false;
 
+    std::atomic_bool data_parts_loading_finished = false;
+
     /// Work with data parts
 
     struct TagByInfo{};
