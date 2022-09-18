@@ -503,9 +503,15 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     UInt32 w_start = addTime(watermark, window_kind, -window_num_units, *time_zone);
 
     auto inner_table = getInnerTable();
+
+    LOG_DEBUG(&Poco::Logger::get("StorageWindowView::getNewBlocks::507"), "InterpreterSelectQuery ctor");
+    auto context_copy = Context::createCopy(getContext());
+    context_copy->setSetting("query_cache_active_usage", false);
+    context_copy->setSetting("query_cache_passive_usage", false);
+
     InterpreterSelectQuery fetch(
         inner_fetch_query,
-        getContext(),
+        context_copy,
         inner_table,
         inner_table->getInMemoryMetadataPtr(),
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
@@ -595,10 +601,14 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     };
 
     TemporaryTableHolder blocks_storage(getContext(), creator);
+    LOG_DEBUG(&Poco::Logger::get("StorageWindowView::getNewBlocks::600"), "InterpreterSelectQuery ctor");
+    auto ctx_copy = Context::createCopy(getContext());
+    ctx_copy->setSetting("query_cache_active_usage", false);
+    ctx_copy->setSetting("query_cache_passive_usage", false);
 
     InterpreterSelectQuery select(
         getFinalQuery(),
-        getContext(),
+        ctx_copy,
         blocks_storage.getTable(),
         blocks_storage.getTable()->getInMemoryMetadataPtr(),
         SelectQueryOptions(QueryProcessingStage::Complete));
@@ -763,8 +773,12 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
 
     auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
 
+    auto context_copy = Context::createCopy(getContext());
+    context_copy->setSetting("query_cache_active_usage", false);
+    context_copy->setSetting("query_cache_passive_usage", false);
+
     auto t_sample_block
-        = InterpreterSelectQuery(inner_select_query, getContext(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
+        = InterpreterSelectQuery(inner_select_query, context_copy, SelectQueryOptions(QueryProcessingStage::WithMergeableState))
               .getSampleBlock();
 
     ASTPtr columns_list = InterpreterCreateQuery::formatColumns(t_sample_block.getNamesAndTypesList());
@@ -1484,9 +1498,13 @@ void StorageWindowView::writeIntoWindowView(
     };
     TemporaryTableHolder blocks_storage(local_context, creator);
 
+    auto context_copy = Context::createCopy(local_context);
+    context_copy->setSetting("query_cache_active_usage", false);
+    context_copy->setSetting("query_cache_passive_usage", false);
+
     InterpreterSelectQuery select_block(
         window_view.getMergeableQuery(),
-        local_context,
+        context_copy,
         blocks_storage.getTable(),
         blocks_storage.getTable()->getInMemoryMetadataPtr(),
         QueryProcessingStage::WithMergeableState);
@@ -1636,7 +1654,11 @@ const Block & StorageWindowView::getOutputHeader() const
     std::lock_guard lock(sample_block_lock);
     if (!output_header)
     {
-        output_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::Complete))
+        auto context_copy = Context::createCopy(getContext());
+        context_copy->setSetting("query_cache_active_usage", false);
+        context_copy->setSetting("query_cache_passive_usage", false);
+
+        output_header = InterpreterSelectQuery(select_query->clone(), context_copy, SelectQueryOptions(QueryProcessingStage::Complete))
                            .getSampleBlock();
     }
     return output_header;
