@@ -846,25 +846,10 @@ auto & Field::safeGet()
 template <typename T>
 T & Field::reinterpret()
 {
-    assert(which != Types::String); // See specialization for char
+    assert(which != Types::String);
     using ValueType = std::decay_t<T>;
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
     return *ptr;
-}
-
-// Specialize reinterpreting to char (used in ColumnUnique) to make sure Strings are reinterpreted correctly
-// inline to avoid multiple definitions
-template <>
-inline char & Field::reinterpret<char>()
-{
-    if (which == Types::String)
-    {
-        // For String we want to return a pointer to the data, not the start of the class
-        // as the layout of std::string depends on the STD version and options
-        char * ptr = reinterpret_cast<String *>(&storage)->data();
-        return *ptr;
-    }
-    return *reinterpret_cast<char *>(&storage);
 }
 
 template <typename T>
