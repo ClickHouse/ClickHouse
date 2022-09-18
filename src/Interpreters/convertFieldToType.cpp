@@ -18,14 +18,16 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <Core/AccurateComparison.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldVisitorToString.h>
-
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+
 
 
 namespace DB
@@ -223,7 +225,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDate32() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
-            const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(src.reinterpret<Int64>(), 0, scale);
+            const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<DateTime64>(decimal_value, scale));
         }
     }
