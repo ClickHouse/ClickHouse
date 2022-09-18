@@ -248,8 +248,11 @@ private:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Some ready chunks expected");
 
         auto & output = outputs.front();
-        output.push(std::move(single_level_chunks.back()));
+        auto chunk = std::move(single_level_chunks.back());
         single_level_chunks.pop_back();
+        const auto has_rows = chunk.hasRows();
+        if (has_rows)
+            output.push(std::move(chunk));
 
         if (finished && single_level_chunks.empty())
         {
@@ -257,7 +260,7 @@ private:
             return Status::Finished;
         }
 
-        return Status::PortFull;
+        return has_rows ? Status::PortFull : Status::Ready;
     }
 
     /// Read all sources and try to push current bucket.
@@ -281,7 +284,10 @@ private:
         if (!two_level_chunks[current_bucket_num])
             return Status::NeedData;
 
-        output.push(std::move(two_level_chunks[current_bucket_num]));
+        auto chunk = std::move(two_level_chunks[current_bucket_num]);
+        const auto has_rows = chunk.hasRows();
+        if (has_rows)
+            output.push(std::move(chunk));
 
         ++current_bucket_num;
         if (current_bucket_num == NUM_BUCKETS)
@@ -291,7 +297,7 @@ private:
             return Status::Finished;
         }
 
-        return Status::PortFull;
+        return has_rows ? Status::PortFull : Status::Ready;
     }
 
     AggregatingTransformParamsPtr params;
