@@ -4,9 +4,12 @@ ARG FROM_TAG=latest
 FROM clickhouse/test-util:$FROM_TAG
 
 # Rust toolchain and libraries
+ENV RUSTUP_HOME=/rust/rustup
+ENV CARGO_HOME=/rust/cargo
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-RUN chmod 777 -R /root/.cargo/bin
+RUN chmod 777 -R /rust
+ENV PATH="/rust/cargo/env:${PATH}"
+ENV PATH="/rust/cargo/bin:${PATH}"
 RUN rustup target add aarch64-unknown-linux-gnu && \
         rustup target add x86_64-apple-darwin && \
         rustup target add x86_64-unknown-freebsd && \

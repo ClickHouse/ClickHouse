@@ -23,6 +23,9 @@ endif()
 
 if((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "toolchain-aarch64"))
     set(Rust_CARGO_TARGET "aarch64-apple-darwin")
+    message(STATUS "Rust is not available on aarch64-apple-darwin")
+    option(ENABLE_RUST "Enable rust" FALSE)
+    return()
 endif()
 
 if((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "x86_64"))
