@@ -1181,8 +1181,6 @@ private:
                     if (key.isNull())
                         continue;
 
-                    std::cerr << applyVisitor(FieldVisitorDump(), key) << ": " << bitCastToUInt64(key) << "\n";
-
                     const String & str_to = to[i].get<const String &>();
                     StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
                     table[bitCastToUInt64(key)] = ref;
