@@ -2168,7 +2168,7 @@ void MergeTreeData::dropAllData()
                     if (disk->isDirectory(detached_path / it->name()))
                     {
                         // Avoid removing shared remote objects when table dropped only on one replica
-                        removeDetachedPart(disk, detached_path / it->name() / "", it->name(), false);
+                        removeDetachedPart(disk, detached_path / it->name() / "", it->name());
                     }
                 }
             }
