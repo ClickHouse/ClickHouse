@@ -3433,7 +3433,7 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 
