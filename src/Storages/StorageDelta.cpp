@@ -27,14 +27,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void DeltaLakeMetadata::add(const String & key, uint64_t timestamp)
+void DeltaLakeMetadata::add(const String & filename, uint64_t timestamp)
 {
-    file_update_time[key] = timestamp;
+    file_update_time[filename] = timestamp;
 }
 
-void DeltaLakeMetadata::remove(const String & key, uint64_t /*timestamp */)
+void DeltaLakeMetadata::remove(const String & filename, uint64_t /*timestamp */)
 {
-    file_update_time.erase(key);
+    file_update_time.erase(filename);
 }
 
 std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
@@ -51,7 +51,7 @@ std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
 }
 
 JsonMetadataGetter::JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, Poco::Logger * log_)
-    : base_configuration(configuration_), table_path(table_path_), metadata(), log(log_)
+    : base_configuration(configuration_), table_path(table_path_), log(log_)
 {
     Init();
 }
