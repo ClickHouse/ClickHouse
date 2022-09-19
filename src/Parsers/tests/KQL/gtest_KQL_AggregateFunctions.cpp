@@ -53,5 +53,9 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "DataTable | summarize t = percentilew(Bucket, Frequency, 50)",
             "SELECT quantileExactWeighted(50 / 100)(Bucket, Frequency) AS t\nFROM DataTable"
+        },
+        {
+             "Customers | summarize t = make_list_with_nulls(Age) by FirstName",
+             "SELECT\n    FirstName,\n    arrayConcat(groupArray(Age) AS ga, arrayMap(x -> NULL, range(0, toUInt32(count(*) - length(ga)), 1))) AS t\nFROM Customers\nGROUP BY FirstName"
         }
 })));

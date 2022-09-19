@@ -152,7 +152,14 @@ bool MakeListIf::convertImpl(String & out,IParser::Pos & pos)
 
 bool MakeListWithNulls::convertImpl(String & out,IParser::Pos & pos)
 {
-    return directMapping(out,pos,"groupArray");
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    ++pos;
+    const auto column_name = getConvertedArgument(fn_name,pos);
+    out = "arrayConcat(groupArray(" + column_name + ") AS ga, arrayMap(x -> null, range(0, toUInt32(count(*)-length(ga)),1)))";
+    return true;
 }
 
 bool MakeSet::convertImpl(String & out,IParser::Pos & pos)
