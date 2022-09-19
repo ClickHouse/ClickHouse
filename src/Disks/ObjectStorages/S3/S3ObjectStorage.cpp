@@ -31,7 +31,6 @@
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 
-
 namespace DB
 {
 
@@ -56,7 +55,7 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+        throw S3Exception(fmt::format("{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType())), err.GetErrorType());
     }
 }
 
@@ -70,7 +69,7 @@ void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response,
     if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
     {
         const auto & err = response.GetError();
-        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+        throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
     }
 }
 
@@ -91,19 +90,7 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
 
 std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    /// Path to store the new S3 object.
-
-    /// Total length is 32 a-z characters for enough randomness.
-    /// First 3 characters are used as a prefix for
-    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
-    constexpr size_t key_name_total_size = 32;
-    constexpr size_t key_name_prefix_size = 3;
-
-    /// Path to store new S3 object.
-    return fmt::format("{}/{}",
-        getRandomASCIIString(key_name_prefix_size),
-        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
+    return getRandomASCIIString(32);
 }
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const

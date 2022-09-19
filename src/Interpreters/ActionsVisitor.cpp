@@ -114,7 +114,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
                 throw Exception("Invalid type in set. Expected tuple, got "
                     + String(value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-            const auto & tuple = DB::get<const Tuple &>(value);
+            const auto & tuple = value.template get<const Tuple &>();
             size_t tuple_size = tuple.size();
 
             if (tuple_size != columns_num)
@@ -306,9 +306,9 @@ Block createBlockForSet(
     {
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
-            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types, tranform_null_in);
+            block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), set_element_types, tranform_null_in);
         else if (type_index == TypeIndex::Array)
-            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types, tranform_null_in);
+            block = createBlockFromCollection(right_arg_value.get<const Array &>(), set_element_types, tranform_null_in);
         else
             throw_unsupported_type(right_arg_type);
     }
@@ -880,20 +880,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             case GroupByKind::GROUPING_SETS:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ROLLUP:
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
                 break;
             case GroupByKind::CUBE:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ORDINARY:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes))), {}, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), {}, column_name);
                 break;
             }
             default:

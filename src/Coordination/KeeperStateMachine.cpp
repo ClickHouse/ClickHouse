@@ -191,12 +191,16 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     return request_for_session;
 }
 
-void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
+bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return;
+        return true;
 
     std::lock_guard lock(storage_and_responses_lock);
+
+    if (storage->isFinalized())
+        return false;
+
     try
     {
         storage->preprocessRequest(
@@ -215,6 +219,8 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
 
     if (keeper_context->digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
+
+    return true;
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)

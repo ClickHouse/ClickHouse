@@ -67,6 +67,9 @@ protected:
 
 private:
     ContextMutablePtr global_context;
+    /// Updated/recent config, to compare http_handlers
+    ConfigurationPtr latest_config;
+
     Poco::Net::SocketAddress socketBindListen(
         const Poco::Util::AbstractConfiguration & config,
         Poco::Net::ServerSocket & socket,

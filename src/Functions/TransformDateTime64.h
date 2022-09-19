@@ -87,6 +87,46 @@ public:
         return wrapped_transform.execute(t, std::forward<Args>(args)...);
     }
 
+
+    template <typename ... Args>
+    inline auto NO_SANITIZE_UNDEFINED execute_extended_result(const DateTime64 & t, Args && ... args) const
+    {
+        /// Type conversion from float to integer may be required.
+        /// We are Ok with implementation specific result for out of range and denormals conversion.
+
+        if constexpr (TransformHasExecuteOverload_v<DateTime64, decltype(scale_multiplier), Args...>)
+        {
+            return wrapped_transform.execute_extended_result(t, scale_multiplier, std::forward<Args>(args)...);
+        }
+        else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
+        {
+            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+
+            const auto result = wrapped_transform.execute_extended_result(components, std::forward<Args>(args)...);
+            using ResultType = std::decay_t<decltype(result)>;
+
+            if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<DateTime64>, ResultType>)
+            {
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(result, scale_multiplier);
+            }
+            else
+            {
+                return result;
+            }
+        }
+        else
+        {
+            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            return wrapped_transform.execute_extended_result(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
+        }
+    }
+
+    template <typename T, typename ... Args, typename = std::enable_if_t<!std::is_same_v<T, DateTime64>>>
+    inline auto execute_extended_result(const T & t, Args && ... args) const
+    {
+        return wrapped_transform.execute_extended_result(t, std::forward<Args>(args)...);
+    }
+
 private:
     DateTime64::NativeType scale_multiplier = 1;
     Transform wrapped_transform = {};
