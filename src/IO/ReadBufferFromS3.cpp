@@ -24,6 +24,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
+    extern const Event GetS3ObjectRequest;
 }
 
 namespace DB
@@ -131,18 +132,18 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             break;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             watch.stop();
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
-            if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+            if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
             {
                 /// It doesn't make sense to retry Access Denied or No Such Key
                 if (!s3_exception->isRetryableError())
                 {
-                    tryLogCurrentException(log, fmt::format("while reading key: {}, from bucket: {}", key, bucket));
+                    s3_exception->addMessage("while reading key: {}, from bucket: {}", key, bucket);
                     throw;
                 }
             }
@@ -275,6 +276,7 @@ SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
+    ProfileEvents::increment(ProfileEvents::GetS3ObjectRequest);
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);

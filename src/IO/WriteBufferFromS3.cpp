@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include <Common/ProfileEvents.h>
 
 #if USE_AWS_S3
 
@@ -24,6 +25,10 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
+    extern const Event S3WriteBytes;
+    extern const Event CompleteS3MultipartUpload;
+    extern const Event UploadS3Part;
+    extern const Event PutS3ObjectRequest;
 }
 
 namespace DB
@@ -303,6 +308,7 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 {
+    ProfileEvents::increment(ProfileEvents::UploadS3Part);
     auto outcome = client_ptr->UploadPart(task.req);
 
     if (outcome.IsSuccess())
@@ -326,6 +332,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     if (tags.empty())
         throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
 
+    ProfileEvents::increment(ProfileEvents::CompleteS3MultipartUpload);
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
@@ -429,6 +436,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 {
+    ProfileEvents::increment(ProfileEvents::PutS3ObjectRequest);
     auto outcome = client_ptr->PutObject(task.req);
     bool with_pool = static_cast<bool>(schedule);
     if (outcome.IsSuccess())
