@@ -20,7 +20,12 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
+static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
+
 
 void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -125,7 +130,12 @@ namespace
         {
             ColumnArray::Offset current_size = 0;
             readIntBinary(current_size, istr);
-            current_offset += current_size;
+
+            if (unlikely(current_size > MAX_ARRAY_SIZE))
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size is too large: {}", current_size);
+            if (unlikely(__builtin_add_overflow(current_offset, current_size, &current_offset)))
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Deserialization of array offsets will lead to overflow");
+
             offset_values[i] = current_offset;
             ++i;
         }
@@ -346,6 +356,9 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     if (last_offset < nested_column->size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column->size();
+
+    if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
 
     /// Adjust value size hint. Divide it to the average array size.
     settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
