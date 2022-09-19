@@ -39,11 +39,11 @@ create table test2(x1 Int, x2 Int, x3 Int) engine=Memory;
 insert into test2 values (1, 10, 100), (10, 1, 10), (100, 100, 1);
 select x1, x1 * 2, max(x2), max(x3) from test2 group by 2, 1, x1 order by 1, 2, 4 desc, 3 asc;
 
-select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t group by 1,2,3,4,5,6;
+select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t group by 1,2,3,4,5,6 order by a;
 
 explain syntax select plus(1, 1) as a group by a;
-select substr('aaaaaaaaaaaaaa', 8) as a  group by a;
-select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
+select substr('aaaaaaaaaaaaaa', 8) as a  group by a order by a;
+select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8) order by a;
 
 select b from (select 5 as a, 'Hello' as b order by a);
 select b from (select 5 as a, 'Hello' as b group by a);

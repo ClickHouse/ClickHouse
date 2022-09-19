@@ -25,7 +25,7 @@ CREATE TABLE master (id Int32, name String) ENGINE = Join (ANY, LEFT, id) SETTIN
 INSERT INTO master VALUES (1, 'ONE');
 INSERT INTO transaction VALUES (1, 52.5, 1);
 
-SELECT tx.id, tx.value, m.name FROM transaction tx ANY LEFT JOIN master m ON m.id = tx.master_id;
+SELECT tx.id, tx.value, m.name FROM transaction tx ANY LEFT JOIN master m ON m.id = tx.master_id ORDER BY tx.id;
 
 DROP TABLE master;
 DROP TABLE transaction;
