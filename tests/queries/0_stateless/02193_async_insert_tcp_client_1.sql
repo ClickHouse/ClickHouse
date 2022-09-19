@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SET log_queries = 1;
 
 DROP TABLE IF EXISTS t_async_insert_02193_1;

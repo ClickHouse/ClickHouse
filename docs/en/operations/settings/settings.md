@@ -1176,8 +1176,9 @@ Enables the quorum writes.
 
 -   If `insert_quorum < 2`, the quorum writes are disabled.
 -   If `insert_quorum >= 2`, the quorum writes are enabled.
+-   If `insert_quorum = 'auto'`, use majority number (`number_of_replicas / 2 + 1`) as quorum number.
 
-Default value: 0.
+Default value: 0 - disabled.
 
 Quorum writes
 
@@ -1259,7 +1260,7 @@ Possible values:
 
 Default value: 1.
 
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)). 
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
 For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
@@ -3144,6 +3145,17 @@ Result:
 └─────┴─────┴───────┘
 ```
 
+## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
+
+Enables or disables returning results of type `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
+
+Possible values:
+
+-   0 — Functions return `Date` for all types of arguments.
+-   1 — Functions return `Date32` for `Date32` or `DateTime64` arguments and `Date` otherwise.
+
+Default value: `0`.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
@@ -3529,8 +3541,8 @@ desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings
 
 Result:
 ```sql
-x	UInt8					
-y	Nullable(String)					
+x	UInt8
+y	Nullable(String)
 z	IPv4
 ```
 
