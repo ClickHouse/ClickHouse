@@ -1302,7 +1302,7 @@ private:
                     *ctx->source_part->data_part_storage, it->name(), destination);
                 hardlinked_files.insert(it->name());
             }
-            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
+            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->data_part_storage_builder->createProjection(destination);
