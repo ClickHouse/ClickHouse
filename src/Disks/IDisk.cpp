@@ -138,7 +138,7 @@ MetadataStoragePtr IDisk::getMetadataStorage()
 
 String getTempFileName(const std::string & dir)
 {
-    return fs::path(dir) / getRandomASCIIString();
+    return fs::path(dir) / getRandomASCIIString(32);
 }
 
 }
