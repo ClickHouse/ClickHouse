@@ -996,7 +996,6 @@
         asynchronous_metrics - send data from table system.asynchronous_metrics
         status_info - send data from different component from CH, ex: Dictionaries status
     -->
-    <!--
     <prometheus>
         <endpoint>/metrics</endpoint>
         <port>9363</port>
@@ -1006,7 +1005,24 @@
         <asynchronous_metrics>true</asynchronous_metrics>
         <status_info>true</status_info>
     </prometheus>
+
+
+        <!-- Graphite Carbon. -->
+    <!--
+        endpoint - mertics path (relative to root, statring with "/")
+        port - port to setup server. If not defined or 0 than http_port used
+        metrics - send data from table system.metrics
+        events - send data from table system.events
+        asynchronous_metrics - send data from table system.asynchronous_metrics
+        status_info - send data from different component from CH, ex: Dictionaries status
     -->
+    
+    <graphite_carbon>
+        <endpoint>/graphite</endpoint>
+        <port>9365</port>
+
+    </graphite_carbon>
+
 
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>
@@ -1288,24 +1304,12 @@
                 <age>0</age>
                 <precision>3600</precision>
             </retention>
-            <retention>
-                <age>86400</age>
-                <precision>60</precision>
-            </retention>
         </pattern>
         <default>
             <function>max</function>
             <retention>
                 <age>0</age>
                 <precision>60</precision>
-            </retention>
-            <retention>
-                <age>3600</age>
-                <precision>300</precision>
-            </retention>
-            <retention>
-                <age>86400</age>
-                <precision>3600</precision>
             </retention>
         </default>
     </graphite_rollup_example>

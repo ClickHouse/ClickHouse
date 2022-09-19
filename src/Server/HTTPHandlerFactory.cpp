@@ -11,6 +11,7 @@
 #include "NotFoundHandler.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
+#include "GraphiteRequestHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "PrometheusRequestHandler.h"
 #include "WebUIRequestHandler.h"
@@ -77,7 +78,7 @@ static inline auto createHandlersFactoryFromConfig(
             const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
 
             if (handler_type.empty())
-                throw Exception("Handler type in config is not specified here: " + prefix + "." + key + ".handler.type",
+                throw Exception("Handler type in config There is no handleis not specified here: " + prefix + "." + key + ".handler.type",
                     ErrorCodes::INVALID_CONFIG_PARAMETER);
 
             if (handler_type == "static")
@@ -89,6 +90,8 @@ static inline auto createHandlersFactoryFromConfig(
             else if (handler_type == "prometheus")
                 main_handler_factory->addHandler(createPrometheusHandlerFactory(server, async_metrics, prefix + "." + key));
             else if (handler_type == "replicas_status")
+                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, prefix + "." + key));
+            else if (handler_type == "graphite_carbon")
                 main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, prefix + "." + key));
             else
                 throw Exception("Unknown handler type '" + handler_type + "' in config here: " + prefix + "." + key + ".handler.type",
@@ -142,6 +145,21 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, Asynchronous
             server, PrometheusMetricsWriter(server.config(), "prometheus", async_metrics));
         handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"));
         handler->allowGetAndHeadRequest();
+        factory->addHandler(handler);
+        return factory;
+    }
+    else if (name == "GraphiteHandler-factory")
+    {
+
+        const auto & table_name = server.config().getString("graphite.table_name", "graphite_index");
+        std::optional<String> content_type_override;
+
+        auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+        auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<GraphiteRequestHandler>>(
+        server, std::move(table_name), std::move(content_type_override));
+        handler->attachNonStrictPath(server.config().getString("graphite_carbon.endpoint", "/graphite"));
+        handler->allowGetAndHeadRequest();
+        //handler->allowPostAndGetParamsAndOptionsRequest();
         factory->addHandler(handler);
         return factory;
     }
@@ -202,6 +220,20 @@ void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer 
         prometheus_handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"));
         prometheus_handler->allowGetAndHeadRequest();
         factory.addHandler(prometheus_handler);
+    }
+
+    if (server.config().has("graphite_carbon") && server.config().getInt("graphite_carbon.port", 0) == 0)
+    {
+       
+        const auto & table_name = server.config().getString("graphite.table_name", "graphite_index");
+        std::optional<String> content_type_override;
+        auto graphite_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<GraphiteRequestHandler>>(
+        server, std::move(table_name), std::move(content_type_override));
+
+        graphite_handler->attachNonStrictPath(server.config().getString("graphite_carbon.endpoint", "/graphite"));
+        graphite_handler->allowGetAndHeadRequest();
+        //graphite_handler->allowPostAndGetParamsAndOptionsRequest();
+        factory.addHandler(graphite_handler);
     }
 }
 

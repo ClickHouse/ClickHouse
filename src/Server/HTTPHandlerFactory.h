@@ -137,5 +137,7 @@ HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server
 HTTPRequestHandlerFactoryPtr
 createPrometheusHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & config_prefix);
 
+HTTPRequestHandlerFactoryPtr createGraphiteHandlerFactory(IServer & server, const std::string & config_prefix);
+
 HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & name);
 }
