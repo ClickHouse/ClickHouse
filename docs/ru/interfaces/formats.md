@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/formats
 sidebar_position: 21
 sidebar_label: "Форматы входных и выходных данных"
 ---

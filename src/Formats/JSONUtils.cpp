@@ -218,6 +218,7 @@ namespace JSONUtils
         {
             auto object = field.getObject();
             DataTypes value_types;
+            bool have_object_value = false;
             for (const auto key_value_pair : object)
             {
                 auto type = getDataTypeFromFieldImpl(key_value_pair.second, settings, numbers_parsed_from_json_strings);
@@ -225,7 +226,10 @@ namespace JSONUtils
                     continue;
 
                 if (isObject(type))
-                    return std::make_shared<DataTypeObject>("json", true);
+                {
+                    have_object_value = true;
+                    break;
+                }
 
                 value_types.push_back(type);
             }
@@ -238,7 +242,7 @@ namespace JSONUtils
             for (size_t i = 1; i < value_types.size(); ++i)
                 are_types_equal &= value_types[i]->equals(*value_types[0]);
 
-            if (!are_types_equal)
+            if (have_object_value || !are_types_equal)
                 return std::make_shared<DataTypeObject>("json", true);
 
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_types[0]);

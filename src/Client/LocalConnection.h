@@ -156,6 +156,7 @@ private:
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
+    std::optional<ThreadStatus> thread_status;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;

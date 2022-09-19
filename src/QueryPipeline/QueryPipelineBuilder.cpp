@@ -159,10 +159,10 @@ void QueryPipelineBuilder::addChain(Chain chain)
     pipe.addChains(std::move(chains));
 }
 
-void QueryPipelineBuilder::transform(const Transformer & transformer, bool check_ports)
+void QueryPipelineBuilder::transform(const Transformer & transformer)
 {
     checkInitializedAndNotCompleted();
-    pipe.transform(transformer, check_ports);
+    pipe.transform(transformer);
 }
 
 void QueryPipelineBuilder::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
@@ -348,7 +348,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
+
+    if (left->pipe.output_ports.size() != 1 || right->pipe.output_ports.size() != 1)
         throw Exception("Join is supported only for pipelines with one output port", ErrorCodes::LOGICAL_ERROR);
 
     if (left->hasTotals() || right->hasTotals())
@@ -358,7 +359,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
 
-    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+    auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+    return result;
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
