@@ -2,9 +2,8 @@
 slug: /en/operations/troubleshooting
 sidebar_position: 46
 sidebar_label: Troubleshooting
+title: Troubleshooting
 ---
-
-# Troubleshooting
 
 -   [Installation](#troubleshooting-installation-errors)
 -   [Connecting to the server](#troubleshooting-accepts-no-connections)
