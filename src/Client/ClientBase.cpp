@@ -292,7 +292,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    std::shared_ptr<IParserBase> parser;
+    std::unique_ptr<IParserBase> parser;
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
@@ -304,9 +304,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     const Dialect & dialect = settings.dialect;
 
     if (dialect == Dialect::kusto)
-        parser = std::make_shared<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
+        parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
     else
-        parser = std::make_shared<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
+        parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 
     if (is_interactive || ignore_error)
     {
