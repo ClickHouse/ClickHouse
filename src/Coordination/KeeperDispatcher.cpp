@@ -74,6 +74,8 @@ void KeeperDispatcher::requestThread()
 
     /// Result of requests batch from previous iteration
     RaftResult prev_result = nullptr;
+    /// has_result == false && get_result_code == OK means that our request still not processed.
+    /// Sometimes NuRaft set errorcode without setting result, so we check both here.
     const auto previous_quorum_done = [&] { return !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK; };
 
     const auto needs_quorum = [](const auto & coordination_settings, const auto & request)
@@ -136,8 +138,6 @@ void KeeperDispatcher::requestThread()
                     read_requests.emplace_back(request);
 
                 /// Waiting until previous append will be successful, or batch is big enough
-                /// has_result == false && get_result_code == OK means that our request still not processed.
-                /// Sometimes NuRaft set errorcode without setting result, so we check both here.
                 while (true)
                 {
                     if (quorum_requests.size() > max_batch_size)
