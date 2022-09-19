@@ -154,6 +154,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int ZERO_COPY_REPLICATION_ERROR;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
@@ -2178,6 +2179,9 @@ void MergeTreeData::dropAllData()
         throw;
     }
 
+    LOG_INFO(log, "dropAllData: clearing temporary directories");
+    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+
     column_sizes.clear();
 
     for (const auto & disk : getDisks())
@@ -2185,8 +2189,22 @@ void MergeTreeData::dropAllData()
         if (disk->isBroken())
             continue;
 
+        LOG_INFO(log, "dropAllData: remove format_version.txt and detached directory");
+        disk->removeFile(fs::path(relative_data_path) / "format_version.txt");
+        disk->removeRecursive(fs::path(relative_data_path) / "detached");
+
         try
         {
+            if (!disk->isDirectoryEmpty(relative_data_path) && disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
+            {
+                std::vector<std::string> files_left;
+                disk->listFiles(relative_data_path, files_left);
+
+                throw Exception(
+                    ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Directory {} with table {} not empty (files [{}]) after drop. Will not drop.",
+                    relative_data_path, getStorageID().getNameForLogs(), fmt::join(files_left, ", "));
+            }
+
             LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
             disk->removeRecursive(relative_data_path);
         }
