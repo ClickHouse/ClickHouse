@@ -750,6 +750,14 @@ void ColumnSparse::forEachSubcolumn(ColumnCallback callback)
     callback(offsets);
 }
 
+void ColumnSparse::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    callback(values);
+    values->forEachSubcolumnRecursively(callback);
+    callback(offsets);
+    offsets->forEachSubcolumnRecursively(callback);
+}
+
 const IColumn::Offsets & ColumnSparse::getOffsetsData() const
 {
     return assert_cast<const ColumnUInt64 &>(*offsets).getData();

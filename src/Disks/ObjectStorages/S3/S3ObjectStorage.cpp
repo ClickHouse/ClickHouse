@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Common/ProfileEvents.h>
 
 #if USE_AWS_S3
 
@@ -30,6 +31,18 @@
 
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
+
+namespace ProfileEvents
+{
+    extern const Event DeleteS3Objects;
+    extern const Event HeadS3Object;
+    extern const Event ListS3Objects;
+    extern const Event CopyS3Object;
+    extern const Event CreateS3MultipartUpload;
+    extern const Event UploadS3PartCopy;
+    extern const Event AbortS3MultipartUpload;
+    extern const Event CompleteS3MultipartUpload;
+}
 
 namespace DB
 {
@@ -96,6 +109,8 @@ std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
 {
     auto client_ptr = client.get();
+
+    ProfileEvents::increment(ProfileEvents::HeadS3Object);
     Aws::S3::Model::HeadObjectRequest request;
     request.SetBucket(bucket_from);
     request.SetKey(key);
@@ -211,6 +226,7 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
 
+    ProfileEvents::increment(ProfileEvents::ListS3Objects);
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
     request.SetPrefix(path);
@@ -239,6 +255,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 {
     auto client_ptr = client.get();
 
+    ProfileEvents::increment(ProfileEvents::DeleteS3Objects);
     Aws::S3::Model::DeleteObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(object.absolute_path);
@@ -284,6 +301,8 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
             Aws::S3::Model::Delete delkeys;
             delkeys.SetObjects(current_chunk);
+
+            ProfileEvents::increment(ProfileEvents::DeleteS3Objects);
             Aws::S3::Model::DeleteObjectsRequest request;
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
@@ -357,6 +376,8 @@ void S3ObjectStorage::copyObjectImpl(
     std::optional<ObjectAttributes> metadata) const
 {
     auto client_ptr = client.get();
+
+    ProfileEvents::increment(ProfileEvents::CopyS3Object);
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
     request.SetBucket(dst_bucket);
@@ -405,6 +426,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     String multipart_upload_id;
 
     {
+        ProfileEvents::increment(ProfileEvents::CreateS3MultipartUpload);
         Aws::S3::Model::CreateMultipartUploadRequest request;
         request.SetBucket(dst_bucket);
         request.SetKey(dst_key);
@@ -423,6 +445,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     size_t upload_part_size = settings_ptr->s3_settings.min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
+        ProfileEvents::increment(ProfileEvents::UploadS3PartCopy);
         Aws::S3::Model::UploadPartCopyRequest part_request;
         part_request.SetCopySource(src_bucket + "/" + src_key);
         part_request.SetBucket(dst_bucket);
@@ -434,6 +457,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
         auto outcome = client_ptr->UploadPartCopy(part_request);
         if (!outcome.IsSuccess())
         {
+            ProfileEvents::increment(ProfileEvents::AbortS3MultipartUpload);
             Aws::S3::Model::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dst_bucket);
             abort_request.SetKey(dst_key);
@@ -448,6 +472,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     }
 
     {
+        ProfileEvents::increment(ProfileEvents::CompleteS3MultipartUpload);
         Aws::S3::Model::CompleteMultipartUploadRequest req;
         req.SetBucket(dst_bucket);
         req.SetKey(dst_key);
