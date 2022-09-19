@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-s3-storage, no-random-settings
+# Tags: no-fasttest, long, no-s3-storage, no-random-settings, no-parallel
 # Tag no-fasttest: setting use_metadata_cache=true is not supported in fasttest, because clickhouse binary in fasttest is build without RocksDB.
 # Tag no-random-settings: random settings significantly slow down test with debug build (alternative: add no-debug tag)
 # To suppress Warning messages from CHECK TABLE
