@@ -939,6 +939,8 @@ public:
 
         bool only_merge;
 
+        bool enable_prefetch;
+
         struct StatsCollectingParams
         {
             StatsCollectingParams();
@@ -974,6 +976,7 @@ public:
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
             size_t max_block_size_,
+            bool enable_prefetch_,
             bool only_merge_ = false, // true for projections
             const StatsCollectingParams & stats_collecting_params_ = {})
             : keys(keys_)
@@ -994,6 +997,7 @@ public:
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
             , max_block_size(max_block_size_)
             , only_merge(only_merge_)
+            , enable_prefetch(enable_prefetch_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
@@ -1001,7 +1005,7 @@ public:
         /// Only parameters that matter during merge.
         Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_)
             : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, true, {})
+                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, {})
         {
         }
 

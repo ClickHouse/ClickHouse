@@ -995,7 +995,8 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = Method::State::has_cheap_key_calculation && (method.data.getBufferSizeInBytes() > getMinBytesForPrefetch());
+        const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+            && (method.data.getBufferSizeInBytes() > getMinBytesForPrefetch());
 
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2554,8 +2555,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
-    const bool prefetch
-        = Method::State::has_cheap_key_calculation && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getMinBytesForPrefetch());
+    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getMinBytesForPrefetch());
 
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -2622,7 +2623,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
 
-    const bool prefetch = Method::State::has_cheap_key_calculation
+    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > getMinBytesForPrefetch());
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
