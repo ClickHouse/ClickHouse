@@ -102,6 +102,10 @@ void KeeperDispatcher::requestThread()
                     addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
             });
         }
+        else
+        {
+            addErrorResponses(quorum_requests, Coordination::Error::ZCONNECTIONLOSS);
+        }
 
         quorum_requests.clear();
     };
@@ -164,7 +168,7 @@ void KeeperDispatcher::requestThread()
                             processReadRequests(coordination_settings, read_requests);
 
                         /// if we still didn't process previous batch we can
-                        /// increase are current batch even more
+                        /// increase the current batch even more
                         if (previous_quorum_done())
                             break;
                     }
