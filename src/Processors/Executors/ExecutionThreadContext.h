@@ -41,7 +41,6 @@ public:
 
     const size_t thread_number;
     const bool profile_processors;
-    const bool trace_processors;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
@@ -62,11 +61,10 @@ public:
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
-        , trace_processors(trace_processors_)
     {}
 };
 

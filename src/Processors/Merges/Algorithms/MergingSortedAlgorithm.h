@@ -16,9 +16,8 @@ public:
     MergingSortedAlgorithm(
         Block header_,
         size_t num_inputs,
-        const SortDescription & description_,
+        SortDescription description_,
         size_t max_block_size,
-        SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
@@ -38,7 +37,7 @@ private:
 
     /// Settings
     SortDescription description;
-    const UInt64 limit;
+    UInt64 limit;
     bool has_collation = false;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
@@ -48,18 +47,14 @@ private:
     /// Chunks currently being merged.
     Inputs current_inputs;
 
-    SortingQueueStrategy sorting_queue_strategy;
-
     SortCursorImpls cursors;
 
     SortQueueVariants queue_variants;
 
-    template <typename TSortingQueue>
-    Status mergeImpl(TSortingQueue & queue);
+    Status insertFromChunk(size_t source_num);
 
-    template <typename TSortingQueue>
-    Status mergeBatchImpl(TSortingQueue & queue);
-
+    template <typename TSortingHeap>
+    Status mergeImpl(TSortingHeap & queue);
 };
 
 }

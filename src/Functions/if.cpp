@@ -1120,9 +1120,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(If)
+void registerFunctionIf(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIf>(FunctionFactory::CaseInsensitive);
 }
 
 }

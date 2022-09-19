@@ -31,7 +31,6 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
     , params(std::move(params_))
-    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
     , group_by_info(group_by_info_)
     , sort_description(group_by_description_)
     , aggregate_columns(params->params.aggregates_size)
@@ -41,13 +40,13 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
 
-    for (size_t i = 0; i < group_by_info->sort_description_for_merging.size(); ++i)
+    for (size_t i = 0; i < group_by_info->order_key_prefix_descr.size(); ++i)
     {
         const auto & column_description = group_by_description_[i];
         group_by_description.emplace_back(column_description, res_header.getPositionByName(column_description.column_name));
     }
 
-    if (group_by_info->sort_description_for_merging.size() < group_by_description_.size())
+    if (group_by_info->order_key_prefix_descr.size() < group_by_description_.size())
     {
         group_by_key = true;
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params
@@ -67,7 +66,6 @@ static Int64 getCurrentMemoryUsage()
 
 void AggregatingInOrderTransform::consume(Chunk chunk)
 {
-    const Columns & columns = chunk.getColumns();
     Int64 initial_memory_usage = getCurrentMemoryUsage();
 
     size_t rows = chunk.getNumRows();
@@ -87,8 +85,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     Columns key_columns(params->params.keys_size);
     for (size_t i = 0; i < params->params.keys_size; ++i)
     {
-        const auto pos = inputs.front().getHeader().getPositionByName(params->params.keys[i]);
-        materialized_columns.push_back(chunk.getColumns().at(pos)->convertToFullColumnIfConst());
+        materialized_columns.push_back(chunk.getColumns().at(params->params.keys[i])->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back();
         if (group_by_key)
             key_columns_raw[i] = materialized_columns.back().get();
@@ -96,11 +93,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
-    if (!params->params.only_merge)
-    {
-        params->aggregator.prepareAggregateInstructions(
-            columns, aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
-    }
+    params->aggregator.prepareAggregateInstructions(chunk.getColumns(), aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
 
     size_t key_end = 0;
     size_t key_begin = 0;
@@ -127,17 +120,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     Int64 current_memory_usage = 0;
 
-    Aggregator::AggregateColumnsConstData aggregate_columns_data(params->params.aggregates_size);
-    if (params->params.only_merge)
-    {
-        for (size_t i = 0, j = 0; i < columns.size(); ++i)
-        {
-            if (!aggregates_mask[i])
-                continue;
-            aggregate_columns_data[j++] = &typeid_cast<const ColumnAggregateFunction &>(*columns[i]).getData();
-        }
-    }
-
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
@@ -154,20 +136,10 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
         {
-            if (params->params.only_merge)
-            {
-                if (group_by_key)
-                    params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
-                else
-                    params->aggregator.mergeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_columns_data);
-            }
+            if (group_by_key)
+                params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
             else
-            {
-                if (group_by_key)
-                    params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
-                else
-                    params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data());
-            }
+                params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
         }
 
         current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
@@ -182,8 +154,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
             {
                 if (group_by_key)
-                    group_by_block
-                        = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+                    group_by_block = params->aggregator.prepareBlockAndFillSingleLevel(variants, /* final= */ false);
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
                 return;
@@ -294,8 +265,7 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         if (group_by_key)
-            group_by_block
-                = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+            group_by_block = params->aggregator.prepareBlockAndFillSingleLevel(variants, /* final= */ false);
         else
             params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
         variants.invalidate();

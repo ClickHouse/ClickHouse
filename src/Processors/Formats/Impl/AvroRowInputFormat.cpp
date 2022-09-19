@@ -6,7 +6,7 @@
 
 #include <Core/Field.h>
 
-#include <Common/CacheBase.h>
+#include <Common/LRUCache.h>
 
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -25,7 +25,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/NestedUtils.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -105,45 +104,45 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
     switch (type.idx)
     {
         case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
+            assert_cast<ColumnUInt8 &>(column).insertValue(value);
             break;
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
+            assert_cast<ColumnUInt16 &>(column).insertValue(value);
             break;
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
+            assert_cast<ColumnUInt32 &>(column).insertValue(value);
             break;
         case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(static_cast<UInt64>(value));
+            assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
         case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
+            assert_cast<ColumnInt8 &>(column).insertValue(value);
             break;
         case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
+            assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
+            assert_cast<ColumnInt32 &>(column).insertValue(value);
             break;
         case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(static_cast<Int64>(value));
+            assert_cast<ColumnInt64 &>(column).insertValue(value);
             break;
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
+            assert_cast<ColumnFloat32 &>(column).insertValue(value);
             break;
         case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(static_cast<Float64>(value));
+            assert_cast<ColumnFloat64 &>(column).insertValue(value);
             break;
         case TypeIndex::Decimal32:
-            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Decimal32>(value));
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(value);
             break;
         case TypeIndex::Decimal64:
-            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(static_cast<Decimal64>(value));
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
             break;
         case TypeIndex::DateTime64:
-            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<DateTime64>(value));
+            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(value);
             break;
         default:
             throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);
@@ -573,39 +572,6 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
     }
 }
 
-void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
-{
-    /// We should deserialize all nested columns together, because
-    /// in avro we have single row Array(Record) and we can
-    /// deserialize it once.
-
-    std::vector<ColumnArray::Offsets *> arrays_offsets;
-    arrays_offsets.reserve(nested_column_indexes.size());
-    std::vector<IColumn *> nested_columns;
-    nested_columns.reserve(nested_column_indexes.size());
-    for (size_t index : nested_column_indexes)
-    {
-        ColumnArray & column_array = assert_cast<ColumnArray &>(*columns[index]);
-        arrays_offsets.push_back(&column_array.getOffsets());
-        nested_columns.push_back(&column_array.getData());
-        ext.read_columns[index] = true;
-    }
-
-    size_t total = 0;
-    for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
-    {
-        total += n;
-        for (size_t i = 0; i < n; ++i)
-        {
-            for (size_t j = 0; j != nested_deserializers.size(); ++j)
-                nested_deserializers[j](*nested_columns[j], decoder);
-        }
-    }
-
-    for (auto & offsets : arrays_offsets)
-        offsets->push_back(offsets->back() + total);
-}
-
 static inline std::string concatPath(const std::string & a, const std::string & b)
 {
     return a.empty() ? b : a + "." + b;
@@ -664,42 +630,6 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             branch_actions[i] = createAction(header, branch_node, concatPath(current_path, branch_name));
         }
         return AvroDeserializer::Action::unionAction(branch_actions);
-    }
-    else if (node->type() == avro::AVRO_ARRAY)
-    {
-        /// If header doesn't have column with current_path name and node is Array(Record),
-        /// check if we have a flattened Nested table with such name.
-        Names nested_names = Nested::getAllNestedColumnsForTable(header, current_path);
-        auto nested_avro_node = node->leafAt(0);
-        if (nested_names.empty() || nested_avro_node->type() != avro::AVRO_RECORD)
-            return AvroDeserializer::Action(createSkipFn(node));
-
-        /// Check that all nested columns are Arrays.
-        std::unordered_map<String, DataTypePtr> nested_types;
-        for (const auto & name : nested_names)
-        {
-            auto type = header.getByName(name).type;
-            if (!isArray(type))
-                return AvroDeserializer::Action(createSkipFn(node));
-            nested_types[Nested::splitName(name).second] = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
-        }
-
-        /// Create nested deserializer for each nested column.
-        std::vector<DeserializeFn> nested_deserializers;
-        std::vector<size_t> nested_indexes;
-        for (size_t i = 0; i != nested_avro_node->leaves(); ++i)
-        {
-            const auto & name = nested_avro_node->nameAt(i);
-            if (!nested_types.contains(name))
-                return AvroDeserializer::Action(createSkipFn(node));
-            size_t nested_column_index = header.getPositionByName(Nested::concatenateName(current_path, name));
-            column_found[nested_column_index] = true;
-            auto nested_deserializer = createDeserializeFn(nested_avro_node->leafAt(i), nested_types[name]);
-            nested_deserializers.emplace_back(nested_deserializer);
-            nested_indexes.push_back(nested_column_index);
-        }
-
-        return AvroDeserializer::Action(nested_indexes, nested_deserializers);
     }
     else
     {
@@ -847,13 +777,13 @@ private:
     }
 
     Poco::URI base_url;
-    CacheBase<uint32_t, avro::ValidSchema> schema_cache;
+    LRUCache<uint32_t, avro::ValidSchema> schema_cache;
 };
 
 using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+static LRUCache<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {

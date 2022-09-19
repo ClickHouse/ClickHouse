@@ -6,7 +6,6 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskDecorator.h>
 #include <Common/MultiVersion.h>
-#include <Disks/FakeDiskTransaction.h>
 
 
 namespace DB
@@ -234,23 +233,10 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        auto delegate_description = delegate->getDataSourceDescription();
-        delegate_description.is_encrypted = true;
-        return delegate_description;
-    }
-
+    DiskType getType() const override { return DiskType::Encrypted; }
     bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
-
-    DiskTransactionPtr createTransaction() override
-    {
-        /// Need to overwrite explicetly because this disk change
-        /// a lot of "delegate" methods.
-        return std::make_shared<FakeDiskTransaction>(*this);
-    }
 
 private:
     String wrappedPath(const String & path) const

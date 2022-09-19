@@ -31,7 +31,7 @@ public:
     ~InterpreterSelectWithUnionQuery() override;
 
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan) override;
+    virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
     BlockIO execute() override;
 
@@ -43,7 +43,7 @@ public:
         ContextPtr context_,
         bool is_subquery = false);
 
-    void ignoreWithTotals() override;
+    virtual void ignoreWithTotals() override;
 
     bool supportsTransactions() const override { return true; }
 

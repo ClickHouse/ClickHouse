@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/nyc-taxi
 sidebar_position: 20
 sidebar_label: "Данные о такси в Нью-Йорке"
 ---
@@ -294,7 +293,6 @@ $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.trips_mergetree"
 :::info "Info"
     Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
 нужно добавить имя базы, `datasets.trips_mergetree`.
-:::
 
 ## Результаты на одном сервере {#rezultaty-na-odnom-servere}
 

@@ -113,7 +113,7 @@ template <>
 const char * FunctionPolygonsUnion<SphericalPoint>::name = "polygonsUnionSpherical";
 
 
-REGISTER_FUNCTION(PolygonsUnion)
+void registerFunctionPolygonsUnion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsUnion<SphericalPoint>>();

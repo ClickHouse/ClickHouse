@@ -3,6 +3,7 @@
 #include <Functions/IFunction.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Field.h>
 
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
@@ -126,9 +127,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(Now)
+void registerFunctionNow(FunctionFactory & factory)
 {
-    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<NowOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

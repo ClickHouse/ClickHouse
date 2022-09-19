@@ -4,10 +4,9 @@
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
-#include <Common/ConcurrencyControl.h>
 
 #include <queue>
+#include <stack>
 #include <mutex>
 
 namespace DB
@@ -60,19 +59,12 @@ private:
     ExecutingGraphPtr graph;
 
     ExecutorTasks tasks;
-
-    // Concurrency control related
-    ConcurrencyControl::AllocationPtr slots;
-    ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
-    std::mutex threads_mutex;
-    std::vector<ThreadFromGlobalPool> threads;
+    using Stack = std::stack<UInt64>;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
     /// system.processors_profile_log
     bool profile_processors = false;
-    /// system.opentelemetry_span_log
-    bool trace_processors = false;
 
     std::atomic_bool cancelled = false;
 
@@ -87,8 +79,6 @@ private:
 
     void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void spawnThreads();
-    void joinThreads();
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads);

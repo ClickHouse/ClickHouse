@@ -194,8 +194,12 @@ QueryPipeline CassandraDictionarySource::loadUpdatedAll()
 CassSessionShared CassandraDictionarySource::getSession()
 {
     /// Reuse connection if exists, create new one if not
-    std::lock_guard lock(connect_mutex);
     auto session = maybe_session.lock();
+    if (session)
+        return session;
+
+    std::lock_guard lock(connect_mutex);
+    session = maybe_session.lock();
     if (session)
         return session;
 

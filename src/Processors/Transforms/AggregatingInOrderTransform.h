@@ -56,7 +56,6 @@ private:
     MutableColumns res_aggregate_columns;
 
     AggregatingTransformParamsPtr params;
-    ColumnsMask aggregates_mask;
 
     InputOrderInfoPtr group_by_info;
     /// For sortBlock()

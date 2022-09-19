@@ -7,16 +7,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
-Int32 IntervalKind::toAvgSeconds() const
+Float64 IntervalKind::toAvgSeconds() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-        case IntervalKind::Microsecond:
-        case IntervalKind::Millisecond: return 0;
+        case IntervalKind::Nanosecond: return 0.000000001;
+        case IntervalKind::Microsecond: return 0.000001;
+        case IntervalKind::Millisecond: return 0.001;
         case IntervalKind::Second: return 1;
         case IntervalKind::Minute: return 60;
         case IntervalKind::Hour: return 3600;
@@ -25,32 +24,6 @@ Int32 IntervalKind::toAvgSeconds() const
         case IntervalKind::Month: return 2629746;   /// Exactly 1/12 of a year.
         case IntervalKind::Quarter: return 7889238; /// Exactly 1/4 of a year.
         case IntervalKind::Year: return 31556952;   /// The average length of a Gregorian year is equal to 365.2425 days
-    }
-    __builtin_unreachable();
-}
-
-Float64 IntervalKind::toSeconds() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Nanosecond:
-            return 0.000000001;
-        case IntervalKind::Microsecond:
-            return 0.000001;
-        case IntervalKind::Millisecond:
-            return 0.001;
-        case IntervalKind::Second:
-            return 1;
-        case IntervalKind::Minute:
-            return 60;
-        case IntervalKind::Hour:
-            return 3600;
-        case IntervalKind::Day:
-            return 86400;
-        case IntervalKind::Week:
-            return 604800;
-        default:
-            throw Exception("Not possible to get precise number of seconds in non-precise interval", ErrorCodes::BAD_ARGUMENTS);
     }
     __builtin_unreachable();
 }

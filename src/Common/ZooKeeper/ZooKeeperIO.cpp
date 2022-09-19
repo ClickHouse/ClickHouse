@@ -28,11 +28,6 @@ void write(int32_t x, WriteBuffer & out)
     writeBinary(x, out);
 }
 
-void write(uint8_t x, WriteBuffer & out)
-{
-    writeBinary(x, out);
-}
-
 void write(OpNum x, WriteBuffer & out)
 {
     write(static_cast<int32_t>(x), out);
@@ -94,11 +89,6 @@ void read(int64_t & x, ReadBuffer & in)
 {
     readBinary(x, in);
     x = __builtin_bswap64(x);
-}
-
-void read(uint8_t & x, ReadBuffer & in)
-{
-    readBinary(x, in);
 }
 
 void read(int32_t & x, ReadBuffer & in)

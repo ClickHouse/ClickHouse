@@ -36,7 +36,7 @@ using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl, NameRoundAge, fal
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundAge> : PositiveMonotonicity {};
 
-REGISTER_FUNCTION(RoundAge)
+void registerFunctionRoundAge(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRoundAge>();
 }

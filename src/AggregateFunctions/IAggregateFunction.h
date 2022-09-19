@@ -73,19 +73,13 @@ public:
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
     virtual DataTypePtr getStateType() const;
 
-    /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
-    virtual DataTypePtr getNormalizedStateType() const { return getStateType(); }
-
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
     /// Examples:
     ///  - quantile(x), quantile(a)(x), quantile(b)(x) - parameter doesn't affect state and used for finalization only
     ///  - foo(x) and fooIf(x) - If combinator doesn't affect state
     /// By default returns true only if functions have exactly the same names, combinators and parameters.
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
-    virtual bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const;
-
-    virtual const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const { return *this; }
+    virtual bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
 
     bool haveEqualArgumentTypes(const IAggregateFunction & rhs) const;
 
@@ -156,7 +150,7 @@ public:
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(
-        ConstAggregateDataPtr __restrict /* place */,
+        ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
@@ -215,7 +209,7 @@ public:
     virtual void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
@@ -224,7 +218,7 @@ public:
     virtual void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena) const = 0;
 
@@ -234,7 +228,7 @@ public:
     virtual void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -243,7 +237,7 @@ public:
     virtual void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1)
@@ -376,7 +370,7 @@ template <typename Derived>
 class IAggregateFunctionHelper : public IAggregateFunction
 {
 private:
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena)
+    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
     {
         static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
     }
@@ -456,7 +450,7 @@ public:
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
@@ -480,7 +474,7 @@ public:
     void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena) const override
     {
@@ -499,7 +493,7 @@ public:
     void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -523,7 +517,7 @@ public:
     void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1)
@@ -667,7 +661,7 @@ public:
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    void create(AggregateDataPtr place) const override /// NOLINT
     {
         new (place) Data;
     }

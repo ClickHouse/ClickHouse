@@ -19,7 +19,6 @@ class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 public:
     MergeTreeDataPartWriterWide(
         const MergeTreeData::DataPartPtr & data_part,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -61,7 +60,8 @@ private:
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & column,
-        WrittenOffsetColumns & offset_columns);
+        WrittenOffsetColumns & offset_columns,
+        ISerialization::SubstreamPath & path);
 
     /// Write mark to disk using stream and rows count
     void flushMarkToFile(
@@ -72,11 +72,13 @@ private:
     void writeSingleMark(
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
-        size_t number_of_rows);
+        size_t number_of_rows,
+        ISerialization::SubstreamPath & path);
 
     void writeFinalMark(
         const NameAndTypePair & column,
-        WrittenOffsetColumns & offset_columns);
+        WrittenOffsetColumns & offset_columns,
+        ISerialization::SubstreamPath & path);
 
     void addStreams(
         const NameAndTypePair & column,

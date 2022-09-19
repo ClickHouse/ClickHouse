@@ -127,10 +127,10 @@ public:
 #endif
     ;
 
-    ssize_t getLineNumber() const { return line_number; }
+    int getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
 
-    String getFileName() const { return file_name; }
+    const String getFileName() const { return file_name; }
     void setFileName(const String & file_name_) { file_name = file_name_; }
 
     Exception * clone() const override { return new ParsingException(*this); }

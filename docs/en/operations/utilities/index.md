@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/utilities/
 sidebar_position: 56
 sidebar_label: Utilities
 ---

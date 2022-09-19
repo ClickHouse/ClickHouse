@@ -1,7 +1,5 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/RestoreSettings.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -10,8 +8,8 @@
 
 namespace DB
 {
-MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_)
+MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_)
+    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
 {
 }
 
@@ -67,17 +65,11 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     UUID id = generateRandomID();
-    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
+    std::lock_guard lock{mutex};
+    if (insertNoLock(id, new_entity, replace_if_exists, throw_if_exists))
         return id;
 
     return std::nullopt;
-}
-
-
-bool MemoryAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
-{
-    std::lock_guard lock{mutex};
-    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
 }
 
 
@@ -270,27 +262,6 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
             insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
         }
     }
-}
-
-
-void MemoryAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
-{
-    if (!isRestoreAllowed())
-        throwRestoreNotAllowed();
-
-    auto entities = restorer.getAccessEntitiesToRestore();
-    if (entities.empty())
-        return;
-
-    auto create_access = restorer.getRestoreSettings().create_access;
-    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
-
-    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
-    {
-        for (const auto & [id, entity] : entities)
-            insertWithID(id, entity, replace_if_exists, throw_if_exists);
-    });
 }
 
 }

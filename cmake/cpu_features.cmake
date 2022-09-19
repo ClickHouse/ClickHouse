@@ -19,27 +19,9 @@ option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
 option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
 option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
 option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
-option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
 option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
 option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
 option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
-
-# X86: Allow compilation for a SSE2-only target machine. Done by a special build in CI for embedded or very old hardware.
-option (NO_SSE3_OR_HIGHER "Disable SSE3 or higher on x86_64" 0)
-if (NO_SSE3_OR_HIGHER)
-    SET(ENABLE_SSSE3 0)
-    SET(ENABLE_SSE41 0)
-    SET(ENABLE_SSE42 0)
-    SET(ENABLE_PCLMULQDQ 0)
-    SET(ENABLE_POPCNT 0)
-    SET(ENABLE_AVX 0)
-    SET(ENABLE_AVX2 0)
-    SET(ENABLE_AVX512 0)
-    SET(ENABLE_AVX512_VBMI 0)
-    SET(ENABLE_BMI 0)
-    SET(ENABLE_AVX2_FOR_SPEC_OP 0)
-    SET(ENABLE_AVX512_FOR_SPEC_OP 0)
-endif()
 
 option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
 
@@ -166,20 +148,6 @@ elseif (ARCH_AMD64)
         }
     " HAVE_AVX512)
     if (HAVE_AVX512 AND ENABLE_AVX512)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    set (TEST_FLAG "-mavx512vbmi")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm512_permutexvar_epi8(__m512i(), __m512i());
-            (void)a;
-            return 0;
-        }
-    " HAVE_AVX512_VBMI)
-    if (HAVE_AVX512 AND ENABLE_AVX512 AND HAVE_AVX512_VBMI AND ENABLE_AVX512_VBMI)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 

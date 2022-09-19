@@ -39,10 +39,7 @@ struct JoinedElement
         : element(table_element)
     {
         if (element.table_join)
-        {
             join = element.table_join->as<ASTTableJoin>();
-            original_kind = join->kind;
-        }
     }
 
     void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database) const
@@ -60,19 +57,17 @@ struct JoinedElement
 
     void rewriteCommaToCross()
     {
-        if (join && join->kind == JoinKind::Comma)
-            join->kind = JoinKind::Cross;
+        if (join && join->kind == ASTTableJoin::Kind::Comma)
+            join->kind = ASTTableJoin::Kind::Cross;
     }
-
-    JoinKind getOriginalKind() const { return original_kind; }
 
     bool rewriteCrossToInner(ASTPtr on_expression)
     {
-        if (join->kind != JoinKind::Cross)
+        if (join->kind != ASTTableJoin::Kind::Cross)
             return false;
 
-        join->kind = JoinKind::Inner;
-        join->strictness = JoinStrictness::All;
+        join->kind = ASTTableJoin::Kind::Inner;
+        join->strictness = ASTTableJoin::Strictness::All;
 
         join->on_expression = on_expression;
         join->children.push_back(join->on_expression);
@@ -88,8 +83,6 @@ struct JoinedElement
 private:
     const ASTTablesInSelectQueryElement & element;
     ASTTableJoin * join = nullptr;
-
-    JoinKind original_kind;
 };
 
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
@@ -243,7 +236,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
         for (size_t i = 1; i < joined_tables.size(); ++i)
         {
             auto & joined = joined_tables[i];
-            if (joined.tableJoin()->kind != JoinKind::Cross)
+            if (joined.tableJoin()->kind != ASTTableJoin::Kind::Cross)
                 continue;
 
             String query_before = queryToString(*joined.tableJoin());
@@ -258,17 +251,10 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 }
             }
 
-            if (joined.getOriginalKind() == JoinKind::Comma &&
-                data.cross_to_inner_join_rewrite > 1 &&
-                !rewritten)
+            if (data.cross_to_inner_join_rewrite > 1 && !rewritten)
             {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Failed to rewrite comma join to INNER. "
-                    "Please, try to simplify WHERE section "
-                    "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case "
-                    "(cannot rewrite '{} WHERE {}' to INNER JOIN)",
-                    query_before, queryToString(select.where()));
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Failed to rewrite '{} WHERE {}' to INNER JOIN",
+                                query_before, queryToString(select.where()));
             }
         }
     }

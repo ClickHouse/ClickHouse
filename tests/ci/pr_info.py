@@ -15,7 +15,6 @@ from env_helper import (
 )
 
 FORCE_TESTS_LABEL = "force tests"
-SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -86,7 +85,7 @@ class PRInfo:
         self.changed_files = set()  # type: Set[str]
         self.body = ""
         self.diff_urls = []
-        self.release_pr = 0
+        self.release_pr = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]

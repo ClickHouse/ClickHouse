@@ -42,9 +42,6 @@ public:
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }
-
-    bool supportsSubcolumns() const override { return true; }
-
     bool mayBenefitFromIndexForIn(
         const ASTPtr & /* left_in_operand */,
         ContextPtr /* query_context */,
@@ -70,7 +67,6 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
 private:
     using FileFormat = IHiveFile::FileFormat;

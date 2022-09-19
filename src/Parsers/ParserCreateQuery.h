@@ -53,8 +53,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     NameParser name_parser;
     ParserDataType type_parser;
 
-    ASTPtr name;
-    ASTPtr type;
+    ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
@@ -334,21 +333,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
 class ParserColumnDeclarationList : public IParserBase
 {
-public:
-    explicit ParserColumnDeclarationList(bool require_type_ = true, bool allow_null_modifiers_ = true, bool check_keywords_after_name_ = false)
-        : require_type(require_type_)
-        , allow_null_modifiers(allow_null_modifiers_)
-        , check_keywords_after_name(check_keywords_after_name_)
-    {
-    }
-
 protected:
     const char * getName() const override { return "column declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    const bool require_type;
-    const bool allow_null_modifiers;
-    const bool check_keywords_after_name;
 };
 
 
