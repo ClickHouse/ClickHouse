@@ -206,16 +206,17 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
 }
 
 
-size_t DataTypeTuple::getPositionByName(const String & name) const
+size_t DataTypeTuple::getPositionByName(std::string_view name) const
 {
     size_t size = elems.size();
     for (size_t i = 0; i < size; ++i)
         if (names[i] == name)
             return i;
-    throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+
+    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
 
-std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name) const
+std::optional<size_t> DataTypeTuple::tryGetPositionByName(std::string_view name) const
 {
     size_t size = elems.size();
     for (size_t i = 0; i < size; ++i)

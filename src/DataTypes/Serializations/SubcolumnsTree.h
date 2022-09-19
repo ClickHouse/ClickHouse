@@ -173,6 +173,7 @@ public:
 
     const Nodes & getLeaves() const { return leaves; }
     const Node * getRoot() const { return root.get(); }
+    const NodePtr & getRootPtr() const { return root; }
 
     using iterator = typename Nodes::iterator;
     using const_iterator = typename Nodes::const_iterator;
