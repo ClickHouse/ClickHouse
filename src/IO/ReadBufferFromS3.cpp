@@ -25,6 +25,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
+    extern const Event DiskS3GetObject;
 }
 
 namespace DB
@@ -277,6 +278,9 @@ SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
     ProfileEvents::increment(ProfileEvents::S3GetObject);
+    if (read_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
+
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
