@@ -297,11 +297,25 @@ public:
 
             type = type_tuple->getElement(*pos);
             column = assert_cast<const ColumnTuple &>(*column).getColumnPtr(*pos);
+            last_key = key;
             return true;
         }
 
         bool moveToElementByIndex(Int64 index)
         {
+            if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+            {
+                const auto & elements = type_tuple->getElements();
+                index = adjustIndex(index, elements.size());
+                if (static_cast<UInt64>(index) >= elements.size())
+                    return false;
+
+                type = elements[index];
+                column = assert_cast<const ColumnTuple &>(*column).getColumnPtr(index);
+                last_key = type_tuple->getElementNames()[index];
+                return true;
+            }
+
             const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
             if (!type_array)
                 return false;
@@ -317,17 +331,20 @@ public:
             type = type_array->getNestedType();
             column = column_array.getDataPtr();
             row = offsets[row - 1] + index;
+            last_key = {};
             return true;
         }
 
         const DataTypePtr & getType() const { return type; }
         const ColumnPtr & getColumn() const { return column; }
         Int64 getRow() const { return row; }
+        std::string_view getLastKey() const { return last_key; }
 
     private:
         DataTypePtr type;
         ColumnPtr column;
         Int64 row = 0;
+        std::string_view last_key;
     };
 
 private:
@@ -751,6 +768,28 @@ public:
     }
 };
 
+class IsValidJSONImplObject
+{
+public:
+    static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.size() != 1)
+            /// IsValidJSON() shouldn't get parameters other than JSON.
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} needs exactly one argument", function_name);
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName &) { return 0; }
+
+    static bool insertResultToColumn(IColumn & to, const ObjectIterator & /*iterator*/)
+    {
+        auto & to_vec = assert_cast<ColumnVector<UInt8> &>(to);
+        to_vec.insertValue(1);
+        return true;
+    }
+};
 
 template <typename JSONParser>
 class JSONLengthImplString
@@ -815,7 +854,7 @@ public:
 };
 
 template <typename JSONParser>
-class JSONKeyImpl
+class JSONKeyImplString
 {
 public:
     using Element = typename JSONParser::Element;
@@ -837,25 +876,49 @@ public:
     }
 };
 
+class JSONKeyImplObject
+{
+public:
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeString>(); }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    static bool insertResultToColumn(IColumn & to, const ObjectIterator & iterator)
+    {
+        auto last_key = iterator.getLastKey();
+        if (last_key.empty())
+            return false;
+
+        auto & to_str = assert_cast<ColumnString &>(to);
+        to_str.insertData(last_key.data(), last_key.size());
+        return true;
+    }
+};
+
+static std::vector<std::pair<String, Int8>> getJSONTypesEnumValues()
+{
+    return
+    {
+        {"Array", '['},
+        {"Object", '{'},
+        {"String", '"'},
+        {"Int64", 'i'},
+        {"UInt64", 'u'},
+        {"Double", 'd'},
+        {"Bool", 'b'},
+        {"Null", 0}, /// the default value for the column.
+    };
+}
 
 template <typename JSONParser>
-class JSONTypeImpl
+class JSONTypeImplString
 {
 public:
     using Element = typename JSONParser::Element;
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        static const std::vector<std::pair<String, Int8>> values = {
-            {"Array", '['},
-            {"Object", '{'},
-            {"String", '"'},
-            {"Int64", 'i'},
-            {"UInt64", 'u'},
-            {"Double", 'd'},
-            {"Bool", 'b'},
-            {"Null", 0}, /// the default value for the column.
-        };
+        static const auto values = getJSONTypesEnumValues();
         return std::make_shared<DataTypeEnum<Int8>>(values);
     }
 
@@ -889,6 +952,42 @@ public:
     }
 };
 
+class JSONTypeImplObject
+{
+public:
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
+    {
+        static const auto values = getJSONTypesEnumValues();
+        return std::make_shared<DataTypeEnum<Int8>>(values);
+    }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    static bool insertResultToColumn(IColumn & to, const ObjectIterator & iterator)
+    {
+        WhichDataType which(iterator.getType());
+        UInt8 type;
+
+        if (which.isNativeInt())
+            type = 'i';
+        else if (which.isNativeUInt())
+            type = 'u';
+        else if (which.isFloat())
+            type = 'd';
+        else if (which.isString())
+            type = '"';
+        else if (which.isArray())
+            type = '[';
+        else if (which.isTuple() )
+            type = '{';
+        else
+            return false;
+
+        auto & to_vec = assert_cast<ColumnVector<Int8> &>(to);
+        to_vec.insertValue(type);
+        return true;
+    }
+};
 
 template <typename JSONParser, typename NumberType, bool convert_bool_to_integer = false>
 class JSONExtractNumericImplString
@@ -1733,7 +1832,7 @@ public:
 };
 
 template <typename JSONParser>
-class JSONExtractKeysImpl
+class JSONExtractKeysImplString
 {
 public:
     using Element = typename JSONParser::Element;
@@ -1765,13 +1864,42 @@ public:
     }
 };
 
+class JSONExtractKeysImplObject
+{
+public:
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
+    {
+        return std::make_unique<DataTypeArray>(std::make_shared<DataTypeString>());
+    }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    bool insertResultToColumn(IColumn & to, const ObjectIterator & iterator)
+    {
+        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(iterator.getType().get());
+        if (!type_tuple || !type_tuple->haveExplicitNames())
+            return false;
+
+        auto & to_array = assert_cast<ColumnArray &>(to);
+        auto & to_string = assert_cast<ColumnString &>(to_array.getData());
+
+        const auto & tuple_names = type_tuple->getElementNames();
+        for (const auto & name : tuple_names)
+            to_string.insertData(name.data(), name.size());
+
+        auto & to_offsets = to_array.getOffsets();
+        to_offsets.push_back(to_offsets.back() + tuple_names.size());
+        return true;
+    }
+};
+
 REGISTER_FUNCTION(JSON)
 {
     factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImplString, JSONHasImplObject>>();
-    // factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>();
+    factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImplString, IsValidJSONImplObject>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONLength, JSONLengthImplString, JSONLengthImplObject>>();
-    // factory.registerFunction<JSONOverloadResolver<NameJSONKey, JSONKeyImpl>>();
-    // factory.registerFunction<JSONOverloadResolver<NameJSONType, JSONTypeImpl>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONKey, JSONKeyImplString, JSONKeyImplObject>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONType, JSONTypeImplString, JSONTypeImplObject>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractInt, JSONExtractInt64ImplString, JSONExtractInt64ImplObject>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractUInt, JSONExtractUInt64ImplString, JSONExtractUInt64ImplObject>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloat, JSONExtractFloat64ImplString, JSONExtractFloat64ImplObject>>();
@@ -1782,7 +1910,7 @@ REGISTER_FUNCTION(JSON)
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractRaw, JSONExtractRawImplString, JSONExtractRawImplObject>>();
     // factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
     // factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>();
-    // factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeys, JSONExtractKeysImpl>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeys, JSONExtractKeysImplString, JSONExtractKeysImplObject>>();
 }
 
 }
