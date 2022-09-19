@@ -121,8 +121,8 @@ namespace
     {
     public:
         static constexpr auto name = "displayName";
-        static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
         explicit FunctionDisplayName(ContextPtr context) : FunctionConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
     };
 }
 
@@ -184,7 +184,17 @@ REGISTER_FUNCTION(GetOSKernelVersion)
 
 REGISTER_FUNCTION(DisplayName)
 {
-    factory.registerFunction<FunctionDisplayName>();
+    factory.registerFunction<FunctionDisplayName>(
+        {
+            R"(
+Returns the value of `display_name` from config or server FQDN if not set.
+
+[example:displayName]
+)",
+            Documentation::Examples{{"displayName", "SELECT displayName();"}},
+            Documentation::Categories{"Constant", "Miscellaneous"}
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 

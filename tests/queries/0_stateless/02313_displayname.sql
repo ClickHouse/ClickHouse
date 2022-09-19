@@ -1,2 +1,1 @@
-select displayname();
 select displayName();
