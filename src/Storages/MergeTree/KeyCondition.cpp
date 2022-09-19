@@ -116,10 +116,20 @@ static void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuf
 {
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT): [[fallthrough]];
-        case (ActionsDAG::ActionType::COLUMN):
+        case (ActionsDAG::ActionType::INPUT):
             writeString(node.result_name, out);
             break;
+        case (ActionsDAG::ActionType::COLUMN):
+        {
+            /// If it was created from ASTLiteral, then result_name can be an alias.
+            /// We need to convert value back to string here.
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
+            /// It may be possible that column is ColumnSet
+            else
+                writeString(node.result_name, out);
+            break;
+        }
         case (ActionsDAG::ActionType::ALIAS):
             appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
             break;
@@ -297,8 +307,10 @@ public:
                 assert(indexes_mapping.size() == data_types.size());
 
                 for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                {
                     if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
                         return false;
+                }
 
                 return true;
             };

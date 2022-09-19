@@ -146,6 +146,9 @@
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     \
+    M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
+    M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
+    \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
@@ -286,6 +289,18 @@ The server successfully detected this situation and will download merged part fr
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     \
+    M(DiskS3ReadMicroseconds, "Time of GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsCount, "Number of GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsErrors, "Number of non-throttling errors in GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsThrottling, "Number of 429 and 503 errors in GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsRedirects, "Number of redirects in GET and HEAD requests to DiskS3 storage.") \
+    \
+    M(DiskS3WriteMicroseconds, "Time of POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsCount, "Number of POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsErrors, "Number of non-throttling errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
@@ -395,6 +410,17 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
+    M(DeleteS3Objects, "Number of s3 API DeleteObjects be called") \
+    M(CopyS3Object, "Number of s3 API CopyObject be called") \
+    M(ListS3Objects, "Number of s3 API ListObjects be called") \
+    M(HeadS3Object,  "Number of s3 API HeadObject be called") \
+    M(CreateS3MultipartUpload, "Number of s3 API CreateMultipartUpload be called") \
+    M(UploadS3PartCopy, "Number of s3 API UploadPartCopy be called") \
+    M(UploadS3Part, "Number of s3 API UploadS3Part be called") \
+    M(AbortS3MultipartUpload, "Number of s3 API AbortMultipartUpload be called") \
+    M(CompleteS3MultipartUpload, "Number of s3 API CompleteS3MultipartUpload be called") \
+    M(PutS3ObjectRequest, "Number of s3 API PutS3ObjectRequest be called") \
+    M(GetS3ObjectRequest, "Number of s3 API GetS3ObjectRequest be called")
 
 namespace ProfileEvents
 {
