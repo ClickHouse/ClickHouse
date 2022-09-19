@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/SharedLibrary.h>
+#include "SharedLibrary.h"
 #include <Common/logger_useful.h>
 #include "ExternalDictionaryLibraryUtils.h"
 
