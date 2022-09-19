@@ -213,9 +213,9 @@ Cache **commands**:
 
 - `SYSTEM DROP FILESYSTEM CACHE (<path>) (ON CLUSTER)`
 
-- `SHOW CACHES` -- show list of caches which were configured on the server.
+- `SHOW FILESYSTEM CACHES` -- show list of caches which were configured on the server. (For versions <= `22.8` commands is named `SHOW CACHES`)
 
-- `DESCRIBE CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW CACHES` command.
+- `DESCRIBE CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW CACHES` command. (For versions <= `22.8` commands is named `DESCRIBE CACHE`)
 
 Cache current metrics:
 
