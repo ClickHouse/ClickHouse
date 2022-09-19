@@ -26,8 +26,10 @@ struct RapidJSONParser
         ALWAYS_INLINE Element() = default;
         ALWAYS_INLINE Element(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
 
-        ALWAYS_INLINE ElementType type() const {
-            switch (ptr->GetType()) {
+        ALWAYS_INLINE ElementType type() const
+        {
+            switch (ptr->GetType())
+            {
                 case rapidjson::kNumberType: return ptr->IsDouble() ? ElementType::DOUBLE : (ptr->IsUint64() ? ElementType::UINT64 : ElementType::INT64);
                 case rapidjson::kStringType: return ElementType::STRING;
                 case rapidjson::kArrayType: return ElementType::ARRAY;

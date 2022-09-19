@@ -3,7 +3,8 @@
 namespace DB
 {
 // Enum values match simdjson's for fast conversion
-enum class ElementType {
+enum class ElementType
+{
     ARRAY = '[',
     OBJECT = '{',
     INT64 = 'l',

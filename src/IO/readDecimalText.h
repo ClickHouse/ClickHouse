@@ -147,23 +147,30 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
     return true;
 }
 
-template <typename T>
-inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false)
+template <typename T, bool _throw_on_error=true>
+inline bool readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false)
 {
     uint32_t digits = precision;
     int32_t exponent;
-    readDigits<true>(buf, x, digits, exponent, digits_only);
+    auto ok = readDigits<_throw_on_error>(buf, x, digits, exponent, digits_only);
+
+    if (!_throw_on_error && !ok)
+        return false;
 
     if (static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale))
     {
-        static constexpr const char * pattern =
-            "Decimal value is too big: {} digits were read: {}e{}."
-            " Expected to read decimal with scale {} and precision {}";
+        if constexpr (_throw_on_error)
+        {
+            static constexpr const char * pattern = "Decimal value is too big: {} digits were read: {}e{}."
+                                                    " Expected to read decimal with scale {} and precision {}";
 
-        if constexpr (is_big_int_v<typename T::NativeType>)
-            throw Exception(fmt::format(pattern, digits, x.value, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            if constexpr (is_big_int_v<typename T::NativeType>)
+                throw Exception(fmt::format(pattern, digits, x.value, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            else
+                throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        }
         else
-            throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            return false;
     }
 
     if (static_cast<int32_t>(scale) + exponent < 0)
@@ -175,7 +182,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
             /// Too big negative exponent
             x.value = 0;
             scale = 0;
-            return;
+            return true;
         }
         else
         {
@@ -184,26 +191,18 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
             assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
             x.value /= divisor;
             scale = 0;
-            return;
+            return true;
         }
     }
 
     scale += exponent;
+    return true;
 }
 
 template <typename T>
 inline bool tryReadDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
 {
-    uint32_t digits = precision;
-    int32_t exponent;
-
-    if (!readDigits<false>(buf, x, digits, exponent, true) ||
-        static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale) ||
-        static_cast<int32_t>(scale) + exponent < 0)
-        return false;
-
-    scale += exponent;
-    return true;
+    return readDecimalText<T, false>(buf, x, precision, scale, true);
 }
 
 template <typename T>
