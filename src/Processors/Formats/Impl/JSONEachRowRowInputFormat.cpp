@@ -355,44 +355,26 @@ void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTyp
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)
 {
-    factory.registerInputFormat("JSONEachRow", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
+    auto register_format = [&](const String & format_name, bool json_strings)
     {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
-    });
+        factory.registerInputFormat(format_name, [json_strings](
+            ReadBuffer & buf,
+            const Block & sample,
+            IRowInputFormat::Params params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, json_strings);
+        });
+    };
 
-    factory.registerInputFormat("JSONLines", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
-    });
-
-    factory.registerInputFormat("NDJSON", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
-    });
+    register_format("JSONEachRow", false);
+    register_format("JSONLines", false);
+    register_format("NDJSON", false);
 
     factory.registerFileExtension("ndjson", "JSONEachRow");
     factory.registerFileExtension("jsonl", "JSONEachRow");
 
-    factory.registerInputFormat("JSONStringsEachRow", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
-    });
+    register_format("JSONStringsEachRow", true);
 
     factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
     factory.markFormatSupportsSubsetOfColumns("JSONLines");
@@ -418,25 +400,22 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
 
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("JSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings)
+    auto register_schema_reader = [&](const String & format_name, bool json_strings)
     {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
-    });
+        factory.registerSchemaReader(format_name, [json_strings](ReadBuffer & buf, const FormatSettings & settings)
+        {
+            return std::make_unique<JSONEachRowSchemaReader>(buf, json_strings, settings);
+        });
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+        {
+            return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+        });
+    };
 
-    factory.registerSchemaReader("JSONStringsEachRow", [](ReadBuffer & buf, const FormatSettings & settings)
-    {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, true, settings);
-    });
-
-    factory.registerSchemaReader("JSONLines", [](ReadBuffer & buf, const FormatSettings & settings)
-    {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
-    });
-
-    factory.registerSchemaReader("NDJSON", [](ReadBuffer & buf, const FormatSettings & settings)
-    {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
-    });
+    register_schema_reader("JSONEachRow", false);
+    register_schema_reader("JSONLines", false);
+    register_schema_reader("NDJSON", false);
+    register_schema_reader("JSONStringsEachRow", true);
 }
 
 }

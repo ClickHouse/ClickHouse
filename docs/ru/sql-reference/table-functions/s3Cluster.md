@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/table-functions/s3Cluster
 sidebar_position: 55
 sidebar_label: s3Cluster
 ---

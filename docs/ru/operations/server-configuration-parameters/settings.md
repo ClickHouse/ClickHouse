@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: "Конфигурационные параметры сервера"
 ---
@@ -411,6 +412,8 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ## interserver_listen_host {#interserver-listen-host}
 
 Ограничение по хостам, для обмена между серверами ClickHouse.
+Если используется Keeper, то такое же ограничение будет применяться к обмену данными
+между различными экземплярами Keeper.
 Значение по умолчанию совпадает со значением параметра listen_host
 
 Примеры:

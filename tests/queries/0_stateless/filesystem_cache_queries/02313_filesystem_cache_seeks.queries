@@ -1,4 +1,5 @@
 SYSTEM DROP FILESYSTEM CACHE;
+SET send_logs_level = 'fatal'; -- Ignore retriable errors like "AWSClient: Failed to make request"
 
 DROP TABLE IF EXISTS test_02313;
 CREATE TABLE test_02313 (id Int32, val String)

@@ -1,4 +1,5 @@
 ---
+slug: /zh/guides/apply-catboost-model
 sidebar_position: 41
 sidebar_label: "\u5E94\u7528CatBoost\u6A21\u578B"
 ---

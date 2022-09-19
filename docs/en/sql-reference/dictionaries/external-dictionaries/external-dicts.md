@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts
 sidebar_position: 39
 sidebar_label: General Description
 ---

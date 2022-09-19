@@ -110,7 +110,7 @@ void DisksApp::init(std::vector<String> & common_arguments)
     if (options.count("help"))
     {
         printHelpMessage(options_description);
-        exit(0);
+        exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     if (!supported_commands.contains(command_name))

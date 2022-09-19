@@ -875,7 +875,8 @@ bool FunctionArrayElement::matchKeyToIndexStringConst(
     return castColumnString(&data, [&](const auto & data_column)
     {
         using DataColumn = std::decay_t<decltype(data_column)>;
-
+        if (index.getType() != Field::Types::String)
+            return false;
         MatcherStringConst<DataColumn> matcher{data_column, get<const String &>(index)};
         executeMatchKeyToIndex(offsets, matched_idxs, matcher);
         return true;

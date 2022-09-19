@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/data-types/lowcardinality
 sidebar_position: 51
 sidebar_label: 低基数类型
 ---

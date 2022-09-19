@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/system
 sidebar_position: 36
 sidebar_label: SYSTEM
 ---

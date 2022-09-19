@@ -23,12 +23,14 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/JSONBuilder.h>
+#include <Common/filesystemHelpers.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Core/ProtocolDefines.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -37,11 +39,18 @@ namespace ProfileEvents
     extern const Event ExternalAggregationWritePart;
     extern const Event ExternalAggregationCompressedBytes;
     extern const Event ExternalAggregationUncompressedBytes;
+    extern const Event ExternalProcessingCompressedBytesTotal;
+    extern const Event ExternalProcessingUncompressedBytesTotal;
     extern const Event AggregationPreallocatedElementsInHashTables;
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForAggregation;
 }
 
 namespace
@@ -1469,40 +1478,26 @@ bool Aggregator::executeOnBlock(Columns columns,
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-
-        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
-
-        // enoughSpaceInDirectory() is not enough to make it right, since
-        // another process (or another thread of aggregator) can consume all
-        // space.
-        //
-        // But true reservation (IVolume::reserve()) cannot be used here since
-        // current_memory_usage does not takes compression into account and
-        // will reserve way more that actually will be used.
-        //
-        // Hence let's do a simple check.
-        if (!enoughSpaceInDirectory(tmp_path, size))
-            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
-
-        writeToTemporaryFile(result, tmp_path);
+        writeToTemporaryFile(result, size);
     }
 
     return true;
 }
 
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto file = createTemporaryFile(tmp_path);
-    const std::string & path = file->path();
+    auto file = createTempFile(max_temp_file_size);
+
+    const auto & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
     NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}.", path);
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", path);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
     /// Flush only two-level data and possibly overflow data.
@@ -1545,6 +1540,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
 
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, compressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, uncompressed_bytes);
 
     LOG_DEBUG(log,
         "Written part in {:.3f} sec., {} rows, {} uncompressed, {} compressed,"
@@ -1563,10 +1560,22 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
 }
 
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants) const
+TemporaryFileOnDiskHolder Aggregator::createTempFile(size_t max_temp_file_size) const
 {
-    String tmp_path = params.tmp_volume->getDisk()->getPath();
-    return writeToTemporaryFile(data_variants, tmp_path);
+    auto file = std::make_unique<TemporaryFileOnDisk>(params.tmp_volume->getDisk(), CurrentMetrics::TemporaryFilesForAggregation);
+
+    // enoughSpaceInDirectory() is not enough to make it right, since
+    // another process (or another thread of aggregator) can consume all
+    // space.
+    //
+    // But true reservation (IVolume::reserve()) cannot be used here since
+    // current_memory_usage does not takes compression into account and
+    // will reserve way more that actually will be used.
+    //
+    // Hence let's do a simple check.
+    if (max_temp_file_size > 0 && !enoughSpaceInDirectory(file->getPath(), max_temp_file_size))
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for external aggregation in '{}'", file->path());
+    return file;
 }
 
 
@@ -2831,22 +2840,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-
-        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
-
-        // enoughSpaceInDirectory() is not enough to make it right, since
-        // another process (or another thread of aggregator) can consume all
-        // space.
-        //
-        // But true reservation (IVolume::reserve()) cannot be used here since
-        // current_memory_usage does not takes compression into account and
-        // will reserve way more that actually will be used.
-        //
-        // Hence let's do a simple check.
-        if (!enoughSpaceInDirectory(tmp_path, size))
-            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
-
-        writeToTemporaryFile(result, tmp_path);
+        writeToTemporaryFile(result, size);
     }
 
     return true;

@@ -41,7 +41,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
 {
     /// Stop anything that maybe in progress,
-    /// to avoid interfer with the subsequent connections.
+    /// to avoid interference with the subsequent connections.
     ///
     /// I.e. some replcas may be in the establishing state,
     /// this means that hedged connection is waiting for TablesStatusResponse,

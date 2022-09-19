@@ -366,10 +366,10 @@ void checkHarmfulEnvironmentVariables(char ** argv)
     bool require_reexec = false;
     for (const auto * var : harmful_env_variables)
     {
-        if (const char * value = getenv(var); value && value[0])
+        if (const char * value = getenv(var); value && value[0]) // NOLINT(concurrency-mt-unsafe)
         {
             /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
-            if (setenv(var, "", true))
+            if (setenv(var, "", true)) // NOLINT(concurrency-mt-unsafe) // this is safe if not called concurrently
             {
                 fmt::print(stderr, "Cannot override {} environment variable", var);
                 _exit(1);

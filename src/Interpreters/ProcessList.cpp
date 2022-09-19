@@ -82,7 +82,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
     bool is_unlimited_query = isUnlimitedQuery(ast);
 
     {
-        std::unique_lock lock(mutex);
+        auto [lock, overcommit_blocker] = safeLock(); // To avoid deadlock in case of OOM
         IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
@@ -269,7 +269,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
 ProcessListEntry::~ProcessListEntry()
 {
-    std::lock_guard lock(parent.mutex);
+    auto lock = parent.safeLock();
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;
@@ -430,7 +430,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
 
@@ -443,7 +443,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 
 void ProcessList::killAllQueries()
 {
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     for (auto & process : processes)
         process.cancelQuery(true);
@@ -495,7 +495,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 {
     Info per_query_infos;
 
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     per_query_infos.reserve(processes.size());
     for (const auto & process : processes)
@@ -530,7 +530,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 {
     UserInfo per_user_infos;
 
-    std::lock_guard lock(mutex);
+    auto lock = safeLock();
 
     per_user_infos.reserve(user_to_queries.size());
 

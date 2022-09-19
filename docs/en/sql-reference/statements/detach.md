@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/detach
 sidebar_position: 43
 sidebar_label: DETACH
+title: "DETACH Statement"
 ---
-
-# DETACH Statement
 
 Makes the server "forget" about the existence of a table, a materialized view, or a dictionary.
 

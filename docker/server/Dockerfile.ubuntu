@@ -26,7 +26,7 @@ ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
 # from debs created by CI build, for example:
-# docker build . --network host --build-arg version="21.4.1.6282" --build-arg deb_location_url="https://clickhouse-builds.s3.yandex.net/21852/069cfbff388b3d478d1a16dc7060b48073f5d522/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/" -t filimonovq/clickhouse-server:pr21852
+# docker build . --network host --build-arg version="21.4.1.6282" --build-arg deb_location_url="https://..." -t ...
 ARG deb_location_url=""
 
 # set non-empty single_binary_location_url to create docker image

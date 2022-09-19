@@ -774,7 +774,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
         };
 
         String url = fs::path(uri_without_path) / path;
-        String cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
+        auto cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
@@ -794,7 +794,7 @@ void StorageHDFS::addColumnsToCache(
     Strings sources;
     sources.reserve(paths.size());
     std::transform(paths.begin(), paths.end(), std::back_inserter(sources), [&](const String & path){ return fs::path(uri_without_path) / path; });
-    Strings cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
+    auto cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
     schema_cache.addMany(cache_keys, columns);
 }
 

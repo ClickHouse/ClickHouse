@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/create/user
 sidebar_position: 39
 sidebar_label: "Пользователь"
 ---

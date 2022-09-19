@@ -82,7 +82,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
             });
     factory.markFormatSupportsSubsetOfColumns("ProtobufList");
     factory.registerAdditionalInfoForSchemaCacheGetter(
-        "ProtobufList", [](const FormatSettings & settings) { return "Format schema: " + settings.schema.format_schema; });
+        "ProtobufList", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 void registerProtobufListSchemaReader(FormatFactory & factory)

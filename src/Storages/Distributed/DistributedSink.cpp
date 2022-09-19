@@ -336,7 +336,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (rows == 0)
             return;
 
-        OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
         span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
         span.addAttribute("clickhouse.written_rows", rows);
 
@@ -419,7 +419,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+    OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
@@ -610,7 +610,7 @@ void DistributedSink::writeSplitAsync(const Block & block)
 
 void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
-    OpenTelemetrySpanHolder span("DistributedSink::writeAsyncImpl()");
+    OpenTelemetry::SpanHolder span("DistributedSink::writeAsyncImpl()");
 
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
@@ -652,7 +652,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 
 void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+    OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("db.statement", this->query_string);
 
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
@@ -668,7 +668,7 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 
 void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+    OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
@@ -737,11 +737,11 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
 
-            if (context->getClientInfo().client_trace_context.trace_id != UUID() && CurrentThread::isInitialized())
+            if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
-                client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+                client_info.client_trace_context = OpenTelemetry::CurrentContext();
                 client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             }
             else
@@ -766,7 +766,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             /// Write the header.
             const std::string_view header = header_buf.stringView();
             writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
-            writeStringBinary(StringRef(header), out);
+            writeStringBinary(header, out);
             writePODBinary(CityHash_v1_0_2::CityHash128(header.data(), header.size()), out);
 
             stream.write(block);

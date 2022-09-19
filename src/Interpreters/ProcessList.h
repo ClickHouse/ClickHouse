@@ -285,7 +285,26 @@ public:
 };
 
 
-class ProcessList
+class ProcessListBase
+{
+    mutable std::mutex mutex;
+
+protected:
+    using Lock = std::unique_lock<std::mutex>;
+    struct LockAndBlocker
+    {
+        Lock lock;
+        OvercommitTrackerBlockerInThread blocker;
+    };
+
+    // It is forbidden to do allocations/deallocations with acquired mutex and
+    // enabled OvercommitTracker. This leads to deadlock in the case of OOM.
+    LockAndBlocker safeLock() const noexcept { return { std::unique_lock{mutex}, {} }; }
+    Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
+};
+
+
+class ProcessList : public ProcessListBase
 {
 public:
     using Element = QueryStatus;
@@ -304,10 +323,10 @@ public:
 
 protected:
     friend class ProcessListEntry;
+    friend struct ::OvercommitTracker;
     friend struct ::UserOvercommitTracker;
     friend struct ::GlobalOvercommitTracker;
 
-    mutable std::mutex mutex;
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
     /// List of queries
@@ -360,19 +379,19 @@ public:
 
     void setMaxSize(size_t max_size_)
     {
-        std::lock_guard lock(mutex);
+        auto lock = unsafeLock();
         max_size = max_size_;
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
-        std::lock_guard lock(mutex);
+        auto lock = unsafeLock();
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
-        std::lock_guard lock(mutex);
+        auto lock = unsafeLock();
         max_select_queries_amount = max_select_queries_amount_;
     }
 

@@ -1,3 +1,6 @@
+---
+slug: /zh/development/tests
+---
 # ClickHouse 测试 {#clickhouse-testing}
 
 ## 功能测试 {#functional-tests}

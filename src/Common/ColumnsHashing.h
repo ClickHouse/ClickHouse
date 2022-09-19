@@ -41,12 +41,12 @@ struct HashMethodOneNumber
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
-        vec = key_columns[0]->getRawData().data;
+        vec = key_columns[0]->getRawData().data();
     }
 
     explicit HashMethodOneNumber(const IColumn * column)
     {
-        vec = column->getRawData().data;
+        vec = column->getRawData().data();
     }
 
     /// Creates context. Method is called once and result context is used in all threads.
@@ -577,7 +577,7 @@ struct HashMethodKeysFixed
             columns_data.reset(new const char*[keys_size]);
 
             for (size_t i = 0; i < keys_size; ++i)
-                columns_data[i] = Base::getActualColumns()[i]->getRawData().data;
+                columns_data[i] = Base::getActualColumns()[i]->getRawData().data();
         }
 #endif
     }

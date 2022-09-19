@@ -118,7 +118,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         Poco::URI poco_uri(uri);
 
         // Parse database from URI. This is required for correctness -- the
-        // cursor is created using database name and colleciton name, so we have
+        // cursor is created using database name and collection name, so we have
         // to specify them properly.
         db = poco_uri.getPath();
         // getPath() may return a leading slash, remove it.

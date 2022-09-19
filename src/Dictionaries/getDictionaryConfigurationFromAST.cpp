@@ -244,7 +244,7 @@ void buildAttributeExpressionIfNeeded(
     root->appendChild(expression_element);
 }
 
-/** Transofrms single dictionary attribute to configuration
+/** Transforms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>

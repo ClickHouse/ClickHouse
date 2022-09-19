@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/access-rights
 sidebar_position: 48
 sidebar_label: "访问权限和账户管理"
 ---

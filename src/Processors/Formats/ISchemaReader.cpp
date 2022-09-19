@@ -89,15 +89,13 @@ void IIRowSchemaReader::setContext(ContextPtr & context)
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IIRowSchemaReader(in_, format_settings_)
+    : IIRowSchemaReader(in_, format_settings_), column_names(splitColumnNames(format_settings.column_names_for_schema_inference))
 {
-    initColumnNames(format_settings.column_names_for_schema_inference);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
-    : IIRowSchemaReader(in_, format_settings_, default_type_)
+    : IIRowSchemaReader(in_, format_settings_, default_type_), column_names(splitColumnNames(format_settings.column_names_for_schema_inference))
 {
-    initColumnNames(format_settings.column_names_for_schema_inference);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, const DataTypes & default_types_)
@@ -171,11 +169,12 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     return result;
 }
 
-void IRowSchemaReader::initColumnNames(const String & column_names_str)
+Strings splitColumnNames(const String & column_names_str)
 {
     if (column_names_str.empty())
-        return;
+        return {};
 
+    Strings column_names;
     /// column_names_for_schema_inference is a string in format 'column1,column2,column3,...'
     boost::split(column_names, column_names_str, boost::is_any_of(","));
     for (auto & column_name : column_names)
@@ -184,6 +183,7 @@ void IRowSchemaReader::initColumnNames(const String & column_names_str)
         if (!col_name_trimmed.empty())
             column_name = col_name_trimmed;
     }
+    return column_names;
 }
 
 DataTypePtr IRowSchemaReader::getDefaultType(size_t column) const

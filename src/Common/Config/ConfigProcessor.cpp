@@ -419,7 +419,7 @@ void ConfigProcessor::doIncludesRecursive(
         XMLDocumentPtr env_document;
         auto get_env_node = [&](const std::string & name) -> const Node *
         {
-            const char * env_val = std::getenv(name.c_str());
+            const char * env_val = std::getenv(name.c_str()); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
             if (env_val == nullptr)
                 return nullptr;
 

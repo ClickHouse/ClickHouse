@@ -137,7 +137,7 @@ struct SimpliestRaftServer
         if (!raft_instance)
         {
             std::cerr << "Failed to initialize launcher" << std::endl;
-            exit(-1);
+            _exit(1);
         }
 
         std::cout << "init Raft instance " << server_id;
@@ -1339,7 +1339,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
             nuraft::async_result<bool>::handler_type when_done = [&snapshot_created] (bool & ret, nuraft::ptr<std::exception> &/*exception*/)
             {
                 snapshot_created = ret;
-                std::cerr << "Snapshot finised\n";
+                std::cerr << "Snapshot finished\n";
             };
 
             state_machine->create_snapshot(s, when_done);

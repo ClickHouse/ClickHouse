@@ -7,7 +7,7 @@
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>

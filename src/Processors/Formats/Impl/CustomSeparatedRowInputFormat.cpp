@@ -353,6 +353,19 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings);
             });
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+            {
+                String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
+                return result + fmt::format(
+                        ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                        " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                        settings.custom.result_before_delimiter,
+                        settings.custom.row_before_delimiter,
+                        settings.custom.field_delimiter,
+                        settings.custom.row_after_delimiter,
+                        settings.custom.row_between_delimiter,
+                        settings.custom.result_after_delimiter);
+            });
         };
 
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);

@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Server Settings
 ---
@@ -441,6 +442,8 @@ For more information, see the section “[Configuration files](../../operations/
 ## interserver_listen_host {#interserver-listen-host}
 
 Restriction on hosts that can exchange data between ClickHouse servers.
+If Keeper is used, the same restriction will be applied to the communication
+between different Keeper instances.
 The default value equals to `listen_host` setting.
 
 Examples:
@@ -743,13 +746,24 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 -   [max_server_memory_usage](#max_server_memory_usage)
 
-## concurrent_threads_soft_limit {#concurrent_threads_soft_limit}
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get one thread to run.
+## concurrent_threads_soft_limit_num {#concurrent_threads_soft_limit_num}
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run. Query can upscale to desired number of threads during execution if more threads become available.
 
 Possible values:
+
 -   Positive integer.
 -   0 — No limit.
--   -1 — The parameter is initialized by number of logical cores multiplies by 3. Which is a good heuristic for CPU-bound tasks.
+
+Default value: `0`.
+
+## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
+The maximum number of query processing threads as multiple of number of logical cores.
+More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
 
 Default value: `0`.
 
