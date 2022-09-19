@@ -51,7 +51,7 @@ StorageS3Cluster::StorageS3Cluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : IStorage(table_id_)
+    : IStorageCluster(table_id_)
     , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
     , filename(configuration_.url)
     , cluster_name(configuration_.cluster_name)
@@ -100,12 +100,7 @@ Pipe StorageS3Cluster::read(
     unsigned /*num_streams*/)
 {
     StorageS3::updateS3Configuration(context, s3_configuration);
-
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-
-    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
-    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
+    createIteratorAndCallback(query_info.query, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -162,6 +157,29 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
 
     /// Follower just reads the data.
     return QueryProcessingStage::Enum::FetchColumns;
+}
+
+
+void StorageS3Cluster::createIteratorAndCallback(ASTPtr query, ContextPtr context) const
+{
+    cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+    iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
+        *s3_configuration.client, s3_configuration.uri, query, virtual_block, context);
+    callback = std::make_shared<StorageS3Source::IteratorWrapper>([iter = this->iterator]() mutable -> String { return iter->next(); });
+}
+
+
+RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ContextPtr context) const
+{
+    createIteratorAndCallback(/*query=*/nullptr, context);
+    return RemoteQueryExecutor::Extension{.task_iterator = callback};
+}
+
+
+ClusterPtr StorageS3Cluster::getCluster(ContextPtr context) const
+{
+    createIteratorAndCallback(/*query=*/nullptr, context);
+    return cluster;
 }
 
 
