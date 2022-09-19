@@ -143,6 +143,8 @@ include (cmake/add_warning.cmake)
 if (COMPILER_CLANG)
     # generate ranges for fast "addr2line" search
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        # NOTE: that clang has a bug because of it does not emit .debug_aranges
+        # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 
