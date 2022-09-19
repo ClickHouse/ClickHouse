@@ -49,7 +49,7 @@ private:
 
 private:
     std::vector<std::string> getKeysFromS3();
-    std::string generateQueryFromKeys(std::vector<std::string> && keys);
+    static std::string generateQueryFromKeys(std::vector<std::string> && keys);
 
 private:
     StorageS3::S3Configuration base_configuration;

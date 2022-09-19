@@ -94,7 +94,7 @@ private:
 
 
 private:
-    String generateQueryFromKeys(std::vector<String> && keys);
+    static String generateQueryFromKeys(std::vector<String> && keys);
 
 private:
     StorageS3::S3Configuration base_configuration;
