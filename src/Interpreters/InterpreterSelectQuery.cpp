@@ -1465,7 +1465,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [&] (QueryPlan & plan, const SortDescription & join_sort_descr, JoinTableSide side)
+                    auto add_sorting = [&] (QueryPlan & plan, const Names & join_keys, JoinTableSide side)
                     {
                         SortDescription sort_descr;
                         {
@@ -1473,12 +1473,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             /// Example: JOIN ON t1.x = t2.a AND t1.x = t2.b AND t1.y = t2.c AND t1.x = t2.d
                             /// We need to sort t1 by [x, y] (not [x, x, y, x]).
                             NameSet existing;
-                            for (const auto & desc : join_sort_descr)
+                            for (const auto & column_name : join_keys)
                             {
-                                if (existing.count(desc.column_name))
+                                if (existing.count(column_name))
                                     continue;
-                                existing.insert(desc.column_name);
-                                sort_descr.push_back(desc);
+                                existing.insert(column_name);
+                                sort_descr.emplace_back(column_name);
                             }
                         }
 
@@ -1494,7 +1494,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         {
                             LOG_TRACE(log, "{} stream is not sorted by {} (sorted {} by {}), using full sorting before join",
                                 side, fmt::join(sort_descr.getColumnNames(), ", "),
-                                data_stream.sort_mode, fmt::join(data_stream.sort_description.getColumnNames(), ", "));
+                                data_stream.sort_scope, fmt::join(data_stream.sort_description.getColumnNames(), ", "));
                         }
 
                         sorting_step = std::make_unique<SortingStep>(
@@ -1527,8 +1527,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
                     {
-                        const auto & table_join = expressions.join->getTableJoin();
-                        const auto & join_clause = table_join.getOnlyClause();
+                        auto & table_join = expressions.join->getTableJoin();
+                        auto & join_clause = table_join.getOnlyClause();
 
                         auto join_kind = table_join.kind();
                         bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
@@ -1544,16 +1544,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                 left_set->setFiltering(right_set->getSet());
                         }
 
-                        SortDescription left_sort_descr;
-                        SortDescription right_sort_descr;
-                        FullSortingMergeJoin::deduceSortDescriptions(
-                            query_plan.getCurrentDataStream(), join_clause.key_names_left,
-                            joined_plan->getCurrentDataStream(), join_clause.key_names_right,
-                            left_sort_descr, right_sort_descr);
+                        Names & key_names_left = join_clause.key_names_left;
+                        Names & key_names_right = join_clause.key_names_right;
+                        FullSortingMergeJoin::reorderJoinKeysUseSort(
+                            query_plan.getCurrentDataStream(), joined_plan->getCurrentDataStream(), key_names_left, key_names_right);
 
-                        add_sorting(query_plan, left_sort_descr, JoinTableSide::Left);
-                        add_sorting(*joined_plan, right_sort_descr, JoinTableSide::Right);
-                        expressions.join->setSortDescriptions(left_sort_descr, right_sort_descr);
+                        add_sorting(query_plan, key_names_left, JoinTableSide::Left);
+                        add_sorting(*joined_plan, key_names_right, JoinTableSide::Right);
                     }
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(

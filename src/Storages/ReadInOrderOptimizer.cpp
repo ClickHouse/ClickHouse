@@ -220,7 +220,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
 
         int current_direction = matchSortDescriptionAndKey(
-            actions.empty() ? ExpressionActions::Actions{} : actions[i]->getActions(),
+            actions.empty() ? ExpressionActions::Actions{} : actions[desc_pos]->getActions(),
             description[desc_pos],
             sorting_key_columns[key_pos]);
         bool is_matched = current_direction && (desc_pos == 0 || current_direction == read_direction);

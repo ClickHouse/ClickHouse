@@ -23,7 +23,6 @@ class MergeJoin : public IJoin
 public:
     MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
-    const TableJoin & getTableJoin() const override { return *table_join; }
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
@@ -73,7 +72,6 @@ private:
     using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
     mutable std::shared_mutex rwlock;
-    std::shared_ptr<TableJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;
     SortDescription right_sort_description;

@@ -18,9 +18,9 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
-    : limits(table_join_->sizeLimits())
+    : IJoin(table_join_)
+    , limits(table_join_->sizeLimits())
     , switched(false)
-    , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
 {
     join = std::make_shared<HashJoin>(table_join, right_sample_block);

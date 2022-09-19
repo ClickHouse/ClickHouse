@@ -33,8 +33,12 @@ namespace ErrorCodes
 namespace
 {
 
-FullMergeJoinCursorPtr createCursor(const Block & block, const SortDescription & desc)
+FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns)
 {
+    SortDescription desc;
+    desc.reserve(columns.size());
+    for (const auto & name : columns)
+        desc.emplace_back(name);
     return std::make_unique<FullMergeJoinCursor>(materializeBlock(block), desc);
 }
 
@@ -287,9 +291,8 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
-    auto sort_descrs = table_join->getSortDescriptions();
-    cursors.push_back(createCursor(input_headers[0], *sort_descrs.first));
-    cursors.push_back(createCursor(input_headers[1], *sort_descrs.second));
+    cursors.push_back(createCursor(input_headers[0], join_on.key_names_left));
+    cursors.push_back(createCursor(input_headers[1], join_on.key_names_right));
 
     for (const auto & [left_key, right_key] : table_join->getTableJoin().leftToRightKeyRemap())
     {

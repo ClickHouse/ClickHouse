@@ -32,8 +32,7 @@ public:
     bool has_single_port = false;
 
     /// Sorting scope
-    enum class SortScope
-    enum class SortMode : UInt8
+    enum class SortScope : UInt8
     {
         None,
         Chunk, /// Separate chunks are sorted
@@ -63,10 +62,9 @@ public:
         return blocksHaveEqualStructure(header, other.header);
     }
 
-    template <typename T>
-    bool isSortedBy(const T & prefix) const
+    bool isSortedBy(const SortDescription & prefix) const
     {
-        return sort_mode >= SortMode::Port && sort_description.hasPrefix(prefix);
+        return sort_scope >= SortScope::Stream && sort_description.hasPrefix(prefix);
     }
 };
 

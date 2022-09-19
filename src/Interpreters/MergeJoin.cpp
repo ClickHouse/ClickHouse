@@ -465,7 +465,7 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
 
 
 MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
-    : table_join(table_join_)
+    : IJoin(table_join_)
     , size_limits(table_join->sizeLimits())
     , right_sample_block(right_sample_block_)
     , is_any_join(table_join->strictness() == JoinStrictness::Any)
@@ -1142,10 +1142,10 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
     }
 }
 
-bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
+bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join_)
 {
-    auto kind = table_join->kind();
-    auto strictness = table_join->strictness();
+    auto kind = table_join_->kind();
+    auto strictness = table_join_->strictness();
 
     bool is_any = (strictness == JoinStrictness::Any);
     bool is_all = (strictness == JoinStrictness::All);
@@ -1154,7 +1154,7 @@ bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
     bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
     bool special_left = isInnerOrLeft(kind) && (is_any || is_semi);
 
-    return (all_join || special_left) && table_join->oneDisjunct();
+    return (all_join || special_left) && table_join_->oneDisjunct();
 }
 
 MergeJoin::RightBlockInfo::RightBlockInfo(std::shared_ptr<Block> block_, size_t block_number_, size_t & skip_, RowBitmaps * bitmaps_)

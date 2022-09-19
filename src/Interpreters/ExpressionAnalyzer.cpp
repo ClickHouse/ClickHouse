@@ -1107,7 +1107,16 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         }
         rename_dag->projectInput();
 
-        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), rename_dag, alias_map);
+        /// Rename does not change sorting, we can use sorting for renamed columns.
+        SortDescription sort_desc = joined_plan->getCurrentDataStream().sort_description;
+        for (auto & desc : sort_desc)
+        {
+            auto it = alias_map.find(desc.column_name);
+            if (it != alias_map.end())
+                desc.column_name = it->second;
+        }
+
+        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), rename_dag, sort_desc);
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
     }

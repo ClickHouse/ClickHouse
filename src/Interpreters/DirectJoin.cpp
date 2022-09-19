@@ -64,7 +64,7 @@ static MutableColumns convertBlockStructure(
 DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
                                        const Block & right_sample_block_,
                                        std::shared_ptr<const IKeyValueEntity> storage_)
-    : table_join(table_join_)
+    : IJoin(table_join_)
     , storage(storage_)
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("DirectKeyValueJoin"))

@@ -36,8 +36,8 @@ static UInt32 toPowerOfTwo(UInt32 x)
 }
 
 ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
-    : context(context_)
-    , table_join(table_join_)
+    : IJoin(table_join_)
+    , context(context_)
     , slots(toPowerOfTwo(std::min<size_t>(slots_, 256)))
 {
     for (size_t i = 0; i < slots; ++i)
@@ -121,11 +121,6 @@ void ConcurrentHashJoin::setTotals(const Block & block)
         std::lock_guard lock(totals_mutex);
         totals = block;
     }
-}
-
-const Block & ConcurrentHashJoin::getTotals() const
-{
-    return totals;
 }
 
 size_t ConcurrentHashJoin::getTotalRowCount() const

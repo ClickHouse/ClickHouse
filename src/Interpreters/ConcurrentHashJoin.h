@@ -37,12 +37,10 @@ public:
     explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_ = false);
     ~ConcurrentHashJoin() override = default;
 
-    const TableJoin & getTableJoin() const override { return *table_join; }
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
     void setTotals(const Block & block) override;
-    const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
@@ -58,12 +56,10 @@ private:
     };
 
     ContextPtr context;
-    std::shared_ptr<TableJoin> table_join;
     size_t slots;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
     std::mutex totals_mutex;
-    Block totals;
 
     IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);

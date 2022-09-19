@@ -44,9 +44,16 @@ enum class JoinPipelineType
 class IJoin
 {
 public:
+    explicit IJoin(std::shared_ptr<TableJoin> table_join_)
+        : table_join(std::move(table_join_))
+    {
+        assert(table_join);
+    }
+
     virtual ~IJoin() = default;
 
-    virtual const TableJoin & getTableJoin() const = 0;
+    TableJoin & getTableJoin() { return *table_join; }
+    const TableJoin & getTableJoin() const { return *table_join; }
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
@@ -82,19 +89,10 @@ public:
     virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
-    void setSortDescriptions(const SortDescription & left_descr, const SortDescription & right_descr)
-    {
-        this->lhs_sort_descr = left_descr;
-        this->rhs_sort_descr = right_descr;
-    }
-
-    std::pair<const SortDescription *, const SortDescription *> getSortDescriptions() const { return {&lhs_sort_descr, &rhs_sort_descr}; }
-
-private:
+protected:
     Block totals;
 
-    SortDescription lhs_sort_descr;
-    SortDescription rhs_sort_descr;
+    std::shared_ptr<TableJoin> table_join;
 };
 
 

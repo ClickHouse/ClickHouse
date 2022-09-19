@@ -22,41 +22,36 @@ namespace ErrorCodes
 class FullSortingMergeJoin : public IJoin
 {
 public:
-    /// Helper methods to build proper plan for this type of join
 
-    /// Returns left_sort_descr and right_sort_descr
-    static void deduceSortDescriptions(
-        const DataStream & left_data_stream, const Names & left_key_names,
-        const DataStream & right_data_stream, const Names & right_key_names,
-        SortDescription & left_sort_descr, SortDescription & right_sort_descr);
+    /// Helper method to build proper plan for this type of join
+    static void reorderJoinKeysUseSort(
+        const DataStream & left_data_stream, const DataStream & right_data_stream, Names & left_key_names, Names & right_key_names);
 
 public:
     explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
-        : table_join(table_join_)
+        : IJoin(table_join_)
         , right_sample_block(right_sample_block_)
     {
         LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
-
-    const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addJoinedBlock(const Block & /* block */, bool /* check_limits */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addJoinedBlock should not be called");
     }
 
-    static bool isSupported(const std::shared_ptr<TableJoin> & table_join)
+    static bool isSupported(const std::shared_ptr<TableJoin> & table_join_)
     {
-        if (!table_join->oneDisjunct())
+        if (!table_join_->oneDisjunct())
             return false;
 
-        bool support_storage = !table_join->isSpecialStorage();
+        bool support_storage = !table_join_->isSpecialStorage();
 
-        const auto & on_expr = table_join->getOnlyClause();
+        const auto & on_expr = table_join_->getOnlyClause();
         bool support_conditions = !on_expr.on_filter_condition_left && !on_expr.on_filter_condition_right;
 
         /// Key column can change nullability and it's not handled on type conversion stage, so algorithm should be aware of it
-        bool support_using_and_nulls = !table_join->hasUsing() || !table_join->joinUseNulls();
+        bool support_using_and_nulls = !table_join_->hasUsing() || !table_join_->joinUseNulls();
 
         return support_conditions && support_using_and_nulls && support_storage;
     }
@@ -96,9 +91,6 @@ public:
         block = materializeBlock(block).cloneEmpty();
     }
 
-    void setTotals(const Block & block) override { totals = block; }
-    const Block & getTotals() const override { return totals; }
-
     size_t getTotalRowCount() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getTotalRowCount should not be called");
@@ -121,9 +113,7 @@ public:
     JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
 private:
-    std::shared_ptr<TableJoin> table_join;
     Block right_sample_block;
-    Block totals;
 };
 
 }
