@@ -5,7 +5,7 @@ FROM ubuntu:20.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=14
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=15
 
 RUN apt-get update \
     && apt-get install \
@@ -56,6 +56,8 @@ RUN apt-get update \
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
+# for external_symbolizer_path
+RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
 ARG CCACHE_VERSION=4.6.1
 RUN mkdir /tmp/ccache \
