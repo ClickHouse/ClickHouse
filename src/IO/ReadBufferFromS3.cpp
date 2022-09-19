@@ -250,7 +250,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, true, read_settings.for_object_storage);
 
     file_size = object_size;
     return *file_size;
@@ -277,10 +277,6 @@ SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (read_settings.for_object_storage)
-        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
-
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
@@ -320,6 +316,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             version_id.empty() ? "Latest" : version_id,
             offset);
     }
+
+    ProfileEvents::increment(ProfileEvents::S3GetObject);
+    if (read_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
