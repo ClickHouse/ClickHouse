@@ -977,7 +977,7 @@ public:
             size_t min_count_to_compile_aggregate_expression_,
             size_t max_block_size_,
             bool enable_prefetch_,
-            bool only_merge_ = false, // true for projections
+            bool only_merge_, // true for projections
             const StatsCollectingParams & stats_collecting_params_ = {})
             : keys(keys_)
             , aggregates(aggregates_)
