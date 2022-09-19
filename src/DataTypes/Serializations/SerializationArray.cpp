@@ -174,7 +174,7 @@ namespace
         {
             auto current_offset = offsets_data[i];
             sizes_data[i] = current_offset - prev_offset;
-            prev_offset =  current_offset;
+            prev_offset = current_offset;
         }
 
         return column_sizes;

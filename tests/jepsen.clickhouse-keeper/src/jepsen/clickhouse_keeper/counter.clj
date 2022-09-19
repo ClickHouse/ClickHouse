@@ -27,12 +27,7 @@
 
   (invoke! [this test op]
     (case (:f op)
-      :read (try
-             (assoc op
-               :type :ok
-               :value (count (zk-list conn root-path)))
-             (catch Exception _ (assoc op :type :info, :error :connect-error)))
-      :final-read (exec-with-retries 30 (fn []
+      :read (exec-with-retries 30 (fn []
                                     (assoc op
                                            :type :ok
                                            :value (count (zk-list conn root-path)))))
@@ -54,5 +49,7 @@
    :checker   (checker/compose
                 {:counter (checker/counter)
                  :perf    (checker/perf)})
-   :generator (gen/mix [r add])
-   :final-generator (gen/once {:type :invoke, :f :final-read, :value nil})})
+   :generator (->> (range)
+                   (map (fn [x]
+                          (->> (gen/mix [r add])))))
+   :final-generator (gen/once {:type :invoke, :f :read, :value nil})})
