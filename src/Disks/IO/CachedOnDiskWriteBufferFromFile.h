@@ -51,7 +51,7 @@ private:
     bool enable_cache_log;
     std::shared_ptr<FilesystemCacheLog> cache_log;
 
-    bool stop_caching = false;
+    bool cache_in_error_state_or_disabled = false;
 
     ProfileEvents::Counters current_file_segment_counters;
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;

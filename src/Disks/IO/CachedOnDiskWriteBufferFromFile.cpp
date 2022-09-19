@@ -77,7 +77,7 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
 void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
 {
-    if (stop_caching)
+    if (cache_in_error_state_or_disabled)
         return;
 
     if (!cache_writer)
@@ -88,14 +88,13 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
 
     Stopwatch watch(CLOCK_MONOTONIC);
 
+    cache_in_error_state_or_disabled = true;
+
     try
     {
         if (!cache_writer->write(data, size, current_download_offset, is_persistent_cache_file))
         {
             LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
-
-            /// No space left, disable caching.
-            stop_caching = true;
             return;
         }
     }
@@ -122,6 +121,8 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
 
     current_file_segment_counters.increment(
         ProfileEvents::FileSegmentWriteMicroseconds, watch.elapsedMicroseconds());
+
+    cache_in_error_state_or_disabled = false;
 }
 
 void CachedOnDiskWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment & file_segment)
