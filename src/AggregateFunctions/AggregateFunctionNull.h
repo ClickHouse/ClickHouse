@@ -468,9 +468,15 @@ public:
             }
         }
 
-        bool found_one = false;
+        /// We can have 0 nullable filters if we don't skip nulls
+        if (nullable_filters.size() == 0)
+        {
+            this->setFlag(place);
+            this->nested_function->addBatchSinglePlace(row_begin, row_end, this->nestedPlace(place), nested_columns, arena, -1);
+            return;
+        }
 
-        chassert(nullable_filters.size() > 0); /// We work under the assumption that we reach this because one argument was NULL
+        bool found_one = false;
         if (nullable_filters.size() == 1)
         {
             /// We can avoid making copies of the only filter but we still need to check that there is data to be added
