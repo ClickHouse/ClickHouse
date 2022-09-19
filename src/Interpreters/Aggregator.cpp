@@ -563,7 +563,10 @@ public:
 #endif
 
 Aggregator::Aggregator(const Block & header_, const Params & params_)
-    : header(header_), keys_positions(calculateKeysPositions(header, params_)), params(params_)
+    : header(header_)
+    , keys_positions(calculateKeysPositions(header, params_))
+    , params(params_)
+    , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -996,7 +999,7 @@ void NO_INLINE Aggregator::executeImpl(
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
         const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
-            && (method.data.getBufferSizeInBytes() > getMinBytesForPrefetch());
+            && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2556,7 +2559,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     bool no_more_keys = false;
 
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
-        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getMinBytesForPrefetch());
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -2624,7 +2627,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     AggregatedDataVariantsPtr & res = data[0];
 
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
-        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > getMinBytesForPrefetch());
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {

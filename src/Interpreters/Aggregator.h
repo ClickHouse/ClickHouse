@@ -1150,6 +1150,8 @@ private:
     /// For external aggregation.
     mutable TemporaryFiles temporary_files;
 
+    size_t min_bytes_for_prefetch = 0;
+
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
 #endif
