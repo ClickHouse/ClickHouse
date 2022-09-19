@@ -7,13 +7,8 @@ title: "Geo Data Types"
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
 
-:::warning    
-Currently geo data types are an experimental feature. To work with them you must set `allow_experimental_geo_types = 1`.
-:::
-
 **See Also**
 - [Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).
-- [allow_experimental_geo_types](../../operations/settings/settings.md#allow-experimental-geo-types) setting.
 
 ## Point
 
