@@ -145,7 +145,7 @@ ReadFromMergeTree::ReadFromMergeTree(
             if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
             {
                 output_stream->sort_scope = DataStream::SortScope::Stream;
-                const auto used_prefix_of_sorting_key_size = query_info.getInputOrderInfo()->used_prefix_of_sorting_key_size;
+                const size_t used_prefix_of_sorting_key_size = query_info.getInputOrderInfo()->used_prefix_of_sorting_key_size;
                 if (sort_description.size() > used_prefix_of_sorting_key_size)
                     sort_description.resize(used_prefix_of_sorting_key_size);
             }
