@@ -55,7 +55,7 @@ public:
     bool isRetryableError() const;
 
 private:
-    const Aws::S3::S3Errors code;
+    Aws::S3::S3Errors code;
 };
 }
 

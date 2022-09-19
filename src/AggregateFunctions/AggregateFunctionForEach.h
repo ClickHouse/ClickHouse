@@ -66,6 +66,7 @@ private:
         if (old_size < new_size)
         {
             char * old_state = state.array_of_aggregate_datas;
+
             char * new_state = arena.alignedAlloc(
                 new_size * nested_size_of_data,
                 nested_func->alignOfData());
@@ -134,21 +135,41 @@ public:
         return nested_func->isVersioned();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
     }
 
-    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    template <bool up_to_state>
+    void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
         AggregateFunctionForEachData & state = data(place);
 
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->destroy(nested_state);
+            if constexpr (up_to_state)
+                nested_func->destroyUpToState(nested_state);
+            else
+                nested_func->destroy(nested_state);
+
             nested_state += nested_size_of_data;
         }
+    }
+
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<false>(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<true>(place);
     }
 
     bool hasTrivialDestructor() const override
