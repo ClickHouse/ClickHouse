@@ -138,8 +138,6 @@ void DDLLogEntry::parse(const String & data)
 
     rb >> this->tracing_context;
 
-    assertEOF(rb);
-
     if (!host_id_strings.empty())
     {
         hosts.resize(host_id_strings.size());
