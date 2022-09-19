@@ -368,7 +368,7 @@ void KeeperDispatcher::finalizeRequestsThread()
 
 void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
-    std::lock_guard lock(session_to_response_callback_mutex);
+    std::unique_lock lock(session_to_response_callback_mutex);
 
     /// Special new session response.
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)
@@ -401,7 +401,12 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
         {
             session_to_response_callback.erase(session_response_callback);
+            lock.unlock();
+
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+
+            std::lock_guard unprocessed_lock{unprocessed_request_mutex};
+            unprocessed_requests_for_session.erase(session_id);
         }
     }
 }
@@ -730,6 +735,9 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
                 response->zxid,
                 errorMessage(error));
     }
+
+    if (!finalize_requests_queue.push(requests_for_sessions))
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push requests to finalize queue");
 }
 
 void KeeperDispatcher::forceWaitAndProcessResult(RaftResult & result)
