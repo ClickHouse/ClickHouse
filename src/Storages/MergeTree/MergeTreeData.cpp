@@ -2190,12 +2190,12 @@ void MergeTreeData::dropAllData()
             continue;
 
         LOG_INFO(log, "dropAllData: remove format_version.txt and detached directory");
-        disk->removeFile(fs::path(relative_data_path) / "format_version.txt");
-        disk->removeRecursive(fs::path(relative_data_path) / "detached");
+        disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+        disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
 
         try
         {
-            if (!disk->isDirectoryEmpty(relative_data_path) && disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
+            if (!disk->isDirectoryEmpty(relative_data_path) && supportsReplication() && disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
             {
                 std::vector<std::string> files_left;
                 disk->listFiles(relative_data_path, files_left);
