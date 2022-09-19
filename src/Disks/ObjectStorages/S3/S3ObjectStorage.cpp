@@ -236,8 +236,6 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
 
-    ProfileEvents::increment(ProfileEvents::S3ListObjects);
-    ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
     request.SetPrefix(path);
@@ -246,6 +244,8 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
     {
+        ProfileEvents::increment(ProfileEvents::S3ListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
         outcome = client_ptr->ListObjectsV2(request);
         throwIfError(outcome);
 
@@ -490,6 +490,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
     {
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
+        ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
         Aws::S3::Model::CompleteMultipartUploadRequest req;
         req.SetBucket(dst_bucket);
         req.SetKey(dst_key);
