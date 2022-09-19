@@ -416,10 +416,10 @@ template <typename Impl>
 class FunctionDecrypt : public IFunction
 {
 public:
-    explicit FunctionDecrypt(const ContextPtr & context) : use_null_when_decrypt_fail(AESHelpers::getParamsFromContext(context)) { }
+    explicit FunctionDecrypt(bool use_null_when_decrypt_fail_) : use_null_when_decrypt_fail(use_null_when_decrypt_fail_) { }
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDecrypt>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDecrypt>(AESHelpers::getParamsFromContext(context)); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
