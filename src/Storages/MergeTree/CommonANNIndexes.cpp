@@ -389,6 +389,9 @@ void ANNCondition::traverseOrderByAST(const ASTPtr & node, RPN & rpn)
 // Returns true and stores ANNQueryInformation if the query has valid WHERE clause
 bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
 {
+    /// Fill query type field
+    expr.query_type = ANNQueryInformation::Type::Where;
+
     // WHERE section must have at least 5 expressions
     // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(TargetVector(floats))
     if (rpn.size() < 5)
@@ -448,6 +451,9 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
 // Returns true and stores ANNExpr if the query has valid ORDERBY clause
 bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNQueryInformation & expr)
 {
+    /// Fill query type field
+    expr.query_type = ANNQueryInformation::Type::OrderBy;
+
     // ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
     {
