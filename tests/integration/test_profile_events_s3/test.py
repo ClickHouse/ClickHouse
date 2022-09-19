@@ -67,6 +67,17 @@ init_list = {
     "S3CompleteMultipartUpload": 0,
     "S3PutObject": 0,
     "S3GetObject": 0,
+    "DiskS3DeleteObjects": 0,
+    "DiskS3CopyObject": 0,
+    "DiskS3ListObjects": 0,
+    "DiskS3HeadObject": 0,
+    "DiskS3CreateMultipartUpload": 0,
+    "DiskS3UploadPartCopy": 0,
+    "DiskS3UploadPart": 0,
+    "DiskS3AbortMultipartUpload": 0,
+    "DiskS3CompleteMultipartUpload": 0,
+    "DiskS3PutObject": 0,
+    "DiskS3GetObject": 0,
 }
 
 
