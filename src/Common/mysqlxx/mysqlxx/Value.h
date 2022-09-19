@@ -248,7 +248,6 @@ template <> inline long                 Value::get<long                 >() cons
 template <> inline unsigned long        Value::get<unsigned long        >() const { return getUInt(); } /// NOLINT
 template <> inline long long            Value::get<long long            >() const { return getInt(); } /// NOLINT
 template <> inline unsigned long long   Value::get<unsigned long long   >() const { return getUInt(); } /// NOLINT
-template <> inline float                Value::get<float                >() const { return getDouble(); }
 template <> inline double               Value::get<double               >() const { return getDouble(); }
 template <> inline std::string          Value::get<std::string          >() const { return getString(); }
 template <> inline LocalDate            Value::get<LocalDate            >() const { return getDate(); }

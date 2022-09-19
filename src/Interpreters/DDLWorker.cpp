@@ -890,7 +890,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
-            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, "finished");
+            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, zkutil::RemoveException{"finished"});
 
             /// And then we remove node_path and node_path/finished in a single transaction
             Coordination::Requests ops;

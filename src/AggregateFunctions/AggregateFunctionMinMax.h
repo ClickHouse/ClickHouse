@@ -581,7 +581,7 @@ struct AggregateFunctionsMinMaxDataString
 
     void ALWAYS_INLINE set(const IColumn & column, size_t row_num, Arena * arena)
     {
-        setImpl(assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
+        setImpl(assert_cast<const ColumnString &>(column).getDataAt(row_num), arena);
     }
 
     void ALWAYS_INLINE inline set(const AggregateFunctionsMinMaxDataString & rhs, Arena * arena) { setImpl(rhs.getStringRef(), arena); }
@@ -598,7 +598,7 @@ struct AggregateFunctionsMinMaxDataString
 
     bool ALWAYS_INLINE inline add(const IColumn & column, size_t row_num, Arena * arena)
     {
-        StringRef s = assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num);
+        StringRef s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
         return add(s, arena);
     }
 
@@ -607,7 +607,7 @@ struct AggregateFunctionsMinMaxDataString
     void insertResultInto(IColumn & to) const
     {
         if (has())
-            assert_cast<ColumnString &>(to).insertDataWithTerminatingZero(getData(), size);
+            assert_cast<ColumnString &>(to).insertData(getData(), size);
         else
             assert_cast<ColumnString &>(to).insertDefault();
     }
@@ -625,13 +625,13 @@ struct AggregateFunctionsMinMaxDataString
                 return {};
         }
 
-        StringRef idx = col.getDataAtWithTerminatingZero(start);
+        StringRef idx = col.getDataAt(start);
         size_t pos = start;
         for (size_t i = start + 1; i < end; i++)
         {
             if (!add_all_elements && !condition_map[i] != add_if_cond_zero)
                 continue;
-            StringRef iref = col.getDataAtWithTerminatingZero(i);
+            StringRef iref = col.getDataAt(i);
             if (Comparator::cmp(iref, idx))
             {
                 idx = iref;
