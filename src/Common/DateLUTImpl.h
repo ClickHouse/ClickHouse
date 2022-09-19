@@ -29,13 +29,6 @@
 #define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
 
 
-#if defined(__PPC__)
-#if !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-#endif
-
-
 /// Flags for toYearWeek() function.
 enum class WeekModeFlag : UInt8
 {
@@ -1445,9 +1438,3 @@ public:
         return s;
     }
 };
-
-#if defined(__PPC__)
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-#endif

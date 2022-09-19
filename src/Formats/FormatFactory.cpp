@@ -530,6 +530,7 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
         return getFormatFromFileName(file_path, false);
     return "";
 #else
+    (void)fd;
     return "";
 #endif
 }
