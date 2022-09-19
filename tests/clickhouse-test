@@ -2341,4 +2341,7 @@ if __name__ == "__main__":
     if args.db_engine and args.db_engine == "Ordinary":
         MESSAGES_TO_RETRY.append(" locking attempt on ")
 
+    if args.s3_storage and (BuildFlags.THREAD in args.build_flags or BuildFlags.DEBUG in args.build_flags):
+        args.no_random_settings = True
+
     main(args)
