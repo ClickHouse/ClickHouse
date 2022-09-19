@@ -60,7 +60,7 @@ Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC
 Sorting (Stream): a ASC
 Sorting (Stream): a ASC
--- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns 'a,b'
+-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
