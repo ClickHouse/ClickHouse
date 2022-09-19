@@ -1055,7 +1055,7 @@ void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
         sort_description.emplace_back(column_name, sort_direction);
     }
     if (sort_description.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort desctiption can't be empty when reading in order");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort description can't be empty when reading in order");
 
     const size_t used_prefix_of_sorting_key_size = order_info->used_prefix_of_sorting_key_size;
     if (sort_description.size() > used_prefix_of_sorting_key_size)
