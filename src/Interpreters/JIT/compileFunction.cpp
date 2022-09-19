@@ -842,7 +842,17 @@ CompiledSortDescriptionFunction compileSortDescription(
             auto * lhs_column_data = b.CreatePointerCast(b.CreateExtractValue(lhs_column, {0}), column_native_type_pointer);
             auto * lhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(lhs_column, {1}) : nullptr;
 
-            llvm::Value * lhs_value = b.CreateLoad(b.CreateInBoundsGEP(nullptr, lhs_column_data, lhs_index_arg));
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+            llvm::Value * lhs_value = b.CreateLoad(
+                    b.CreateInBoundsGEP(nullptr, lhs_column_data, lhs_index_arg)->getType()->getPointerElementType(),
+                    b.CreateInBoundsGEP(nullptr, lhs_column_data, lhs_index_arg),
+                    "");
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
             if (lhs_column_null_data)
             {
@@ -856,7 +866,17 @@ CompiledSortDescriptionFunction compileSortDescription(
             auto * rhs_column_data = b.CreatePointerCast(b.CreateExtractValue(rhs_column, {0}), column_native_type_pointer);
             auto * rhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(rhs_column, {1}) : nullptr;
 
-            llvm::Value * rhs_value = b.CreateLoad(b.CreateInBoundsGEP(nullptr, rhs_column_data, rhs_index_arg));
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+            llvm::Value * rhs_value = b.CreateLoad(
+                    b.CreateInBoundsGEP(nullptr, rhs_column_data, rhs_index_arg)->getType()->getPointerElementType(),
+                    b.CreateInBoundsGEP(nullptr, rhs_column_data, rhs_index_arg),
+                    "");
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
             if (rhs_column_null_data)
             {
                 auto * is_null_value_pointer = b.CreateInBoundsGEP(nullptr, rhs_column_null_data, rhs_index_arg);
