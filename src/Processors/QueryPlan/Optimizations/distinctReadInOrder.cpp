@@ -44,13 +44,8 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (!read_from_merge_tree)
         return 0;
 
-    /// if some `read in order` optimization is already applied - do not proceed
-    /// todo: check later case with several read in order optimizations
-    if (read_from_merge_tree->getOutputStream().sort_scope != DataStream::SortScope::Chunk)
-        return 0;
-
     /// find non-const columns in DISTINCT
-    const auto & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
     std::set<std::string_view> non_const_columns;
     for (const auto & column : distinct_columns)
     {
@@ -58,29 +53,35 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
             non_const_columns.emplace(column.name);
     }
 
-    /// apply optimization only when distinct columns match or form prefix of sorting key
-    /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
-    const SortDescription & sort_desc = read_from_merge_tree->getOutputStream().sort_description;
-    if (sort_desc.size() < non_const_columns.size())
-        return 0;
-
+    const Names& sorting_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKeyColumns();
     /// check if DISTINCT has the same columns as sorting key
-    SortDescription distinct_sort_desc;
-    distinct_sort_desc.reserve(sort_desc.size());
-    for (const auto & column_desc : sort_desc)
+    size_t number_of_sorted_distinct_columns = 0;
+    for (const auto & column_name : sorting_key_columns)
     {
-        if (non_const_columns.end() == non_const_columns.find(column_desc.column_name))
+        if (non_const_columns.end() == non_const_columns.find(column_name))
             break;
 
-        distinct_sort_desc.push_back(column_desc);
+        ++number_of_sorted_distinct_columns;
     }
-    if (distinct_sort_desc.size() != non_const_columns.size())
+    /// apply optimization only when distinct columns match or form prefix of sorting key
+    /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
+    if (number_of_sorted_distinct_columns != non_const_columns.size())
+        return 0;
+
+    /// check if another read in order optimization is already applied
+    /// apply optimization only if another read in order one uses less sorting columns
+    /// example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
+    /// if read in order for ORDER BY is already applied, then output sort description will contain only column `a`
+    /// but we need columns `a, b`, applying read in order for distinct will still benefit `order by`
+    const DataStream & output_data_stream = read_from_merge_tree->getOutputStream();
+    const SortDescription & output_sort_desc = output_data_stream.sort_description;
+    if (output_data_stream.sort_scope != DataStream::SortScope::Chunk && number_of_sorted_distinct_columns <= output_sort_desc.size())
         return 0;
 
     /// update input order info in read_from_merge_tree step
     const int direction = 1; /// default direction, ASC
     InputOrderInfoPtr order_info
-        = std::make_shared<const InputOrderInfo>(SortDescription{}, distinct_sort_desc.size(), direction, pre_distinct->getLimitHint());
+        = std::make_shared<const InputOrderInfo>(SortDescription{}, number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
     read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
 
     /// update data stream's sorting properties for found transforms
