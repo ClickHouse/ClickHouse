@@ -215,8 +215,15 @@ public:
 
         if constexpr (result_is_nullable)
         {
-            auto * aggregate_data_is_null_dst_value = b.CreateLoad(aggregate_data_dst_ptr);
-            auto * aggregate_data_is_null_src_value = b.CreateLoad(aggregate_data_src_ptr);
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+            auto * aggregate_data_is_null_dst_value = b.CreateLoad(aggregate_data_dst_ptr->getType()->getPointerElementType(), aggregate_data_dst_ptr, "");
+            auto * aggregate_data_is_null_src_value = b.CreateLoad(aggregate_data_src_ptr->getType()->getPointerElementType(), aggregate_data_src_ptr, "");
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
             auto * is_src_null = nativeBoolCast(b, std::make_shared<DataTypeUInt8>(), aggregate_data_is_null_src_value);
             auto * is_null_result_value = b.CreateSelect(is_src_null, llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_is_null_dst_value);

@@ -86,6 +86,9 @@ set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
 set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
 set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
 
+
+
+
 set(LLVM_INCLUDE_TOOLS 0 CACHE INTERNAL "")
 set(LLVM_BUILD_TOOLS 0 CACHE INTERNAL "")
 
@@ -102,9 +105,9 @@ set(LLVM_INCLUDE_DOCS 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_OCAMLDOC 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_BINDINGS 0 CACHE INTERNAL "")
 
-# Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
-# LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
-set (CMAKE_CXX_STANDARD 17)
+
+
+
 
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
