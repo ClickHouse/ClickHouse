@@ -20,6 +20,12 @@ ASTPtr ASTDeleteQuery::clone() const
         res->children.push_back(res->predicate);
     }
 
+    if (settings_ast)
+    {
+        res->settings_ast = settings_ast->clone();
+        res->children.push_back(res->settings_ast);
+    }
+
     cloneTableOptions(*res);
     return res;
 }
@@ -37,6 +43,12 @@ void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
     predicate->formatImpl(settings, state, frame);
+
+    if (settings_ast)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+        settings_ast->formatImpl(settings, state, frame);
+    }
 }
 
 }
