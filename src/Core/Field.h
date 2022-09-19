@@ -833,6 +833,7 @@ auto & Field::safeGet()
 }
 
 
+template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
