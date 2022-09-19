@@ -35,12 +35,12 @@ private:
     using Counter = UInt64;
     size_t category_count;
 
-    Counter & counter(AggregateDataPtr __restrict place, size_t i, bool what) const
+    static Counter & counter(AggregateDataPtr __restrict place, size_t i, bool what)
     {
         return reinterpret_cast<Counter *>(place)[i * 2 + (what ? 1 : 0)];
     }
 
-    const Counter & counter(ConstAggregateDataPtr __restrict place, size_t i, bool what) const
+    static const Counter & counter(ConstAggregateDataPtr __restrict place, size_t i, bool what)
     {
         return reinterpret_cast<const Counter *>(place)[i * 2 + (what ? 1 : 0)];
     }
