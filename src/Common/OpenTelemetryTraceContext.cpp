@@ -232,11 +232,11 @@ void TracingContext::deserialize(ReadBuffer & buf)
     {
         buf >> "tracing: "
             >> this->trace_id
-            >> " "
+            >> "\n"
             >> this->span_id
-            >> " "
+            >> "\n"
             >> this->tracestate
-            >> " "
+            >> "\n"
             >> this->trace_flags
             >> "\n";
     }
@@ -246,11 +246,11 @@ void TracingContext::serialize(WriteBuffer & buf) const
 {
     buf << "tracing: "
         << this->trace_id
-        << " "
+        << "\n"
         << this->span_id
-        << " "
+        << "\n"
         << this->tracestate
-        << " "
+        << "\n"
         << this->trace_flags
         << "\n";
 }
