@@ -49,11 +49,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserTest,
         },
         {
             "print array_rotate_left(A, B)",
-            "SELECT arrayMap(x -> (A[(((x + length(A)) + (B % toInt64(length(A)))) % length(A)) + 1]), range(0, length(A)))"
+            "SELECT arrayMap(x -> (A[moduloOrZero((x + length(A)) + moduloOrZero(B, toInt64(length(A))), length(A)) + 1]), range(0, length(A)))"
         },
         {
             "print array_rotate_right(A, B)",
-            "SELECT arrayMap(x -> (A[(((x + length(A)) + ((-1 * B) % toInt64(length(A)))) % length(A)) + 1]), range(0, length(A)))"
+            "SELECT arrayMap(x -> (A[moduloOrZero((x + length(A)) + moduloOrZero(-1 * B, toInt64(length(A))), length(A)) + 1]), range(0, length(A)))"
         },
         {
             "print output = array_sum(dynamic([2, 5, 3]))",
@@ -102,14 +102,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserTest,
         {
             "print set_union(A, B, C)",
             "SELECT arrayDistinct(arrayConcat(A, B, C))"
-        },
-        {
-            "print zip(A, B)",
-            "SELECT arrayMap(t -> [untuple(t)], arrayZip(A, B))"
-        },
-        {
-            "print zip(A, B, C)",
-            "SELECT arrayMap(t -> [untuple(t)], arrayZip(A, B, C))"
         }
 })));
 
@@ -119,26 +111,34 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicRegex, ParserRegexTest,
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "print array_shift_left(A, B)",
-            "SELECT arrayResize\\(if\\(B > 0, arraySlice\\(A, B \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            R"(SELECT arrayResize\(if\(B > 0, arraySlice\(A, B \+ 1\), arrayConcat\(arrayWithConstant\(abs\(B\), fill_value_\d+\), A\)\), length\(A\), if\(\(NULL IS NULL\) AND \(\(extract\(toTypeName\(A\), 'Array\\\\\(\(\.\*\)\\\\\)*'\) AS element_type_\d+\) = 'String'\), defaultValueOfTypeName\(if\(element_type_\d+ = 'Nothing', 'Nullable\(Nothing\)', element_type_\d+\)\), NULL\) AS fill_value_\d+\))"
         },
         {
             "print array_shift_left(A, B, C)",
-            "SELECT arrayResize\\(if\\(B > 0, arraySlice\\(A, B \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            R"(SELECT arrayResize\(if\(B > 0, arraySlice\(A, B \+ 1\), arrayConcat\(arrayWithConstant\(abs\(B\), fill_value_\d+\), A\)\), length\(A\), if\(\(C IS NULL\) AND \(\(extract\(toTypeName\(A\), 'Array\\\\\(\(\.\*\)\\\\\)'\) AS element_type_\d+\) = 'String'\), defaultValueOfTypeName\(if\(element_type_\d+ = 'Nothing', 'Nullable\(Nothing\)', element_type_\d+\)\), C\) AS fill_value_\d+\))"
         },
         {
             "print array_shift_right(A, B)",
-            "SELECT arrayResize\\(if\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(NULL, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            R"(SELECT arrayResize\(if\(\(-1 \* B\) > 0, arraySlice\(A, \(-1 \* B\) \+ 1\), arrayConcat\(arrayWithConstant\(abs\(-1 \* B\), fill_value_\d+\), A\)\), length\(A\), if\(\(NULL IS NULL\) AND \(\(extract\(toTypeName\(A\), 'Array\\\\\(\(\.\*\)\\\\\)'\) AS element_type_\d+\) = 'String'\), defaultValueOfTypeName\(if\(element_type_\d+ = 'Nothing', 'Nullable\(Nothing\)', element_type_\d+\)\), NULL\) AS fill_value_\d+\))"
         },
         {
             "print array_shift_right(A, B, C)",
-            "SELECT arrayResize\\(if\\(\\(-1 \\* B\\) > 0, arraySlice\\(A, \\(-1 \\* B\\) \\+ 1\\), arrayConcat\\(arrayWithConstant\\(abs\\(-1 \\* B\\), fill_value_\\d+\\), A\\)\\), length\\(A\\), ifNull\\(C, if\\(toTypeName\\(A\\) = 'Array\\(String\\)', defaultValueOfArgumentType\\(A\\[1\\]\\), NULL\\)\\) AS fill_value_\\d+\\)"
+            R"(SELECT arrayResize\(if\(\(-1 \* B\) > 0, arraySlice\(A, \(-1 \* B\) \+ 1\), arrayConcat\(arrayWithConstant\(abs\(-1 \* B\), fill_value_\d+\), A\)\), length\(A\), if\(\(C IS NULL\) AND \(\(extract\(toTypeName\(A\), 'Array\\\\\(\(\.\*\)\\\\\)'\) AS element_type_\d+\) = 'String'\), defaultValueOfTypeName\(if\(element_type_\d+ = 'Nothing', 'Nullable\(Nothing\)', element_type_\d+\)\), C\) AS fill_value_\d+\))"
         },
         {
             "print array_slice(A, B, C)",
-            "SELECT arraySlice\\(A, 1 \\+ if\\(B >= 0, B, toInt64\\(max2\\(-length\\(A\\), B\\)\\) \\+ length\\(A\\)\\) AS offset_\\d+, \\(\\(1 \\+ if\\(C >= 0, C, toInt64\\(max2\\(-length\\(A\\), C\\)\\) \\+ length\\(A\\)\\)\\) - offset_\\d+\\) \\+ 1\\)"
+            R"(SELECT arraySlice\(A, 1 \+ if\(B >= 0, B, arrayMax\(\[-length\(A\), B\]\) \+ length\(A\)\) AS offset_\d+, \(\(1 \+ if\(C >= 0, C, arrayMax\(\[-length\(A\), C\]\) \+ length\(A\)\)\) - offset_\d+\) \+ 1\))"
         },
         {
             "print array_split(A, B)",
-            "SELECT if\\(empty\\(arrayMap\\(x -> if\\(x >= 0, x, toInt64\\(max2\\(0, x \\+ length\\(A\\)\\)\\)\\), flatten\\(\\[B\\]\\)\\) AS indices_\\d+\\), \\[A\\], arrayConcat\\(\\[arraySlice\\(A, 1, indices_\\d+\\[1\\]\\)\\], arrayMap\\(i -> arraySlice\\(A, \\(indices_\\d+\\[i\\]\\) \\+ 1, if\\(i = length\\(indices_\\d+\\), CAST\\(length\\(A\\), 'Int64'\\), CAST\\(indices_\\d+\\[i \\+ 1\\], 'Int64'\\)\\) - \\(indices_\\d+\\[i\\]\\)\\), range\\(1, length\\(indices_\\d+\\) \\+ 1\\)\\)\\)\\)"
+            R"(SELECT if\(empty\(arrayMap\(x -> if\(x >= 0, x, arrayMax\(\[0, x \+ CAST\(length\(A\), 'Int\d+'\)\]\)\), flatten\(\[B\]\)\) AS indices_\d+\), \[A\], arrayConcat\(\[arraySlice\(A, 1, indices_\d+\[1\]\)\], arrayMap\(i -> arraySlice\(A, \(indices_\d+\[i\]\) \+ 1, if\(i = length\(indices_\d+\), CAST\(length\(A\), 'Int\d+'\), CAST\(indices_\d+\[i \+ 1\], 'Int\d+'\)\) - \(indices_\d+\[i\]\)\), range\(1, length\(indices_\d+\) \+ 1\)\)\)\))"
+        },
+        {
+            "print zip(A, B)",
+            R"(SELECT arrayMap\(t -> \[untuple\(t\)\], arrayZip\(arrayResize\(arg0_\d+, arrayMax\(\[length\(if\(match\(toTypeName\(A\), 'Array\\\\\(Nullable\\\\\(\.\*\\\\\)\\\\\)'\), A, CAST\(A, concat\('Array\(Nullable\(', extract\(toTypeName\(A\), 'Array\\\\\(\(\.\*\)\\\\\)'\), '\)\)'\)\)\) AS arg0_\d+\), length\(if\(match\(toTypeName\(B\), 'Array\\\\\(Nullable\\\\\(\.\*\\\\\)\\\\\)'\), B, CAST\(B, concat\('Array\(Nullable\(', extract\(toTypeName\(B\), 'Array\\\\\(\(\.\*\)\\\\\)'\), '\)\)'\)\)\) AS arg1_\d+\)\]\) AS max_length_\d+, NULL\), arrayResize\(arg1_\d+, max_length_\d+, NULL\)\)\))"
+        },
+        {
+            "print zip(A, B, C)",
+            R"(SELECT arrayMap\(t -> \[untuple\(t\)\], arrayZip\(arrayResize\(arg0_\d+, arrayMax\(\[length\(if\(match\(toTypeName\(A\), 'Array\\\\\(Nullable\\\\\(\.\*\\\\\)\\\\\)'\), A, CAST\(A, concat\('Array\(Nullable\(', extract\(toTypeName\(A\), 'Array\\\\\(\(\.\*\)\\\\\)'\), '\)\)'\)\)\) AS arg0_\d+\), length\(if\(match\(toTypeName\(B\), 'Array\\\\\(Nullable\\\\\(\.\*\\\\\)\\\\\)'\), B, CAST\(B, concat\('Array\(Nullable\(', extract\(toTypeName\(B\), 'Array\\\\\(\(\.\*\)\\\\\)'\), '\)\)'\)\)\) AS arg1_\d+\), length\(if\(match\(toTypeName\(C\), 'Array\\\\\(Nullable\\\\\(\.\*\\\\\)\\\\\)'\), C, CAST\(C, concat\('Array\(Nullable\(', extract\(toTypeName\(C\), 'Array\\\\\(\(\.\*\)\\\\\)'\), '\)\)'\)\)\) AS arg2_\d+\)\]\) AS max_length_\d+, NULL\), arrayResize\(arg1_\d+, max_length_\d+, NULL\), arrayResize\(arg2_\d+, max_length_\d+, NULL\)\)\))"
         }
 })));

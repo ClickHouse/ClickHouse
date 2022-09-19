@@ -7,6 +7,25 @@
 
 namespace DB
 {
+class Interval
+{
+public:
+    using Representation = int;
+
+    Interval(const Representation min_, const Representation max_) : max(max_), min(min_) { }
+
+    Representation Max() const { return max; }
+    Representation Min() const { return min; }
+    bool IsWithinBounds(const Representation value) const { return min <= value && value <= max; }
+
+    static constexpr auto max_bound = std::numeric_limits<Representation>::max();
+    static constexpr auto min_bound = std::numeric_limits<Representation>::min();
+
+private:
+    Representation max = max_bound;
+    Representation min = min_bound;
+};
+
 class IParserKQLFunction
 {
 public:
@@ -51,11 +70,13 @@ protected:
 
     virtual bool convertImpl(String & out, IParser::Pos & pos) = 0;
 
-    static bool directMapping(String & out, IParser::Pos & pos, const String & ch_fn);
+    static bool directMapping(
+        String & out, IParser::Pos & pos, std::string_view ch_fn, const Interval & argument_count_interval = {0, Interval::max_bound});
     static String generateUniqueIdentifier();
     static String getArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
     static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
-    static std::optional<String> getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
+    static std::optional<String>
+    getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
     static String
     kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth);
     static String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth);

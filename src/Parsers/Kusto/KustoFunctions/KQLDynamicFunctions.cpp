@@ -21,6 +21,10 @@ String wrapInDynamic(const String & parameter)
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 bool ArrayConcat::convertImpl(String & out, IParser::Pos & pos)
 {
@@ -159,8 +163,8 @@ bool ArraySlice::convertImpl(String & out, IParser::Pos & pos)
     const auto end = getArgument(function_name, pos);
 
     out = std::format(
-        "arraySlice({0}, plus(1, if({1} >= 0, {1}, toInt64(max2(-length({0}), {1})) + length({0}))) as offset_{3}, "
-        "                plus(1, if({2} >= 0, {2}, toInt64(max2(-length({0}), {2})) + length({0}))) - offset_{3} + 1)",
+        "arraySlice({0}, plus(1, if({1} >= 0, {1}, arrayMax([-length({0}), {1}]) + length({0}))) as offset_{3}, "
+        "                plus(1, if({2} >= 0, {2}, arrayMax([-length({0}), {2}]) + length({0}))) - offset_{3} + 1)",
         array,
         start,
         end,
@@ -195,7 +199,7 @@ bool ArraySplit::convertImpl(String & out, IParser::Pos & pos)
     const auto indices = getArgument(function_name, pos);
 
     out = std::format(
-        "if(empty(arrayMap(x -> if(x >= 0, x, toInt64(max2(0, x + length({0})))), flatten([{1}])) as indices_{2}), [{0}], "
+        "if(empty(arrayMap(x -> if(x >= 0, x, arrayMax([0, x + length({0})::Int64])), flatten([{1}])) as indices_{2}), [{0}], "
         "arrayConcat([arraySlice({0}, 1, indices_{2}[1])], arrayMap(i -> arraySlice({0}, indices_{2}[i] + 1, "
         "if(i = length(indices_{2}), length({0})::Int64, indices_{2}[i + 1]::Int64) - indices_{2}[i]), "
         "range(1, length(indices_{2}) + 1))))",
@@ -264,7 +268,7 @@ bool PackAll::convertImpl(String & out, IParser::Pos & pos)
 
 bool PackArray::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "array");
+    return directMapping(out, pos, "array", {1, Interval::max_bound});
 }
 
 bool Repeat::convertImpl(String & out, IParser::Pos & pos)
@@ -331,10 +335,48 @@ bool TreePath::convertImpl(String & out, IParser::Pos & pos)
 
 bool Zip::convertImpl(String & out, IParser::Pos & pos)
 {
-    if (!directMapping(out, pos, "arrayZip"))
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
         return false;
 
-    out = std::format("arrayMap(t -> [untuple(t)], {0})", out);
+    const auto arguments = std::invoke(
+        [&function_name, &pos]
+        {
+            std::vector<String> result;
+            while (auto argument = getOptionalArgument(function_name, pos))
+                result.push_back(std::move(*argument));
+
+            return result;
+        });
+
+    if (const auto size = arguments.size(); size < 2 || size > 16)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Between 2 and 16 arguments are expected, but {} were provided", size);
+
+    const auto unique_identifier = generateUniqueIdentifier();
+    const auto resized_arguments = std::invoke(
+        [&arguments, &unique_identifier]
+        {
+            String lengths;
+            for (int i = 0; i < std::ssize(arguments); ++i)
+            {
+                lengths.append(i > 0 ? ", " : "");
+                lengths.append(std::format(
+                    "length(if(match(toTypeName({0}), 'Array\\(Nullable\\(.*\\)\\)'), {0}, "
+                    "cast({0}, concat('Array(Nullable(', extract(toTypeName({0}), 'Array\\((.*)\\)'), '))'))) as arg{1}_{2})",
+                    arguments[i],
+                    i,
+                    unique_identifier));
+            }
+
+            auto result = std::format("arrayResize(arg0_{1}, arrayMax([{0}]) as max_length_{1}, null)", lengths, unique_identifier);
+            for (int i = 1; i < std::ssize(arguments); ++i)
+                result.append(std::format(", arrayResize(arg{0}_{1}, max_length_{1}, null)", i, unique_identifier));
+
+            return result;
+        });
+
+    out = std::format("arrayMap(t -> [untuple(t)], arrayZip({0}))", resized_arguments);
 
     return true;
 }

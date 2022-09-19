@@ -99,8 +99,8 @@ print jaccard_index(dynamic([1, 2, 3]), dynamic([4, 5, 6, 7]));
 print jaccard_index(dynamic(['a', 's', 'd']), dynamic(['f', 'd', 's', 'a']));
 print jaccard_index(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader']));
 print '-- pack_array()';
-print pack_array(); -- { serverError }
-print x = 1, y = x * 2, z = y * 2, pack_array(x,y,z);
+print pack_array(); -- { clientError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+print x = 1 | extend y = x * 2 | extend z = y * 2 | extend pack_array(x,y,z);
 print pack_array(strcat('a', 'b'), format_ipv4(42), tostring(4.2));
 print '-- repeat()';
 print repeat(1, 0);
