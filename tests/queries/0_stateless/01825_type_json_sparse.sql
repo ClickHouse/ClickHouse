@@ -58,6 +58,6 @@ WHERE database = currentDatabase()
 GROUP BY subcolumns.names, subcolumns.serializations
 ORDER BY subcolumns.names;
 
-SELECT data.k1, count(), sum(data.k2.k3) FROM t_json_sparse GROUP BY data.k1;
+SELECT data.k1, count(), sum(data.k2.k3) FROM t_json_sparse GROUP BY data.k1 ORDER BY data.k1;
 
 -- DROP TABLE t_json_sparse;
