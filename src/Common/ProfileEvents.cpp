@@ -301,17 +301,17 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
     M(DiskS3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
     \
-    M(DeleteS3Objects, "Number of S3 API DeleteObjects calls.") \
-    M(CopyS3Object, "Number of S3 API CopyObject calls.") \
-    M(ListS3Objects, "Number of S3 API ListObjects calls.") \
-    M(HeadS3Object,  "Number of S3 API HeadObject calls.") \
-    M(CreateS3MultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
-    M(UploadS3PartCopy, "Number of S3 API UploadPartCopy calls.") \
-    M(UploadS3Part, "Number of S3 API UploadPart calls.") \
-    M(AbortS3MultipartUpload, "Number of S3 API AbortMultipartUpload calls.") \
-    M(CompleteS3MultipartUpload, "Number of S3 API CompleteMultipartUpload calls.") \
-    M(PutS3ObjectRequest, "Number of S3 API PutObject calls.") \
-    M(GetS3ObjectRequest, "Number of S3 API GetObject calls.") \
+    M(S3DeleteObjects, "Number of S3 API DeleteObjects calls.") \
+    M(S3CopyObject, "Number of S3 API CopyObject calls.") \
+    M(S3ListObjects, "Number of S3 API ListObjects calls.") \
+    M(S3HeadObject,  "Number of S3 API HeadObject calls.") \
+    M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
+    M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.") \
+    M(S3UploadPart, "Number of S3 API UploadPart calls.") \
+    M(S3AbortMultipartUpload, "Number of S3 API AbortMultipartUpload calls.") \
+    M(S3CompleteMultipartUpload, "Number of S3 API CompleteMultipartUpload calls.") \
+    M(S3PutObject, "Number of S3 API PutObject calls.") \
+    M(S3GetObject, "Number of S3 API GetObject calls.") \
     \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
