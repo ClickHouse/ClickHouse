@@ -233,12 +233,10 @@ def test_distributed_insert_select(started_cluster):
 
     for file_number in range(100):
         first_replica_first_shard.query(
+            f"""
+        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated/file_{file_number}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
+        SELECT repeat('{file_number}', 10), number from numbers(100) SETTINGS insert_distributed_sync=1;
             """
-        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
-        SELECT repeat('{}', 10), number from numbers(100);
-            """.format(
-                file_number, file_number
-            )
         )
 
     first_replica_first_shard.query(
@@ -246,7 +244,7 @@ def test_distributed_insert_select(started_cluster):
     INSERT INTO insert_select_distributed SELECT * FROM s3Cluster(
         'cluster_simple',
         'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
-    ) SETTINGS parallel_distributed_insert_select=1;
+    ) SETTINGS parallel_distributed_insert_select=1, insert_distributed_sync=1;
         """
     )
 
@@ -301,12 +299,10 @@ def test_distributed_insert_select_with_replicated(started_cluster):
 
     for file_number in range(100):
         first_replica_first_shard.query(
+           f"""
+        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{file_number}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
+        SELECT repeat('{file_number}', 10), number from numbers(100);
             """
-        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
-        SELECT repeat('{}', 10), number from numbers(100);
-            """.format(
-                file_number, file_number
-            )
         )
 
     first_replica_first_shard.query(
