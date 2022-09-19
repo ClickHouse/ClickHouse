@@ -51,29 +51,42 @@ ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE IF EXISTS ddl_test_for_opentelemetry;
 "
 
+case_no=1;
+
 #
-# Case 1, a normal case
+# normal cases for ALL distributed_ddl_entry_format_version
 #
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-execute_query $trace_id "CREATE TABLE ddl_test_for_opentelemetry ON CLUSTER test_shard_localhost (id UInt64) Engine=MergeTree ORDER BY id" "distributed_ddl_output_mode=none"
+for ddl_version in 1 2 3; do
+    # Echo a separator so that the reference file is more clear for reading
+    echo "===case ${case_no}===="
 
-check_span $trace_id "count()" "HTTPHandler"
-check_span $trace_id "count()" "%DDLWorker::processTask%"
+    trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
+    execute_query $trace_id "CREATE TABLE ddl_test_for_opentelemetry ON CLUSTER test_shard_localhost (id UInt64) Engine=MergeTree ORDER BY id" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=${ddl_version}"
 
-# There should be two 'query' spans,
-# one is for the HTTPHandler, the other is for the DDL executing in DDLWorker
-check_span $trace_id "count()" "query"
+    check_span $trace_id "count()" "HTTPHandler"
+    check_span $trace_id "count()" "%DDLWorker::processTask%"
 
+    # There should be two 'query' spans,
+    # one is for the HTTPHandler, the other is for the DDL executing in DDLWorker
+    check_span $trace_id "count()" "query"
+
+    # Remove table
+    ${CLICKHOUSE_CLIENT} -q "
+        DROP TABLE IF EXISTS ddl_test_for_opentelemetry;
+    "
+
+    case_no=$(($case_no + 1))
+done
+
+#
+# an exceptional case, DROP a non-exist table
+#
 # Echo a separator so that the reference file is more clear for reading
-echo "===case 2===="
-
-#
-# Case 2, an exceptional case, DROP a non-exist table
-#
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
+echo "===case ${case_no}===="
 
 # Since this query is supposed to fail, we redirect the error message to /dev/null to discard the error message so that it won't pollute the reference file.
 # The exception will be checked in the span log
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 execute_query $trace_id "DROP TABLE ddl_test_for_opentelemetry_non_exist ON CLUSTER test_shard_localhost" "distributed_ddl_output_mode=none" "/dev/null"
 
 check_span $trace_id "count()" "HTTPHandler"
