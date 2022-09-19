@@ -65,6 +65,7 @@ void addNewWords(Words & to, const Words & from, Compare comp)
 
 }
 
+#if USE_REPLXX
 replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length)
 {
     std::string_view last_word;
@@ -95,6 +96,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
 
     return replxx::Replxx::completions_t(range.first, range.second);
 }
+#endif
 
 void LineReader::Suggest::addWords(Words && new_words)
 {

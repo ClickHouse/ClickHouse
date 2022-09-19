@@ -1,3 +1,6 @@
+include(configure_config.cmake)
+configure_file(config_base.h.in ${ConfigIncludePath}/config_base.h)
+
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
@@ -17,11 +20,14 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    ReplxxLineReader.cpp
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
 )
+
+if (TARGET ch_contrib::replxx)
+    list (APPEND SRCS ReplxxLineReader.cpp)
+endif ()
 
 if (USE_DEBUG_HELPERS)
     get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
@@ -55,11 +61,14 @@ target_link_libraries (common
         Poco::Net::SSL
         Poco::Util
         Poco::Foundation
-        ch_contrib::replxx
         ch_contrib::cctz
         ch_contrib::fmt
         ch_contrib::magic_enum
 )
+
+if (TARGET ch_contrib::replxx)
+    target_link_libraries(common PUBLIC ch_contrib::replxx)
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)
