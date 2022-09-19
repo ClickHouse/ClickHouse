@@ -251,7 +251,6 @@ dragonbox
 durations
 endian
 enum
-exFAT
 fastops
 fcoverage
 filesystem
@@ -407,7 +406,6 @@ requestor
 resultset
 rethrow
 risc
-riscv
 ro
 rocksdb
 rowNumberInBlock

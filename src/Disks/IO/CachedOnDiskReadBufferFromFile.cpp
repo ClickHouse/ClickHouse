@@ -80,7 +80,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .file_segment_range = { file_segment_range.left, file_segment_range.right },
         .requested_range = { first_offset, read_until_position },
         .file_segment_size = file_segment_range.size(),
-        .read_from_cache_attempted = true,
+        .cache_attempted = true,
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
@@ -222,6 +222,9 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
 {
     auto range = file_segment->range();
 
+    size_t wait_download_max_tries = settings.filesystem_cache_max_wait_sec;
+    size_t wait_download_tries = 0;
+
     auto download_state = file_segment->state();
     LOG_TEST(log, "getReadBufferForFileSegment: {}", file_segment->getInfoForLog());
 
@@ -271,7 +274,16 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                     return getCacheReadBuffer(range.left);
                 }
 
-                download_state = file_segment->wait();
+                if (wait_download_tries++ < wait_download_max_tries)
+                {
+                    download_state = file_segment->wait();
+                }
+                else
+                {
+                    LOG_DEBUG(log, "Retries to wait for file segment download exceeded ({})", wait_download_tries);
+                    download_state = FileSegment::State::SKIP_CACHE;
+                }
+
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
@@ -702,6 +714,22 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 
         size_t download_offset = file_segment->getDownloadOffset();
         bool cached_part_is_finished = download_offset == file_offset_of_buffer_end;
+
+#ifndef NDEBUG
+        size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
+        size_t cache_file_read_offset = implementation_buffer->getFileOffsetOfBufferEnd();
+        size_t implementation_buffer_finished = cache_file_size == cache_file_read_offset;
+
+        if (cached_part_is_finished != implementation_buffer_finished)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Incorrect state of buffers. Current download offset: {}, file offset of buffer end: {}, "
+                "cache file size: {}, cache file offset: {}, file segment info: {}",
+                download_offset, file_offset_of_buffer_end, cache_file_size, cache_file_read_offset,
+                file_segment->getInfoForLog());
+        }
+#endif
 
         if (cached_part_is_finished)
         {

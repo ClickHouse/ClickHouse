@@ -1,6 +1,6 @@
 # We use vectorscan, a portable and API/ABI-compatible drop-in replacement for hyperscan.
 
-if (ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
+if (ARCH_AMD64)
     option (ENABLE_VECTORSCAN "Enable vectorscan library" ${ENABLE_LIBRARIES})
 endif()
 

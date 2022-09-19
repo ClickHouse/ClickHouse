@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/data_skipping_indices
----
 # data_skipping_indices
 
 Contains information about existing data skipping indices in all the tables.

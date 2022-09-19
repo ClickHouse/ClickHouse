@@ -154,7 +154,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            /// don't optimize functions that shadow any of it's arguments, e.g.:
+            /// don't optimise functions that shadow any of it's arguments, e.g.:
             /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
             if (!function->alias.empty())
             {
@@ -453,7 +453,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         return;
 
     /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their underlying tables
+    /// because we can't get the sorting key of their undelying tables
     /// and we can break the matching of the sorting key for `read_in_order`
     /// optimization by removing monotonous functions from the prefix of key.
     if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
@@ -632,7 +632,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
         if (!cnf_form)
             return false;
 
-        cnf_form->pushNotInFunctions();
+        cnf_form->pushNotInFuntions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
         return true;
     }

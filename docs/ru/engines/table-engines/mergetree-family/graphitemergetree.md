@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/mergetree-family/graphitemergetree
 sidebar_position: 38
 sidebar_label: GraphiteMergeTree
 ---

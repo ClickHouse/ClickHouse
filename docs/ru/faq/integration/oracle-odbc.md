@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/integration/oracle-odbc
 title: Что делать, если у меня проблема с кодировками при использовании Oracle через ODBC?
 sidebar_position: 20
 ---

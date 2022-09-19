@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 
 IMergeTreeReader::IMergeTreeReader(
-    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
@@ -31,18 +31,19 @@ IMergeTreeReader::IMergeTreeReader(
     const MarkRanges & all_mark_ranges_,
     const MergeTreeReaderSettings & settings_,
     const ValueSizeMap & avg_value_size_hints_)
-    : data_part_info_for_read(data_part_info_for_read_)
+    : data_part(data_part_)
     , avg_value_size_hints(avg_value_size_hints_)
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
+    , storage(data_part_->storage)
     , metadata_snapshot(metadata_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
-    , alter_conversions(data_part_info_for_read->getAlterConversions())
+    , alter_conversions(storage.getAlterConversionsForPart(data_part))
     /// For wide parts convert plain arrays of Nested to subcolumns
     /// to allow to use shared offset column from cache.
-    , requested_columns(data_part_info_for_read->isWidePart() ? Nested::convertToSubcolumns(columns_) : columns_)
-    , part_columns(data_part_info_for_read->isWidePart() ? Nested::collect(data_part_info_for_read->getColumns()) : data_part_info_for_read->getColumns())
+    , requested_columns(isWidePart(data_part) ? Nested::convertToSubcolumns(columns_) : columns_)
+    , part_columns(isWidePart(data_part) ? Nested::collect(data_part->getColumns()) : data_part->getColumns())
 {
     columns_to_read.reserve(requested_columns.size());
     serializations.reserve(requested_columns.size());
@@ -70,7 +71,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + ")");
         throw;
     }
 }
@@ -98,13 +99,13 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         }
 
         auto dag = DB::evaluateMissingDefaults(
-                additional_columns, requested_columns, metadata_snapshot->getColumns(), data_part_info_for_read->getContext());
+                additional_columns, requested_columns, metadata_snapshot->getColumns(), storage.getContext());
         if (dag)
         {
             dag->addMaterializingOutputActions();
             auto actions = std::make_shared<
                 ExpressionActions>(std::move(dag),
-                ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
+                ExpressionActionsSettings::fromSettings(storage.getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }
 
@@ -116,7 +117,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + ")");
         throw;
     }
 }
@@ -150,7 +151,7 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     if (!column_in_part)
         return IDataType::getSerialization(required_column);
 
-    const auto & infos = data_part_info_for_read->getSerializationInfos();
+    const auto & infos = data_part->getSerializationInfos();
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 
@@ -186,7 +187,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             copy_block.insert({res_columns[pos], getColumnInPart(*name_and_type).type, name_and_type->name});
         }
 
-        DB::performRequiredConversions(copy_block, requested_columns, data_part_info_for_read->getContext());
+        DB::performRequiredConversions(copy_block, requested_columns, storage.getContext());
 
         /// Move columns from block.
         name_and_type = requested_columns.begin();
@@ -196,7 +197,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + ")");
         throw;
     }
 }
@@ -204,11 +205,11 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const String & column_name) const
 {
     String table_name = Nested::extractTableName(column_name);
-    for (const auto & part_column : data_part_info_for_read->getColumns())
+    for (const auto & part_column : data_part->getColumns())
     {
         if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
-            auto position = data_part_info_for_read->getColumnPosition(part_column.getNameInStorage());
+            auto position = data_part->getColumnPosition(part_column.getNameInStorage());
             if (position && Nested::extractTableName(part_column.name) == table_name)
                 return position;
         }

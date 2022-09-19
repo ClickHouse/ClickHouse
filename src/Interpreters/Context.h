@@ -364,26 +364,8 @@ private:
     bool apply_deleted_mask = true;
 
 public:
-    /// Some counters for current query execution.
-    /// Most of them are workarounds and should be removed in the future.
-    struct KitchenSink
-    {
-        std::atomic<size_t> analyze_counter = 0;
-
-        KitchenSink() = default;
-
-        KitchenSink(const KitchenSink & rhs)
-            : analyze_counter(rhs.analyze_counter.load())
-        {}
-
-        KitchenSink & operator=(const KitchenSink & rhs)
-        {
-            analyze_counter = rhs.analyze_counter.load();
-            return *this;
-        }
-    };
-
-    KitchenSink kitchen_sink;
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
+    OpenTelemetryTraceContext query_trace_context;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;

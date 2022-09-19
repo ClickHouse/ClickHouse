@@ -2,7 +2,7 @@
 
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteSettings.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/FileCache.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
 namespace Poco
