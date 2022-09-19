@@ -29,7 +29,7 @@ public:
 
 private:
 
-    void loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, std::string_view object_name, const String & file_path);
+    void loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, const std::string_view & object_name, const String & file_path);
     Poco::Logger * log;
     bool enable_persistence = true;
 };

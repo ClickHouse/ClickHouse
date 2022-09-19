@@ -31,8 +31,8 @@ try
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set,
-        task_columns, prewhere_info && prewhere_info->remove_prewhere_column,
-        std::move(size_predictor));
+        task_columns.columns, task_columns.pre_columns, prewhere_info && prewhere_info->remove_prewhere_column,
+        task_columns.should_reorder, std::move(size_predictor));
 
     return true;
 }
@@ -44,9 +44,9 @@ catch (...)
     throw;
 }
 
-MergeTreeBaseSelectProcessor::BlockAndRowCount MergeTreeReverseSelectProcessor::readFromPart()
+Chunk MergeTreeReverseSelectProcessor::readFromPart()
 {
-    BlockAndRowCount res;
+    Chunk res;
 
     if (!chunks.empty())
     {
@@ -60,7 +60,7 @@ MergeTreeBaseSelectProcessor::BlockAndRowCount MergeTreeReverseSelectProcessor::
 
     while (!task->isFinished())
     {
-        auto chunk = readFromPartImpl();
+        Chunk chunk = readFromPartImpl();
         chunks.push_back(std::move(chunk));
     }
 

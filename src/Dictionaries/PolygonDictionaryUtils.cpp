@@ -2,7 +2,7 @@
 
 #include <Common/ThreadPool.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/sort.h>
 
 #include <algorithm>
@@ -131,6 +131,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     /** Map of interesting edge ids to the index of left x, the index of right x */
     std::vector<size_t> edge_left(m, n), edge_right(m, n);
 
+    size_t total_index_edges = 0;
     size_t edges_it = 0;
     for (size_t l = 0, r = 1; r < sorted_x.size(); ++l, ++r)
     {
@@ -169,10 +170,12 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
             if (l & 1)
             {
                 edges_index_tree[l++].emplace_back(all_edges[i]);
+                ++total_index_edges;
             }
             if (r & 1)
             {
                 edges_index_tree[--r].emplace_back(all_edges[i]);
+                ++total_index_edges;
             }
         }
     }

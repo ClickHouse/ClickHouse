@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 
 #include <Interpreters/AggregationCommon.h>
 
@@ -25,6 +26,22 @@ int main(int, char **)
 
         for (auto x : cont)
             std::cerr << x.getValue() << std::endl;
+
+        DB::WriteBufferFromOwnString wb;
+        cont.writeText(wb);
+
+        std::cerr << "dump: " << wb.str() << std::endl;
+    }
+
+    {
+        using Cont = SmallMap<int, std::string, 16>;
+        Cont cont;
+
+        cont.insert(Cont::value_type(1, "Hello, world!"));
+        cont[1] = "Goodbye.";
+
+        for (auto x : cont)
+            std::cerr << x.getKey() << " -> " << x.getMapped() << std::endl;
 
         DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);

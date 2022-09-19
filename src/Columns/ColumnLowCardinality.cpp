@@ -81,7 +81,7 @@ namespace
         if (max_val > size)
             return mapUniqueIndexImplRef(index);
 
-        auto map_size = static_cast<UInt64>(max_val) + 1;
+        auto map_size = UInt64(max_val) + 1;
         PaddedPODArray<T> map(map_size, 0);
         T zero_pos_value = index[0];
         index[0] = 0;
@@ -98,7 +98,7 @@ namespace
             index[i] = map[val];
         }
 
-        auto res_col = ColumnVector<T>::create(static_cast<UInt64>(cur_pos) + 1);
+        auto res_col = ColumnVector<T>::create(UInt64(cur_pos) + 1);
         auto & data = res_col->getData();
         data[0] = zero_pos_value;
         for (size_t i = 0; i < map_size; ++i)
@@ -132,12 +132,14 @@ namespace
 ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
     : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
 {
+    // idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insert(const Field & x)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsert(x));
+    // idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertDefault()
@@ -165,12 +167,15 @@ void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
         const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
         idx.insertPosition(dictionary.getColumnUnique().uniqueInsertFrom(nested, position));
     }
+
+    // idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertFrom(src, n));
+    // idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -200,6 +205,7 @@ void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, si
         auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
         idx.insertPositionsRange(*inserted_indexes->index(*sub_idx, 0), 0, length);
     }
+    // idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length)
@@ -207,6 +213,7 @@ void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t
     compactIfSharedDictionary();
     auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(src, start, length);
     idx.insertPositionsRange(*inserted_indexes, 0, length);
+    // idx.check(getDictionary().size());
 }
 
 static void checkPositionsAreLimited(const IColumn & positions, UInt64 limit)
@@ -247,12 +254,14 @@ void ColumnLowCardinality::insertRangeFromDictionaryEncodedColumn(const IColumn 
     compactIfSharedDictionary();
     auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(keys, 0, keys.size());
     idx.insertPositionsRange(*inserted_indexes->index(positions, 0), 0, positions.size());
+    // idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertData(const char * pos, size_t length)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertData(pos, length));
+    // idx.check(getDictionary().size());
 }
 
 StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -267,6 +276,7 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     const char * new_pos;
     idx.insertPosition(dictionary.getColumnUnique().uniqueDeserializeAndInsertFromArena(pos, new_pos));
 
+    // idx.check(getDictionary().size());
     return new_pos;
 }
 

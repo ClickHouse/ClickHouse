@@ -80,32 +80,7 @@ struct ToStartOfTransform;
     TRANSFORM_TIME(Hour)
     TRANSFORM_TIME(Minute)
     TRANSFORM_TIME(Second)
-#undef TRANSFORM_TIME
-
-#define TRANSFORM_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
-template<> \
-    struct ToStartOfTransform<IntervalKind::INTERVAL_KIND> \
-    { \
-        static Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
-        { \
-            if (scale <= DEF_SCALE) \
-            { \
-                auto val = t * DecimalUtils::scaleMultiplier<DateTime64>(DEF_SCALE - scale); \
-                if (delta == 1) \
-                    return val; \
-                else \
-                    return val - (val % delta); \
-            } \
-            else \
-            { \
-                return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - DEF_SCALE))) ; \
-            } \
-        } \
-    };
-    TRANSFORM_SUBSECONDS(Millisecond, 3)
-    TRANSFORM_SUBSECONDS(Microsecond, 6)
-    TRANSFORM_SUBSECONDS(Nanosecond, 9)
-#undef TRANSFORM_SUBSECONDS
+#undef TRANSFORM_DATE
 
     template <IntervalKind::Kind unit>
     struct AddTime;
@@ -141,25 +116,6 @@ template<> \
     ADD_TIME(Minute, 60)
     ADD_TIME(Second, 1)
 #undef ADD_TIME
-
-#define ADD_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
-template <> \
-    struct AddTime<IntervalKind::INTERVAL_KIND> \
-    { \
-        static inline NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
-        { \
-            if (scale < DEF_SCALE) \
-            { \
-                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(DEF_SCALE - scale); \
-            } \
-            else \
-                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - DEF_SCALE); \
-        } \
-    };
-    ADD_SUBSECONDS(Millisecond, 3)
-    ADD_SUBSECONDS(Microsecond, 6)
-    ADD_SUBSECONDS(Nanosecond, 9)
-#undef ADD_SUBSECONDS
 
 template <TimeWindowFunctionName type>
 struct TimeWindowImpl

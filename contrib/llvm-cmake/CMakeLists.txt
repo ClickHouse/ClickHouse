@@ -76,7 +76,9 @@ message (STATUS "LLVM library Directory: ${LLVM_LIBRARY_DIRS}")
 message (STATUS "LLVM C++ compiler flags: ${LLVM_CXXFLAGS}")
 
 # ld: unknown option: --color-diagnostics
-set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
+if (APPLE)
+    set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
+endif ()
 
 # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (CMAKE_INSTALL_RPATH "ON")
@@ -93,18 +95,6 @@ set (CMAKE_CXX_STANDARD 17)
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm/llvm")
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
-set_directory_properties (PROPERTIES
-   # due to llvm crosscompile cmake does not know how to clean it, and on clean
-   # will lead to the following error:
-   #
-   #   ninja: error: remove(contrib/llvm/llvm/NATIVE): Directory not empty
-   #
-   ADDITIONAL_CLEAN_FILES "${LLVM_BINARY_DIR}"
-   # llvm's cmake configuring this file only when cmake runs,
-   # and after clean cmake will not know that it should re-run,
-   # add explicitly depends from llvm-config.h
-   CMAKE_CONFIGURE_DEPENDS "${LLVM_BINARY_DIR}/include/llvm/Config/llvm-config.h"
-)
 
 add_library (_llvm INTERFACE)
 target_link_libraries (_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})
