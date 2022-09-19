@@ -402,7 +402,7 @@ struct ToDateTransform32Or64Signed
 
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
-            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(0xFFFFFFFF));
+            : std::min<Int32>(Int32(time_zone.toDayNum(static_cast<UInt16>(from))), Int32(0xFFFFFFFF));
 
     }
 };
