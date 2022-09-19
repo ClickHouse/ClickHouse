@@ -61,18 +61,23 @@ public:
         return host_fqdn_id;
     }
 
+    std::string getQueueDir() const
+    {
+        return queue_dir;
+    }
+
     void startup();
     virtual void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
-protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     ZooKeeperPtr getAndSetZooKeeper();
 
+protected:
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
 
