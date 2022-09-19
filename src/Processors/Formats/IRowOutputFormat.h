@@ -38,6 +38,9 @@ protected:
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
 
+    virtual bool supportTotals() const { return false; }
+    virtual bool supportExtremes() const { return false; }
+
     virtual void writeMinExtreme(const Columns & columns, size_t row_num);
     virtual void writeMaxExtreme(const Columns & columns, size_t row_num);
     virtual void writeTotals(const Columns & columns, size_t row_num);

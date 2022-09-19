@@ -51,7 +51,6 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
@@ -551,8 +550,9 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        if (readString(filename).find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
+        String clocksource = readString(filename);
+        if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
@@ -1157,7 +1157,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setExternalAuthenticatorsConfig(*config);
 
             global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             global_context->setRemoteHostFilter(*config);
@@ -1735,17 +1734,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         catch (...)
         {
             tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
-            throw;
-        }
-
-        /// try to load models immediately, throw on error and die
-        try
-        {
-            global_context->loadOrReloadModels(config());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
             throw;
         }
 

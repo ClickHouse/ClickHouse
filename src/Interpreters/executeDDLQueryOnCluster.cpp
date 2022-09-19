@@ -562,12 +562,16 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     if (database_name != query_on_cluster->cluster)
         return false;
 
-    auto db = DatabaseCatalog::instance().tryGetDatabase(database_name);
-    if (!db || db->getEngineName() != "Replicated")
-        return false;
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (database && database->shouldReplicateQuery(context, query_ptr))
+    {
+        /// It's Replicated database and query is replicated on database level,
+        /// so ON CLUSTER clause is redundant.
+        query_on_cluster->cluster.clear();
+        return true;
+    }
 
-    query_on_cluster->cluster.clear();
-    return true;
+    return false;
 }
 
 }
