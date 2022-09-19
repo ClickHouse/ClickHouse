@@ -465,6 +465,16 @@ void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
 }
 
 
+void DiskObjectStorageTransaction::removeDirectoryIfExists(const std::string & path)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
+        {
+            tx->removeDirectoryIfExists(path);
+        }));
+}
+
+
 void DiskObjectStorageTransaction::removeRecursive(const std::string & path)
 {
     removeSharedRecursive(path, false, {});

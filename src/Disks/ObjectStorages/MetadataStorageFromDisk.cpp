@@ -1,7 +1,6 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/TemporaryFile.h>
@@ -116,15 +115,17 @@ void MetadataStorageFromDisk::checkAndFixMetadataHardLinkUnlocked(const std::str
         }
         else if (!disk->isFilesHardLinked(path, index_path))
         {
-            disk->removeFile(path);
-            disk->createHardLink(index_path, path);
+            fs::path dir_name = fs::path(path).parent_path().filename();
+            std::string tmp_path = getTempFileName(dir_name);
+            disk->createHardLink(index_path, tmp_path);
+            disk->replaceFile(tmp_path, path);
 
             auto ref_count = disk->getFileHardLinkCount(index_path);
             if (ref_count < 2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "After creation hard link nlink less than 2 : {}", index_path);
 
             auto metadata_index = readMetadataUnlocked(index_path, lock);
-            /// Index link + work link - object with single refecence, ref_count=0
+            /// Index link + work link - object with single reference, ref_count=0
             /// So ref_count should be equal file hard links minus 2
             metadata_index->setRefCount(ref_count - 2);
             auto buf = disk->writeFile(index_path);
@@ -319,6 +320,11 @@ void MetadataStorageFromDiskTransaction::removeDirectory(const std::string & pat
     addOperation(std::make_unique<RemoveDirectoryOperation>(path, *metadata_storage.getDisk()));
 }
 
+void MetadataStorageFromDiskTransaction::removeDirectoryIfExists(const std::string & path)
+{
+    addOperation(std::make_unique<RemoveDirectoryIfExistsOperation>(path, *metadata_storage.getDisk()));
+}
+
 void MetadataStorageFromDiskTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
     addOperation(std::make_unique<MoveFileOperation>(path_from, path_to, *metadata_storage.getDisk()));
@@ -357,7 +363,7 @@ void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & 
 
     auto index_path = metadata->getIndexPath();
     // index_path is not empty after addObject
-    // so we need not check it
+    assert(!index_path.empty());
 
     auto data = metadata->serializeToString();
     if (!data.empty())
@@ -389,7 +395,7 @@ void MetadataStorageFromDiskTransaction::createMetadataFileFromContent(const std
 
     auto index_path = metadata->getIndexPath();
     // index_path is not empty after at least one addObject
-    // so we need not check it
+    assert(!index_path.empty());
 
     auto data = metadata->serializeToString();
     if (!data.empty())

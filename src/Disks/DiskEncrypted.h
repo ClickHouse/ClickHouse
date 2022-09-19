@@ -150,6 +150,12 @@ public:
         delegate->removeDirectory(wrapped_path);
     }
 
+    bool removeDirectoryIfExists(const String & path) override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->removeDirectoryIfExists(wrapped_path);
+    }
+
     void removeRecursive(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);

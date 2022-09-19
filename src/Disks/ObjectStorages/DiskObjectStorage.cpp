@@ -350,6 +350,15 @@ void DiskObjectStorage::removeDirectory(const String & path)
 }
 
 
+bool DiskObjectStorage::removeDirectoryIfExists(const String & path)
+{
+    auto transaction = createObjectStorageTransaction();
+    transaction->removeDirectoryIfExists(path);
+    transaction->commit();
+    return true;
+}
+
+
 DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) const
 {
     return metadata_storage->iterateDirectory(path);

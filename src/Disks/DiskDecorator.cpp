@@ -151,6 +151,11 @@ void DiskDecorator::removeDirectory(const String & path)
     delegate->removeDirectory(path);
 }
 
+bool DiskDecorator::removeDirectoryIfExists(const String & path)
+{
+    return delegate->removeDirectoryIfExists(path);
+}
+
 void DiskDecorator::removeRecursive(const String & path)
 {
     delegate->removeRecursive(path);

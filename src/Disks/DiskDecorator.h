@@ -55,6 +55,7 @@ public:
     void removeSharedFileIfExists(const String & path, bool keep_s3) override;
 
     void removeDirectory(const String & path) override;
+    bool removeDirectoryIfExists(const String & path) override;
     void removeRecursive(const String & path) override;
 
     void removeSharedFile(const String & path, bool keep_s3) override;

@@ -101,6 +101,7 @@ public:
     void removeFile(const std::string & path) override;
     void removeFileIfExists(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
+    void removeDirectoryIfExists(const std::string & path) override;
     void removeRecursive(const std::string & path) override;
 
     void removeSharedFile(const std::string & path, bool keep_shared_data) override;

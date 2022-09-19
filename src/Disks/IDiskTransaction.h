@@ -75,6 +75,9 @@ public:
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
     virtual void removeDirectory(const std::string & path) = 0;
 
+    /// Remove directory. Throws exception if directory is not empty.
+    virtual void removeDirectoryIfExists(const std::string & path) = 0;
+
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const std::string & path) = 0;
 

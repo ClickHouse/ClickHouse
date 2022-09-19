@@ -149,6 +149,11 @@ void FakeMetadataStorageFromDiskTransaction::removeDirectory(const std::string &
     disk->removeDirectory(path);
 }
 
+void FakeMetadataStorageFromDiskTransaction::removeDirectoryIfExists(const std::string & path)
+{
+    disk->removeDirectoryIfExists(path);
+}
+
 void FakeMetadataStorageFromDiskTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
     disk->moveFile(path_from, path_to);

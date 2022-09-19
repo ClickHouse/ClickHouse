@@ -1,7 +1,6 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/IDisk.h>
-#include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <ranges>
@@ -12,11 +11,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-static std::string getTempFileName(const std::string & dir)
-{
-    return fs::path(dir) / getRandomASCIIString();
-}
 
 SetLastModifiedOperation::SetLastModifiedOperation(const std::string & path_, Poco::Timestamp new_timestamp_, IDisk & disk_)
     : path(path_)
@@ -90,12 +84,11 @@ void UnlinkIndexFileOperation::execute(std::unique_lock<std::shared_mutex> &)
     auto dir2 = parentPath(index_path);
     if (disk.isDirectoryEmpty(dir2))
     {
-        if (disk.exists(dir2))
-            disk.removeDirectory(dir2);
+        disk.removeDirectoryIfExists(dir2);
         // clean first-level directory .../metaindex/123
         auto dir1 = parentPath(dir2);
-        if (disk.exists(dir1) && disk.isDirectoryEmpty(dir1))
-            disk.removeDirectory(dir1);
+        if (disk.isDirectoryEmpty(dir1))
+            disk.removeDirectoryIfExists(dir1);
     }
 }
 
@@ -162,6 +155,24 @@ void RemoveDirectoryOperation::execute(std::unique_lock<std::shared_mutex> &)
 void RemoveDirectoryOperation::undo()
 {
     disk.createDirectory(path);
+}
+
+RemoveDirectoryIfExistsOperation::RemoveDirectoryIfExistsOperation(const std::string & path_, IDisk & disk_)
+    : path(path_)
+    , disk(disk_)
+    , exists(false)
+{
+}
+
+void RemoveDirectoryIfExistsOperation::execute(std::unique_lock<std::shared_mutex> &)
+{
+    exists = disk.removeDirectoryIfExists(path);
+}
+
+void RemoveDirectoryIfExistsOperation::undo()
+{
+    if (exists)
+        disk.createDirectory(path);
 }
 
 RemoveRecursiveOperation::RemoveRecursiveOperation(const std::string & path_, IDisk & disk_)

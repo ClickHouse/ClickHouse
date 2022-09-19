@@ -378,6 +378,28 @@ void DiskMemory::removeDirectory(const String & path)
     }
 }
 
+bool DiskMemory::removeDirectoryIfExists(const String & path)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        return false;
+
+    if (file_it->second.type == FileType::Directory)
+    {
+        files.erase(file_it);
+        if (std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
+            throw Exception("Directory '" + path + "' is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+    }
+    else
+    {
+        throw Exception("Path '" + path + "' is not a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+    }
+
+    return true;
+}
+
 void DiskMemory::removeFileIfExists(const String & path)
 {
     std::lock_guard lock(mutex);

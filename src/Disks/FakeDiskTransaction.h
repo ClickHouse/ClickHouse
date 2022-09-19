@@ -87,6 +87,11 @@ public:
         disk.removeDirectory(path);
     }
 
+    void removeDirectoryIfExists(const std::string & path) override
+    {
+        disk.removeDirectoryIfExists(path);
+    }
+
     void removeRecursive(const std::string & path) override
     {
         disk.removeRecursive(path);

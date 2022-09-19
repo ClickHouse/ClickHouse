@@ -246,6 +246,12 @@ void DiskRestartProxy::removeDirectory(const String & path)
     DiskDecorator::removeDirectory(path);
 }
 
+bool DiskRestartProxy::removeDirectoryIfExists(const String & path)
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::removeDirectoryIfExists(path);
+}
+
 void DiskRestartProxy::removeRecursive(const String & path)
 {
     ReadLock lock (mutex);

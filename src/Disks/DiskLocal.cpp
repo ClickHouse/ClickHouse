@@ -390,6 +390,15 @@ void DiskLocal::removeDirectory(const String & path)
         throwFromErrnoWithPath("Cannot rmdir " + fs_path.string(), fs_path, ErrorCodes::CANNOT_RMDIR);
 }
 
+bool DiskLocal::removeDirectoryIfExists(const String & path)
+{
+    auto fs_path = fs::path(disk_path) / path;
+    bool exists = (errno != ENOENT);
+    if (0 != rmdir(fs_path.c_str()) && exists)
+        throwFromErrnoWithPath("Cannot rmdir " + fs_path.string(), fs_path, ErrorCodes::CANNOT_RMDIR);
+    return exists;
+}
+
 void DiskLocal::removeRecursive(const String & path)
 {
     fs::remove_all(fs::path(disk_path) / path);

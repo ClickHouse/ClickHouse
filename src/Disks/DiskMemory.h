@@ -77,6 +77,7 @@ public:
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
+    bool removeDirectoryIfExists(const String & path) override;
     void removeRecursive(const String & path) override;
 
     void setLastModified(const String &, const Poco::Timestamp &) override {}

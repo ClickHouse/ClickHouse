@@ -120,6 +120,8 @@ public:
 
     void removeDirectory(const std::string & path) override;
 
+    void removeDirectoryIfExists(const std::string & path) override;
+
     void removeRecursive(const std::string & path) override;
 
     void createHardLink(const std::string & path_from, const std::string & path_to) override;

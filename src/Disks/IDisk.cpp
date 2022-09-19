@@ -6,6 +6,7 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/getRandomASCIIString.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
@@ -133,6 +134,11 @@ MetadataStoragePtr IDisk::getMetadataStorage()
         return std::make_shared<FakeMetadataStorageFromDisk>(
             std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
     }
+}
+
+String getTempFileName(const std::string & dir)
+{
+    return fs::path(dir) / getRandomASCIIString();
 }
 
 }

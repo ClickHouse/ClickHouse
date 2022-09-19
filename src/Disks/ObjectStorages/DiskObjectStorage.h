@@ -130,6 +130,8 @@ public:
 
     void removeDirectory(const String & path) override;
 
+    bool removeDirectoryIfExists(const String & path) override;
+
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;

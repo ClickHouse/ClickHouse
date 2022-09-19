@@ -202,6 +202,11 @@ void MetadataStorageFromStaticFilesWebServerTransaction::removeDirectory(const s
     WebObjectStorage::throwNotAllowed();
 }
 
+void MetadataStorageFromStaticFilesWebServerTransaction::removeDirectoryIfExists(const std::string &)
+{
+    WebObjectStorage::throwNotAllowed();
+}
+
 void MetadataStorageFromStaticFilesWebServerTransaction::moveFile(const std::string &, const std::string &)
 {
     WebObjectStorage::throwNotAllowed();

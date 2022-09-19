@@ -125,6 +125,20 @@ private:
     IDisk & disk;
 };
 
+struct RemoveDirectoryIfExistsOperation final : public IMetadataOperation
+{
+    RemoveDirectoryIfExistsOperation(const std::string & path_, IDisk & disk_);
+
+    void execute(std::unique_lock<std::shared_mutex> & metadata_lock) override;
+
+    void undo() override;
+
+private:
+    std::string path;
+    IDisk & disk;
+    bool exists;
+};
+
 struct RemoveRecursiveOperation final : public IMetadataOperation
 {
     RemoveRecursiveOperation(const std::string & path_, IDisk & disk_);

@@ -50,6 +50,8 @@ public:
 
     virtual void removeDirectory(const std::string & path) = 0;
 
+    virtual void removeDirectoryIfExists(const std::string & path) = 0;
+
     virtual void removeRecursive(const std::string & path) = 0;
 
     virtual void createHardLink(const std::string & path_from, const std::string & path_to) = 0;
