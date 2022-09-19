@@ -654,7 +654,7 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
    `Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName`
    `Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName`
  - [make_list_with_nulls()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-list-with-nulls-aggfunction)  
-   `Customers | summarize t = make_list_with_nulls(FirstName) by FirstName`
+   `Customers | summarize t = make_list_with_nulls(Age) by FirstName`
  - [make_set()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makeset-aggfunction)  
    `Customers | summarize t = make_set(FirstName) by FirstName`
    `Customers | summarize t = make_set(FirstName, 10) by FirstName`
