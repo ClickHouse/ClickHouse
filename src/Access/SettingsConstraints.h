@@ -115,7 +115,7 @@ private:
         {}
 
         // Allow or forbid depending on range defined by constraint, also used to return stored constraint
-        Checker(const Constraint & constraint_)
+        explicit Checker(const Constraint & constraint_)
             : constraint(constraint_)
         {}
 
