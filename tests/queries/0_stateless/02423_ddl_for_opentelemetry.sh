@@ -65,6 +65,7 @@ for ddl_version in 1 2 3; do
 
     check_span $trace_id "count()" "HTTPHandler"
     check_span $trace_id "count()" "%DDLWorker::processTask%"
+    check_span $trace_id "attribute['clickhouse.cluster']" "%executeDDLQueryOnCluster%"
 
     # There should be two 'query' spans,
     # one is for the HTTPHandler, the other is for the DDL executing in DDLWorker
@@ -91,6 +92,7 @@ execute_query $trace_id "DROP TABLE ddl_test_for_opentelemetry_non_exist ON CLUS
 
 check_span $trace_id "count()" "HTTPHandler"
 check_span $trace_id "count()" "%DDLWorker::processTask%"
+check_span $trace_id "attribute['clickhouse.cluster']" "%executeDDLQueryOnCluster%"
 
 # There should be two 'query' spans,
 # one is for the HTTPHandler, the other is for the DDL executing in DDLWorker.
