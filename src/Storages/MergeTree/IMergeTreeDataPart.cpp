@@ -1291,7 +1291,7 @@ catch (Exception & e)
 
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 {
-    assert(!version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
+    assert(!storage.data_parts_loading_finished || !version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
     bool created_by_transaction = !version.creation_tid.isPrehistoric();
     bool removed_by_transaction = version.isRemovalTIDLocked() && version.removal_tid_lock != Tx::PrehistoricTID.getHash();
     return created_by_transaction || removed_by_transaction;
@@ -1433,13 +1433,18 @@ void IMergeTreeDataPart::remove() const
     assert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
-    auto [can_remove, files_not_to_remove] = canRemovePart();
+    auto can_remove_callback = [this] ()
+    {
+        auto [can_remove, files_not_to_remove] = canRemovePart();
+        if (!can_remove)
+            LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
 
-    if (!can_remove)
-        LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
+        if (!files_not_to_remove.empty())
+            LOG_TRACE(storage.log, "Some blobs ({}) of part {} cannot be removed", fmt::join(files_not_to_remove, ", "), name);
 
-    if (!files_not_to_remove.empty())
-        LOG_TRACE(storage.log, "Some blobs ({}) of part {} cannot be removed", fmt::join(files_not_to_remove, ", "), name);
+        return CanRemoveDescription{.can_remove_anything = can_remove, .files_not_to_remove = files_not_to_remove };
+    };
+
 
     if (!isStoredOnDisk())
         return;
@@ -1459,7 +1464,7 @@ void IMergeTreeDataPart::remove() const
         projection_checksums.emplace_back(IDataPartStorage::ProjectionChecksums{.name = p_name, .checksums = projection_part->checksums});
     }
 
-    data_part_storage->remove(can_remove, files_not_to_remove, checksums, projection_checksums, is_temp, getState(), storage.log);
+    data_part_storage->remove(std::move(can_remove_callback), checksums, projection_checksums, is_temp, getState(), storage.log);
 }
 
 String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached) const
