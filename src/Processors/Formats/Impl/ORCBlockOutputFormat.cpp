@@ -486,13 +486,16 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
 {
     if (!writer)
         prepareWriter();
+
     size_t columns_num = chunk.getNumColumns();
     size_t rows_num = chunk.getNumRows();
+
     /// getMaxColumnSize is needed to write arrays.
     /// The size of the batch must be no less than total amount of array elements
     /// and no less than the number of rows (ORC writes a null bit for every row).
     std::unique_ptr<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
     orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
+
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveLowCardinality(column);
