@@ -8,10 +8,12 @@
 #include <Formats/FormatSettings.h>
 #include <orc/OrcFile.hh>
 
+
 namespace DB
 {
 
 class WriteBuffer;
+
 
 /// orc::Writer writes only in orc::OutputStream
 class ORCOutputStream : public orc::OutputStream
@@ -21,7 +23,7 @@ public:
 
     uint64_t getLength() const override;
     uint64_t getNaturalWriteSize() const override;
-    void write(const void* buf, size_t length) override;
+    void write(const void * buf, size_t length) override;
 
     void close() override {}
     const std::string& getName() const override { return name; }
@@ -30,6 +32,7 @@ private:
     WriteBuffer & out;
     std::string name = "ORCOutputStream";
 };
+
 
 class ORCBlockOutputFormat : public IOutputFormat
 {
