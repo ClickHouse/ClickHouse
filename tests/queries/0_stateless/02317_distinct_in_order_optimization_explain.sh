@@ -38,6 +38,9 @@ $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a,
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by the same columns -> pre-distinct and final distinct optimization'"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain order by a, b" | eval $FIND_DISTINCT
 
+$CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by columns are prefix of distinct columns -> pre-distinct and final distinct optimization'"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain order by a" | eval $FIND_DISTINCT
+
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by column in distinct but non-primary key prefix -> pre-distinct and final distinct optimization'"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b, c from distinct_in_order_explain order by c" | eval $FIND_DISTINCT
 
@@ -73,7 +76,13 @@ $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -nq "$ENABLE_OPTI
 echo "-- enabled, only part of distinct columns form prefix of sorting key"
 $CLICKHOUSE_CLIENT --max_threads=0 -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 
-echo "-- check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
+echo "-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain where a > 0" | eval $FIND_SORTING_PROPERTIES
+echo "-- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns"
+$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a" | eval $FIND_SORTING_PROPERTIES
+echo "-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a" | eval $FIND_SORTING_PROPERTIES
+echo "-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization i.e. it contains columns from ORDER BY clause"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct a from distinct_in_order_explain order by a, b" | eval $FIND_SORTING_PROPERTIES
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
