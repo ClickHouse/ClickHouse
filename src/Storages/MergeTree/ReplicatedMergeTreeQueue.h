@@ -279,7 +279,7 @@ private:
     /// Very large queue entries may appear occasionally.
     /// We cannot process MAX_MULTI_OPS at once because it will fail.
     /// But we have to process more than one entry at once because otherwise lagged replicas keep up slowly.
-    /// Let's start with one entry per transaction and icrease it exponentially towards MAX_MULTI_OPS.
+    /// Let's start with one entry per transaction and increase it exponentially towards MAX_MULTI_OPS.
     /// It will allow to make some progress before failing and remain operational even in extreme cases.
     size_t current_multi_batch_size = 1;
 

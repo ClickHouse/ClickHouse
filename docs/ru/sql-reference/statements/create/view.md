@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: "Представление"
 ---

@@ -32,7 +32,10 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         ContextPtr context_,
-        const String & primary_key_);
+        const String & primary_key_,
+        Int32 ttl_ = 0,
+        String rocksdb_dir_ = "",
+        bool read_only_ = false);
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
@@ -47,6 +50,9 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
+
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+    void mutate(const MutationCommands &, ContextPtr) override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
@@ -80,6 +86,8 @@ private:
     RocksDBPtr rocksdb_ptr;
     mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
+    Int32 ttl;
+    bool read_only;
 
     void initDB();
 };

@@ -1076,7 +1076,8 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         settings.auth_settings.region,
         ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
-        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
+        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+        /* for_disk_s3 = */ false);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.rw_settings.max_connections;
@@ -1389,7 +1390,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
         };
 
         String source = fs::path(s3_configuration.uri.uri.getHost() + std::to_string(s3_configuration.uri.uri.getPort())) / path;
-        String cache_key = getKeyForSchemaCache(source, format_name, format_settings, ctx);
+        auto cache_key = getKeyForSchemaCache(source, format_name, format_settings, ctx);
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
@@ -1410,7 +1411,7 @@ void StorageS3::addColumnsToCache(
     Strings sources;
     sources.reserve(keys.size());
     std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const String & key){ return host_and_bucket / key; });
-    Strings cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
+    auto cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
     auto & schema_cache = getSchemaCache(ctx);
     schema_cache.addMany(cache_keys, columns);
 }

@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/kafka
 sidebar_position: 8
 sidebar_label: Kafka
 ---

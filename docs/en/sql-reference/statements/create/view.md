@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: VIEW
 ---

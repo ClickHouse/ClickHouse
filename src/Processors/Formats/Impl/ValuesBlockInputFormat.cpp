@@ -634,6 +634,10 @@ void registerValuesSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<ValuesSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
+    });
 }
 
 }

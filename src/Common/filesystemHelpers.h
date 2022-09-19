@@ -19,11 +19,14 @@ using TemporaryFile = Poco::TemporaryFile;
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
 
+
 // Determine what block device is responsible for specified path
 #if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getBlockDeviceId([[maybe_unused]] const String & path);
+
+std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path);
 
 enum class BlockDeviceType
 {

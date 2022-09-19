@@ -255,7 +255,7 @@ private:
 class HDFSSource::URISIterator::Impl
 {
 public:
-    explicit Impl(const std::vector<const String> & uris_, ContextPtr context)
+    explicit Impl(const std::vector<String> & uris_, ContextPtr context)
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
@@ -293,7 +293,7 @@ String HDFSSource::DisclosedGlobIterator::next()
     return pimpl->next();
 }
 
-HDFSSource::URISIterator::URISIterator(const std::vector<const String> & uris_, ContextPtr context)
+HDFSSource::URISIterator::URISIterator(const std::vector<String> & uris_, ContextPtr context)
     : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_, context))
 {
 }
@@ -774,7 +774,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
         };
 
         String url = fs::path(uri_without_path) / path;
-        String cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
+        auto cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
@@ -794,7 +794,7 @@ void StorageHDFS::addColumnsToCache(
     Strings sources;
     sources.reserve(paths.size());
     std::transform(paths.begin(), paths.end(), std::back_inserter(sources), [&](const String & path){ return fs::path(uri_without_path) / path; });
-    Strings cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
+    auto cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
     schema_cache.addMany(cache_keys, columns);
 }
 

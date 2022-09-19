@@ -103,7 +103,6 @@ void ReplicatedMergeTreeRestartingThread::run()
 }
 
 bool ReplicatedMergeTreeRestartingThread::runImpl()
-
 {
     if (!storage.is_readonly && !storage.getZooKeeper()->expired())
         return true;

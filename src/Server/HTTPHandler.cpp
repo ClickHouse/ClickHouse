@@ -534,19 +534,7 @@ void HTTPHandler::processQuery(
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
 
-    // Parse the OpenTelemetry traceparent header.
-    ClientInfo client_info = session->getClientInfo();
-    if (request.has("traceparent"))
-    {
-        std::string opentelemetry_traceparent = request.get("traceparent");
-        std::string error;
-        if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
-        {
-            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
-        }
-        client_info.client_trace_context.tracestate = request.get("tracestate", "");
-    }
-
+    auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
@@ -945,6 +933,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
 
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
+    SCOPE_EXIT({
+        // make sure the response status is recorded
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+    });
+
     try
     {
         if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
@@ -952,6 +947,28 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             processOptionsRequest(response, server.config());
             return;
         }
+
+        // Parse the OpenTelemetry traceparent header.
+        ClientInfo& client_info = session->getClientInfo();
+        if (request.has("traceparent"))
+        {
+            std::string opentelemetry_traceparent = request.get("traceparent");
+            std::string error;
+            if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            {
+                LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+            }
+            client_info.client_trace_context.tracestate = request.get("tracestate", "");
+        }
+
+        // Setup tracing context for this thread
+        auto context = session->sessionOrGlobalContext();
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("HTTPHandler",
+            client_info.client_trace_context,
+            context->getSettingsRef(),
+            context->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
@@ -987,6 +1004,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// cannot write in it anymore. So, just log this exception.
         if (used_output.isFinalized())
         {
+            if (thread_trace_context)
+                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
+
             tryLogCurrentException(log, "Cannot flush data to client");
             return;
         }
@@ -1000,6 +1020,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         int exception_code = getCurrentExceptionCode();
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
+
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.exception_code", exception_code);
     }
 
     used_output.finalize();
@@ -1135,18 +1158,20 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     return predefined_query;
 }
 
-HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix)
 {
-    auto query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
     std::optional<String> content_type_override;
-    if (server.config().has(config_prefix + ".handler.content_type"))
-        content_type_override = server.config().getString(config_prefix + ".handler.content_type");
+    if (config.has(config_prefix + ".handler.content_type"))
+        content_type_override = config.getString(config_prefix + ".handler.content_type");
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
         server, std::move(query_param_name), std::move(content_type_override));
 
-    factory->addFiltersFromConfig(server.config(), config_prefix);
+    factory->addFiltersFromConfig(config, config_prefix);
 
     return factory;
 }
@@ -1174,23 +1199,23 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     return compiled_regex;
 }
 
-HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix)
 {
-    Poco::Util::AbstractConfiguration & configuration = server.config();
-
-    if (!configuration.has(config_prefix + ".handler.query"))
+    if (!config.has(config_prefix + ".handler.query"))
         throw Exception("There is no path '" + config_prefix + ".handler.query' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    std::string predefined_query = configuration.getString(config_prefix + ".handler.query");
+    std::string predefined_query = config.getString(config_prefix + ".handler.query");
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
     Poco::Util::AbstractConfiguration::Keys headers_name;
-    configuration.keys(config_prefix + ".headers", headers_name);
+    config.keys(config_prefix + ".headers", headers_name);
 
     for (const auto & header_name : headers_name)
     {
-        auto expression = configuration.getString(config_prefix + ".headers." + header_name);
+        auto expression = config.getString(config_prefix + ".headers." + header_name);
 
         if (!startsWith(expression, "regex:"))
             continue;
@@ -1202,14 +1227,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
     }
 
     std::optional<String> content_type_override;
-    if (configuration.has(config_prefix + ".handler.content_type"))
-        content_type_override = configuration.getString(config_prefix + ".handler.content_type");
+    if (config.has(config_prefix + ".handler.content_type"))
+        content_type_override = config.getString(config_prefix + ".handler.content_type");
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
-    if (configuration.has(config_prefix + ".url"))
+    if (config.has(config_prefix + ".url"))
     {
-        auto url_expression = configuration.getString(config_prefix + ".url");
+        auto url_expression = config.getString(config_prefix + ".url");
 
         if (startsWith(url_expression, "regex:"))
             url_expression = url_expression.substr(6);
@@ -1224,7 +1249,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
                 std::move(regex),
                 std::move(headers_name_with_regex),
                 std::move(content_type_override));
-            factory->addFiltersFromConfig(configuration, config_prefix);
+            factory->addFiltersFromConfig(config, config_prefix);
             return factory;
         }
     }
@@ -1236,7 +1261,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
         CompiledRegexPtr{},
         std::move(headers_name_with_regex),
         std::move(content_type_override));
-    factory->addFiltersFromConfig(configuration, config_prefix);
+    factory->addFiltersFromConfig(config, config_prefix);
 
     return factory;
 }

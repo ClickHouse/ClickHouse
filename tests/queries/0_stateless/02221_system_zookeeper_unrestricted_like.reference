@@ -29,8 +29,12 @@ pinned_part_uuids
 queue
 quorum
 replicas
+shared
+shared
 table_shared_id
 temp
+zero_copy_hdfs
+zero_copy_s3
 -------------------------
 1
 alter_partition_version
@@ -63,5 +67,9 @@ pinned_part_uuids
 queue
 quorum
 replicas
+shared
+shared
 table_shared_id
 temp
+zero_copy_hdfs
+zero_copy_s3

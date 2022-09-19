@@ -143,9 +143,9 @@ ReadFromMergeTree::ReadFromMergeTree(
         {
             auto const & settings = context->getSettingsRef();
             if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
-                output_stream->sort_mode = DataStream::SortMode::Port;
+                output_stream->sort_scope = DataStream::SortScope::Stream;
             else
-                output_stream->sort_mode = DataStream::SortMode::Chunk;
+                output_stream->sort_scope = DataStream::SortScope::Chunk;
         }
 
         output_stream->sort_description = std::move(sort_description);
@@ -179,7 +179,6 @@ Pipe ReadFromMergeTree::readFromPool(
         sum_marks,
         min_marks_for_concurrent_read,
         std::move(parts_with_range),
-        data,
         storage_snapshot,
         prewhere_info,
         required_columns,
@@ -548,9 +547,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     if (need_preliminary_merge)
     {
-        size_t fixed_prefix_size = input_order_info->order_key_fixed_prefix_descr.size();
-        size_t prefix_size = fixed_prefix_size + input_order_info->order_key_prefix_descr.size();
-
+        size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
         auto order_key_prefix_ast = metadata_for_reading->getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
@@ -865,6 +862,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     size_t total_parts = parts.size();
 
+    /// TODO Support row_policy_filter and additional_filters
     auto part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, query_info.query, context);
     if (part_values && part_values->empty())
         return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
@@ -922,6 +920,9 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 fmt::join(primary_key_columns, ", ")))});
     }
     LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
+
+    if (key_condition->alwaysFalse())
+        return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 

@@ -2,6 +2,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageView.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -528,15 +529,33 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
         QueryPlan plan;
-        storage->read(
-            plan,
-            real_column_names,
-            storage_snapshot,
-            modified_query_info,
-            modified_context,
-            processed_stage,
-            max_block_size,
-            UInt32(streams_num));
+        if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
+        {
+            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
+            /// The most intuitive way is to use InterpreterSelectQuery.
+
+            /// Intercept the settings
+            modified_context->setSetting("max_threads", streams_num);
+            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+            modified_context->setSetting("max_block_size", max_block_size);
+
+            InterpreterSelectQuery(
+                modified_query_info.query, modified_context, storage, view->getInMemoryMetadataPtr(), SelectQueryOptions(processed_stage))
+                .buildQueryPlan(plan);
+        }
+        else
+        {
+            storage->read(
+                plan,
+                real_column_names,
+                storage_snapshot,
+                modified_query_info,
+                modified_context,
+                processed_stage,
+                max_block_size,
+                UInt32(streams_num));
+
+        }
 
         if (!plan.isInitialized())
             return {};

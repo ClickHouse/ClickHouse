@@ -34,6 +34,13 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
         return with_default ? config.getUInt64(config_elem + "." + key + "." + elem, default_value) : config.getUInt64(config_elem + "." + key + "." + elem);
     };
 
+
+    auto get_bool_for_key = [&](const String & key, const String & elem, bool with_default = true, bool default_value = false)
+    {
+        return with_default ? config.getBool(config_elem + "." + key + "." + elem, default_value) : config.getBool(config_elem + "." + key + "." + elem);
+    };
+
+
     for (const String & key : config_keys)
     {
         if (config.has(config_elem + "." + key + ".endpoint"))
@@ -82,6 +89,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             rw_settings.upload_part_size_multiply_parts_count_threshold = get_uint_for_key(key, "upload_part_size_multiply_parts_count_threshold", true, settings.s3_upload_part_size_multiply_parts_count_threshold);
             rw_settings.max_single_part_upload_size = get_uint_for_key(key, "max_single_part_upload_size", true, settings.s3_max_single_part_upload_size);
             rw_settings.max_connections = get_uint_for_key(key, "max_connections", true, settings.s3_max_connections);
+            rw_settings.check_objects_after_upload = get_bool_for_key(key, "check_objects_after_upload", true, false);
 
             s3_settings.emplace(endpoint, S3Settings{std::move(auth_settings), std::move(rw_settings)});
         }
@@ -112,6 +120,7 @@ S3Settings::ReadWriteSettings::ReadWriteSettings(const Settings & settings)
     upload_part_size_multiply_parts_count_threshold = settings.s3_upload_part_size_multiply_parts_count_threshold;
     max_single_part_upload_size = settings.s3_max_single_part_upload_size;
     max_connections = settings.s3_max_connections;
+    check_objects_after_upload = settings.s3_check_objects_after_upload;
 }
 
 void S3Settings::ReadWriteSettings::updateFromSettingsIfEmpty(const Settings & settings)
@@ -128,6 +137,7 @@ void S3Settings::ReadWriteSettings::updateFromSettingsIfEmpty(const Settings & s
         max_single_part_upload_size = settings.s3_max_single_part_upload_size;
     if (!max_connections)
         max_connections = settings.s3_max_connections;
+    check_objects_after_upload = settings.s3_check_objects_after_upload;
 }
 
 }

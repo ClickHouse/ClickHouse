@@ -427,6 +427,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
         return false;
 
     size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->rows_read;
+    size_t input_rows_filtered = *global_ctx->input_rows_filtered;
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_column_names.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
@@ -439,10 +440,11 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     /// In special case, when there is only one source part, and no rows were skipped, we may have
     /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
     /// number of input rows.
-    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count)
-        throw Exception("Number of rows in source parts (" + toString(sum_input_rows_exact)
-            + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
-            + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
+    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number of bytes written to rows_sources file ({}). It is a bug.",
+            sum_input_rows_exact, input_rows_filtered, rows_sources_count);
 
     ctx->rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(ctx->tmp_disk->readFile(fileName(ctx->rows_sources_file->path())));
 
@@ -453,7 +455,6 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     return false;
 }
-
 
 void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 {
@@ -467,10 +468,17 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     Pipes pipes;
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
-        auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-            *global_ctx->data, global_ctx->storage_snapshot, global_ctx->future_part->parts[part_num], column_names, ctx->read_with_direct_io, true);
+        Pipe pipe = createMergeTreeSequentialSource(
+            *global_ctx->data,
+            global_ctx->storage_snapshot,
+            global_ctx->future_part->parts[part_num],
+            column_names,
+            ctx->read_with_direct_io,
+            true,
+            false,
+            global_ctx->input_rows_filtered);
 
-        pipes.emplace_back(std::move(column_part_source));
+        pipes.emplace_back(std::move(pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -809,27 +817,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     for (const auto & part : global_ctx->future_part->parts)
     {
-        auto columns = global_ctx->merging_column_names;
-
-        /// The part might have some rows masked by lightweight deletes
-        const auto lightweight_delete_filter_column = LightweightDeleteDescription::FILTER_COLUMN.name;
-        const bool need_to_filter_deleted_rows = part->hasLightweightDelete();
-        if (need_to_filter_deleted_rows)
-            columns.emplace_back(lightweight_delete_filter_column);
-
-        auto input = std::make_unique<MergeTreeSequentialSource>(
-            *global_ctx->data, global_ctx->storage_snapshot, part, columns, ctx->read_with_direct_io, true);
-
-        Pipe pipe(std::move(input));
-
-        /// Add filtering step that discards deleted rows
-        if (need_to_filter_deleted_rows)
-        {
-            pipe.addSimpleTransform([lightweight_delete_filter_column](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(header, nullptr, lightweight_delete_filter_column, true);
-            });
-        }
+        Pipe pipe = createMergeTreeSequentialSource(
+            *global_ctx->data,
+            global_ctx->storage_snapshot,
+            part,
+            global_ctx->merging_column_names,
+            ctx->read_with_direct_io,
+            true,
+            false,
+            global_ctx->input_rows_filtered);
 
         if (global_ctx->metadata_snapshot->hasSortingKey())
         {

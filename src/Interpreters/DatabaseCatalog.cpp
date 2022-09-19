@@ -19,6 +19,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
+#include <Common/checkStackSize.h>
 
 #include "config_core.h"
 
@@ -31,6 +32,7 @@
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
+
 
 namespace CurrentMetrics
 {
@@ -255,6 +257,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     ContextPtr context_,
     std::optional<Exception> * exception) const
 {
+    checkStackSize();
+
     if (!table_id)
     {
         if (exception)

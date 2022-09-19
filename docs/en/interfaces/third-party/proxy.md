@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/third-party/proxy
 sidebar_position: 29
 sidebar_label: Proxies
 ---

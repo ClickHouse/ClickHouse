@@ -44,7 +44,7 @@ public:
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,
-        const String & compression_method,
+        CompressionMethod compression_method,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
@@ -67,7 +67,7 @@ protected:
         ASTPtr partition_by = nullptr);
 
     String uri;
-    String compression_method;
+    CompressionMethod compression_method;
     String format_name;
     // For URL engine, we use format settings from server context + `SETTINGS`
     // clause of the `CREATE` query. In this case, format_settings is set.

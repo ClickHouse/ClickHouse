@@ -4,18 +4,14 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <cerrno>
 #include <pwd.h>
 #include <unistd.h>
 #include <Poco/Version.h>
-#include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Common/scope_guard_safe.h>
-#include <base/defines.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <Common/ErrorHandlers.h>
@@ -44,8 +40,8 @@
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/ServerUUID.h>
-#include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
@@ -55,7 +51,6 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
@@ -84,7 +79,6 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/Elf.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -170,7 +164,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     /// Can be overridden by environment variable (cannot use server config at this moment).
     if (argc > 0)
     {
-        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE");
+        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE"); // NOLINT(concurrency-mt-unsafe)
         if (env_watchdog)
         {
             if (0 == strcmp(env_watchdog, "1"))
@@ -268,7 +262,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
@@ -557,8 +550,9 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        if (readString(filename).find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
+        String clocksource = readString(filename);
+        if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
@@ -658,6 +652,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 
+#if USE_HDFS
+    /// This will point libhdfs3 to the right location for its config.
+    /// Note: this has to be done once at server initialization, because 'setenv' is not thread-safe.
+
+    String libhdfs3_conf = config().getString("hdfs.libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
+    {
+        if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+        {
+            const String config_path = config().getString("config-file", "config.xml");
+            const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+            if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+        }
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), true /* overwrite */); // NOLINT
+    }
+#endif
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -698,8 +710,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     GlobalThreadPool::initialize(
         config().getUInt("max_thread_pool_size", 10000),
         config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
-    );
+        config().getUInt("thread_pool_queue_size", 10000));
 
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
@@ -726,7 +737,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
     AsynchronousMetrics async_metrics(
-        global_context, config().getUInt("asynchronous_metrics_update_period_s", 1),
+        global_context,
+        config().getUInt("asynchronous_metrics_update_period_s", 1),
+        config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;
@@ -840,7 +853,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
                     if (0 != mlock(addr, len))
-                        LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
                     else
                         LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
                 }
@@ -908,7 +921,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
-                LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, strerror(errno));
+                LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString());
             else
                 LOG_DEBUG(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
         }
@@ -931,7 +944,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int rc = setrlimit(RLIMIT_NPROC, &rlim);
             if (rc != 0)
             {
-                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, strerror(errno));
+                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, errnoToString());
                 rlim.rlim_cur = old;
             }
             else
@@ -1024,7 +1037,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         try
         {
             LOG_DEBUG(
-                log, "Initiailizing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+                log, "Initializing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
             global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
         }
         catch (...)
@@ -1077,7 +1090,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    LOG_DEBUG(log, "Initiailizing interserver credentials.");
+    LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
     if (config().has("macros"))
@@ -1144,7 +1157,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setExternalAuthenticatorsConfig(*config);
 
             global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             global_context->setRemoteHostFilter(*config);
@@ -1156,22 +1168,20 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("concurrent_threads_soft_limit"))
+            ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
+            if (config->has("concurrent_threads_soft_limit_num"))
             {
-                auto concurrent_threads_soft_limit = config->getInt("concurrent_threads_soft_limit", 0);
-                if (concurrent_threads_soft_limit == -1)
-                {
-                    // Based on tests concurrent_threads_soft_limit has an optimal value when it's about 3 times of logical CPU cores
-                    constexpr size_t thread_factor = 3;
-                    concurrent_threads_soft_limit = std::thread::hardware_concurrency() * thread_factor;
-                }
-                if (concurrent_threads_soft_limit)
-                    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-                else
-                    ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+                auto value = config->getUInt64("concurrent_threads_soft_limit_num", 0);
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
             }
-            else
-                ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+            if (config->has("concurrent_threads_soft_limit_ratio_to_cores"))
+            {
+                auto value = config->getUInt64("concurrent_threads_soft_limit_ratio_to_cores", 0) * std::thread::hardware_concurrency();
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
+            }
+            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
 
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
@@ -1259,6 +1269,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             CertificateReloader::instance().tryLoad(*config);
 #endif
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
+
+            /// Must be the last.
+            latest_config = config;
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -1724,17 +1737,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             throw;
         }
 
-        /// try to load models immediately, throw on error and die
-        try
-        {
-            global_context->loadOrReloadModels(config());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
-            throw;
-        }
-
         /// try to load user defined executable functions, throw on error and die
         try
         {
@@ -1876,7 +1878,7 @@ void Server::createServers(
                 port_name,
                 "http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
         });
 
         /// HTTPS
@@ -1893,7 +1895,7 @@ void Server::createServers(
                 port_name,
                 "https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
             UNUSED(port);
             throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -2018,7 +2020,7 @@ void Server::createServers(
                 port_name,
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                    context(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 
@@ -2039,7 +2041,7 @@ void Server::createServers(
                 "replica communication (interserver): http://" + address.toString(),
                 std::make_unique<HTTPServer>(
                     context(),
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
+                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -2059,7 +2061,7 @@ void Server::createServers(
                 "secure replica communication (interserver): https://" + address.toString(),
                 std::make_unique<HTTPServer>(
                     context(),
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -2101,13 +2103,24 @@ void Server::updateServers(
 
     std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
 
+    Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
+
     for (auto & server : servers)
     {
         if (!server.isStopping())
         {
             bool has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(server.getPortName(), "").empty();
-            if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber())
+
+            /// NOTE: better to compare using getPortName() over using
+            /// dynamic_cast<> since HTTPServer is also used for prometheus and
+            /// internal replication communications.
+            bool is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+            bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
+            if (force_restart)
+                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server.getDescription());
+
+            if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber() || force_restart)
             {
                 server.stop();
                 LOG_INFO(log, "Stopped listening for {}", server.getDescription());

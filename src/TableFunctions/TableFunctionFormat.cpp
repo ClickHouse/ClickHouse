@@ -91,7 +91,7 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>(TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionFormat>({}, TableFunctionFactory::CaseInsensitive);
 }
 
 }
