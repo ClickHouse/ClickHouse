@@ -299,7 +299,7 @@ def test_distributed_insert_select_with_replicated(started_cluster):
 
     for file_number in range(100):
         first_replica_first_shard.query(
-           f"""
+            f"""
         INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{file_number}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
         SELECT repeat('{file_number}', 10), number from numbers(100);
             """
