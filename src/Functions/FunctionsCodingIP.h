@@ -31,7 +31,7 @@ static inline bool tryParseIPv4(const char * pos, UInt32 & result_value)
 namespace detail
 {
     template <IPStringToNumExceptionMode exception_mode, typename StringColumnType>
-    ColumnPtr convertToIPv6(const StringColumnType & string_column)
+    ColumnPtr convertToIPv6(const StringColumnType & string_column, const PaddedPODArray<UInt8> * null_map = nullptr)
     {
         size_t column_size = string_column.size();
 
@@ -85,6 +85,15 @@ namespace detail
                 src_next_offset += fixed_string_size;
             }
 
+            if (null_map && (*null_map)[i])
+            {
+                std::fill_n(&vec_res[i], IPV6_BINARY_LENGTH, 0);
+                src_offset = src_next_offset;
+                if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+                    (*vec_null_map_to)[i] = true;
+                continue;
+            }
+
             bool parse_result = false;
             UInt32 dummy_result = 0;
 
@@ -126,7 +135,7 @@ namespace detail
 }
 
 template <IPStringToNumExceptionMode exception_mode>
-ColumnPtr convertToIPv6(ColumnPtr column)
+ColumnPtr convertToIPv6(ColumnPtr column, const PaddedPODArray<UInt8> * null_map = nullptr)
 {
     size_t column_size = column->size();
 
@@ -137,11 +146,11 @@ ColumnPtr convertToIPv6(ColumnPtr column)
 
     if (const auto * column_input_string = checkAndGetColumn<ColumnString>(column.get()))
     {
-        return detail::convertToIPv6<exception_mode>(*column_input_string);
+        return detail::convertToIPv6<exception_mode>(*column_input_string, null_map);
     }
     else if (const auto * column_input_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
     {
-        return detail::convertToIPv6<exception_mode>(*column_input_fixed_string);
+        return detail::convertToIPv6<exception_mode>(*column_input_fixed_string, null_map);
     }
     else
     {
@@ -150,7 +159,7 @@ ColumnPtr convertToIPv6(ColumnPtr column)
 }
 
 template <IPStringToNumExceptionMode exception_mode>
-ColumnPtr convertToIPv4(ColumnPtr column)
+ColumnPtr convertToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null_map = nullptr)
 {
     const ColumnString * column_string = checkAndGetColumn<ColumnString>(column.get());
 
@@ -181,6 +190,15 @@ ColumnPtr convertToIPv4(ColumnPtr column)
 
     for (size_t i = 0; i < vec_res.size(); ++i)
     {
+        if (null_map && (*null_map)[i])
+        {
+            vec_res[i] = 0;
+            prev_offset = offsets_src[i];
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+                (*vec_null_map_to)[i] = true;
+            continue;
+        }
+
         bool parse_result = tryParseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]), vec_res[i]);
 
         if (!parse_result)

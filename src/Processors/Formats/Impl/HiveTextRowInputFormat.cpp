@@ -14,6 +14,7 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
 {
     FormatSettings updated = settings;
     updated.skip_unknown_fields = true;
+    updated.with_names_use_header = true;
     updated.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
     if (settings.hive_text.input_field_names.empty())

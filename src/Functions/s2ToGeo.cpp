@@ -113,7 +113,7 @@ public:
 
 }
 
-void registerFunctionS2ToGeo(FunctionFactory & factory)
+REGISTER_FUNCTION(S2ToGeo)
 {
     factory.registerFunction<FunctionS2ToGeo>();
 }

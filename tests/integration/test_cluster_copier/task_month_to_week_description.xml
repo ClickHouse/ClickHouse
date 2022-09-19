@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <!-- How many simualteneous workers are posssible -->
     <max_workers>4</max_workers>

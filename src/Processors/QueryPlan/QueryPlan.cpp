@@ -97,8 +97,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
-        interpreter_context.insert(interpreter_context.end(),
-                                   plan->interpreter_context.begin(), plan->interpreter_context.end());
+        resources = std::move(plan->resources);
     }
 }
 
@@ -196,33 +195,12 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    for (auto & context : interpreter_context)
-        last_pipeline->addInterpreterContext(std::move(context));
-
-    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
+    last_pipeline->addResources(std::move(resources));
 
     return last_pipeline;
 }
-
-Pipe QueryPlan::convertToPipe(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
-{
-    if (!isInitialized())
-        return {};
-
-    if (isCompleted())
-        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
-
-    return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
-}
-
-void QueryPlan::addInterpreterContext(ContextPtr context)
-{
-    interpreter_context.emplace_back(std::move(context));
-}
-
 
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
@@ -347,8 +325,22 @@ static void explainStep(
                 elem.dumpNameAndType(settings.out);
             }
         }
-
         settings.out.write('\n');
+
+    }
+
+    if (options.sorting)
+    {
+        if (step.hasOutputStream())
+        {
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+            {
+                settings.out << ": ";
+                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
+            }
+            settings.out.write('\n');
+        }
     }
 
     if (options.actions)
@@ -456,6 +448,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

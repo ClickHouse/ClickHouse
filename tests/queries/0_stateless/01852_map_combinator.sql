@@ -26,7 +26,7 @@ select minMap(val) from values ('val Map(String, String)',  (map('1', '1')), (ma
 select minMap(val) from values ('val Map(FixedString(1), FixedString(1))',  (map('1', '1')), (map('1', '2')));
 select minMap(val) from values ('val Map(UInt64, UInt64)',  (map(1, 1)), (map(1, 2)));
 select minMap(val) from values ('val Map(Date, Int16)',  (map(1, 1)), (map(1, 2)));
-select minMap(val) from values ('val Map(DateTime(\'Europe/Moscow\'), Int32)',  (map(1, 1)), (map(1, 2)));
+select minMap(val) from values ('val Map(DateTime(\'Asia/Istanbul\'), Int32)',  (map(1, 1)), (map(1, 2)));
 select minMap(val) from values ('val Map(Enum16(\'a\'=1), Int16)',  (map('a', 1)), (map('a', 2)));
 select maxMap(val) from values ('val Map(String, String)',  (map('1', '1')), (map('1', '2')));
 select minMap(val) from values ('val Map(Int128, Int128)',  (map(1, 1)), (map(1, 2)));

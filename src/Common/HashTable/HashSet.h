@@ -16,14 +16,12 @@
   */
 
 
-template
-<
+template <
     typename Key,
     typename TCell,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
 class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
@@ -84,13 +82,11 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
     size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
-template
-<
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
 using HashSet = HashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
@@ -102,13 +98,11 @@ using HashSetWithStackMemory = HashSet<
         (1ULL << initial_size_degree)
         * sizeof(HashTableCell<Key, Hash>)>>;
 
-template
-<
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
 using HashSetWithSavedHash = HashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>

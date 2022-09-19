@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/avg
 sidebar_position: 5
 ---
 
-# avg {#agg_function-avg}
+# avg
 
 Calculates the arithmetic mean.
 

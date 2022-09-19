@@ -8,6 +8,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <boost/algorithm/hex.hpp>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -182,6 +184,7 @@ public:
     }
 
     UInt64 getSize() const override { return reservation->getSize(); }
+    UInt64 getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
     DiskPtr getDisk(size_t i) const override
     {

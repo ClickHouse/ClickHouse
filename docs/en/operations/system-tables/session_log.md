@@ -1,4 +1,7 @@
-# session_log {#system_tables-session_log}
+---
+slug: /en/operations/system-tables/session_log
+---
+# session_log
 
 Contains information about all successful and failed login and logout events.
 

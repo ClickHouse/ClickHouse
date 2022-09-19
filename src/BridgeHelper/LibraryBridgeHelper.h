@@ -6,52 +6,16 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/IBridgeHelper.h>
-
+#include <Common/BridgeProtocolVersion.h>
 
 namespace DB
 {
 
-class Pipe;
-
+// Common base class to access the clickhouse-library-bridge.
 class LibraryBridgeHelper : public IBridgeHelper
 {
-
-public:
-    struct LibraryInitData
-    {
-        String library_path;
-        String library_settings;
-        String dict_attributes;
-    };
-
-    static constexpr inline size_t DEFAULT_PORT = 9012;
-
-    LibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_, const LibraryInitData & library_data_);
-
-    bool initLibrary();
-
-    bool cloneLibrary(const Field & other_dictionary_id);
-
-    bool removeLibrary();
-
-    bool isModified();
-
-    bool supportsSelectiveLoad();
-
-    Pipe loadAll();
-
-    Pipe loadIds(const std::vector<uint64_t> & ids);
-
-    Pipe loadKeys(const Block & requested_block);
-
-    Pipe loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
-
-    bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
-
-    LibraryInitData getLibraryData() const { return library_data; }
-
 protected:
-    bool bridgeHandShake() override;
+    explicit LibraryBridgeHelper(ContextPtr context_);
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override;
 
@@ -73,33 +37,13 @@ protected:
 
     Poco::URI createBaseURI() const override;
 
-    ReadWriteBufferFromHTTP::OutStreamCallback getInitLibraryCallback() const;
+    static constexpr inline size_t DEFAULT_PORT = 9012;
 
-private:
-    static constexpr inline auto LIB_NEW_METHOD = "libNew";
-    static constexpr inline auto LIB_CLONE_METHOD = "libClone";
-    static constexpr inline auto LIB_DELETE_METHOD = "libDelete";
-    static constexpr inline auto LOAD_ALL_METHOD = "loadAll";
-    static constexpr inline auto LOAD_IDS_METHOD = "loadIds";
-    static constexpr inline auto LOAD_KEYS_METHOD = "loadKeys";
-    static constexpr inline auto IS_MODIFIED_METHOD = "isModified";
-    static constexpr inline auto PING = "ping";
-    static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
-
-    Poco::URI createRequestURI(const String & method) const;
-
-    static String getDictIdsString(const std::vector<UInt64> & ids);
-
-    Poco::Logger * log;
-    const Block sample_block;
     const Poco::Util::AbstractConfiguration & config;
+    Poco::Logger * log;
     const Poco::Timespan http_timeout;
-
-    LibraryInitData library_data;
-    Field dictionary_id;
     std::string bridge_host;
     size_t bridge_port;
-    bool library_initialized = false;
     ConnectionTimeouts http_timeouts;
     Poco::Net::HTTPBasicCredentials credentials{};
 };

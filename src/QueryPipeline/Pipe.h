@@ -14,6 +14,8 @@ struct StreamLocalLimits;
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
+class ReadProgressCallback;
+
 using OutputPortRawPtrs = std::vector<OutputPort *>;
 
 /// Pipe is a set of processors which represents the part of pipeline.
@@ -83,13 +85,13 @@ public:
     /// Add chain to every output port.
     void addChains(std::vector<Chain> chains);
 
-    /// Changes the number of output ports if needed. Adds ResizeTransform.
+    /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
     /// Transform Pipe in general way.
-    void transform(const Transformer & transformer);
+    void transform(const Transformer & transformer, bool check_ports = true);
 
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);
@@ -99,26 +101,7 @@ public:
     /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
     const Processors & getProcessors() const { return processors; }
 
-    /// Specify quotas and limits for every ISourceWithProgress.
-    void setLimits(const StreamLocalLimits & limits);
-    void setLeafLimits(const SizeLimits & leaf_limits);
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
-
-    /// Do not allow to change the table while the processors of pipe are alive.
-    void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
-    /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
-    void addInterpreterContext(std::shared_ptr<const Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
-    void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
-    /// For queries with nested interpreters (i.e. StorageDistributed)
-    void addQueryPlan(std::unique_ptr<QueryPlan> plan);
-
-    PipelineResourcesHolder detachResources();
-
 private:
-    /// Destruction order: processors, header, locks, temporary storages, local contexts
-    PipelineResourcesHolder holder;
-
     /// Header is common for all output below.
     Block header;
     Processors processors;

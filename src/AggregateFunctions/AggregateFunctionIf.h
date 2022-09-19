@@ -56,6 +56,16 @@ public:
         return nested_func->getReturnType();
     }
 
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return nested_func->getNormalizedStateType();
+    }
+
     bool isVersioned() const override
     {
         return nested_func->isVersioned();
@@ -100,7 +110,7 @@ public:
     void addBatch(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr * places,
+        AggregateDataPtr * __restrict places,
         size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
@@ -112,7 +122,7 @@ public:
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t) const override
@@ -123,7 +133,7 @@ public:
     void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,

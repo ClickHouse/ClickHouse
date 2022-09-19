@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/integrations/odbc
 sidebar_position: 2
 sidebar_label: ODBC
 ---
 
-# ODBC {#table-engine-odbc}
+# ODBC
 
 Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 

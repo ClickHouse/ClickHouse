@@ -39,6 +39,7 @@
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
 #include <Storages/System/StorageSystemSettings.h>
+#include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
@@ -72,6 +73,8 @@
 #include <Storages/System/StorageSystemTransactions.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
+#include <Storages/System/StorageSystemCertificates.h>
+#include <Storages/System/StorageSystemSchemaInferenceCache.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -99,6 +102,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemFunctions>(context, system_database, "functions");
     attach<StorageSystemEvents>(context, system_database, "events");
     attach<StorageSystemSettings>(context, system_database, "settings");
+    attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes");
     attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings");
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options");
@@ -130,6 +134,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemLicenses>(context, system_database, "licenses");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
     attach<StorageSystemBackups>(context, system_database, "backups");
+    attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
@@ -168,6 +173,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts");
     attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache");
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
+    attach<StorageSystemCertificates>(context, system_database, "certificates");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");

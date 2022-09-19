@@ -1,11 +1,5 @@
 #include "WriteIndirectBufferFromRemoteFS.h"
 
-#include <IO/WriteBufferFromS3.h>
-#include <IO/WriteBufferFromAzureBlobStorage.h>
-#include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <IO/WriteBufferFromHTTP.h>
-
-
 namespace DB
 {
 
@@ -32,11 +26,11 @@ WriteIndirectBufferFromRemoteFS::~WriteIndirectBufferFromRemoteFS()
     }
 }
 
-
 void WriteIndirectBufferFromRemoteFS::finalizeImpl()
 {
     WriteBufferFromFileDecorator::finalizeImpl();
-    create_metadata_callback(count());
+    if (create_metadata_callback)
+        create_metadata_callback(count());
 }
 
 

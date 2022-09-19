@@ -66,7 +66,7 @@ public:
     explicit Fetcher(StorageReplicatedMergeTree & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
-    MergeTreeData::MutableDataPartPtr fetchPart(
+    MergeTreeData::MutableDataPartPtr fetchSelectedPart(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const String & part_name,
@@ -90,9 +90,8 @@ public:
 private:
     void downloadBaseOrProjectionPartToDisk(
             const String & replica_path,
-            const String & part_download_path,
+            DataPartStorageBuilderPtr & data_part_storage_builder,
             bool sync,
-            DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
             MergeTreeData::DataPart::Checksums & checksums,
             ThrottlerPtr throttler) const;

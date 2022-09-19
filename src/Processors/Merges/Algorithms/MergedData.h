@@ -38,27 +38,41 @@ public:
         sum_blocks_granularity += block_size;
     }
 
-    void insertFromChunk(Chunk && chunk, size_t limit_rows)
+    void insertRows(const ColumnRawPtrs & raw_columns, size_t start_index, size_t length, size_t block_size)
+    {
+        size_t num_columns = raw_columns.size();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (length == 1)
+                columns[i]->insertFrom(*raw_columns[i], start_index);
+            else
+                columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+        }
+
+        total_merged_rows += length;
+        merged_rows += length;
+        sum_blocks_granularity += (block_size * length);
+    }
+
+    void insertChunk(Chunk && chunk, size_t rows_size)
     {
         if (merged_rows)
             throw Exception("Cannot insert to MergedData from Chunk because MergedData is not empty.",
                             ErrorCodes::LOGICAL_ERROR);
 
-        auto num_rows = chunk.getNumRows();
+        UInt64 num_rows = chunk.getNumRows();
         columns = chunk.mutateColumns();
-        if (limit_rows && num_rows > limit_rows)
+
+        if (rows_size < num_rows)
         {
-            num_rows = limit_rows;
+            size_t pop_size = num_rows - rows_size;
             for (auto & column : columns)
-                column = IColumn::mutate(column->cut(0, num_rows));
+                column->popBack(pop_size);
         }
 
         need_flush = true;
-        total_merged_rows += num_rows;
-        merged_rows = num_rows;
-
-        /// We don't care about granularity here. Because, for fast-forward optimization, chunk will be moved as-is.
-        /// sum_blocks_granularity += block_size * num_rows;
+        total_merged_rows += rows_size;
+        merged_rows = rows_size;
     }
 
     Chunk pull()
@@ -107,6 +121,7 @@ public:
     UInt64 totalMergedRows() const { return total_merged_rows; }
     UInt64 totalChunks() const { return total_chunks; }
     UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
+    UInt64 maxBlockSize() const { return max_block_size; }
 
 protected:
     MutableColumns columns;

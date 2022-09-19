@@ -42,9 +42,9 @@ void MySQLClient::connect()
         disconnect();
     }
 
-    const Poco::Timespan connection_timeout(10 * 1e9);
-    const Poco::Timespan receive_timeout(5 * 1e9);
-    const Poco::Timespan send_timeout(5 * 1e9);
+    const Poco::Timespan connection_timeout(10'000'000'000);
+    const Poco::Timespan receive_timeout(5'000'000'000);
+    const Poco::Timespan send_timeout(5'000'000'000);
 
     socket = std::make_unique<Poco::Net::StreamSocket>();
     address = DNSResolver::instance().resolveAddress(host, port);
@@ -56,7 +56,7 @@ void MySQLClient::connect()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
+    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     handshake();
 }
@@ -152,7 +152,7 @@ void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, std:
     setBinlogChecksum(binlog_checksum);
 
     /// Set heartbeat 1s.
-    UInt64 period_ns = (1 * 1e9);
+    UInt64 period_ns = 1'000'000'000;
     writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns));
 
     // Register slave.

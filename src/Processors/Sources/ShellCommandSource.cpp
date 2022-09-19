@@ -244,7 +244,7 @@ namespace
     *
     * If process_pool is passed in constructor then after source is destroyed process is returned to pool.
     */
-    class ShellCommandSource final : public SourceWithProgress
+    class ShellCommandSource final : public ISource
     {
     public:
 
@@ -260,7 +260,7 @@ namespace
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-            : SourceWithProgress(sample_block_)
+            : ISource(sample_block_)
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
@@ -373,7 +373,7 @@ namespace
 
         Status prepare() override
         {
-            auto status = SourceWithProgress::prepare();
+            auto status = ISource::prepare();
 
             if (status == Status::Finished)
             {
@@ -578,9 +578,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         source_configuration,
         std::move(process_holder),
         process_pool);
-    auto pipe = Pipe(std::move(source));
 
-    return pipe;
+    return Pipe(std::move(source));
 }
 
 }

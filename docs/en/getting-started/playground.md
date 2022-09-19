@@ -6,7 +6,7 @@ description: The ClickHouse Playground allows people to experiment with ClickHou
 slug: /en/getting-started/playground
 ---
 
-# ClickHouse Playground {#clickhouse-playground}
+# ClickHouse Playground
 
 [ClickHouse Playground](https://play.clickhouse.com/play?user=play) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
 Several example datasets are available in Playground.

@@ -51,12 +51,12 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
-        Protocol::Secure secure_,
-        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
+        Protocol::Secure secure_);
 
     ~Connection() override;
 
@@ -96,11 +96,13 @@ public:
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
+        const NameToNameMap& query_parameters,
         const String & query_id_/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
-        bool with_pending_data/* = false */) override;
+        bool with_pending_data/* = false */,
+        std::function<void(const Progress &)> process_progress_callback) override;
 
     void sendCancel() override;
 
@@ -122,7 +124,7 @@ public:
 
     bool isConnected() const override { return connected; }
 
-    bool checkConnected() override { return connected && ping(); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
 
     void disconnect() override;
 
@@ -158,6 +160,7 @@ private:
     String default_database;
     String user;
     String password;
+    String quota_key;
 
     /// For inter-server authorization
     String cluster;
@@ -204,8 +207,6 @@ private:
       */
     ThrottlerPtr throttler;
 
-    Poco::Timespan sync_request_timeout;
-
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     std::unique_ptr<NativeReader> block_in;
@@ -244,12 +245,13 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+    void sendAddendum();
     void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();
 #endif
-    bool ping();
+    bool ping(const ConnectionTimeouts & timeouts);
 
     Block receiveData();
     Block receiveLogData();

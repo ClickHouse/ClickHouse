@@ -9,14 +9,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/*
- * CastInternal does not preserve nullability of the data type,
- * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
- *
- * Cast preserves nullability according to setting `cast_keep_nullable`,
- * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
-**/
-template<CastType cast_type, bool internal, typename CastName, typename FunctionName>
+/** CastInternal does not preserve nullability of the data type,
+  * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
+  *
+  * Cast preserves nullability according to setting `cast_keep_nullable`,
+  * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
+  */
+template <CastType cast_type, bool internal, typename CastName, typename FunctionName>
 class CastOverloadResolverImpl : public IFunctionOverloadResolver
 {
 public:
@@ -45,7 +44,7 @@ public:
         const auto & settings_ref = context->getSettingsRef();
 
         if constexpr (internal)
-            return createImpl({}, false /*keep_nullable*/, false /*cast_ipv4_ipv6_default_on_conversion_error*/);
+            return createImpl({}, false /*keep_nullable*/, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
 
         return createImpl({}, settings_ref.cast_keep_nullable, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
     }
@@ -98,6 +97,7 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:

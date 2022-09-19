@@ -2,7 +2,13 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 
 #if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
+#    define LIBDIVIDE_SSE2
+#elif defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
+#    define LIBDIVIDE_AVX512
+#elif defined(__AVX2__)
+#    define LIBDIVIDE_AVX2
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+#    define LIBDIVIDE_NEON
 #endif
 
 #include <libdivide.h>
@@ -156,7 +162,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> :
 struct NameModulo { static constexpr auto name = "modulo"; };
 using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;
 
-void registerFunctionModulo(FunctionFactory & factory)
+REGISTER_FUNCTION(Modulo)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
@@ -165,7 +171,7 @@ void registerFunctionModulo(FunctionFactory & factory)
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
 using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
 
-void registerFunctionModuloLegacy(FunctionFactory & factory)
+REGISTER_FUNCTION(ModuloLegacy)
 {
     factory.registerFunction<FunctionModuloLegacy>();
 }

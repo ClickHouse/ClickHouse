@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+# tags: long, no-parallel
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
+log_user 0
+set timeout 20
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
+}
+
+spawn bash -c "echo 'select 1;\nselect 2;\nselect 3' > queries_02352"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --disable_suggestion"
+expect ":) "
+
+send -- "\\i queries_02352\r"
+expect "1"
+expect "2"
+expect "3"
+expect ":) "
+send -- "\\i queries_02352;\r"
+expect "1"
+expect "2"
+expect "3"
+expect ":) "
+send -- "       \\i queries_02352 ;         \r"
+expect "1"
+expect "2"
+expect "3"
+expect ":) "
+send -- "       \\i         queries_02352 ;         \r"
+expect "1"
+expect "2"
+expect "3"
+expect ":) "
+
+send -- "exit\r"
+expect eof

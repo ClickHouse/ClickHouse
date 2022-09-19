@@ -35,6 +35,7 @@ struct AccessEntityTypeInfo
     String formatEntityNameWithType(const String & entity_name) const;
 
     static const AccessEntityTypeInfo & get(AccessEntityType type_);
+    static AccessEntityType parseType(const String & name_);
 };
 
 }

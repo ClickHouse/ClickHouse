@@ -76,9 +76,8 @@ Chunk ArrowBlockInputFormat::generate()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
-        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
-            for (const auto & column_idx : missing_columns)
-                block_missing_values.setBit(column_idx, row_idx);
+        for (const auto & column_idx : missing_columns)
+            block_missing_values.setBits(column_idx, res.getNumRows());
 
     return res;
 }
@@ -188,7 +187,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
-    factory.markFormatAsColumnOriented("Arrow");
+    factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",
         [](ReadBuffer & buf,

@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
 #include <chrono>
 
@@ -27,11 +27,6 @@
 #include <Dictionaries/DictionaryHelpers.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric Write;
-}
-
 namespace ProfileEvents
 {
     extern const Event FileOpen;
@@ -39,6 +34,8 @@ namespace ProfileEvents
     extern const Event AIOWriteBytes;
     extern const Event AIORead;
     extern const Event AIOReadBytes;
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
 }
 
 namespace DB
@@ -507,7 +504,7 @@ public:
         iocb write_request{};
         iocb * write_request_ptr{&write_request};
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
         write_request.aio.aio_buf = reinterpret_cast<volatile void *>(const_cast<char *>(buffer));
@@ -526,8 +523,6 @@ public:
             if (errno != EINTR)
                 throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
         }
-
-        // CurrentMetrics::Increment metric_increment_write{CurrentMetrics::Write};
 
         io_event event;
 
@@ -551,6 +546,9 @@ public:
                 file_path,
                 std::to_string(bytes_written));
 
+        ProfileEvents::increment(ProfileEvents::FileSync);
+
+        Stopwatch watch;
         #if defined(OS_DARWIN)
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
@@ -558,6 +556,7 @@ public:
         if (::fdatasync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fdatasync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
         #endif
+        ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
         current_block_index += buffer_size_in_blocks;
 
@@ -576,7 +575,7 @@ public:
         iocb request{};
         iocb * request_ptr = &request;
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
         request.aio.aio_lio_opcode = LIO_READ;
         request.aio.aio_fildes = file.fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(read_buffer_memory.data()));
@@ -656,7 +655,7 @@ public:
 
             char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
-            #if defined(__FreeBSD__)
+            #if defined(OS_FREEBSD)
             request.aio.aio_lio_opcode = LIO_READ;
             request.aio.aio_fildes = file.fd;
             request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(buffer_place));
@@ -785,7 +784,7 @@ private:
 
     inline static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
         #else
             return fallocate(fd, 0, offset, len);
@@ -796,7 +795,7 @@ private:
     {
         char * result = nullptr;
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
             result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
         #else
             result = reinterpret_cast<char *>(request.aio_buf);
@@ -809,7 +808,7 @@ private:
     {
         ssize_t  bytes_written;
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
             bytes_written = aio_return(reinterpret_cast<struct aiocb *>(event.udata));
         #else
             bytes_written = event.res;

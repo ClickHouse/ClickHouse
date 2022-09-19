@@ -97,6 +97,8 @@ public:
 private:
     DataTypes readRowAndGetDataTypes() override;
 
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
+
     PeekableReadBuffer buf;
     CustomSeparatedFormatReader reader;
     bool first_row = true;

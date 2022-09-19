@@ -14,6 +14,7 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -21,6 +22,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -101,10 +103,11 @@ StorageExecutable::StorageExecutable(
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
 }
 
-Pipe StorageExecutable::read(
-    const Names & /*column_names*/,
+void StorageExecutable::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -134,12 +137,14 @@ Pipe StorageExecutable::read(
             user_scripts_path);
 
     Pipes inputs;
+    QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
     for (auto & input_query : input_queries)
     {
         InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
-        inputs.emplace_back(QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline()));
+        auto builder = interpreter.buildQueryPipeline();
+        inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
     /// For executable pool we read data from input streams and convert it to single blocks streams.
@@ -157,7 +162,9 @@ Pipe StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    return coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    auto pipe = coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
+    query_plan.addResources(std::move(resources));
 }
 
 void registerStorageExecutable(StorageFactory & factory)
@@ -173,14 +180,14 @@ void registerStorageExecutable(StorageFactory & factory)
         for (size_t i = 0; i < 2; ++i)
             args.engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[i], local_context);
 
-        auto scipt_name_with_arguments_value = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args.engine_args[0], "script_name_with_arguments_value");
 
         std::vector<String> script_name_with_arguments;
-        boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c) { return c == ' '; });
+        boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c) { return c == ' '; });
 
         auto script_name = script_name_with_arguments[0];
         script_name_with_arguments.erase(script_name_with_arguments.begin());
-        auto format = args.engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
 
         std::vector<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
@@ -217,7 +224,7 @@ void registerStorageExecutable(StorageFactory & factory)
             settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
-        return StorageExecutable::create(args.table_id, format, settings, input_queries, columns, constraints);
+        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints);
     };
 
     StorageFactory::StorageFeatures storage_features;
@@ -234,5 +241,5 @@ void registerStorageExecutable(StorageFactory & factory)
     }, storage_features);
 }
 
-};
+}
 

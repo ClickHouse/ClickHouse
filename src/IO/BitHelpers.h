@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <base/types.h>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
@@ -55,7 +56,7 @@ public:
     ~BitReader() = default;
 
     // reads bits_to_read high-bits from bits_buffer
-    inline UInt64 readBits(UInt8 bits_to_read)
+    ALWAYS_INLINE inline UInt64 readBits(UInt8 bits_to_read)
     {
         if (bits_to_read > bits_count)
             fillBitBuffer();
@@ -71,7 +72,7 @@ public:
         return getBitsFromBitBuffer<PEEK>(8);
     }
 
-    inline UInt8 readBit()
+    ALWAYS_INLINE inline UInt8 readBit()
     {
         return static_cast<UInt8>(readBits(1));
     }
@@ -122,7 +123,7 @@ private:
 
 
     // Fills internal bits_buffer with data from source, reads at most 64 bits
-    size_t fillBitBuffer()
+    ALWAYS_INLINE size_t fillBitBuffer()
     {
         const size_t available = source_end - source_current;
         const auto bytes_to_read = std::min<size_t>(64 / 8, available);
@@ -140,7 +141,8 @@ private:
         memcpy(&tmp_buffer, source_current, bytes_to_read);
         source_current += bytes_to_read;
 
-        tmp_buffer = __builtin_bswap64(tmp_buffer);
+        if constexpr (std::endian::native == std::endian::little)
+            tmp_buffer = __builtin_bswap64(tmp_buffer);
 
         bits_buffer |= BufferType(tmp_buffer) << ((sizeof(BufferType) - sizeof(tmp_buffer)) * 8 - bits_count);
         bits_count += static_cast<UInt8>(bytes_to_read) * 8;
@@ -223,8 +225,11 @@ private:
                 "Can not write past end of buffer. Space available {} bytes, required to write {} bytes.",
                 available, to_write);
         }
-
-        const auto tmp_buffer = __builtin_bswap64(static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8));
+        UInt64 tmp_buffer = 0;
+        if constexpr (std::endian::native == std::endian::little)
+            tmp_buffer = __builtin_bswap64(static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8));
+        else
+            tmp_buffer = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8);
         memcpy(dest_current, &tmp_buffer, to_write);
         dest_current += to_write;
 

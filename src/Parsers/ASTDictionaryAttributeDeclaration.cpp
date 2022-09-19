@@ -58,6 +58,9 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
     if (hierarchical)
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "HIERARCHICAL";
 
+    if (bidirectional)
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "BIDIRECTIONAL";
+
     if (injective)
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "INJECTIVE";
 

@@ -14,7 +14,8 @@ def started_cluster():
     try:
         cluster.start()
         q(
-            "CREATE DATABASE test ENGINE = Ordinary"
+            "CREATE DATABASE test ENGINE = Ordinary",
+            settings={"allow_deprecated_database_ordinary": 1},
         )  # Different path in shadow/ with Atomic
 
         yield cluster

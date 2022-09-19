@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/statements/alter/settings-profile
 sidebar_position: 48
 sidebar_label: SETTINGS PROFILE
 ---
 
-## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+## ALTER SETTINGS PROFILE
 
 Changes settings profiles.
 

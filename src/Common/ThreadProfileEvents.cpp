@@ -1,6 +1,6 @@
 #include "ThreadProfileEvents.h"
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include "TaskStatsInfoGetter.h"
 #include "ProcfsMetricsProvider.h"
@@ -27,7 +27,6 @@
 
 namespace ProfileEvents
 {
-#if defined(__linux__)
     extern const Event OSIOWaitMicroseconds;
     extern const Event OSCPUWaitMicroseconds;
     extern const Event OSCPUVirtualTimeMicroseconds;
@@ -61,7 +60,6 @@ namespace ProfileEvents
     extern const Event PerfInstructionTLBMisses;
     extern const Event PerfLocalMemoryReferences;
     extern const Event PerfLocalMemoryMisses;
-#endif
 }
 
 namespace DB
@@ -179,7 +177,7 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
 
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 namespace DB
 {
@@ -303,7 +301,7 @@ static void enablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't enable perf event with file descriptor {}: '{}' ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, errnoToString(), errno);
     }
 }
 
@@ -313,7 +311,7 @@ static void disablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't disable perf event with file descriptor {}: '{}' ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, errnoToString(), errno);
     }
 }
 
@@ -323,7 +321,7 @@ static void releasePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't close perf event file descriptor {}: {} ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, errnoToString(), errno);
     }
 }
 
@@ -341,7 +339,7 @@ static bool validatePerfEventDescriptor(int & fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Error while checking availability of event descriptor {}: {} ({})",
-            fd, errnoToString(errno), errno);
+            fd, errnoToString(), errno);
 
         disablePerfEvent(fd);
         releasePerfEvent(fd);
@@ -448,7 +446,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Failed to open perf event {} (event_type={}, event_config={}): "
                 "'{}' ({})", event_info.settings_name, event_info.event_type,
-                event_info.event_config, errnoToString(errno), errno);
+                event_info.event_config, errnoToString(), errno);
         }
     }
 
@@ -534,7 +532,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         {
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Can't read event value from file descriptor {}: '{}' ({})",
-                fd, errnoToString(errno), errno);
+                fd, errnoToString(), errno);
             current_values[i] = {};
         }
     }
@@ -560,8 +558,8 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // deltas from old values.
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
-        const UInt64 delta = (current_value.value - previous_value.value)
-            * enabled / std::max(1.f, float(running));
+        const UInt64 delta = static_cast<UInt64>(
+            (current_value.value - previous_value.value) * enabled / std::max(1.f, float(running)));
 
         if (min_enabled_time > enabled)
         {

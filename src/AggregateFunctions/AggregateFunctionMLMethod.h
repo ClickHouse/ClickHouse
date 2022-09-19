@@ -362,7 +362,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
-        ConstAggregateDataPtr place,
+        ConstAggregateDataPtr __restrict place,
         IColumn & to,
         const ColumnsWithTypeAndName & arguments,
         size_t offset,

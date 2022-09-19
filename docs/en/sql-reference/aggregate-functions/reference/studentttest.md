@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/studentttest
 sidebar_position: 300
 sidebar_label: studentTTest
 ---
 
-# studentTTest {#studentttest}
+# studentTTest
 
 Applies Student's t-test to samples from two populations.
 

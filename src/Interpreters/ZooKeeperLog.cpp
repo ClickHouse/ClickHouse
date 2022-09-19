@@ -85,6 +85,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"Multi",               static_cast<Int16>(Coordination::OpNum::Multi)},
                 {"Auth",                static_cast<Int16>(Coordination::OpNum::Auth)},
                 {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
+                {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
             });
 
     auto error_enum = getCoordinationErrorCodesEnumType();
@@ -121,6 +122,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
         {"address", DataTypeFactory::instance().get("IPv6")},
         {"port", std::make_shared<DataTypeUInt16>()},
         {"session_id", std::make_shared<DataTypeInt64>()},
+        {"duration_ms", std::make_shared<DataTypeUInt64>()},
 
         {"xid", std::make_shared<DataTypeInt32>()},
         {"has_watch", std::make_shared<DataTypeUInt8>()},
@@ -171,6 +173,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
+    columns[i++]->insert(duration_ms);
 
     columns[i++]->insert(xid);
     columns[i++]->insert(has_watch);
@@ -209,4 +212,4 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(children_array);
 }
 
-};
+}

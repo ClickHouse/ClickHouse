@@ -108,7 +108,7 @@ public:
 
 }
 
-void registerFunctionH3GetPentagonIndexes(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetPentagonIndexes)
 {
     factory.registerFunction<FunctionH3GetPentagonIndexes>();
 }

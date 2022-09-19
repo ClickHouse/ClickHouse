@@ -3,7 +3,7 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
-#include <errno.h>
+#include <cerrno>
 
 
 namespace ProfileEvents
@@ -37,7 +37,7 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
-#ifdef __APPLE__
+#ifdef OS_DARWIN
     bool o_direct = (flags != -1) && (flags & O_DIRECT);
     if (o_direct)
         flags = flags & ~O_DIRECT;
@@ -47,7 +47,7 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     if (-1 == fd)
         throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
                                errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-#ifdef __APPLE__
+#ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)

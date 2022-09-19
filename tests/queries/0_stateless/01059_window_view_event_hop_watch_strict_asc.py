@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Tags: no-parallel
+
 import os
 import sys
 import signal
@@ -23,7 +25,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.send("SET window_view_heartbeat_interval = 1")
     client1.expect(prompt)
 
-    client1.send("CREATE DATABASE db_01059_event_hop_watch_strict_asc")
+    client1.send("CREATE DATABASE IF NOT EXISTS db_01059_event_hop_watch_strict_asc")
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS db_01059_event_hop_watch_strict_asc.mt")
     client1.expect(prompt)
@@ -31,16 +33,17 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE db_01059_event_hop_watch_strict_asc.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE db_01059_event_hop_watch_strict_asc.mt(a Int32, timestamp DateTime('US/Samoa')) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW db_01059_event_hop_watch_strict_asc.wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(a) AS count, hopEnd(wid) as w_end FROM db_01059_event_hop_watch_strict_asc.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid;"
+        "CREATE WINDOW VIEW db_01059_event_hop_watch_strict_asc.wv ENGINE Memory WATERMARK=STRICTLY_ASCENDING AS SELECT count(a) AS count, hopEnd(wid) as w_end FROM db_01059_event_hop_watch_strict_asc.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid;"
     )
     client1.expect(prompt)
 
     client1.send("WATCH db_01059_event_hop_watch_strict_asc.wv")
     client1.expect("Query id" + end_of_block)
+    client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
         "INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )

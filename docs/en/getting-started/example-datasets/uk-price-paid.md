@@ -1,8 +1,9 @@
 ---
+slug: /en/getting-started/example-datasets/uk-price-paid
 sidebar_label: UK Property Price Paid
+sidebar_position: 1
+title: "UK Property Price Paid"
 ---
-
-# UK Property Price Paid
 
 The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
 The size of the dataset in uncompressed form is about 4 GiB and it will take about 278 MiB in ClickHouse.
@@ -388,12 +389,6 @@ SETTINGS mutations_sync = 1;
 
 Let's run the same 3 queries.
 
-[Enable](../../operations/settings/settings.md#allow-experimental-projection-optimization) projections for selects:
-
-```sql
-SET allow_experimental_projection_optimization = 1;
-```
-
 ### Query 1. Average Price Per Year {#average-price-projections}
 
 Query:
@@ -645,4 +640,4 @@ no projection: 100 rows in set. Elapsed: 0.069 sec. Processed 26.32 million rows
 
 ### Test It in Playground {#playground}
 
-The dataset is also available in the [Online Playground](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).
+The dataset is also available in the [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).

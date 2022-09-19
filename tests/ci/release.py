@@ -89,14 +89,26 @@ class Release:
         self._git.update()
         self.version = get_version_from_repo(git=self._git)
 
+    def get_stable_release_type(self) -> str:
+        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+            return VersionType.LTS
+        return VersionType.STABLE
+
     def check_prerequisites(self):
         """
-        Check tooling installed in the system
+        Check tooling installed in the system, `git` is checked by Git() init
         """
-        self.run("gh auth status")
-        self.run("git status")
+        try:
+            self.run("gh auth status")
+        except subprocess.SubprocessError:
+            logging.error(
+                "The github-cli either not installed or not setup, please follow "
+                "the instructions on https://github.com/cli/cli#installation and "
+                "https://cli.github.com/manual/"
+            )
+            raise
 
-    def do(self, check_dirty: bool, check_branch: bool, with_prestable: bool):
+    def do(self, check_dirty: bool, check_branch: bool, with_release_branch: bool):
         self.check_prerequisites()
 
         if check_dirty:
@@ -115,19 +127,28 @@ class Release:
         with self._checkout(self.release_commit, True):
             if self.release_type in self.BIG:
                 # Checkout to the commit, it will provide the correct current version
-                if with_prestable:
-                    with self.prestable():
+                if with_release_branch:
+                    with self.create_release_branch():
                         logging.info("Prestable part of the releasing is done")
                 else:
-                    logging.info("Skipping prestable stage")
+                    logging.info("Skipping creating release branch stage")
 
-                with self.testing():
-                    logging.info("Testing part of the releasing is done")
+                rollback = self._rollback_stack.copy()
+                try:
+                    with self.testing():
+                        logging.info("Testing part of the releasing is done")
+                except (Exception, KeyboardInterrupt):
+                    logging.fatal("Testing part failed, rollback previous steps")
+                    rollback.reverse()
+                    for cmd in rollback:
+                        self.run(cmd)
+                    raise
 
             elif self.release_type in self.SMALL:
                 with self.stable():
                     logging.info("Stable part of the releasing is done")
 
+        self.log_post_workflows()
         self.log_rollback()
 
     def check_no_tags_after(self):
@@ -152,7 +173,10 @@ class Release:
             )
 
         # Prefetch the branch to have it updated
-        self.run(f"git fetch {self.repo.url} {branch}:{branch}")
+        if self._git.branch == branch:
+            self.run("git pull")
+        else:
+            self.run(f"git fetch {self.repo.url} {branch}:{branch}")
         output = self.run(f"git branch --contains={self.release_commit} {branch}")
         if branch not in output:
             raise Exception(
@@ -162,24 +186,33 @@ class Release:
 
     def log_rollback(self):
         if self._rollback_stack:
-            rollback = self._rollback_stack
+            rollback = self._rollback_stack.copy()
             rollback.reverse()
             logging.info(
                 "To rollback the action run the following commands:\n  %s",
                 "\n  ".join(rollback),
             )
 
+    def log_post_workflows(self):
+        logging.info(
+            "To verify all actions are running good visit the following links:\n  %s",
+            "\n  ".join(
+                f"https://github.com/{self.repo}/actions/workflows/{action}.yml"
+                for action in ("release", "tags_stable")
+            ),
+        )
+
     @contextmanager
-    def prestable(self):
+    def create_release_branch(self):
         self.check_no_tags_after()
         # Create release branch
         self.read_version()
         with self._create_branch(self.release_branch, self.release_commit):
             with self._checkout(self.release_branch, True):
                 self.read_version()
-                self.version.with_description(VersionType.PRESTABLE)
-                with self._create_gh_release(True):
-                    with self._bump_prestable_version():
+                self.version.with_description(self.get_stable_release_type())
+                with self._create_gh_release(False):
+                    with self._bump_release_branch():
                         # At this point everything will rollback automatically
                         yield
 
@@ -187,9 +220,7 @@ class Release:
     def stable(self):
         self.check_no_tags_after()
         self.read_version()
-        version_type = VersionType.STABLE
-        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
-            version_type = VersionType.LTS
+        version_type = self.get_stable_release_type()
         self.version.with_description(version_type)
         with self._create_gh_release(False):
             self.version = self.version.update(self.release_type)
@@ -198,7 +229,7 @@ class Release:
             update_contributors(raise_error=True)
             # Checkouting the commit of the branch and not the branch itself,
             # then we are able to skip rollback
-            with self._checkout(f"{self.release_branch}@{{0}}", False):
+            with self._checkout(f"{self.release_branch}^0", False):
                 current_commit = self.run("git rev-parse HEAD")
                 self.run(
                     f"git commit -m "
@@ -254,11 +285,15 @@ class Release:
         self._release_commit = commit(release_commit)
 
     @contextmanager
-    def _bump_prestable_version(self):
+    def _bump_release_branch(self):
         # Update only git, origal version stays the same
         self._git.update()
         new_version = self.version.patch_update()
-        new_version.with_description("prestable")
+        version_type = self.get_stable_release_type()
+        pr_labels = "--label release"
+        if version_type == VersionType.LTS:
+            pr_labels += " --label release-lts"
+        new_version.with_description(version_type)
         update_cmake_version(new_version)
         update_contributors(raise_error=True)
         self.run(
@@ -272,22 +307,23 @@ class Release:
                 with self._create_gh_label(
                     f"v{self.release_branch}-affected", "c2bfff"
                 ):
+                    # The following command is rolled back by self._push
                     self.run(
                         f"gh pr create --repo {self.repo} --title "
                         f"'Release pull request for branch {self.release_branch}' "
-                        f"--head {self.release_branch}  --label release "
+                        f"--head {self.release_branch} {pr_labels} "
                         "--body 'This PullRequest is a part of ClickHouse release "
                         "cycle. It is used by CI system only. Do not perform any "
                         "changes with it.'"
                     )
-                    # Here the prestable part is done
+                    # Here the release branch part is done
                     yield
 
     @contextmanager
     def _bump_testing_version(self, helper_branch: str):
         self.read_version()
         self.version = self.version.update(self.release_type)
-        self.version.with_description("testing")
+        self.version.with_description(VersionType.TESTING)
         update_cmake_version(self.version)
         update_contributors(raise_error=True)
         self.run(
@@ -300,7 +336,7 @@ class Release:
                 f"gh pr create --repo {self.repo} --title 'Update version after "
                 f"release' --head {helper_branch} --body-file '{body_file}'"
             )
-            # Here the prestable part is done
+            # Here the testing part is done
             yield
 
     @contextmanager
@@ -314,9 +350,9 @@ class Release:
             rollback_cmd = f"git checkout {orig_ref}"
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
-            self.run(f"git reset --hard; git checkout {orig_ref}")
+            self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
         else:
             if with_checkout_back and need_rollback:
@@ -329,7 +365,7 @@ class Release:
         self._rollback_stack.append(rollback_cmd)
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back created branch %s", name)
             self.run(rollback_cmd)
             raise
@@ -344,7 +380,7 @@ class Release:
         self._rollback_stack.append(rollback_cmd)
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back label %s", label)
             self.run(rollback_cmd)
             raise
@@ -358,14 +394,14 @@ class Release:
             if as_prerelease:
                 prerelease = "--prerelease"
             self.run(
-                f"gh release create {prerelease} --draft --repo {self.repo} "
+                f"gh release create {prerelease} --repo {self.repo} "
                 f"--title 'Release {tag}' '{tag}'"
             )
             rollback_cmd = f"gh release delete --yes --repo {self.repo} '{tag}'"
             self._rollback_stack.append(rollback_cmd)
             try:
                 yield
-            except BaseException:
+            except (Exception, KeyboardInterrupt):
                 logging.warning("Rolling back release publishing")
                 self.run(rollback_cmd)
                 raise
@@ -379,7 +415,7 @@ class Release:
         try:
             with self._push(f"'{tag}'"):
                 yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back tag %s", tag)
             self.run(rollback_cmd)
             raise
@@ -396,7 +432,7 @@ class Release:
 
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             if with_rollback_on_fail:
                 logging.warning("Rolling back pushed ref %s", ref)
                 self.run(rollback_cmd)
@@ -437,14 +473,13 @@ def parse_args() -> argparse.Namespace:
         dest="release_type",
         help="a release type, new branch is created only for 'major' and 'minor'",
     )
-    parser.add_argument("--with-prestable", default=True, help=argparse.SUPPRESS)
+    parser.add_argument("--with-release-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
-        "--no-prestable",
-        dest="with_prestable",
+        "--no-release-branch",
+        dest="with_release_branch",
         action="store_false",
         default=argparse.SUPPRESS,
-        help=f"if set, for release types in {Release.BIG} skip creating prestable "
-        "release and  release branch",
+        help=f"if set, for release types in {Release.BIG} skip creating release branch",
     )
     parser.add_argument("--check-dirty", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -475,7 +510,7 @@ def main():
     repo = Repo(args.repo, args.remote_protocol)
     release = Release(repo, args.commit, args.release_type)
 
-    release.do(args.check_dirty, args.check_branch, args.with_prestable)
+    release.do(args.check_dirty, args.check_branch, args.with_release_branch)
 
 
 if __name__ == "__main__":

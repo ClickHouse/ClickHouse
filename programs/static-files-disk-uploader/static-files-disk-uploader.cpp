@@ -71,7 +71,7 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
         dst_buf->next();
         dst_buf->finalize();
     }
-};
+}
 
 
 void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
@@ -160,7 +160,7 @@ try
     if (options.empty() || options.count("help"))
     {
         std::cout << description << std::endl;
-        exit(0);
+        exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     String metadata_path;
@@ -200,6 +200,6 @@ try
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(false);
+    std::cerr << DB::getCurrentExceptionMessage(false) << '\n';
     return 1;
 }

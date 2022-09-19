@@ -12,6 +12,7 @@ namespace Poco::Util
 
 namespace DB
 {
+class AccessControl;
 class ConfigReloader;
 
 /// Implementation of IAccessStorage which loads all from users.xml periodically.
@@ -20,13 +21,8 @@ class UsersConfigAccessStorage : public IAccessStorage
 public:
 
     static constexpr char STORAGE_TYPE[] = "users.xml";
-    using CheckSettingNameFunction = std::function<void(const std::string_view &)>;
-    using IsNoPasswordFunction = std::function<bool()>;
-    using IsPlaintextPasswordFunction =  std::function<bool()>;
 
-    UsersConfigAccessStorage(const String & storage_name_ = STORAGE_TYPE, const CheckSettingNameFunction & check_setting_name_function_ = {}, const IsNoPasswordFunction & is_no_password_allowed_function_ ={}, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_ = {}); /// NOLINT
-    UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_, const IsNoPasswordFunction & is_no_password_allowed_function_, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_); /// NOLINT
-
+    UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_);
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -41,29 +37,27 @@ public:
               const String & include_from_path = {},
               const String & preprocessed_dir = {},
               const zkutil::GetZooKeeper & get_zookeeper_function = {});
-    void reload();
-    void startPeriodicReloading();
-    void stopPeriodicReloading();
+
+    void reload() override;
+    void startPeriodicReloading() override;
+    void stopPeriodicReloading() override;
 
     bool exists(const UUID & id) const override;
-    bool hasSubscription(const UUID & id) const override;
-    bool hasSubscription(AccessEntityType type) const override;
+
+    bool isBackupAllowed() const override { return backup_allowed; }
 
 private:
     void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
-    scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
+    std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
 
+    AccessControl & access_control;
     MemoryAccessStorage memory_storage;
-    CheckSettingNameFunction check_setting_name_function;
-    IsNoPasswordFunction is_no_password_allowed_function;
-    IsPlaintextPasswordFunction is_plaintext_password_allowed_function;
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
+    bool backup_allowed = false;
     mutable std::mutex load_mutex;
 };
 }

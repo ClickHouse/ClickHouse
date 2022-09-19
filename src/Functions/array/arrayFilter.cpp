@@ -74,7 +74,7 @@ struct ArrayFilterImpl
 struct NameArrayFilter { static constexpr auto name = "arrayFilter"; };
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;
 
-void registerFunctionArrayFilter(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayFilter)
 {
     factory.registerFunction<FunctionArrayFilter>();
 }

@@ -51,7 +51,13 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
         settings.ostr << func_name;
 
         if (parameters)
-            parameters->formatImpl(settings, state, frame);
+        {
+            auto nested_frame = frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+            settings.ostr << "(";
+            parameters->formatImpl(settings, state, nested_frame);
+            settings.ostr << ")";
+        }
     }
 
     if (!column_name_prefix.empty())

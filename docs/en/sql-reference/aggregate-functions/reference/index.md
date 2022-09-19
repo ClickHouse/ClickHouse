@@ -1,10 +1,11 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/
 toc_folder_title: Reference
 sidebar_position: 36
 toc_hidden: true
 ---
 
-# List of Aggregate Functions {#aggregate-functions-reference}
+# List of Aggregate Functions
 
 Standard aggregate functions:
 

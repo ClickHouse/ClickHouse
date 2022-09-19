@@ -142,6 +142,33 @@ std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier 
     return {};
 }
 
+String IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & table)
+{
+    auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
+    size_t to_strip = 0;
+    switch (match)
+    {
+        case IdentifierSemantic::ColumnMatch::TableName:
+        case IdentifierSemantic::ColumnMatch::AliasedTableName:
+        case IdentifierSemantic::ColumnMatch::TableAlias:
+            to_strip = 1;
+            break;
+        case IdentifierSemantic::ColumnMatch::DBAndTable:
+            to_strip = 2;
+            break;
+        default:
+            break;
+    }
+    String res;
+    for (size_t i = to_strip, sz = identifier.name_parts.size(); i < sz; ++i)
+    {
+        if (!res.empty())
+            res += ".";
+        res += identifier.name_parts[i];
+    }
+    return res;
+}
+
 bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
 {
     size_t num_components = identifier.name_parts.size();

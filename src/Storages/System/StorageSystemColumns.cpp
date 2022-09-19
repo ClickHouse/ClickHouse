@@ -64,7 +64,7 @@ namespace
 }
 
 
-class ColumnsSource : public SourceWithProgress
+class ColumnsSource : public ISource
 {
 public:
     ColumnsSource(
@@ -75,7 +75,7 @@ public:
         ColumnPtr tables_,
         Storages storages_,
         ContextPtr context)
-        : SourceWithProgress(header_)
+        : ISource(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
         , total_tables(tables->size()), access(context->getAccess())

@@ -28,6 +28,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
+#include <IO/IOThreadPool.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
@@ -105,6 +106,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
+
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 10000),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
+
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 }
 
 
@@ -215,6 +227,8 @@ void LocalServer::cleanup()
             global_context.reset();
         }
 
+        /// thread status should be destructed before shared context because it relies on process list.
+
         status.reset();
 
         // Delete the temporary directory if needed.
@@ -311,12 +325,28 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
-    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
+    if (config().has("config-file") || fs::exists("config.xml"))
     {
-        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-        ConfigProcessor config_processor(users_config_path);
-        const auto loaded_config = config_processor.loadConfig();
-        users_config = loaded_config.configuration;
+        String config_path = config().getString("config-file", "");
+        bool has_user_directories = config().has("user_directories");
+        const auto config_dir = fs::path{config_path}.remove_filename().string();
+        String users_config_path = config().getString("users_config", "");
+
+        if (users_config_path.empty() && has_user_directories)
+        {
+            users_config_path = config().getString("user_directories.users_xml.path");
+            if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+                users_config_path = fs::path(config_dir) / users_config_path;
+        }
+
+        if (users_config_path.empty())
+            users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+        else
+        {
+            ConfigProcessor config_processor(users_config_path);
+            const auto loaded_config = config_processor.loadConfig();
+            users_config = loaded_config.configuration;
+        }
     }
     else
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
@@ -325,7 +355,6 @@ void LocalServer::setupUsers()
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
 }
-
 
 void LocalServer::connect()
 {
@@ -339,7 +368,10 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    ThreadStatus thread_status;
+    thread_status.emplace();
+
+    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
+
     setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
@@ -528,23 +560,23 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size);
+        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
-    /// Specify default value for mark_cache_size explicitly!
+    /// Size of cache for marks (index of MergeTree family of tables).
+    String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
+        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
-    /// Specify default value for index_mark_cache_size explicitly!
+    /// Size of cache for index marks (index of MergeTree skip indices).
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
@@ -614,6 +646,7 @@ void LocalServer::processConfig()
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
+    client_info.query_kind = query_kind;
 }
 
 
@@ -724,6 +757,15 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
+}
+
+void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
+{
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    {
+        const char * arg = argv[arg_num];
+        common_arguments.emplace_back(arg);
+    }
 }
 
 }

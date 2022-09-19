@@ -55,7 +55,16 @@ Chunk ParquetBlockInputFormat::generate()
         return res;
 
     std::shared_ptr<arrow::Table> table;
-    arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, column_indices, &table);
+
+    std::unique_ptr<::arrow::RecordBatchReader> rbr;
+    std::vector<int> row_group_indices { row_group_current };
+    arrow::Status get_batch_reader_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &rbr);
+
+    if (!get_batch_reader_status.ok())
+        throw ParsingException{"Error while reading Parquet data: " + get_batch_reader_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
+
+    arrow::Status read_status = rbr->ReadAll(&table);
+
     if (!read_status.ok())
         throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
 
@@ -66,9 +75,8 @@ Chunk ParquetBlockInputFormat::generate()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
-        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
-            for (const auto & column_idx : missing_columns)
-                block_missing_values.setBit(column_idx, row_idx);
+        for (const auto & column_idx : missing_columns)
+            block_missing_values.setBits(column_idx, res.getNumRows());
     return res;
 }
 
@@ -193,7 +201,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatAsColumnOriented("Parquet");
+    factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 
 void registerParquetSchemaReader(FormatFactory & factory)

@@ -105,7 +105,7 @@ struct SimdJSONParser
         ALWAYS_INLINE Iterator end() const { return object.end(); }
         ALWAYS_INLINE size_t size() const { return object.size(); }
 
-        bool find(const std::string_view & key, Element & result) const
+        bool find(std::string_view key, Element & result) const
         {
             auto x = object.at_key(key);
             if (x.error())
@@ -131,7 +131,7 @@ struct SimdJSONParser
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(const std::string_view & json, Element & result)
+    bool parse(std::string_view json, Element & result)
     {
         auto document = parser.parse(json.data(), json.size());
         if (document.error())

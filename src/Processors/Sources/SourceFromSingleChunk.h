@@ -1,11 +1,11 @@
 #pragma once
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 
 namespace DB
 {
 
-class SourceFromSingleChunk : public SourceWithProgress
+class SourceFromSingleChunk : public ISource
 {
 public:
     explicit SourceFromSingleChunk(Block header, Chunk chunk_);

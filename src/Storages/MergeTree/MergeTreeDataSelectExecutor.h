@@ -12,6 +12,7 @@ namespace DB
 {
 
 class KeyCondition;
+struct QueryIdHolder;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
@@ -59,6 +60,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
+        const ActionDAGNodes & added_filter_nodes,
         ContextPtr context,
         unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;

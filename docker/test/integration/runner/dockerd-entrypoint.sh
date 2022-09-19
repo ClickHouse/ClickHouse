@@ -28,8 +28,10 @@ done
 set -e
 
 # cleanup for retry run if volume is not recreated
-docker kill "$(docker ps -aq)" || true
-docker rm "$(docker ps -aq)" || true
+{
+    docker ps --all --quiet | xargs --no-run-if-empty docker kill || true
+    docker ps --all --quiet | xargs --no-run-if-empty docker rm || true
+}
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse

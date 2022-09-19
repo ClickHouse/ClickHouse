@@ -1,9 +1,9 @@
 ---
+slug: /en/operations/troubleshooting
 sidebar_position: 46
 sidebar_label: Troubleshooting
+title: Troubleshooting
 ---
-
-# Troubleshooting 
 
 -   [Installation](#troubleshooting-installation-errors)
 -   [Connecting to the server](#troubleshooting-accepts-no-connections)
@@ -26,7 +26,7 @@ Possible issues:
 
 ### Server Is Not Running {#server-is-not-running}
 
-**Check if server is runnnig**
+**Check if server is running**
 
 Command:
 

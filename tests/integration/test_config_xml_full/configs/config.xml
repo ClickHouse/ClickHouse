@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
   If you have accidentally specified user-level settings here, server won't start.
@@ -303,12 +302,6 @@
          Enabling it can sometimes paradoxically make queries slower.
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
-
-    <!-- Approximate size of mark cache, used in tables of MergeTree family.
-         In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
 
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
