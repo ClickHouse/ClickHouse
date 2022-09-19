@@ -152,7 +152,7 @@ bool ParseIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
     const auto mask = getArgument(function_name, pos);
     out = std::format(
         "if(isNull(toIPv4OrNull({0}) as ip_{2}) or isNull(toUInt8OrNull(toString({1})) as mask_{2}), null, "
-        "toUInt32(tupleElement(IPv4CIDRToRange(assumeNotNull(ip_{2}), toUInt8(max2(0, min2(32, assumeNotNull(mask_{2}))))), 1)))",
+        "toUInt32(tupleElement(IPv4CIDRToRange(assumeNotNull(ip_{2}), arrayMax([0, arrayMin([32, assumeNotNull(mask_{2})])])), 1)))",
         ip_address,
         mask,
         generateUniqueIdentifier());

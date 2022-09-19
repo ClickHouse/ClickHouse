@@ -12,11 +12,11 @@
 #include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
+#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 
 #include <pcg_random.hpp>
 
@@ -73,40 +73,46 @@ bool IParserKQLFunction::convert(String & out, IParser::Pos & pos)
         });
 }
 
-bool IParserKQLFunction::directMapping(String & out, IParser::Pos & pos, const String & ch_fn)
+bool IParserKQLFunction::directMapping(
+    String & out, IParser::Pos & pos, const std::string_view ch_fn, const Interval & argument_count_interval)
 {
-    std::vector<String> arguments;
-
-    String fn_name = getKQLFunctionName(pos);
-
+    const auto fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
-    String res;
-    auto begin = pos;
-    ++pos;
+    out.append(ch_fn.data(), ch_fn.length());
+    out.push_back('(');
+
+    int argument_count = 0;
+    const auto begin = pos;
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
-        String argument = getConvertedArgument(fn_name, pos);
-        arguments.push_back(argument);
+        if (pos != begin)
+            out.append(", ");
+
+        if (const auto argument = getOptionalArgument(fn_name, pos))
+        {
+            ++argument_count;
+            out.append(*argument);
+        }
 
         if (pos->type == TokenType::ClosingRoundBracket)
         {
-            for (auto arg : arguments)
-            {
-                if (res.empty())
-                    res = ch_fn + "(" + arg;
-                else
-                    res = res + ", " + arg;
-            }
-            res += ")";
+            if (!argument_count_interval.IsWithinBounds(argument_count))
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "{}: between {} and {} arguments are expected, but {} were provided",
+                    fn_name,
+                    argument_count_interval.Min(),
+                    argument_count_interval.Max(),
+                    argument_count);
 
-            out = res;
+            out.push_back(')');
             return true;
         }
-        ++pos;
     }
 
+    out.clear();
     pos = begin;
     return false;
 }
@@ -174,10 +180,13 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
 std::optional<String>
 IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state)
 {
-    if (const auto & type = pos->type; type != DB::TokenType::Comma && type != DB::TokenType::OpeningRoundBracket)
+    if (const auto type = pos->type; type != DB::TokenType::Comma && type != DB::TokenType::OpeningRoundBracket)
         return {};
 
     ++pos;
+    if (const auto type = pos->type; type == DB::TokenType::ClosingRoundBracket || type == DB::TokenType::ClosingSquareBracket)
+        return {};
+
     if (argument_state == ArgumentState::Parsed)
         return getConvertedArgument(function_name, pos);
 
@@ -187,7 +196,7 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
             "Argument extraction is not implemented for {}::{}",
             magic_enum::enum_type_name<ArgumentState>(),
             magic_enum::enum_name(argument_state));
-    
+
     String expression;
     std::stack<DB::TokenType> scopes;
     while (!pos->isEnd() && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
@@ -197,11 +206,12 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
         else if (isClosingBracket(token_type))
         {
             if (scopes.empty() || determineClosingPair(scopes.top()) != token_type)
-                throw Exception(DB::ErrorCodes::SYNTAX_ERROR, "Unmatched token: {} when parsing {}", magic_enum::enum_name(token_type), function_name);
-             
+                throw Exception(
+                    DB::ErrorCodes::SYNTAX_ERROR, "Unmatched token: {} when parsing {}", magic_enum::enum_name(token_type), function_name);
+
             scopes.pop();
         }
-        
+
         expression.append(pos->begin, pos->end);
         ++pos;
     }
