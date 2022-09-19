@@ -114,7 +114,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3ToParent)
+void registerFunctionH3ToParent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3ToParent>();
 }

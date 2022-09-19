@@ -7,14 +7,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
 #include <TableFunctions/TableFunctionHDFSCluster.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Access/Common/AccessFlags.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_fwd.h>
 

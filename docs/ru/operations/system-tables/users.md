@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/users
----
 # system.users {#system_tables-users}
 
 Содержит список [аккаунтов пользователей](../../operations/access-rights.md#user-account-management), настроенных на сервере.

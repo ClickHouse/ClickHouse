@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Columns/IColumnUnique.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ReverseIndex.h>
@@ -8,17 +7,16 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
-
 #include <base/range.h>
+
 #include <base/unaligned.h>
+#include "Columns/ColumnConst.h"
 
 
 namespace DB
@@ -72,6 +70,10 @@ public:
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
+    StringRef getDataAtWithTerminatingZero(size_t n) const override
+    {
+        return getNestedColumn()->getDataAtWithTerminatingZero(n);
+    }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -307,52 +309,17 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
     return 0;
 }
 
-
-namespace
-{
-    class FieldVisitorGetData : public StaticVisitor<>
-    {
-    public:
-        StringRef res;
-
-        [[noreturn]] static void throwUnsupported()
-        {
-            throw Exception("Unsupported field type", ErrorCodes::LOGICAL_ERROR);
-        }
-
-        [[noreturn]] void operator() (const Null &) { throwUnsupported(); }
-        [[noreturn]] void operator() (const Array &) { throwUnsupported(); }
-        [[noreturn]] void operator() (const Tuple &) { throwUnsupported(); }
-        [[noreturn]] void operator() (const Map &) { throwUnsupported(); }
-        [[noreturn]] void operator() (const Object &) { throwUnsupported(); }
-        [[noreturn]] void operator() (const AggregateFunctionStateData &) { throwUnsupported(); }
-        void operator() (const String & x) { res = {x.data(), x.size()}; }
-        void operator() (const UInt64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const UInt128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const UInt256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const Int64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const Int128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const Int256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const UUID & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const Float64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const DecimalField<Decimal32> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const DecimalField<Decimal64> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const DecimalField<Decimal128> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const DecimalField<Decimal256> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-        void operator() (const bool & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
-    };
-}
-
-
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
     if (x.isNull())
         return getNullValueIndex();
 
-    FieldVisitorGetData visitor;
-    applyVisitor(visitor, x);
-    return uniqueInsertData(visitor.res.data, visitor.res.size);
+    if (valuesHaveFixedSize())
+        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
+
+    const auto & val = x.get<String>();
+    return uniqueInsertData(val.data(), val.size());
 }
 
 template <typename ColumnType>
@@ -582,6 +549,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         }
     }
 
+    // checkIndexes(*positions_column, column->size() + (overflowed_keys ? overflowed_keys->size() : 0));
     return std::move(positions_column);
 }
 

@@ -530,7 +530,7 @@ using FunctionNgramSearchUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, U
 using FunctionNgramSearchCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
 
 
-REGISTER_FUNCTION(StringSimilarity)
+void registerFunctionsStringSimilarity(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNgramDistance>();
     factory.registerFunction<FunctionNgramDistanceCaseInsensitive>();

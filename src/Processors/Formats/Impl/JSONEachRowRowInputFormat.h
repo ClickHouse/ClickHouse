@@ -88,11 +88,10 @@ private:
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 {
 public:
-    JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings_);
+    JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings);
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     bool json_strings;
     bool first_row = true;

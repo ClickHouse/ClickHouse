@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToStartOfFifteenMinutes = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfFifteenMinutesImpl>;
 
-REGISTER_FUNCTION(ToStartOfFifteenMinutes)
+void registerFunctionToStartOfFifteenMinutes(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStartOfFifteenMinutes>();
 }

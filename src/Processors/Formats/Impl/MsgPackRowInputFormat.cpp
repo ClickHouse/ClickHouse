@@ -2,15 +2,6 @@
 
 #if USE_MSGPACK
 
-/// FIXME: there is some issue with clang-15, that incorrectly detect a
-/// "Attempt to free released memory" in msgpack::unpack(), because of delete
-/// operator for zone (from msgpack/v1/detail/cpp11_zone.hpp), hence NOLINT
-///
-/// NOTE: that I was not able to suppress it locally, only with
-/// NOLINTBEGIN/NOLINTEND
-//
-// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete)
-
 #include <cstdlib>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
@@ -550,19 +541,9 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<MsgPackSchemaReader>(buf, settings);
     });
-    factory.registerAdditionalInfoForSchemaCacheGetter("MsgPack", [](const FormatSettings & settings)
-    {
-            return fmt::format(
-                "number_of_columns={}, schema_inference_hints={}, max_rows_to_read_for_schema_inference={}",
-                settings.msgpack.number_of_columns,
-                settings.schema_inference_hints,
-                settings.max_rows_to_read_for_schema_inference);
-        });
 }
 
 }
-
-// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 
 #else
 

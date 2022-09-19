@@ -5,9 +5,10 @@
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
-#include <Interpreters/JoinUtils.h>
+#include <Interpreters/join_common.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -49,7 +50,8 @@ struct ExpressionAnalyzerData
 {
     ~ExpressionAnalyzerData();
 
-    PreparedSetsPtr prepared_sets;
+    SubqueriesForSets subqueries_for_sets;
+    PreparedSets prepared_sets;
 
     std::unique_ptr<QueryPlan> joined_plan;
 
@@ -104,7 +106,7 @@ public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_)
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {})
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {}, {})
     {
     }
 
@@ -128,7 +130,9 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
+    SubqueriesForSets & getSubqueriesForSets() { return subqueries_for_sets; }
+
+    PreparedSets & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -139,12 +143,14 @@ public:
     void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
-    /** Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
+    /**
+      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options = {});
 
-    /** Checks if subquery is not a plain StorageSet.
+    /**
+      * Checks if subquery is not a plain StorageSet.
       * Because while making set we will read data from StorageSet which is not allowed.
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
       */
@@ -158,7 +164,8 @@ protected:
         size_t subquery_depth_,
         bool do_global_,
         bool is_explain_,
-        PreparedSetsPtr prepared_sets_);
+        SubqueriesForSets subqueries_for_sets_,
+        PreparedSets prepared_sets_);
 
     ASTPtr query;
     const ExtractedSettings settings;
@@ -310,7 +317,8 @@ public:
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {},
-        PreparedSetsPtr prepared_sets_ = nullptr)
+        SubqueriesForSets subqueries_for_sets_ = {},
+        PreparedSets prepared_sets_ = {})
         : ExpressionAnalyzer(
             query_,
             syntax_analyzer_result_,
@@ -318,7 +326,8 @@ public:
             options_.subquery_depth,
             do_global_,
             options_.is_explain,
-            prepared_sets_)
+            std::move(subqueries_for_sets_),
+            std::move(prepared_sets_))
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)
