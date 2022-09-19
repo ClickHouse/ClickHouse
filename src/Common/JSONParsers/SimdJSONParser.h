@@ -31,8 +31,10 @@ struct SimdJSONParser
         ALWAYS_INLINE Element() {} /// NOLINT
         ALWAYS_INLINE Element(const simdjson::dom::element & element_) : element(element_) {} /// NOLINT
 
-        ALWAYS_INLINE ElementType type() const {
-            switch (element.type()) {
+        ALWAYS_INLINE ElementType type() const
+        {
+            switch (element.type())
+            {
                 case simdjson::dom::element_type::INT64: return ElementType::INT64;
                 case simdjson::dom::element_type::UINT64: return ElementType::UINT64;
                 case simdjson::dom::element_type::DOUBLE: return ElementType::DOUBLE;
