@@ -39,7 +39,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPProtocolStackHandler(tcp_server, socket, stack, conf_name);
+            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name);
         }
         catch (const Poco::Net::NetException &)
         {
