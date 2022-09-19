@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/general/who-is-using-clickhouse
 title: Кто пользуется ClickHouse?
 sidebar_position: 9
 ---

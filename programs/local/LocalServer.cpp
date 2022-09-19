@@ -227,8 +227,6 @@ void LocalServer::cleanup()
             global_context.reset();
         }
 
-        /// thread status should be destructed before shared context because it relies on process list.
-
         status.reset();
 
         // Delete the temporary directory if needed.
@@ -368,7 +366,7 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    thread_status.emplace();
+    ThreadStatus thread_status;
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 

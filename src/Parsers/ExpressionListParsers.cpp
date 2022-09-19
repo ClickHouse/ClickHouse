@@ -139,38 +139,36 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     };
 
-    /// Parse UNION / INTERSECT / EXCEPT mode
-    /// The mode can be DEFAULT (unspecified) / DISTINCT / ALL
+    /// Parse UNION type
     auto parse_separator = [&]
     {
         if (s_union_parser.ignore(pos, expected))
         {
+            // SELECT ... UNION ALL SELECT ...
             if (s_all_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::UNION_ALL);
+            {
+                union_modes.push_back(SelectUnionMode::ALL);
+            }
+            // SELECT ... UNION DISTINCT SELECT ...
             else if (s_distinct_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::UNION_DISTINCT);
+            {
+                union_modes.push_back(SelectUnionMode::DISTINCT);
+            }
+            // SELECT ... UNION SELECT ...
             else
-                union_modes.push_back(SelectUnionMode::UNION_DEFAULT);
+            {
+                union_modes.push_back(SelectUnionMode::Unspecified);
+            }
             return true;
         }
         else if (s_except_parser.check(pos, expected))
         {
-            if (s_all_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::EXCEPT_ALL);
-            else if (s_distinct_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::EXCEPT_DISTINCT);
-            else
-                union_modes.push_back(SelectUnionMode::EXCEPT_DEFAULT);
+            union_modes.push_back(SelectUnionMode::EXCEPT);
             return true;
         }
         else if (s_intersect_parser.check(pos, expected))
         {
-            if (s_all_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::INTERSECT_ALL);
-            else if (s_distinct_parser.check(pos, expected))
-                union_modes.push_back(SelectUnionMode::INTERSECT_DISTINCT);
-            else
-                union_modes.push_back(SelectUnionMode::INTERSECT_DEFAULT);
+            union_modes.push_back(SelectUnionMode::INTERSECT);
             return true;
         }
         return false;
