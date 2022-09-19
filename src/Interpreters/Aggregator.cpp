@@ -293,7 +293,7 @@ concept HasPrefetchMemberFunc = requires
     {std::declval<HashTable>().prefetch(std::declval<KeyHolder>())};
 };
 
-size_t getL2CacheSize()
+size_t getMinBytesForPrefetch()
 {
     size_t l2_size = 0;
 
@@ -302,9 +302,8 @@ size_t getL2CacheSize()
         l2_size = ret;
 #endif
 
-    /// 4MB looks like a reasonable default.
-    /// max() is needed because sysconf() may return 0 instead of the actual value (at least on ARM).
-    return std::max<size_t>(l2_size, 4 * 1024 * 1024);
+    /// 1MB looks like a reasonable estimate of L2 size. 4 is empirical constant.
+    return 4 * std::max<size_t>(l2_size, 1024 * 1024);
 }
 
 }
@@ -996,7 +995,7 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = Method::State::has_cheap_key_calculation && (method.data.getBufferSizeInBytes() > getL2CacheSize());
+        const bool prefetch = Method::State::has_cheap_key_calculation && (method.data.getBufferSizeInBytes() > getMinBytesForPrefetch());
 
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2556,7 +2555,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     bool no_more_keys = false;
 
     const bool prefetch
-        = Method::State::has_cheap_key_calculation && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getL2CacheSize());
+        = Method::State::has_cheap_key_calculation && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > getMinBytesForPrefetch());
 
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -2624,7 +2623,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     AggregatedDataVariantsPtr & res = data[0];
 
     const bool prefetch = Method::State::has_cheap_key_calculation
-        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > getL2CacheSize());
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > getMinBytesForPrefetch());
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
