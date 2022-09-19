@@ -59,7 +59,7 @@ void JSONCompactEachRowRowOutputFormat::writeRowBetweenDelimiter()
 
 void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    writeChar('\n', out);
+    writeRowBetweenDelimiter();
     size_t columns_size = columns.size();
     writeRowStartDelimiter();
     for (size_t i = 0; i < columns_size; ++i)
@@ -70,6 +70,7 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
         writeField(*columns[i], *serializations[i], row_num);
     }
     writeRowEndDelimiter();
+    writeRowBetweenDelimiter();
 }
 
 void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & values)

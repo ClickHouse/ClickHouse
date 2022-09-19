@@ -73,6 +73,8 @@ void IOutputFormat::work()
             setRowsBeforeLimit(rows_before_limit_counter->get());
 
         finalize();
+        if (auto_flush)
+            flush();
         return;
     }
 
