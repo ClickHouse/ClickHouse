@@ -66,7 +66,7 @@ init_list = {
     "AbortS3MultipartUpload": 0,
     "CompleteS3MultipartUpload": 0,
     "PutS3ObjectRequest": 0,
-    "GetS3ObjectRequest" 0,
+    "GetS3ObjectRequest": 0,
 }
 
 
