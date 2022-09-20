@@ -346,7 +346,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
 
                         assert(file_offset_of_buffer_end > file_segment->getDownloadOffset());
                         bytes_to_predownload = file_offset_of_buffer_end - file_segment->getDownloadOffset();
-                        assert(bytes_to_predownload < range.size());
+                        assert(bytes_to_predownload < file_segment->range().size());
                     }
 
                     download_offset = file_segment->getDownloadOffset();
