@@ -21,7 +21,7 @@ static String typeToString(FilesystemCacheLogElement::CacheType type)
         case FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE:
             return "READ_FROM_FS_BYPASSING_CACHE";
         case FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE:
-            return "READ_FROM_FS_BYPASSING_CACHE";
+            return "WRITE_THROUGH_CACHE";
     }
     __builtin_unreachable();
 }
