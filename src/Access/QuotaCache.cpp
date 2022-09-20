@@ -301,4 +301,5 @@ std::vector<QuotaUsage> QuotaCache::getAllQuotasUsage() const
     }
     return all_usage;
 }
+
 }
