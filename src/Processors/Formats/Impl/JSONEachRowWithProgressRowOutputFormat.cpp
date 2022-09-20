@@ -10,7 +10,10 @@ namespace DB
 void JSONEachRowWithProgressRowOutputFormat::writeRowStartDelimiter()
 {
     if (has_progress)
+    {
         writeProgress();
+        writeRowBetweenDelimiter();
+    }
     writeCString("{\"row\":{", out);
 }
 
@@ -27,7 +30,7 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
     WriteBufferFromString ostr(progress_line);
     writeCString("{\"progress\":", ostr);
     progress.writeJSON(ostr);
-    writeCString("}\n", ostr);
+    writeCString("}", ostr);
     ostr.finalize();
     std::lock_guard lock(progress_lines_mutex);
     progress_lines.emplace_back(std::move(progress_line));
@@ -37,22 +40,33 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
 void JSONEachRowWithProgressRowOutputFormat::flush()
 {
     if (has_progress)
+    {
+        if (haveWrittenData())
+            writeRowBetweenDelimiter();
         writeProgress();
+    }
     IOutputFormat::flush();
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeSuffix()
 {
     if (has_progress)
+    {
+        writeRowBetweenDelimiter();
         writeProgress();
+    }
     JSONEachRowRowOutputFormat::writeSuffix();
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeProgress()
 {
     std::lock_guard lock(progress_lines_mutex);
-    for (const auto & progress_line : progress_lines)
-        writeString(progress_line, out);
+    for (size_t i = 0; i != progress_lines.size(); ++i)
+    {
+        if (i != 0)
+            writeRowBetweenDelimiter();
+        writeString(Sprogress_lines[i], out);
+    }
     progress_lines.clear();
     has_progress = false;
 }

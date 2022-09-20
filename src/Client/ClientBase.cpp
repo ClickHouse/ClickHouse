@@ -461,6 +461,8 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 {
     have_error = true;
     server_exception = std::move(e);
+    if (output_format)
+        output_format->finalize();
     resetOutput();
 }
 
