@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToRelativeMonthNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMonthNumImpl>;
 
-void registerFunctionToRelativeMonthNum(FunctionFactory & factory)
+REGISTER_FUNCTION(ToRelativeMonthNum)
 {
     factory.registerFunction<FunctionToRelativeMonthNum>();
 }

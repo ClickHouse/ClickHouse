@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeImpl>;
 
-void registerFunctionToTime(FunctionFactory & factory)
+REGISTER_FUNCTION(ToTime)
 {
     factory.registerFunction<FunctionToTime>();
 }

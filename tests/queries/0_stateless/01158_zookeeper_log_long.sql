@@ -31,3 +31,7 @@ where (session_id, xid) in (select session_id, xid from system.zookeeper_log whe
 order by xid, type, request_idx;
 
 drop table rmt;
+
+system flush logs;
+select 'duration_ms';
+select count()>0 from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt%' and duration_ms > 0;

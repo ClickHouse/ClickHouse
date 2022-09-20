@@ -169,7 +169,7 @@ using FunctionNormalizeUTF8NFKC = FunctionStringToString<NormalizeUTF8Impl<Norma
 using FunctionNormalizeUTF8NFKD = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKDImpl>, NormalizeNFKDImpl>;
 }
 
-void registerFunctionNormalizeUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(NormalizeUTF8)
 {
     factory.registerFunction<FunctionNormalizeUTF8NFC>();
     factory.registerFunction<FunctionNormalizeUTF8NFD>();

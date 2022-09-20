@@ -24,6 +24,7 @@
 #include <Common/randomSeed.h>
 #include "Core/Block.h"
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -64,20 +65,19 @@ Connection::~Connection() = default;
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
+    const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
-    Protocol::Secure secure_,
-    Poco::Timespan sync_request_timeout_)
+    Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
-    , user(user_), password(password_)
+    , user(user_), password(password_), quota_key(quota_key_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
-    , sync_request_timeout(sync_request_timeout_)
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -169,6 +169,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         sendHello();
         receiveHello();
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
+            sendAddendum();
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
@@ -262,6 +264,14 @@ void Connection::sendHello()
         writeStringBinary(password, *out);
     }
 
+    out->next();
+}
+
+
+void Connection::sendAddendum()
+{
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+        writeStringBinary(quota_key, *out);
     out->next();
 }
 
@@ -375,7 +385,7 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     {
         connect(timeouts);
     }
-    else if (!ping())
+    else if (!ping(timeouts))
     {
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
@@ -395,11 +405,11 @@ void Connection::sendClusterNameAndSalt()
 }
 #endif
 
-bool Connection::ping()
+bool Connection::ping(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
+        TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
@@ -443,7 +453,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
+    TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -466,6 +476,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
+    const NameToNameMap & query_parameters,
     const String & query_id_,
     UInt64 stage,
     const Settings * settings,
@@ -473,6 +484,22 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()");
+    span.addAttribute("clickhouse.query_id", query_id_);
+    span.addAttribute("clickhouse.query", query);
+    span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
+
+    ClientInfo new_client_info;
+    const auto &current_trace_context = OpenTelemetry::CurrentContext();
+    if (client_info && current_trace_context.isTraceEnabled())
+    {
+        // use current span as the parent of remote span
+        new_client_info = *client_info;
+        new_client_info.client_trace_context = current_trace_context;
+
+        client_info = &new_client_info;
+    }
+
     if (!connected)
         connect(timeouts);
 
@@ -530,7 +557,7 @@ void Connection::sendQuery(
         /// Send correct hash only for !INITIAL_QUERY, due to:
         /// - this will avoid extra protocol complexity for simplest cases
         /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/unsecure changes)
+        ///   (since there is no secure/non-secure changes)
         if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         {
 #if USE_SSL
@@ -557,6 +584,14 @@ void Connection::sendQuery(
     writeVarUInt(static_cast<bool>(compression), *out);
 
     writeStringBinary(query, *out);
+
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    {
+        Settings params;
+        for (const auto & [name, value] : query_parameters)
+            params.set(name, value);
+        params.write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
 
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
@@ -1083,6 +1118,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.default_database,
         parameters.user,
         parameters.password,
+        parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */
         "client",

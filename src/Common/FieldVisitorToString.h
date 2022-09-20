@@ -31,5 +31,8 @@ public:
     String operator() (const bool & x) const;
 };
 
-}
+/// Get value from field and convert it to string.
+/// Also remove quotes from strings.
+String convertFieldToString(const Field & field);
 
+}

@@ -2,6 +2,7 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -15,8 +16,16 @@ namespace ProfileEvents
 {
     extern const Event ExternalSortWritePart;
     extern const Event ExternalSortMerge;
+    extern const Event ExternalSortCompressedBytes;
+    extern const Event ExternalSortUncompressedBytes;
+    extern const Event ExternalProcessingCompressedBytesTotal;
+    extern const Event ExternalProcessingUncompressedBytesTotal;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForSort;
+}
 
 namespace DB
 {
@@ -50,9 +59,14 @@ public:
     {
         if (out_stream)
         {
+            out_stream->flush();
             compressed_buf_out.next();
             file_buf_out.next();
-            LOG_INFO(log, "Done writing part of data into temporary file {}", path);
+
+            auto stat = updateWriteStat();
+
+            LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
+                path, ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
 
             out_stream.reset();
 
@@ -76,6 +90,24 @@ public:
     }
 
 private:
+    struct Stat
+    {
+        size_t compressed_size = 0;
+        size_t uncompressed_size = 0;
+    };
+
+    Stat updateWriteStat()
+    {
+        Stat res{compressed_buf_out.getCompressedBytes(), compressed_buf_out.getUncompressedBytes()};
+
+        ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, res.compressed_size);
+        ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, res.uncompressed_size);
+
+        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, res.compressed_size);
+        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, res.uncompressed_size);
+        return res;
+    }
+
     Poco::Logger * log;
     std::string path;
     WriteBufferFromFile file_buf_out;
@@ -182,8 +214,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         if (!reservation)
             throw Exception("Not enough space for external sort in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        const std::string tmp_path(reservation->getDisk()->getPath());
-        temporary_files.emplace_back(createTemporaryFile(tmp_path));
+        temporary_files.emplace_back(std::make_unique<TemporaryFileOnDisk>(reservation->getDisk(), CurrentMetrics::TemporaryFilesForSort));
 
         const std::string & path = temporary_files.back()->path();
         merge_sorter
@@ -236,7 +267,7 @@ void MergeSortingTransform::generate()
         else
         {
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
-            LOG_INFO(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
+            LOG_INFO(log, "There are {} temporary sorted parts to merge", temporary_files.size());
 
             processors.emplace_back(std::make_shared<MergeSorterSource>(
                     header_without_constants, std::move(chunks), description, max_merged_block_size, limit));

@@ -4,6 +4,7 @@
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
+#include <base/errnoToString.h>
 #include <unzip.h>
 
 
@@ -553,11 +554,11 @@ void ZipArchiveReader::checkResult(int code) const
     if (code >= UNZ_OK)
         return;
 
-    String message = "Code= ";
+    String message = "Code = ";
     switch (code)
     {
         case UNZ_OK: return;
-        case UNZ_ERRNO: message += "ERRNO, errno= " + String{strerror(errno)}; break;
+        case UNZ_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
         case UNZ_PARAMERROR: message += "PARAMERROR"; break;
         case UNZ_BADZIPFILE: message += "BADZIPFILE"; break;
         case UNZ_INTERNALERROR: message += "INTERNALERROR"; break;

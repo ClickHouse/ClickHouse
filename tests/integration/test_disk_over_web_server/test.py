@@ -104,7 +104,7 @@ def test_usage(cluster, node_name):
             )
         )
 
-        node2.query("DROP TABLE test{}".format(i))
+        node2.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
 
 
@@ -131,4 +131,63 @@ def test_incorrect_usage(cluster):
     result = node2.query_and_get_error("TRUNCATE TABLE test0")
     assert "Table is read-only" in result
 
-    node2.query("DROP TABLE test0")
+    node2.query("DROP TABLE test0 SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node2"])
+def test_cache(cluster, node_name):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances[node_name]
+    global uuids
+    assert len(uuids) == 3
+    for i in range(3):
+        node2.query(
+            """
+            ATTACH TABLE test{} UUID '{}'
+            (id Int32) ENGINE = MergeTree() ORDER BY id
+            SETTINGS storage_policy = 'cached_web';
+        """.format(
+                i, uuids[i], i, i
+            )
+        )
+
+        result = node2.query(
+            """
+            SYSTEM DROP FILESYSTEM CACHE;
+            SELECT count() FROM system.filesystem_cache;
+        """
+        )
+        assert int(result) == 0
+
+        result = node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
+
+        result = node2.query(
+            """
+            SELECT count() FROM system.filesystem_cache;
+        """
+        )
+        assert int(result) > 0
+
+        result = node2.query("SELECT count() FROM test{}".format(i))
+        assert int(result) == 500000 * (i + 1)
+
+        result = node2.query(
+            "SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i)
+        )
+        assert result == node1.query(
+            "SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)
+        )
+
+        result = node2.query(
+            "SELECT id FROM test{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(
+                i
+            )
+        )
+        assert result == node1.query(
+            "SELECT id FROM data{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(
+                i
+            )
+        )
+
+        node2.query("DROP TABLE test{} SYNC".format(i))
+        print(f"Ok {i}")

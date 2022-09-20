@@ -84,15 +84,6 @@ void ThreadStatus::attachQueryContext(ContextPtr query_context_)
             thread_group->global_context = global_context;
     }
 
-    // Generate new span for thread manually here, because we can't depend
-    // on OpenTelemetrySpanHolder due to link order issues.
-    // FIXME why and how is this different from setupState()?
-    thread_trace_context = query_context_->query_trace_context;
-    if (thread_trace_context.trace_id != UUID())
-    {
-        thread_trace_context.span_id = thread_local_rng();
-    }
-
     applyQuerySettings();
 }
 
@@ -132,18 +123,6 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     if (auto query_context_ptr = query_context.lock())
     {
         applyQuerySettings();
-
-        // Generate new span for thread manually here, because we can't depend
-        // on OpenTelemetrySpanHolder due to link order issues.
-        thread_trace_context = query_context_ptr->query_trace_context;
-        if (thread_trace_context.trace_id != UUID())
-        {
-            thread_trace_context.span_id = thread_local_rng();
-        }
-    }
-    else
-    {
-        thread_trace_context.trace_id = 0;
     }
 
     initPerformanceCounters();
@@ -353,42 +332,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
 
-    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
-    auto query_context_ptr = query_context.lock();
-    if (thread_trace_context.trace_id != UUID() && query_context_ptr)
-    {
-        opentelemetry_span_log = query_context_ptr->getOpenTelemetrySpanLog();
-    }
-
-    if (opentelemetry_span_log)
-    {
-        // Log the current thread span.
-        // We do this manually, because we can't use OpenTelemetrySpanHolder as a
-        // ThreadStatus member, because of linking issues. This file is linked
-        // separately, so we can reference OpenTelemetrySpanLog here, but if we had
-        // the span holder as a field, we would have to reference it in the
-        // destructor, which is in another library.
-        OpenTelemetrySpanLogElement span;
-
-        span.trace_id = thread_trace_context.trace_id;
-        // All child span holders should be finished by the time we detach this
-        // thread, so the current span id should be the thread span id. If not,
-        // an assertion for a proper parent span in ~OpenTelemetrySpanHolder()
-        // is going to fail, because we're going to reset it to zero later in
-        // this function.
-        span.span_id = thread_trace_context.span_id;
-        assert(query_context_ptr);
-        span.parent_span_id = query_context_ptr->query_trace_context.span_id;
-        span.operation_name = getThreadName();
-        span.start_time_us = query_start_time_microseconds;
-        span.finish_time_us =
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-        span.attributes.push_back(Tuple{"clickhouse.thread_id", toString(thread_id)});
-
-        opentelemetry_span_log->add(span);
-    }
-
     finalizeQueryProfiler();
     finalizePerformanceCounters();
 
@@ -404,8 +347,11 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     query_id.clear();
     query_context.reset();
-    thread_trace_context.trace_id = 0;
-    thread_trace_context.span_id = 0;
+
+    /// Avoid leaking of ThreadGroupStatus::finished_threads_counters_memory
+    /// (this is in case someone uses system thread but did not call getProfileEventsCountersAndMemoryForThreads())
+    thread_group->getProfileEventsCountersAndMemoryForThreads();
+
     thread_group.reset();
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
@@ -416,7 +362,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         LOG_TRACE(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
-            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString());
 
         os_thread_priority = 0;
     }

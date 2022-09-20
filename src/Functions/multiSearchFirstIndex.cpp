@@ -18,7 +18,7 @@ using FunctionMultiSearchFirstIndex = FunctionsMultiStringSearch<MultiSearchFirs
 
 }
 
-void registerFunctionMultiSearchFirstIndex(FunctionFactory & factory)
+REGISTER_FUNCTION(MultiSearchFirstIndex)
 {
     factory.registerFunction<FunctionMultiSearchFirstIndex>();
 }

@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/math-functions
+---
 # 数学函数 {#shu-xue-han-shu}
 
 以下所有的函数都返回一个Float64类型的数值。返回结果总是以尽可能最大精度返回，但还是可能与机器中可表示最接近该值的数字不同。

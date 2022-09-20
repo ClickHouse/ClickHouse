@@ -39,7 +39,7 @@ using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
 
 }
 
-void registerFunctionIsFinite(FunctionFactory & factory)
+REGISTER_FUNCTION(IsFinite)
 {
     factory.registerFunction<FunctionIsFinite>();
 }

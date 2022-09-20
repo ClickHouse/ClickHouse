@@ -98,7 +98,7 @@ public:
     }
 };
 
-void registerFunctionH3ToGeoBoundary(FunctionFactory & factory)
+REGISTER_FUNCTION(H3ToGeoBoundary)
 {
     factory.registerFunction<FunctionH3ToGeoBoundary>();
 }

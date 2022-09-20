@@ -33,7 +33,7 @@ public:
 
     static KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
 
-    void preprocess(const KeeperStorage::RequestForSession & request_for_session);
+    bool preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
@@ -43,6 +43,10 @@ public:
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
     void rollback(uint64_t log_idx, nuraft::buffer & data) override;
+
+    // allow_missing - whether the transaction we want to rollback can be missing from storage
+    // (can happen in case of exception during preprocessing)
+    void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 

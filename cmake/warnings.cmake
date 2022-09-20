@@ -23,6 +23,7 @@ if (COMPILER_CLANG)
     no_warning(zero-length-array)
     no_warning(c++98-compat-pedantic)
     no_warning(c++98-compat)
+    no_warning(c++20-compat) # Use constinit in C++20 without warnings
     no_warning(conversion)
     no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
     no_warning(disabled-macro-expansion)
@@ -41,6 +42,7 @@ if (COMPILER_CLANG)
     no_warning(weak-template-vtables)
     no_warning(weak-vtables)
     no_warning(thread-safety-negative) # experimental flag, too many false positives
+    no_warning(enum-constexpr-conversion) # breaks magic-enum library in clang-16
     # TODO Enable conversion, sign-conversion, double-promotion warnings.
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler

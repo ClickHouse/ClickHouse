@@ -10,7 +10,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <Interpreters/asof.h>
+#include <Core/Joins.h>
 #include <base/sort.h>
 #include <Common/Arena.h>
 
@@ -161,5 +161,5 @@ struct SortedLookupVectorBase
 // It only contains a std::unique_ptr which is memmovable.
 // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
 using AsofRowRefs = std::unique_ptr<SortedLookupVectorBase>;
-AsofRowRefs createAsofRowRef(TypeIndex type, ASOF::Inequality inequality);
+AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality);
 }

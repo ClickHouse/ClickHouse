@@ -203,7 +203,7 @@ def main():
         json.dump(changed_images, ci)
 
     pr_info = PRInfo()
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
@@ -221,7 +221,7 @@ def main():
     if len(description) >= 140:
         description = description[:136] + "..."
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

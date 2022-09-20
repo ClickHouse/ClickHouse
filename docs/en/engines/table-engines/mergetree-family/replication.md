@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/replication
 sidebar_position: 20
 sidebar_label: Data Replication
 ---

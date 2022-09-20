@@ -8,6 +8,7 @@
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
+#include <bit>
 
 
 namespace DB
@@ -413,7 +414,7 @@ UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
 {
     UInt64 diff_bits = min ^ max;
     if (diff_bits)
-        return 64 - __builtin_clzll(diff_bits);
+        return 64 - std::countl_zero(diff_bits);
     return 0;
 }
 

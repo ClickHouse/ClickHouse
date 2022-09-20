@@ -1,7 +1,10 @@
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
@@ -19,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int DATABASE_ACCESS_DENIED;
 }
 
@@ -30,21 +34,41 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionFile>(context_); }
     explicit FunctionFile(ContextPtr context_) : WithContext(context_) {}
 
+    bool isVariadic() const override { return true; }
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                getName(), toString(arguments.size()));
+
         if (!isString(arguments[0].type))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for type String", getName());
+
+        if (arguments.size() == 2)
+        {
+            if (arguments[1].type->onlyNull())
+                return makeNullable(std::make_shared<DataTypeString>());
+
+            if (!isString(arguments[1].type))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} only accepts String or Null as second argument", getName());
+        }
 
         return std::make_shared<DataTypeString>();
     }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnString * column_src = checkAndGetColumn<ColumnString>(column.get());
@@ -52,6 +76,31 @@ public:
             throw Exception(
                 fmt::format("Illegal column {} of argument of function {}", arguments[0].column->getName(), getName()),
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        String default_result;
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
+
+        if (arguments.size() == 2)
+        {
+            if (result_type->isNullable())
+            {
+                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+                vec_null_map_to = &col_null_map_to->getData();
+            }
+            else
+            {
+                const auto & default_column = arguments[1].column;
+                const ColumnConst * default_col = checkAndGetColumn<ColumnConst>(default_column.get());
+
+                if (!default_col)
+                    throw Exception(
+                        "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+                default_result = default_col->getValue<String>();
+            }
+        }
 
         auto result = ColumnString::create();
         auto & res_chars = result->getChars();
@@ -77,24 +126,40 @@ public:
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
             file_path = fs::absolute(file_path).lexically_normal();
 
-            if (need_check && file_path.string().find(user_files_absolute_path_string) != 0)
-                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
+            try
+            {
+                if (need_check && file_path.string().find(user_files_absolute_path_string) != 0)
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
-            ReadBufferFromFile in(file_path);
-            WriteBufferFromVector out(res_chars, AppendModeTag{});
-            copyData(in, out);
-            out.finalize();
+                ReadBufferFromFile in(file_path);
+                WriteBufferFromVector out(res_chars, AppendModeTag{});
+                copyData(in, out);
+                out.finalize();
+            }
+            catch (...)
+            {
+                if (arguments.size() == 1)
+                    throw;
+
+                if (vec_null_map_to)
+                    (*vec_null_map_to)[row] = true;
+                else
+                    res_chars.insert(default_result.data(), default_result.data() + default_result.size());
+            }
 
             res_chars.push_back(0);
             res_offsets[row] = res_chars.size();
         }
+
+        if (vec_null_map_to)
+            return ColumnNullable::create(std::move(result), std::move(col_null_map_to));
 
         return result;
     }
 };
 
 
-void registerFunctionFile(FunctionFactory & factory)
+REGISTER_FUNCTION(File)
 {
     factory.registerFunction<FunctionFile>();
 }

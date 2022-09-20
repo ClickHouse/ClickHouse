@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/
 sidebar_label: 接口
 sidebar_position: 14
 ---

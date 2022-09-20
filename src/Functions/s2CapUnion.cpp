@@ -169,7 +169,7 @@ public:
 
 }
 
-void registerFunctionS2CapUnion(FunctionFactory & factory)
+REGISTER_FUNCTION(S2CapUnion)
 {
     factory.registerFunction<FunctionS2CapUnion>();
 }

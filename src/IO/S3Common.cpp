@@ -24,7 +24,7 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
+#    include <aws/s3/model/HeadObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -34,6 +34,32 @@
 #    include <Common/logger_useful.h>
 
 #    include <fstream>
+
+namespace ProfileEvents
+{
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
+}
+
+namespace DB
+{
+
+bool S3Exception::isRetryableError() const
+{
+    /// Looks like these list is quite conservative, add more codes if you wish
+    static const std::unordered_set<Aws::S3::S3Errors> unretryable_errors = {
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        Aws::S3::S3Errors::ACCESS_DENIED,
+        Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
+        Aws::S3::S3Errors::INVALID_SIGNATURE,
+        Aws::S3::S3Errors::NO_SUCH_UPLOAD,
+        Aws::S3::S3Errors::NO_SUCH_BUCKET,
+    };
+
+    return !unretryable_errors.contains(code);
+}
+
+}
 
 namespace
 {
@@ -543,7 +569,7 @@ public:
             /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
             /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
 
@@ -580,7 +606,7 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -700,9 +726,10 @@ namespace S3
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        bool enable_s3_requests_logging)
+        bool enable_s3_requests_logging,
+        bool for_disk_s3)
     {
-        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging);
+        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging, for_disk_s3);
     }
 
     URI::URI(const Poco::URI & uri_)
@@ -790,8 +817,13 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
-    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+
+    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
+        ProfileEvents::increment(ProfileEvents::S3HeadObject);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
@@ -804,13 +836,18 @@ namespace S3
         if (outcome.IsSuccess())
         {
             auto read_result = outcome.GetResultWithOwnership();
-            return static_cast<size_t>(read_result.GetContentLength());
+            return {.size = static_cast<size_t>(read_result.GetContentLength()), .last_modification_time = read_result.GetLastModified().Millis() / 1000};
         }
         else if (throw_on_error)
         {
             throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
         }
-        return 0;
+        return {};
+    }
+
+    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    {
+        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error, for_disk_s3).size;
     }
 }
 

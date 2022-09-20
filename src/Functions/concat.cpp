@@ -228,9 +228,9 @@ private:
 
 }
 
-void registerFunctionsConcat(FunctionFactory & factory)
+REGISTER_FUNCTION(Concat)
 {
-    factory.registerFunction<ConcatOverloadResolver>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

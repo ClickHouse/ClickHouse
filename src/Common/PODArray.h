@@ -115,7 +115,13 @@ protected:
     }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
-    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; } /// NOLINT
+    static size_t minimum_memory_for_elements(size_t num_elements)
+    {
+        size_t amount;
+        if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        return amount;
+    }
 
     void alloc_for_num_elements(size_t num_elements) /// NOLINT
     {
@@ -225,9 +231,7 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
-#if defined(__clang__)
     ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
-#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
@@ -703,10 +707,9 @@ public:
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         if (bytes_to_copy)
-        {
             memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-            this->c_end = this->c_start + bytes_to_copy;
-        }
+
+        this->c_end = this->c_start + bytes_to_copy;
     }
 
     // ISO C++ has strict ambiguity rules, thus we cannot apply TAllocatorParams here.

@@ -100,7 +100,7 @@ private:
 
 }
 
-void registerFunctionStringToH3(FunctionFactory & factory)
+REGISTER_FUNCTION(StringToH3)
 {
     factory.registerFunction<FunctionStringToH3>();
 }

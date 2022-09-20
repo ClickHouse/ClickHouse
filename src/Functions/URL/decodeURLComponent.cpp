@@ -172,7 +172,7 @@ using FunctionEncodeURLComponent = FunctionStringToString<CodeURLComponentImpl<e
 using FunctionDecodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<decode, true>, NameDecodeURLFormComponent>;
 using FunctionEncodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<encode, true>, NameEncodeURLFormComponent>;
 
-void registerFunctionEncodeAndDecodeURLComponent(FunctionFactory & factory)
+REGISTER_FUNCTION(EncodeAndDecodeURLComponent)
 {
     factory.registerFunction<FunctionDecodeURLComponent>();
     factory.registerFunction<FunctionEncodeURLComponent>();
