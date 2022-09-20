@@ -55,7 +55,8 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & hea
         data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
-ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const std::string & column_name)
+
+std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const std::string & column_name)
 {
     switch (type->getTypeId())
     {
@@ -398,17 +399,21 @@ void ORCBlockOutputFormat::writeColumn(
             const auto & list_column = assert_cast<const ColumnArray &>(column);
             auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
             const ColumnArray::Offsets & offsets = list_column.getOffsets();
-            list_orc_column.resize(list_column.size());
+
+            size_t column_size = list_column.size();
+            list_orc_column.resize(column_size);
+
             /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
             list_orc_column.offsets[0] = 0;
-            for (size_t i = 0; i != list_column.size(); ++i)
+            for (size_t i = 0; i != column_size; ++i)
             {
                 list_orc_column.offsets[i + 1] = offsets[i];
                 list_orc_column.notNull[i] = 1;
             }
+
             orc::ColumnVectorBatch & nested_orc_column = *list_orc_column.elements;
             writeColumn(nested_orc_column, list_column.getData(), nested_type, null_bytemap);
-            list_orc_column.numElements = list_column.size();
+            list_orc_column.numElements = column_size;
             break;
         }
         case TypeIndex::Tuple:
@@ -429,10 +434,12 @@ void ORCBlockOutputFormat::writeColumn(
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
             const ColumnArray::Offsets & offsets = list_column.getOffsets();
 
+            size_t column_size = list_column.size();
+
             map_orc_column.resize(list_column.size());
             /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
             map_orc_column.offsets[0] = 0;
-            for (size_t i = 0; i != list_column.size(); ++i)
+            for (size_t i = 0; i != column_size; ++i)
             {
                 map_orc_column.offsets[i + 1] = offsets[i];
                 map_orc_column.notNull[i] = 1;
@@ -447,7 +454,7 @@ void ORCBlockOutputFormat::writeColumn(
             auto value_type = map_type.getValueType();
             writeColumn(values_orc_column, *nested_columns[1], value_type, null_bytemap);
 
-            map_orc_column.numElements = list_column.size();
+            map_orc_column.numElements = column_size;
             break;
         }
         default:
@@ -461,8 +468,9 @@ size_t ORCBlockOutputFormat::getColumnSize(const IColumn & column, DataTypePtr &
     {
         auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
         const IColumn & nested_column = assert_cast<const ColumnArray &>(column).getData();
-        return getColumnSize(nested_column, nested_type);
+        return std::max(column.size(), getColumnSize(nested_column, nested_type));
     }
+
     return column.size();
 }
 
@@ -471,9 +479,7 @@ size_t ORCBlockOutputFormat::getMaxColumnSize(Chunk & chunk)
     size_t columns_num = chunk.getNumColumns();
     size_t max_column_size = 0;
     for (size_t i = 0; i != columns_num; ++i)
-    {
         max_column_size = std::max(max_column_size, getColumnSize(*chunk.getColumns()[i], data_types[i]));
-    }
     return max_column_size;
 }
 
@@ -484,8 +490,9 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     size_t columns_num = chunk.getNumColumns();
     size_t rows_num = chunk.getNumRows();
     /// getMaxColumnSize is needed to write arrays.
-    /// The size of the batch must be no less than total amount of array elements.
-    ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
+    /// The size of the batch must be no less than total amount of array elements
+    /// and no less than the number of rows (ORC writes a null bit for every row).
+    std::unique_ptr<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
     orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
