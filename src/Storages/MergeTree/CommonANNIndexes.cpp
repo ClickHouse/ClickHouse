@@ -420,6 +420,9 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
         }
 
         expr.distance = getFloatOrIntLiteralOrPanic(iter);
+        if (expr.distance < 0)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", expr.distance);
+
         ++iter;
 
     }
@@ -441,6 +444,8 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
             return false;
         }
         expr.distance = expr.target.back();
+        if (expr.distance < 0)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", expr.distance);
         expr.target.pop_back();
     }
 
