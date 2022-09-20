@@ -29,11 +29,9 @@ class DeltaLakeMetadata
 public:
     DeltaLakeMetadata() = default;
 
-public:
     void add(const String & filename, uint64_t timestamp);
     void remove(const String & filename, uint64_t timestamp);
 
-public:
     std::vector<String> ListCurrentFiles() &&;
 
 private:
@@ -46,18 +44,15 @@ class JsonMetadataGetter
 public:
     JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, Poco::Logger * log_);
 
+    std::vector<String> getFiles() { return std::move(metadata).ListCurrentFiles(); }
+
 private:
     void Init();
 
     std::vector<String> getJsonLogFiles();
 
-private:
     std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
 
-public:
-    std::vector<String> getFiles() { return std::move(metadata).ListCurrentFiles(); }
-
-private:
     StorageS3::S3Configuration base_configuration;
     String table_path;
     DeltaLakeMetadata metadata;
@@ -92,11 +87,8 @@ private:
     void Init();
     static void updateS3Configuration(ContextPtr, StorageS3::S3Configuration &);
 
-
-private:
     static String generateQueryFromKeys(std::vector<String> && keys);
 
-private:
     StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;

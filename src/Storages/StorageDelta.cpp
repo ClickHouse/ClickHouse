@@ -18,6 +18,9 @@
 
 #include <QueryPipeline/Pipe.h>
 
+#include <fmt/ranges.h>
+#include <fmt/format.h>
+
 namespace DB
 {
 
@@ -25,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 void DeltaLakeMetadata::add(const String & filename, uint64_t timestamp)
@@ -34,7 +38,9 @@ void DeltaLakeMetadata::add(const String & filename, uint64_t timestamp)
 
 void DeltaLakeMetadata::remove(const String & filename, uint64_t /*timestamp */)
 {
-    file_update_time.erase(filename);
+    bool erase = file_update_time.erase(filename);
+    if (!erase)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid table metadata, tried to remove {} before adding it", filename);
 }
 
 std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
@@ -95,9 +101,6 @@ void JsonMetadataGetter::Init()
                     auto timestamp = json["add"]["modificationTime"].getInt();
 
                     metadata.add(path, timestamp);
-
-                    LOG_DEBUG(log, "Path {}", path);
-                    LOG_DEBUG(log, "Timestamp {}", timestamp);
                 }
                 else if (json.has("remove"))
                 {
@@ -105,9 +108,6 @@ void JsonMetadataGetter::Init()
                     auto timestamp = json["remove"]["deletionTimestamp"].getInt();
 
                     metadata.remove(path, timestamp);
-
-                    LOG_DEBUG(log, "Path {}", path);
-                    LOG_DEBUG(log, "Timestamp {}", timestamp);
                 }
 
                 // reset
@@ -132,7 +132,7 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
     const auto bucket{base_configuration.uri.bucket};
 
     request.SetBucket(bucket);
-    request.SetPrefix(table_path + "_delta_log");
+    request.SetPrefix(std::filesystem::path(table_path) / "_delta_log");
 
     while (!is_finished)
     {
@@ -151,7 +151,7 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
         {
             const auto & filename = obj.GetKey();
 
-            if (filename.substr(filename.size() - 5) == ".json")
+            if (std::filesystem::path(filename).extension() == ".json")
                 keys.push_back(filename);
         }
 
@@ -164,7 +164,6 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 
 std::unique_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key)
 {
-
     // TBD: add parallel downloads
     return std::make_unique<ReadBufferFromS3>(
         base_configuration.client,
@@ -196,11 +195,6 @@ StorageDelta::StorageDelta(
 
     auto keys = getter.getFiles();
 
-    for (const String & path : keys)
-    {
-        LOG_DEBUG(log, "{}", path);
-    }
-
     auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys));
 
     LOG_DEBUG(log, "New uri: {}", new_uri);
@@ -225,7 +219,7 @@ StorageDelta::StorageDelta(
         access_key_,
         secret_access_key_,
         table_id_,
-        String("Parquet"), // format name
+        "Parquet", // format name
         base_configuration.rw_settings,
         columns_,
         constraints_,
@@ -297,18 +291,7 @@ void StorageDelta::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configurat
 
 String StorageDelta::generateQueryFromKeys(std::vector<String> && keys)
 {
-    String new_query;
-
-    for (auto && key : keys)
-    {
-        if (!new_query.empty())
-        {
-            new_query += ",";
-        }
-        new_query += key;
-    }
-    new_query = "{" + new_query + "}";
-
+    std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
     return new_query;
 }
 
