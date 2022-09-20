@@ -216,6 +216,10 @@ def test_distributed_insert_select(started_cluster):
     second_replica_first_shard = started_cluster.instances["s0_0_1"]
     first_replica_second_shard = started_cluster.instances["s0_1_0"]
 
+    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple';""")
+    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple';""")
+
+
     first_replica_first_shard.query(
         """
     CREATE TABLE insert_select_local ON CLUSTER 'cluster_simple' (a String, b UInt64)
@@ -235,7 +239,7 @@ def test_distributed_insert_select(started_cluster):
         first_replica_first_shard.query(
             f"""
         INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated/file_{file_number}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
-        SELECT repeat('{file_number}', 10), number from numbers(100) SETTINGS insert_distributed_sync=1;
+        SELECT repeat('{file_number}', 10), number from numbers_mt(100);
             """
         )
 
@@ -272,10 +276,15 @@ def test_distributed_insert_select(started_cluster):
         _, b = line.split()
         assert int(b) % 2 == 1
 
+    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_local ON CLUSTER 'cluster_simple';""")
+    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_distributed ON CLUSTER 'cluster_simple';""")
+
 
 def test_distributed_insert_select_with_replicated(started_cluster):
     first_replica_first_shard = started_cluster.instances["s0_0_0"]
     second_replica_first_shard = started_cluster.instances["s0_0_1"]
+
+    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard';""")
 
     first_replica_first_shard.query(
         """
@@ -301,7 +310,7 @@ def test_distributed_insert_select_with_replicated(started_cluster):
         first_replica_first_shard.query(
             f"""
         INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{file_number}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
-        SELECT repeat('{file_number}', 10), number from numbers(100);
+        SELECT repeat('{file_number}', 10), number from numbers_mt(100);
             """
         )
 
@@ -328,3 +337,5 @@ def test_distributed_insert_select_with_replicated(started_cluster):
     assert first != 0
     assert second != 0
     assert first + second == 100 * 100
+
+    first_replica_first_shard.query("""DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard';""")
