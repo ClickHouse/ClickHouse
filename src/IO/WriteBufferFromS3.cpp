@@ -367,20 +367,33 @@ void WriteBufferFromS3::completeMultipartUpload()
 
     req.SetMultipartUpload(multipart_upload);
 
-    ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
-    if (write_settings.for_object_storage)
-        ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
-
-    auto outcome = client_ptr->CompleteMultipartUpload(req);
-
-    if (outcome.IsSuccess())
-        LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
-    else
+    size_t max_retry = std::max(s3_settings.max_unexpected_write_error_retries, 1UL);
+    for (size_t i = 0; i < max_retry; ++i)
     {
-        throw S3Exception(
-            outcome.GetError().GetErrorType(),
-            "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-            outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+        ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
+        if (write_settings.for_object_storage)
+            ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
+
+        auto outcome = client_ptr->CompleteMultipartUpload(req);
+
+        if (outcome.IsSuccess())
+        {
+            LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
+            break;
+        }
+        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        {
+            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
+            LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
+        }
+        else
+        {
+            throw S3Exception(
+                outcome.GetError().GetErrorType(),
+                "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+        }
     }
 }
 
@@ -460,18 +473,30 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 {
-    ProfileEvents::increment(ProfileEvents::S3PutObject);
-    if (write_settings.for_object_storage)
-        ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
-    auto outcome = client_ptr->PutObject(task.req);
-    bool with_pool = static_cast<bool>(schedule);
-    if (outcome.IsSuccess())
-        LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
-    else
-        throw S3Exception(
-            outcome.GetError().GetErrorType(),
-            "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
-            outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+    size_t max_retry = std::max(s3_settings.max_unexpected_write_error_retries, 1UL);
+    for (size_t i = 0; i < max_retry; ++i)
+    {
+        ProfileEvents::increment(ProfileEvents::S3PutObject);
+        if (write_settings.for_object_storage)
+            ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
+        auto outcome = client_ptr->PutObject(task.req);
+        bool with_pool = static_cast<bool>(schedule);
+        if (outcome.IsSuccess())
+        {
+            LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
+            break;
+        }
+        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        {
+            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+            LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
+        }
+        else
+            throw S3Exception(
+                outcome.GetError().GetErrorType(),
+                "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+                outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+    }
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()
