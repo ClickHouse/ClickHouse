@@ -142,7 +142,12 @@ ReadFromMergeTree::ReadFromMergeTree(
         if (!sort_description.empty())
         {
             if (query_info.getInputOrderInfo())
+            {
                 output_stream->sort_scope = DataStream::SortScope::Stream;
+                const size_t used_prefix_of_sorting_key_size = query_info.getInputOrderInfo()->used_prefix_of_sorting_key_size;
+                if (sort_description.size() > used_prefix_of_sorting_key_size)
+                    sort_description.resize(used_prefix_of_sorting_key_size);
+            }
             else
                 output_stream->sort_scope = DataStream::SortScope::Chunk;
         }
