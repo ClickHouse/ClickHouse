@@ -475,8 +475,8 @@ private:
     ThrottlerPtr replicated_sends_throttler;
 
     /// Global ID, synced via ZooKeeper between replicas
-    std::mutex table_shared_id_mutex;
-    UUID table_shared_id;
+    mutable std::mutex table_shared_id_mutex;
+    mutable UUID table_shared_id;
 
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
@@ -841,7 +841,7 @@ private:
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
-    void createTableSharedID();
+    void createTableSharedID() const;
 
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
