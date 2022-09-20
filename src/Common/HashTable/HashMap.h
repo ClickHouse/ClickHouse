@@ -305,8 +305,11 @@ private:
     Iterator advanceIterator(Iterator it, size_t n)
     {
         size_t i = 0;
-        while (i++ < n && it != this->end())
+        while (i < n && it != this->end())
+        {
+            ++i;
             ++it;
+        }
         return it;
     }
 };
