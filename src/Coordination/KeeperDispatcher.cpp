@@ -124,6 +124,26 @@ void KeeperDispatcher::requestThread()
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
 
+        const auto handle_request = [&](auto & new_request)
+        {
+            if (needs_quorum(coordination_settings, new_request))
+            {
+                quorum_requests.emplace_back(std::move(new_request));
+                return;
+            }
+
+            // if it's local no need to batch it, just process it instantly
+            if (coordination_settings->read_mode.toString() == "nonlinear")
+            {
+                if (!read_requests_queue.push({std::move(request)}))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+
+                return;
+            }
+
+            read_requests.emplace_back(std::move(new_request));
+        };
+
         try
         {
             if (active_requests_queue->tryPop(request, max_wait))
@@ -132,10 +152,7 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
-                if (needs_quorum(coordination_settings, request))
-                    quorum_requests.emplace_back(request);
-                else
-                    read_requests.emplace_back(request);
+                handle_request(request);
 
                 /// Waiting until previous append will be successful, or batch is big enough
                 while (true)
@@ -155,10 +172,7 @@ void KeeperDispatcher::requestThread()
                     if (active_requests_queue->tryPop(request, 1))
                     {
                         CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
-                        if (needs_quorum(coordination_settings, request))
-                            quorum_requests.emplace_back(request);
-                        else
-                            read_requests.emplace_back(request);
+                        handle_request(request);
                     }
                     else
                     {
@@ -192,67 +206,63 @@ void KeeperDispatcher::requestThread()
     }
 }
 
-void KeeperDispatcher::processReadRequests(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestsForSessions & read_requests)
+void KeeperDispatcher::processReadRequests([[maybe_unused]] const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestsForSessions & read_requests)
 {
-    if (coordination_settings->read_mode.toString() == "fastlinear")
+    if (read_requests.empty())
+        return;
+
+    assert(coordination_settings->read_mode.toString() == "fastlinear");
+
+    // we just want to know what's the current latest committed log on Leader node
+    auto leader_info_result = server->getLeaderInfo();
+    if (leader_info_result)
     {
-        // we just want to know what's the current latest committed log on Leader node
-        auto leader_info_result = server->getLeaderInfo();
-        if (leader_info_result)
+        leader_info_result->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
         {
-            leader_info_result->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
+            if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
             {
-                if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
-                {
-                    addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
-                    return;
-                }
+                addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+                return;
+            }
 
-                if (result.get_result_code() != nuraft::cmd_result_code::OK)
-                {
-                    addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-                    return;
-                }
+            if (result.get_result_code() != nuraft::cmd_result_code::OK)
+            {
+                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                return;
+            }
 
-                if (exception)
-                {
-                    LOG_INFO(log, "Got exception while waiting for read results {}", exception->what());
-                    addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-                    return;
-                }
+            if (exception)
+            {
+                LOG_INFO(log, "Got exception while waiting for read results {}", exception->what());
+                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                return;
+            }
 
-                auto & leader_info_ctx = result.get();
+            auto & leader_info_ctx = result.get();
 
-                if (!leader_info_ctx)
-                {
-                    addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-                    return;
-                }
+            if (!leader_info_ctx)
+            {
+                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                return;
+            }
 
-                KeeperServer::NodeInfo leader_info;
-                leader_info.term = leader_info_ctx->get_ulong();
-                leader_info.last_committed_index = leader_info_ctx->get_ulong();
-                std::lock_guard lock(leader_waiter_mutex);
-                auto node_info = server->getNodeInfo();
+            KeeperServer::NodeInfo leader_info;
+            leader_info.term = leader_info_ctx->get_ulong();
+            leader_info.last_committed_index = leader_info_ctx->get_ulong();
+            std::lock_guard lock(leader_waiter_mutex);
+            auto node_info = server->getNodeInfo();
 
-                /// we're behind, we need to wait
-                if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
-                {
-                    auto & leader_waiter = leader_waiters[leader_info];
-                    leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
-                    LOG_TRACE(log, "waiting for term {}, idx {}", leader_info.term, leader_info.last_committed_index);
-                }
-                /// process it in background thread
-                else if (!read_requests_queue.push(std::move(requests_for_sessions)))
-                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
-            });
-        }
-    }
-    else
-    {
-        assert(coordination_settings->read_mode.toString() == "nonlinear");
-        if (!read_requests_queue.push(std::move(read_requests)))
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+            /// we're behind, we need to wait
+            if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
+            {
+                auto & leader_waiter = leader_waiters[leader_info];
+                leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
+                LOG_TRACE(log, "waiting for term {}, idx {}", leader_info.term, leader_info.last_committed_index);
+            }
+            /// process it in background thread
+            else if (!read_requests_queue.push(std::move(requests_for_sessions)))
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+        });
     }
 
     read_requests.clear();
