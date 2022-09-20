@@ -56,6 +56,7 @@ Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
+-- check that reading in order optimization for ORDER BY and DISTINCT applied correctly in the same query
 -- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
 Sorting (Stream): a ASC
 Sorting (Stream): a ASC
@@ -64,7 +65,15 @@ Sorting (Stream): a ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
--- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization i.e. it contains columns from ORDER BY clause
+-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization, but direction used from ORDER BY clause
+Sorting (Stream): a DESC, b DESC
+Sorting (Stream): a DESC, b DESC
+Sorting (Stream): a DESC, b DESC
+-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (1), - it contains columns from ORDER BY clause
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
+-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (2), - direction used from ORDER BY clause
+Sorting (Stream): a DESC, b DESC
+Sorting (Stream): a DESC, b DESC
+Sorting (Stream): a DESC, b DESC
