@@ -1,0 +1,11 @@
+a	Nullable(FixedString(1))	a
+Nullable(FixedString(1))	\N
+Nullable(FixedString(1))	1
+Nullable(FixedString(1))	2
+Nullable(FixedString(1))	\N
+Nullable(FixedString(1))	4
+Nullable(FixedString(1))	5
+Nullable(FixedString(1))	\N
+Nullable(FixedString(1))	7
+Nullable(FixedString(1))	8
+Nullable(FixedString(1))	\N
