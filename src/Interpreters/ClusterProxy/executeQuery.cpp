@@ -268,10 +268,13 @@ void executeQueryWithParallelReplicas(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster)
+    const ClusterPtr & not_optimized_cluster,
+    QueryProcessingStage::Enum processed_stage)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -294,6 +297,7 @@ void executeQueryWithParallelReplicas(
 
 
     std::vector<QueryPlanPtr> plans;
+    SelectStreamFactory::Shards remote_shards;
     size_t shards = query_info.getCluster()->getShardCount();
 
     for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
@@ -316,18 +320,35 @@ void executeQueryWithParallelReplicas(
         else
             query_ast_for_shard = query_ast;
 
-        auto shard_plans = stream_factory.createForShardWithParallelReplicas(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr, throttler, context,
-            static_cast<UInt32>(shards), query_info.storage_limits);
+        stream_factory.createForShardWithParallelReplicas(
+            shard_info, query_ast_for_shard, main_table, context, static_cast<UInt32>(shards), plans, remote_shards);
+    }
 
-        if (!shard_plans.local_plan && !shard_plans.remote_plan)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");
+    Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    scalars.emplace(
+        "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
+    auto external_tables = context->getExternalTables();
 
-        if (shard_plans.local_plan)
-            plans.emplace_back(std::move(shard_plans.local_plan));
+    for (const auto & shard : remote_shards)
+    {
+        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
+            shard.coordinator,
+            shard,
+            shard.header,
+            processed_stage,
+            main_table,
+            table_func_ptr,
+            context,
+            throttler,
+            scalars,
+            external_tables,
+            &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
+            query_info.storage_limits);
 
-        if (shard_plans.remote_plan)
-            plans.emplace_back(std::move(shard_plans.remote_plan));
+        auto remote_plan = std::make_unique<QueryPlan>();
+        remote_plan->addStep(std::move(read_from_remote));
+        remote_plan->addInterpreterContext(context);
+        plans.emplace_back(std::move(remote_plan));
     }
 
     if (plans.empty())

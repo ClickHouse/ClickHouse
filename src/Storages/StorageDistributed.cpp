@@ -703,7 +703,7 @@ void StorageDistributed::read(
             select_stream_factory, modified_query_ast,
             local_context, query_info,
             sharding_key_expr, sharding_key_column_name,
-            query_info.cluster);
+            query_info.cluster, processed_stage);
     else
         ClusterProxy::executeQuery(
             query_plan, header, processed_stage,
