@@ -33,7 +33,7 @@ elseif (ARCH_AARCH64)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs")
 
     # The LSE extension for atomic operations is mandatory in ARM >= v8.1. As we target v8.0,
-    # use a runtime-dispatch that falls back to non-atomic operations hardware w/o LSE.
+    # use a runtime-dispatch that falls back to non-atomic operations on hardware w/o LSE.
     # -moutline-atomic is supported from GCC >=10.1 and Clang >=12.0
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -moutline-atomics")
 
