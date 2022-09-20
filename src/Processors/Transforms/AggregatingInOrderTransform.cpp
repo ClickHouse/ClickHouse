@@ -141,15 +141,21 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
-        /// Find the first position of new (not current) key in current chunk
-        auto indices = collections::range(key_begin, rows);
-        auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
-            [&](size_t lhs_row, size_t rhs_row)
+        auto equals = [&]()
+        {
+            for (const auto & elem : group_by_description)
             {
-                return less(res_key_columns, key_columns, lhs_row, rhs_row, group_by_description);
-            });
+                size_t ind = elem.column_number;
+                if (res_key_columns[ind]->compareAt(cur_block_size - 1, key_end, *key_columns[ind], elem.base.nulls_direction))
+                    return false;
+            }
 
-        key_end = (it == indices.end() ? rows : *it);
+            return true;
+        };
+
+        /// Find the first position of new (not current) key in current chunk
+        while (key_end != rows && equals())
+            ++key_end;
 
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
