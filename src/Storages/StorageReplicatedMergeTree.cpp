@@ -7440,12 +7440,21 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 
 String StorageReplicatedMergeTree::getTableSharedID() const
 {
+    /// Lock is not required in other places because createTableSharedID()
+    /// can be called only during table initialization
+    std::lock_guard lock(table_shared_id_mutex);
+
+    /// Can happen if table was partially initialized before drop by DatabaseCatalog
+    if (table_shared_id == UUIDHelpers::Nil)
+        createTableSharedID();
+
     return toString(table_shared_id);
 }
 
 
 void StorageReplicatedMergeTree::createTableSharedID()
 {
+    LOG_DEBUG(log, "Creating shared ID for table {}", getStorageID().getNameForLogs());
     if (table_shared_id != UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
 
@@ -7454,6 +7463,7 @@ void StorageReplicatedMergeTree::createTableSharedID()
     String id;
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))
     {
+        LOG_DEBUG(log, "Shared ID for table {} doesn't exist in ZooKeeper on path {}", getStorageID().getNameForLogs(), zookeeper_table_id_path);
         UUID table_id_candidate;
         auto local_storage_id = getStorageID();
         if (local_storage_id.uuid != UUIDHelpers::Nil)
@@ -7462,11 +7472,13 @@ void StorageReplicatedMergeTree::createTableSharedID()
             table_id_candidate = UUIDHelpers::generateV4();
 
         id = toString(table_id_candidate);
+        LOG_DEBUG(log, "Got candidate ID {}, will try to create it in ZooKeeper on path {}", id, zookeeper_table_id_path);
 
         auto code = zookeeper->tryCreate(zookeeper_table_id_path, id, zkutil::CreateMode::Persistent);
         if (code == Coordination::Error::ZNODEEXISTS)
         { /// Other replica create node early
             id = zookeeper->get(zookeeper_table_id_path);
+            LOG_DEBUG(log, "Shared ID on path {} concurrently created, will set ID {}", zookeeper_table_id_path, id);
         }
         else if (code != Coordination::Error::ZOK)
         {
@@ -7474,6 +7486,7 @@ void StorageReplicatedMergeTree::createTableSharedID()
         }
     }
 
+    LOG_DEBUG(log, "Initializing table shared ID with {}", id);
     table_shared_id = parseFromString<UUID>(id);
 }
 
