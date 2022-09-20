@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/mergetree
 sidebar_position: 11
 sidebar_label:  MergeTree
 ---
@@ -1022,6 +1023,10 @@ Other parameters:
 * `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
+
+  :::warning Zero-copy replication is not ready for production
+  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+  :::
 
 ## Virtual Columns {#virtual-columns}
 

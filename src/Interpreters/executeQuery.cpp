@@ -34,6 +34,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
+#include <Parsers/wipePasswordFromQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -111,8 +112,11 @@ static String prepareQueryForLogging(const String & query, ContextPtr context)
 {
     String res = query;
 
-    // wiping sensitive data before cropping query by log_queries_cut_to_length,
-    // otherwise something like credit card without last digit can go to log
+    // Wiping a password or its hash from CREATE/ALTER USER query because we don't want it to go to logs.
+    res = wipePasswordFromQuery(res);
+
+    // Wiping sensitive data before cropping query by log_queries_cut_to_length,
+    // otherwise something like credit card without last digit can go to log.
     if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
@@ -233,7 +237,7 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
-static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast)
+static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span)
 {
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
@@ -291,29 +295,13 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         if (auto query_log = context->getQueryLog())
             query_log->add(elem);
 
-    if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-        context->query_trace_context.trace_id != UUID()
-            && opentelemetry_span_log)
+    if (query_span)
     {
-        OpenTelemetrySpanLogElement span;
-        span.trace_id = context->query_trace_context.trace_id;
-        span.span_id = context->query_trace_context.span_id;
-        span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
-        span.operation_name = "query";
-        span.start_time_us = current_time_us;
-        span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
-        span.attributes.reserve(6);
-        span.attributes.push_back(Tuple{"clickhouse.query_status", "ExceptionBeforeStart"});
-        span.attributes.push_back(Tuple{"db.statement", elem.query});
-        span.attributes.push_back(Tuple{"clickhouse.query_id", elem.client_info.current_query_id});
-        span.attributes.push_back(Tuple{"clickhouse.exception", elem.exception});
-        span.attributes.push_back(Tuple{"clickhouse.exception_code", toString(elem.exception_code)});
-        if (!context->query_trace_context.tracestate.empty())
-        {
-            span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
-        }
-
-        opentelemetry_span_log->add(span);
+        query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
+        query_span->addAttribute("clickhouse.exception", elem.exception);
+        query_span->addAttribute("db.statement", elem.query);
+        query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+        query_span->finish();
     }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
@@ -364,6 +352,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
+    /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
+    /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
+    /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
+    ///
+    /// This does not have impact on the final span logs, because these internal queries are issued by external queries,
+    /// we still have enough span logs for the execution of external queries.
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
+
     const auto current_time = std::chrono::system_clock::now();
 
     auto & client_info = context->getClientInfo();
@@ -465,7 +461,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!internal)
         {
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
         }
 
         throw;
@@ -521,13 +517,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         {
-            SelectIntersectExceptQueryVisitor::Data data;
+            SelectIntersectExceptQueryVisitor::Data data{settings.intersect_default_mode, settings.except_default_mode};
             SelectIntersectExceptQueryVisitor{data}.visit(ast);
         }
 
         {
             /// Normalize SelectWithUnionQuery
-            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
+            NormalizeSelectWithUnionQueryVisitor::Data data{settings.union_default_mode};
             NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
         }
 
@@ -684,12 +680,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             {
-                std::unique_ptr<OpenTelemetrySpanHolder> span;
-                if (context->query_trace_context.trace_id != UUID())
+                std::unique_ptr<OpenTelemetry::SpanHolder> span;
+                if (OpenTelemetry::CurrentContext().isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
                     std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
-                    span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
+                    span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();
             }
@@ -841,147 +837,138 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     log_processors_profiles = settings.log_processors_profiles,
                                     status_info_to_query_log,
                                     implicit_txn_control,
-                                    pulling_pipeline = pipeline.pulling()](QueryPipeline & query_pipeline) mutable
+                                    pulling_pipeline = pipeline.pulling(),
+                                    query_span](QueryPipeline & query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 
-                if (!process_list_elem)
-                    return;
-
-                /// Update performance counters before logging to query_log
-                CurrentThread::finalizePerformanceCounters();
-
-                QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
-
-                double elapsed_seconds = info.elapsed_seconds;
-
-                elem.type = QueryLogElementType::QUERY_FINISH;
-
-                // construct event_time and event_time_microseconds using the same time point
-                // so that the two times will always be equal up to a precision of a second.
-                const auto finish_time = std::chrono::system_clock::now();
-                elem.event_time = time_in_seconds(finish_time);
-                elem.event_time_microseconds = time_in_microseconds(finish_time);
-                status_info_to_query_log(elem, info, ast, context);
-
-                if (pulling_pipeline)
+                if (process_list_elem)
                 {
-                    query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
-                }
-                else /// will be used only for ordinary INSERT queries
-                {
-                    auto progress_out = process_list_elem->getProgressOut();
-                    elem.result_rows = progress_out.written_rows;
-                    elem.result_bytes = progress_out.written_bytes;
-                }
+                    /// Update performance counters before logging to query_log
+                    CurrentThread::finalizePerformanceCounters();
 
-                auto progress_callback = context->getProgressCallback();
-                if (progress_callback)
-                {
-                    Progress p(WriteProgress{info.written_rows, info.written_bytes});
-                    p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
-                    progress_callback(p);
-                }
+                    QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
 
-                if (elem.read_rows != 0)
-                {
-                    LOG_INFO(&Poco::Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-                        elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
-                        static_cast<size_t>(elem.read_rows / elapsed_seconds),
-                        ReadableSize(elem.read_bytes / elapsed_seconds));
-                }
+                    double elapsed_seconds = info.elapsed_seconds;
 
-                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
-                {
-                    if (auto query_log = context->getQueryLog())
-                        query_log->add(elem);
-                }
-                if (log_processors_profiles)
-                {
-                    if (auto processors_profile_log = context->getProcessorsProfileLog())
+                    elem.type = QueryLogElementType::QUERY_FINISH;
+
+                    // construct event_time and event_time_microseconds using the same time point
+                    // so that the two times will always be equal up to a precision of a second.
+                    const auto finish_time = std::chrono::system_clock::now();
+                    elem.event_time = time_in_seconds(finish_time);
+                    elem.event_time_microseconds = time_in_microseconds(finish_time);
+                    status_info_to_query_log(elem, info, ast, context);
+
+                    if (pulling_pipeline)
                     {
-                        ProcessorProfileLogElement processor_elem;
-                        processor_elem.event_time = time_in_seconds(finish_time);
-                        processor_elem.event_time_microseconds = time_in_microseconds(finish_time);
-                        processor_elem.query_id = elem.client_info.current_query_id;
+                        query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
+                    }
+                    else /// will be used only for ordinary INSERT queries
+                    {
+                        auto progress_out = process_list_elem->getProgressOut();
+                        elem.result_rows = progress_out.written_rows;
+                        elem.result_bytes = progress_out.written_bytes;
+                    }
 
-                        auto get_proc_id = [](const IProcessor & proc) -> UInt64
-                        {
-                            return reinterpret_cast<std::uintptr_t>(&proc);
-                        };
+                    auto progress_callback = context->getProgressCallback();
+                    if (progress_callback)
+                    {
+                        Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                        p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+                        progress_callback(p);
+                    }
 
-                        for (const auto & processor : query_pipeline.getProcessors())
+                    if (elem.read_rows != 0)
+                    {
+                        LOG_INFO(&Poco::Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                            elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
+                            static_cast<size_t>(elem.read_rows / elapsed_seconds),
+                            ReadableSize(elem.read_bytes / elapsed_seconds));
+                    }
+
+                    if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                    {
+                        if (auto query_log = context->getQueryLog())
+                            query_log->add(elem);
+                    }
+                    if (log_processors_profiles)
+                    {
+                        if (auto processors_profile_log = context->getProcessorsProfileLog())
                         {
-                            std::vector<UInt64> parents;
-                            for (const auto & port : processor->getOutputs())
+                            ProcessorProfileLogElement processor_elem;
+                            processor_elem.event_time = time_in_seconds(finish_time);
+                            processor_elem.event_time_microseconds = time_in_microseconds(finish_time);
+                            processor_elem.query_id = elem.client_info.current_query_id;
+
+                            auto get_proc_id = [](const IProcessor & proc) -> UInt64
                             {
-                                if (!port.isConnected())
-                                    continue;
-                                const IProcessor & next = port.getInputPort().getProcessor();
-                                parents.push_back(get_proc_id(next));
+                                return reinterpret_cast<std::uintptr_t>(&proc);
+                            };
+
+                            for (const auto & processor : query_pipeline.getProcessors())
+                            {
+                                std::vector<UInt64> parents;
+                                for (const auto & port : processor->getOutputs())
+                                {
+                                    if (!port.isConnected())
+                                        continue;
+                                    const IProcessor & next = port.getInputPort().getProcessor();
+                                    parents.push_back(get_proc_id(next));
+                                }
+
+                                processor_elem.id = get_proc_id(*processor);
+                                processor_elem.parent_ids = std::move(parents);
+
+                                processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                                processor_elem.plan_group = processor->getQueryPlanStepGroup();
+
+                                processor_elem.processor_name = processor->getName();
+
+                                processor_elem.elapsed_us = processor->getElapsedUs();
+                                processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
+                                processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+
+                                auto stats = processor->getProcessorDataStats();
+                                processor_elem.input_rows = stats.input_rows;
+                                processor_elem.input_bytes = stats.input_bytes;
+                                processor_elem.output_rows = stats.output_rows;
+                                processor_elem.output_bytes = stats.output_bytes;
+
+                                processors_profile_log->add(processor_elem);
                             }
+                        }
+                    }
 
-                            processor_elem.id = get_proc_id(*processor);
-                            processor_elem.parent_ids = std::move(parents);
-
-                            processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
-                            processor_elem.plan_group = processor->getQueryPlanStepGroup();
-
-                            processor_elem.processor_name = processor->getName();
-
-                            processor_elem.elapsed_us = processor->getElapsedUs();
-                            processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
-                            processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
-
-                            auto stats = processor->getProcessorDataStats();
-                            processor_elem.input_rows = stats.input_rows;
-                            processor_elem.input_bytes = stats.input_bytes;
-                            processor_elem.output_rows = stats.output_rows;
-                            processor_elem.output_bytes = stats.output_bytes;
-
-                            processors_profile_log->add(processor_elem);
+                    if (implicit_txn_control)
+                    {
+                        try
+                        {
+                            implicit_txn_control->executeCommit(context->getSessionContext());
+                            implicit_txn_control.reset();
+                        }
+                        catch (const Exception &)
+                        {
+                            /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
+                            /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
+                            implicit_txn_control.reset();
+                            throw;
                         }
                     }
                 }
 
-                if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-                    context->query_trace_context.trace_id != UUID()
-                        && opentelemetry_span_log)
+                if (query_span)
                 {
-                    OpenTelemetrySpanLogElement span;
-                    span.trace_id = context->query_trace_context.trace_id;
-                    span.span_id = context->query_trace_context.span_id;
-                    span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
-                    span.operation_name = "query";
-                    span.start_time_us = elem.query_start_time_microseconds;
-                    span.finish_time_us = time_in_microseconds(finish_time);
-
-                    span.attributes.reserve(4);
-                    span.attributes.push_back(Tuple{"clickhouse.query_status", "QueryFinish"});
-                    span.attributes.push_back(Tuple{"db.statement", elem.query});
-                    span.attributes.push_back(Tuple{"clickhouse.query_id", elem.client_info.current_query_id});
-                    if (!context->query_trace_context.tracestate.empty())
-                    {
-                    span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
-                    }
-
-                    opentelemetry_span_log->add(span);
-                }
-
-                if (implicit_txn_control)
-                {
-                    try
-                    {
-                        implicit_txn_control->executeCommit(context->getSessionContext());
-                        implicit_txn_control.reset();
-                    }
-                    catch (const Exception &)
-                    {
-                        /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
-                        /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
-                        implicit_txn_control.reset();
-                        throw;
-                    }
+                    query_span->addAttribute("db.statement", elem.query);
+                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                    query_span->addAttribute("clickhouse.query_status", "QueryFinish");
+                    query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::CurrentContext().tracestate);
+                    query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+                    query_span->finish();
                 }
             };
 
@@ -993,7 +980,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                        log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
                                        quota(quota),
                                        status_info_to_query_log,
-                                       implicit_txn_control]() mutable
+                                       implicit_txn_control,
+                                       query_span]() mutable
             {
                 if (implicit_txn_control)
                 {
@@ -1050,6 +1038,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
+
+                if (query_span)
+                {
+                    query_span->addAttribute("db.statement", elem.query);
+                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                    query_span->addAttribute("clickhouse.exception", elem.exception);
+                    query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
+                    query_span->finish();
+                }
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -1073,7 +1070,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
         }
 
         throw;

@@ -697,7 +697,7 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
             return JSONUtils::getDataTypeFromField(field, format_settings);
         case FormatSettings::EscapingRule::CSV:
         {
-            if (!format_settings.csv.input_format_use_best_effort_in_schema_inference)
+            if (!format_settings.csv.use_best_effort_in_schema_inference)
                 return makeNullable(std::make_shared<DataTypeString>());
 
             if (field.empty() || field == format_settings.csv.null_representation)
@@ -745,7 +745,7 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
         case FormatSettings::EscapingRule::Raw: [[fallthrough]];
         case FormatSettings::EscapingRule::Escaped:
         {
-            if (!format_settings.tsv.input_format_use_best_effort_in_schema_inference)
+            if (!format_settings.tsv.use_best_effort_in_schema_inference)
                 return makeNullable(std::make_shared<DataTypeString>());
 
             if (field.empty() || field == format_settings.tsv.null_representation)
@@ -797,6 +797,51 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
     for (const auto & rule : escaping_rules)
         data_types.push_back(getDefaultDataTypeForEscapingRule(rule));
     return data_types;
+}
+
+String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
+{
+    String result;
+    /// First, settings that are common for all text formats:
+    result = fmt::format(
+        "schema_inference_hints={}, try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, max_rows_to_read_for_schema_inference={}",
+        settings.schema_inference_hints,
+        settings.try_infer_integers,
+        settings.try_infer_dates,
+        settings.try_infer_datetimes,
+        settings.max_rows_to_read_for_schema_inference);
+
+    /// Second, format-specific settings:
+    switch (escaping_rule)
+    {
+        case FormatSettings::EscapingRule::Escaped:
+        case FormatSettings::EscapingRule::Raw:
+            result += fmt::format(
+                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={}, null_representation={}",
+                settings.tsv.use_best_effort_in_schema_inference,
+                settings.bool_true_representation,
+                settings.bool_false_representation,
+                settings.tsv.null_representation);
+            break;
+        case FormatSettings::EscapingRule::CSV:
+            result += fmt::format(
+                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
+                " null_representation={}, delimiter={}, tuple_delimiter={}",
+                settings.tsv.use_best_effort_in_schema_inference,
+                settings.bool_true_representation,
+                settings.bool_false_representation,
+                settings.csv.null_representation,
+                settings.csv.delimiter,
+                settings.csv.tuple_delimiter);
+            break;
+        case FormatSettings::EscapingRule::JSON:
+            result += fmt::format(", try_infer_numbers_from_strings={}, read_bools_as_numbers={}", settings.json.try_infer_numbers_from_strings, settings.json.read_bools_as_numbers);
+            break;
+        default:
+            break;
+    }
+
+    return result;
 }
 
 }

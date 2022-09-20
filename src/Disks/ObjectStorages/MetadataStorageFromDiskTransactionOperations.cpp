@@ -15,7 +15,7 @@ namespace DB
 
 static std::string getTempFileName(const std::string & dir)
 {
-    return fs::path(dir) / getRandomASCIIString();
+    return fs::path(dir) / getRandomASCIIString(32);
 }
 
 SetLastModifiedOperation::SetLastModifiedOperation(const std::string & path_, Poco::Timestamp new_timestamp_, IDisk & disk_)

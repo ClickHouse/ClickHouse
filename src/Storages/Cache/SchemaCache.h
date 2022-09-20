@@ -23,6 +23,28 @@ class SchemaCache
 public:
     SchemaCache(size_t max_elements_);
 
+    struct Key
+    {
+        String source;
+        String format;
+        String additional_format_info;
+
+        bool operator==(const Key & other) const
+        {
+            return source == other.source && format == other.format && additional_format_info == other.additional_format_info;
+        }
+    };
+
+    using Keys = std::vector<Key>;
+
+    struct KeyHash
+    {
+        size_t operator()(const Key & key) const
+        {
+            return std::hash<String>()(key.source + key.format + key.additional_format_info);
+        }
+    };
+
     struct SchemaInfo
     {
         ColumnsDescription columns;
@@ -32,22 +54,22 @@ public:
     using LastModificationTimeGetter = std::function<std::optional<time_t>()>;
 
     /// Add new key with a schema
-    void add(const String & key, const ColumnsDescription & columns);
+    void add(const Key & key, const ColumnsDescription & columns);
 
     /// Add many keys with the same schema (usually used for globs)
-    void addMany(const Strings & keys, const ColumnsDescription & columns);
+    void addMany(const Keys & keys, const ColumnsDescription & columns);
 
-    std::optional<ColumnsDescription> tryGet(const String & key, LastModificationTimeGetter get_last_mod_time = {});
+    std::optional<ColumnsDescription> tryGet(const Key & key, LastModificationTimeGetter get_last_mod_time = {});
 
     void clear();
 
-    std::unordered_map<String, SchemaInfo> getAll();
+    std::unordered_map<Key, SchemaInfo, SchemaCache::KeyHash> getAll();
 
 private:
-    void addUnlocked(const String & key, const ColumnsDescription & columns);
+    void addUnlocked(const Key & key, const ColumnsDescription & columns);
     void checkOverflow();
 
-    using Queue = std::list<String>;
+    using Queue = std::list<Key>;
     using QueueIterator = Queue::iterator;
 
     struct Cell
@@ -57,7 +79,7 @@ private:
     };
 
     Queue queue;
-    std::unordered_map<String, Cell> data;
+    std::unordered_map<Key, Cell, KeyHash> data;
 
     size_t max_elements;
     std::mutex mutex;

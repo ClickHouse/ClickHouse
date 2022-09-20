@@ -89,15 +89,13 @@ void IIRowSchemaReader::setContext(ContextPtr & context)
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IIRowSchemaReader(in_, format_settings_)
+    : IIRowSchemaReader(in_, format_settings_), column_names(splitColumnNames(format_settings.column_names_for_schema_inference))
 {
-    initColumnNames(format_settings.column_names_for_schema_inference);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
-    : IIRowSchemaReader(in_, format_settings_, default_type_)
+    : IIRowSchemaReader(in_, format_settings_, default_type_), column_names(splitColumnNames(format_settings.column_names_for_schema_inference))
 {
-    initColumnNames(format_settings.column_names_for_schema_inference);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, const DataTypes & default_types_)
@@ -115,6 +113,11 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
 
     DataTypes data_types = readRowAndGetDataTypes();
+
+    /// Check that we read at list one column.
+    if (data_types.empty())
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
+
     /// If column names weren't set, use default names 'c1', 'c2', ...
     if (column_names.empty())
     {
@@ -124,9 +127,11 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     }
     /// If column names were set, check that the number of names match the number of types.
     else if (column_names.size() != data_types.size())
+    {
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
+    }
 
     for (size_t i = 0; i != column_names.size(); ++i)
     {
@@ -157,10 +162,6 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         }
     }
 
-    /// Check that we read at list one column.
-    if (data_types.empty())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
-
     NamesAndTypesList result;
     for (size_t i = 0; i != data_types.size(); ++i)
     {
@@ -171,11 +172,12 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     return result;
 }
 
-void IRowSchemaReader::initColumnNames(const String & column_names_str)
+Strings splitColumnNames(const String & column_names_str)
 {
     if (column_names_str.empty())
-        return;
+        return {};
 
+    Strings column_names;
     /// column_names_for_schema_inference is a string in format 'column1,column2,column3,...'
     boost::split(column_names, column_names_str, boost::is_any_of(","));
     for (auto & column_name : column_names)
@@ -184,6 +186,7 @@ void IRowSchemaReader::initColumnNames(const String & column_names_str)
         if (!col_name_trimmed.empty())
             column_name = col_name_trimmed;
     }
+    return column_names;
 }
 
 DataTypePtr IRowSchemaReader::getDefaultType(size_t column) const

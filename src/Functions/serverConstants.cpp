@@ -153,12 +153,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
@@ -174,4 +174,3 @@ REGISTER_FUNCTION(GetOSKernelVersion)
 
 
 }
-

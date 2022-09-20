@@ -49,7 +49,6 @@ void registerDiskHDFS(DiskFactory & factory)
             "DiskHDFS",
             std::move(metadata_storage),
             std::move(hdfs_storage),
-            DiskType::HDFS,
             /* send_metadata = */ false,
             copy_thread_pool_size);
 

@@ -4,8 +4,8 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Common/FileCache.h>
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -32,6 +32,13 @@ CachedObjectStorage::CachedObjectStorage(
     , log(&Poco::Logger::get(getName()))
 {
     cache->initialize();
+}
+
+DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
+{
+    auto wrapped_object_storage_data_source = object_storage->getDataSourceDescription();
+    wrapped_object_storage_data_source.is_cached = true;
+    return wrapped_object_storage_data_source;
 }
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const

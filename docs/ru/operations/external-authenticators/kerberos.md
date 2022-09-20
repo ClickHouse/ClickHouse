@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/external-authenticators/kerberos
+---
 # Kerberos {#external-authenticators-kerberos}
 
 ClickHouse предоставляет возможность аутентификации существующих (и правильно сконфигурированных) пользователей с использованием Kerberos.

@@ -211,6 +211,11 @@ void registerRegexpSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<RegexpSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Regexp", [](const FormatSettings & settings)
+    {
+        auto result = getAdditionalFormatInfoByEscapingRule(settings, settings.regexp.escaping_rule);
+        return result + fmt::format(", regexp={}", settings.regexp.regexp);
+    });
 }
 
 }

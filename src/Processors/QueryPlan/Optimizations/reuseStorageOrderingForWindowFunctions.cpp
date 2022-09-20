@@ -29,7 +29,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 {
     /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
     /// SortingStep:
-    /// WindowStep <- SortingStep <- [Expression] <- [SettingQuotaAndLimits] <- ReadFromMergeTree
+    /// WindowStep <- SortingStep <- [Expression] <- ReadFromMergeTree
 
     auto * window_node = parent_node;
     auto * window = typeid_cast<WindowStep *>(window_node->step.get());
@@ -104,7 +104,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     if (order_info)
     {
         read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
-        sorting->convertToFinishSorting(order_info->order_key_prefix_descr);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
     }
 
     return 0;

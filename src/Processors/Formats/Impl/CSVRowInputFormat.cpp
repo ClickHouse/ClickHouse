@@ -401,6 +401,13 @@ void registerCSVSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<CSVSchemaReader>(buf, with_names, with_types, settings);
         });
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
+        {
+            String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
+            if (!with_names)
+                result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+            return result;
+        });
     };
 
     registerWithNamesAndTypes("CSV", register_func);

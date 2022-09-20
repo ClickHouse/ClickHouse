@@ -725,7 +725,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     with_alias->getColumnName(), 1 /* direction */,
                     1 /* nulls_direction */));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, actions_dag);
             desc.partition_by_actions.push_back(std::move(actions_dag));
         }
@@ -746,7 +746,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     order_by_element.direction,
                     order_by_element.nulls_direction));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, actions_dag);
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
@@ -1988,6 +1988,23 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 }
             }
 
+            // Here we need to set order by expression as required output to avoid
+            // their removal from the ActionsDAG.
+            const auto * select_query = query_analyzer.getSelectQuery();
+            if (select_query->orderBy())
+            {
+                for (auto & child : select_query->orderBy()->children)
+                {
+                    auto * ast = child->as<ASTOrderByElement>();
+                    ASTPtr order_expression = ast->children.at(0);
+                    if (auto * function = order_expression->as<ASTFunction>();
+                        function && (function->is_window_function || function->compute_after_window_functions))
+                        continue;
+                    const String & column_name = order_expression->getColumnName();
+                    chain.getLastStep().addRequiredOutput(column_name);
+                }
+            }
+
             before_window = chain.getLastActions();
             finalize_chain(chain);
 
@@ -2007,7 +2024,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct
             // list of columns is important when we apply SELECT DISTINCT later.
-            const auto * select_query = query_analyzer.getSelectQuery();
             for (const auto & child : select_query->select()->children)
             {
                 step.addRequiredOutput(child->getColumnName());

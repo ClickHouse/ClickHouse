@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/data-types/fixedstring
+---
 # 固定字符串 {#fixedstring}
 
 固定长度 N 的字符串（N 必须是严格的正自然数）。
