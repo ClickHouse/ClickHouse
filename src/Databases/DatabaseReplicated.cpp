@@ -1242,4 +1242,24 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     }
 }
 
+bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const
+{
+    if (query_context->getClientInfo().is_replicated_database_internal)
+        return false;
+
+    /// Some ALTERs are not replicated on database level
+    if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
+    {
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
+    }
+
+    /// DROP DATABASE is not replicated
+    if (const auto * drop = query_ptr->as<const ASTDropQuery>())
+    {
+        return drop->table.get();
+    }
+
+    return true;
+}
+
 }

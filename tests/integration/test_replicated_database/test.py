@@ -354,6 +354,42 @@ def test_alter_drop_detached_part(started_cluster, engine):
     dummy_node.query("DROP DATABASE testdb SYNC")
 
 
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_partition(started_cluster, engine):
+    main_node.query(
+        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard1', 'replica2');"
+    )
+    snapshotting_node.query(
+        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard2', 'replica1');"
+    )
+
+    table = f"alter_drop_partition.alter_drop_{engine}"
+    main_node.query(
+        f"CREATE TABLE {table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
+    )
+    main_node.query(f"INSERT INTO {table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO {table} VALUES (456)")
+    snapshotting_node.query(f"INSERT INTO {table} VALUES (789)")
+    main_node.query(
+        f"ALTER TABLE {table} ON CLUSTER alter_drop_partition DROP PARTITION ID 'all'",
+        settings={"replication_alter_partitions_sync": 2},
+    )
+    assert (
+        main_node.query(
+            f"SELECT CounterID FROM clusterAllReplicas('alter_drop_partition', {table})"
+        )
+        == ""
+    )
+    assert dummy_node.query(f"SELECT CounterID FROM {table}") == ""
+    main_node.query("DROP DATABASE alter_drop_partition")
+    dummy_node.query("DROP DATABASE alter_drop_partition")
+    snapshotting_node.query("DROP DATABASE alter_drop_partition")
+
+
 def test_alter_fetch(started_cluster):
     main_node.query(
         "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
