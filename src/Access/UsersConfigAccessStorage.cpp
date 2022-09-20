@@ -441,17 +441,32 @@ namespace
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
 
+            size_t writability_count = 0;
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
                     profile_element.min_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
                     profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
-                else if (constraint_type == "readonly")
-                    profile_element.readonly = true;
+                else if (constraint_type == "readonly" || constraint_type == "const")
+                {
+                    writability_count++;
+                    profile_element.writability = SettingConstraintWritability::CONST;
+                }
+                else if (constraint_type == "changeable_in_readonly")
+                {
+                    writability_count++;
+                    if (access_control.doesSettingsConstraintsReplacePrevious())
+                        profile_element.writability = SettingConstraintWritability::CHANGEABLE_IN_READONLY;
+                    else
+                        throw Exception("Setting changeable_in_readonly for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
+                }
                 else
                     throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
+            if (writability_count > 1)
+                throw Exception("Not more than one constraint writability specifier (const/readonly/changeable_in_readonly) is allowed for " + setting_name, ErrorCodes::NOT_IMPLEMENTED);
+
             profile_elements.push_back(std::move(profile_element));
         }
 
