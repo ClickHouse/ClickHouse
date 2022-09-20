@@ -302,8 +302,8 @@ size_t getMinBytesForPrefetch()
         l2_size = ret;
 #endif
 
-    /// 1MB looks like a reasonable estimate of L2 size. 4 is empirical constant.
-    return 4 * std::max<size_t>(l2_size, 1024 * 1024);
+    /// 256KB looks like a reasonable default L2 size. 4 is empirical constant.
+    return 4 * std::max<size_t>(l2_size, 256 * 1024);
 }
 
 }
