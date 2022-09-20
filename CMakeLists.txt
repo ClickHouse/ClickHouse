@@ -515,6 +515,22 @@ if (TARGET global-group)
     install (EXPORT global DESTINATION cmake)
 endif ()
 
+option(ENABLE_CH_BUNDLE_BORINGSSL "Provide the user to allow building of OpenSSL library. By default, uses in-house ClickHouse BoringSSL" OFF)
+
+message (STATUS "ENABLE_CH_BUNDLE_BORINGSSL: ${ENABLE_CH_BUNDLE_BORINGSSL}")
+if (ENABLE_CH_BUNDLE_BORINGSSL)
+    message (STATUS "Uses in-house ClickHouse BoringSSL library")
+else ()
+    message (STATUS "Uses dynamic linking OpenSSL library instead of BoringSSL")
+    find_package(OpenSSL REQUIRED)
+    message(STATUS "OpenSSL::SSL  version: " ${OPENSSL_FOUND} ${OPENSSL_VERSION} ${OPENSSL_CRYPTO_LIBRARY})
+endif ()
+
+if (NOT ENABLE_CH_BUNDLE_BORINGSSL)
+    set(ENABLE_SSL 1)
+    target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
+endif ()
+
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 if (NOT ENABLE_JEMALLOC)
