@@ -6,10 +6,17 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
+#include <Access/Common/AllowedClientHosts.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
+    extern const int IP_ADDRESS_NOT_ALLOWED;
+}
 
 
 class TCPProtocolStackFactory : public TCPServerConnectionFactory
@@ -19,6 +26,7 @@ private:
     Poco::Logger * log;
     std::string conf_name;
     std::list<TCPServerConnectionFactory::Ptr> stack;
+    AllowedClientHosts allowed_client_hosts;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
@@ -32,10 +40,33 @@ public:
     explicit TCPProtocolStackFactory(IServer & server_, const std::string & conf_name_, T... factory)
         : server(server_), log(&Poco::Logger::get("TCPProtocolStackFactory")), conf_name(conf_name_), stack({factory...})
     {
+        const auto & config = server.config();
+        /// Fill list of allowed hosts.
+        const auto networks_config = conf_name + ".networks";
+        if (config.has(networks_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(networks_config, keys);
+            for (const String & key : keys)
+            {
+                String value = config.getString(networks_config + "." + key);
+                if (key.starts_with("ip"))
+                    allowed_client_hosts.addSubnet(value);
+                else if (key.starts_with("host_regexp"))
+                    allowed_client_hosts.addNameRegexp(value);
+                else if (key.starts_with("host"))
+                    allowed_client_hosts.addName(value);
+                else
+                    throw Exception("Unknown address pattern type: " + key, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
+            }
+        }
     }
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
+        if (!allowed_client_hosts.empty() && !allowed_client_hosts.contains(socket.peerAddress().host()))
+            throw Exception("Connections from " + socket.peerAddress().toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
