@@ -752,6 +752,7 @@ void Java_io_glutenproject_vectorized_BlockNativeConverter_freeMemory(JNIEnv * e
 jlong Java_io_glutenproject_vectorized_BlockNativeConverter_convertSparkRowsToCHColumn(
     JNIEnv * env, jobject, jobject java_iter, jobjectArray names, jobjectArray types, jbooleanArray is_nullables)
 {
+    LOCAL_ENGINE_JNI_METHOD_START
     using namespace std;
     int column_size = env->GetArrayLength(names);
 
@@ -773,12 +774,15 @@ jlong Java_io_glutenproject_vectorized_BlockNativeConverter_convertSparkRowsToCH
     env->ReleaseBooleanArrayElements(is_nullables, p_booleans, JNI_ABORT);
     local_engine::SparkRowToCHColumn converter;
     return reinterpret_cast<jlong>(converter.convertSparkRowItrToCHColumn(java_iter, c_names, c_types, c_isnullables));
+    LOCAL_ENGINE_JNI_METHOD_END(env, -1)
 }
 
 void Java_io_glutenproject_vectorized_BlockNativeConverter_freeBlock(JNIEnv * env, jobject, jlong block_address)
 {
+    LOCAL_ENGINE_JNI_METHOD_START
     local_engine::SparkRowToCHColumn converter;
     converter.freeBlock(reinterpret_cast<DB::Block *>(block_address));
+    LOCAL_ENGINE_JNI_METHOD_END(env, )
 }
 
 jlong Java_io_glutenproject_vectorized_BlockNativeWriter_nativeCreateInstance(JNIEnv * env, jobject)
