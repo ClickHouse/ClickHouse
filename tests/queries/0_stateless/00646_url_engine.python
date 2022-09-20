@@ -194,7 +194,7 @@ def main():
     select_requests = {
         "select distinct numuint from {tbl} order by numuint": '\n'.join([str(i) for i in range(11)]),
         "select count(*) from {tbl}": '12',
-        'select double, count(*) from {tbl} group by double': "7.7\t2\n9.9\t10"
+        'select double, count(*) from {tbl} group by double order by double': "7.7\t2\n9.9\t10"
     }
 
     t, httpd = start_server()
