@@ -28,6 +28,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -84,10 +89,13 @@ void SortedBlocksWriter::insert(Block && block)
     size_t bytes = 0;
     size_t flush_no = 0;
 
+    if (!block.rows())
+        return;
+
     {
         std::lock_guard lock{insert_mutex};
 
-        /// insert bock into BlocksList undef lock
+        /// insert block into BlocksList under lock
         inserted_blocks.insert(std::move(block));
 
         size_t total_row_count = inserted_blocks.row_count + row_count_in_flush;
@@ -145,7 +153,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), num_rows)));
 
     if (pipes.empty())
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty block");
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
@@ -262,7 +270,7 @@ Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 
 Block SortedBlocksBuffer::exchange(Block && block)
 {
-    static constexpr const float reserve_coef = 1.2;
+    static constexpr const double reserve_coefficient = 1.2;
 
     Blocks out_blocks;
     Block empty_out = block.cloneEmpty();
@@ -282,7 +290,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
 
         /// Not saved. Return buffered.
         out_blocks.swap(buffer);
-        buffer.reserve(out_blocks.size() * reserve_coef);
+        buffer.reserve(static_cast<size_t>(out_blocks.size() * reserve_coefficient));
         current_bytes = 0;
     }
 

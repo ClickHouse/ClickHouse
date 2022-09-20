@@ -68,7 +68,7 @@ private:
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(size_t offset) const;
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
 
@@ -90,9 +90,10 @@ private:
 
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
-    bool canStartFromCache(size_t current_offset, const FileSegment & file_segment) const;
 
     void prepareForSkipCache(FileSegment & file_segment);
+
+    bool canStartFromCache(size_t current_offset, const FileSegment & file_segment) const;
 
     Poco::Logger * log;
     FileCache::Key cache_key;

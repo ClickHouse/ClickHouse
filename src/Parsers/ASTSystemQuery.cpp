@@ -201,6 +201,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         if (!filesystem_cache_path_or_name.empty())
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path_or_name;
     }
+    else if (type == Type::UNFREEZE)
+    {
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(backup_name);
+    }
 }
 
 

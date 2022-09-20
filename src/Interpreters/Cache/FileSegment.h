@@ -210,6 +210,8 @@ public:
     /// Complete file segment with a certain state.
     void completeWithState(State state);
 
+    void completeWithoutState();
+
     /// Complete file segment's part which was last written.
     void completePartAndResetDownloader();
 
@@ -223,18 +225,16 @@ public:
 
     void resetRemoteFileReader();
 
-    size_t getRemainingSizeToDownload() const;
-
 private:
     size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     size_t getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    size_t getAvailableSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     String getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     String getDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     void resetDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void resetDownloadingStateUnlocked(std::unique_lock<std::mutex> & segment_lock);
 
     void setDownloadState(State state);
 
@@ -244,7 +244,6 @@ private:
     bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     bool isDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    bool isDownloadedSizeEqualToFileSegmentSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     bool isDetached(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_detached; }
     void detachAssumeStateFinalized(std::unique_lock<std::mutex> & segment_lock);
@@ -255,13 +254,8 @@ private:
     void assertNotDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     void assertIsDownloaderUnlocked(const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
     void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
-    void assertNotAlreadyDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    /// complete() without any completion state is called from destructor of
-    /// FileSegmentsHolder. complete() might check if the caller of the method
-    /// is the last alive holder of the segment. Therefore, complete() and destruction
-    /// of the file segment pointer must be done under the same cache mutex.
-    void completeWithoutState(std::lock_guard<std::mutex> & cache_lock);
+    void completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock);
     void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
 
     void completePartAndResetDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock);
@@ -450,49 +444,6 @@ struct FileSegmentsHolder : private boost::noncopyable
     }
 
     FileSegments file_segments{};
-};
-
-/**
-  * We want to write eventually some size, which is not known until the very end.
-  * Therefore we allocate file segments lazily. Each file segment is assigned capacity
-  * of max_file_segment_size, but reserved_size remains 0, until call to tryReserve().
-  * Once current file segment is full (reached max_file_segment_size), we allocate a
-  * new file segment. All allocated file segments resize in file segments holder.
-  * If at the end of all writes, the last file segment is not full, then it is resized.
-  */
-class FileSegmentRangeWriter
-{
-public:
-    using OnCompleteFileSegmentCallback = std::function<void(const FileSegment & file_segment)>;
-
-    FileSegmentRangeWriter(
-        FileCache * cache_,
-        const FileSegment::Key & key_,
-        /// A callback which is called right after each file segment is completed.
-        /// It is used to write into filesystem cache log.
-        OnCompleteFileSegmentCallback && on_complete_file_segment_func_);
-
-    ~FileSegmentRangeWriter();
-
-    bool write(const char * data, size_t size, size_t offset, bool is_persistent);
-
-    void finalize();
-
-private:
-    FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
-    void completeFileSegment(FileSegment & file_segment);
-
-    FileCache * cache;
-    FileSegment::Key key;
-
-    FileSegmentsHolder file_segments_holder;
-    FileSegments::iterator current_file_segment_it;
-
-    size_t current_file_segment_write_offset = 0;
-
-    bool finalized = false;
-
-    OnCompleteFileSegmentCallback on_complete_file_segment_func;
 };
 
 }

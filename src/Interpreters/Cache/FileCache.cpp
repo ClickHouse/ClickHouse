@@ -34,10 +34,10 @@ FileCache::FileCache(
     , max_size(cache_settings_.max_size)
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
+    , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
-    , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
@@ -129,7 +129,6 @@ void FileCache::initialize()
             fs::create_directories(cache_base_path);
         }
 
-        status_file = make_unique<StatusFile>(fs::path(cache_base_path) / "status", StatusFile::write_full_info);
         is_initialized = true;
     }
     LOG_TRACE(log, "Initialization finished");
@@ -1044,7 +1043,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
         {
             if (!key_it->is_directory())
             {
-                LOG_DEBUG(log, "Unexpected file {} (not a directory), will skip it", key_it->path().string());
+                LOG_DEBUG(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
                 continue;
             }
 
@@ -1082,7 +1081,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
                 {
                     auto * cell = addCell(
                         key, offset, size, FileSegment::State::DOWNLOADED,
-                        CreateFileSegmentSettings{ .is_persistent = is_persistent }, cache_lock);
+                        CreateFileSegmentSettings{ .is_persistent = is_persistent  }, cache_lock);
 
                     if (cell)
                         queue_entries.emplace_back(cell->queue_iterator, cell->file_segment);
@@ -1154,7 +1153,7 @@ void FileCache::reduceSizeToDownloaded(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 
     assert(file_segment->reserved_size == downloaded_size);
-    // assert(cell->size() == cell->queue_iterator->size());
+    assert(cell->size() == cell->queue_iterator->size());
 }
 
 bool FileCache::isLastFileSegmentHolder(

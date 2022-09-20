@@ -19,8 +19,6 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Common/logger_useful.h>
-#include <Common/StatusFile.h>
 
 namespace DB
 {
@@ -142,18 +140,17 @@ private:
     const size_t max_size;
     const size_t max_element_size;
     const size_t max_file_segment_size;
+    const size_t background_download_max_memory_usage;
 
     const bool allow_persistent_files;
     const size_t enable_cache_hits_threshold;
     const bool enable_filesystem_query_cache_limit;
-    const size_t background_download_max_memory_usage;
 
     mutable std::mutex mutex;
     Poco::Logger * log;
 
     bool is_initialized = false;
     std::exception_ptr initialization_exception;
-    std::unique_ptr<StatusFile> status_file;
 
     void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 

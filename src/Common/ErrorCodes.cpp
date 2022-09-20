@@ -636,7 +636,8 @@
     M(665, CANNOT_CONNECT_NATS) \
     M(666, CANNOT_USE_CACHE) \
     M(667, NOT_INITIALIZED) \
-    M(668, BACKGROUND_CACHE_WRITE_WAS_CANCELLED) \
+    M(668, INVALID_STATE) \
+    M(669, BACKGROUND_CACHE_WRITE_WAS_CANCELLED) \
     \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
@@ -675,7 +676,7 @@ namespace ErrorCodes
 
     ErrorCode getErrorCodeByName(std::string_view error_name)
     {
-        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+        for (int i = 0, end = ErrorCodes::end(); i < end; ++i)
         {
             std::string_view name = ErrorCodes::getName(i);
 
