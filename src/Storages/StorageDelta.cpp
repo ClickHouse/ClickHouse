@@ -27,7 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
-    extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_DATA;
 }
 
@@ -179,6 +179,7 @@ StorageDelta::StorageDelta(
     const String & access_key_,
     const String & secret_access_key_,
     const StorageID & table_id_,
+    const String & format_name_,
     ColumnsDescription columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -204,7 +205,7 @@ StorageDelta::StorageDelta(
     if (columns_.empty())
     {
         columns_
-            = StorageS3::getTableStructureFromData(String("Parquet"), s3_uri, access_key_, secret_access_key_, "", false, {}, context_);
+            = StorageS3::getTableStructureFromData(format_name_, s3_uri, access_key_, secret_access_key_, "", false, {}, context_);
         storage_metadata.setColumns(columns_);
     }
     else
@@ -219,7 +220,7 @@ StorageDelta::StorageDelta(
         access_key_,
         secret_access_key_,
         table_id_,
-        "Parquet", // format name
+        format_name_,
         base_configuration.rw_settings,
         columns_,
         constraints_,
@@ -303,23 +304,27 @@ void registerStorageDelta(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             auto & engine_args = args.engine_args;
-            if (engine_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+            if (engine_args.empty() || engine_args.size() < 3)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage DeltaLake requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
 
-            auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
+            
+            String table_url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+            String access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
+            String secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
+            
+            String format = "Parquet";
+            if (engine_args.size() == 4) {
+                format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
+            }
 
-            configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
-
-
-            S3::URI s3_uri(Poco::URI(configuration.url));
+            auto s3_uri = S3::URI(Poco::URI(table_url));
 
             return std::make_shared<StorageDelta>(
                 s3_uri,
-                configuration.auth_settings.access_key_id,
-                configuration.auth_settings.secret_access_key,
+                access_key_id,
+                secret_access_key,
                 args.table_id,
+                format,
                 args.columns,
                 args.constraints,
                 args.comment,
