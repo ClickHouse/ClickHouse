@@ -141,8 +141,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         }
         if (!sort_description.empty())
         {
-            auto const & settings = context->getSettingsRef();
-            if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
+            if (query_info.getInputOrderInfo())
                 output_stream->sort_scope = DataStream::SortScope::Stream;
             else
                 output_stream->sort_scope = DataStream::SortScope::Chunk;
@@ -1008,7 +1007,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.selected_rows = sum_rows;
 
     const auto & input_order_info = query_info.getInputOrderInfo();
-    if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
+    if (input_order_info)
         result.read_type = (input_order_info->direction > 0) ? ReadType::InOrder
                                                              : ReadType::InReverseOrder;
 
@@ -1119,7 +1118,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             column_names_to_read,
             result_projection);
     }
-    else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order || settings.optimize_read_in_window_order) && input_order_info)
+    else if (input_order_info)
     {
         pipe = spreadMarkRangesAmongStreamsWithOrder(
             std::move(result.parts_with_ranges),
