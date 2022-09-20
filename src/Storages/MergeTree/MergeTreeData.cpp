@@ -2189,7 +2189,7 @@ void MergeTreeData::dropAllData()
         if (disk->isBroken())
             continue;
 
-        LOG_INFO(log, "dropAllData: remove format_version.txt and detached directory");
+        LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
 
         if (disk->exists(fs::path(relative_data_path) / DETACHED_DIR_NAME))
@@ -2197,6 +2197,8 @@ void MergeTreeData::dropAllData()
 
         if (disk->exists(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
+
+        MergeTreeWriteAheadLog::dropAllWriteAheadLogs(disk, relative_data_path);
 
         try
         {
