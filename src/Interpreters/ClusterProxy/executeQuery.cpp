@@ -20,6 +20,42 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 
+using namespace DB;
+
+namespace
+{
+
+/// We determine output stream sort properties by a local plan (local because otherwise table could be unknown).
+/// If no local shard exist for this cluster, no sort properties will be provided, c'est la vie.
+auto getLocalPlanSortDescription(const std::vector<QueryPlanPtr> & plans, ContextMutablePtr context)
+{
+    SortDescription sort_description;
+    DataStream::SortScope sort_scope = DataStream::SortScope::None;
+    if (!plans.empty())
+    {
+        /// Currently we've implemented sorting properties enforcing only for memory bound merging (and MBM is implemented only for aggregation in order).
+        const IQueryPlanStep * step = nullptr;
+        if (const auto * aggregating_step = dynamic_cast<const AggregatingStep *>(plans.front()->getRootNode()->step.get());
+            aggregating_step && aggregating_step->memoryBoundMergingWillBeUsed())
+            step = aggregating_step;
+        if (const auto * merging_step = dynamic_cast<const MergingAggregatedStep *>(plans.front()->getRootNode()->step.get());
+            merging_step && merging_step->memoryBoundMergingWillBeUsed())
+            step = merging_step;
+        if (step)
+        {
+            /// So, we synchronize the corresponding settings.
+            context->setSetting("enable_memory_bound_merging_of_aggregation_results", true);
+            context->setSetting("optimize_aggregation_in_order", true);
+            /// And explicitly set the setting which will tell remote node to use aggregation in order and memory bound merging no matter what.
+            context->setSetting("force_aggregation_in_order", true);
+            sort_description = step->getOutputStream().sort_description;
+            sort_scope = step->getOutputStream().sort_scope;
+        }
+    }
+    return std::make_pair(sort_description, sort_scope);
+}
+}
+
 namespace DB
 {
 
@@ -195,31 +231,7 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
-        /// We determine output stream sort properties by a local plan (local because otherwise table could be unknown).
-        /// If no local shard exist for this cluster, no sort properties will be provided, c'est la vie.
-        SortDescription sort_description;
-        DataStream::SortScope sort_scope = DataStream::SortScope::None;
-        if (!plans.empty())
-        {
-            const IQueryPlanStep * step = nullptr;
-            if (const auto * aggregating_step = dynamic_cast<const AggregatingStep *>(plans.front()->getRootNode()->step.get());
-                aggregating_step && aggregating_step->memoryBoundMergingWillBeUsed())
-                step = aggregating_step;
-            if (const auto * merging_step = dynamic_cast<const MergingAggregatedStep *>(plans.front()->getRootNode()->step.get());
-                merging_step && merging_step->memoryBoundMergingWillBeUsed())
-                step = merging_step;
-            if (step)
-            {
-                /// Currently we've implemented sorting properties enforcing only for memory bound merging (and MBM is implemented only for aggregation in order).
-                /// So, we synchronize the corresponding settings.
-                new_context->setSetting("enable_memory_bound_merging_of_aggregation_results", true);
-                new_context->setSetting("optimize_aggregation_in_order", true);
-                /// And explicitly set the setting which will tell remote node to use aggregation in order and memory bound merging no matter what.
-                new_context->setSetting("force_aggregation_in_order", true);
-                sort_description = step->getOutputStream().sort_description;
-                sort_scope = step->getOutputStream().sort_scope;
-            }
-        }
+        auto && [sort_description, sort_scope] = getLocalPlanSortDescription(plans, new_context);
 
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
@@ -235,8 +247,8 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            sort_description,
-            sort_scope);
+            std::move(sort_description),
+            std::move(sort_scope));
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
@@ -329,26 +341,34 @@ void executeQueryWithParallelReplicas(
         "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
     auto external_tables = context->getExternalTables();
 
-    for (const auto & shard : remote_shards)
+    if (!remote_shards.empty())
     {
-        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            shard.coordinator,
-            shard,
-            shard.header,
-            processed_stage,
-            main_table,
-            table_func_ptr,
-            context,
-            throttler,
-            scalars,
-            external_tables,
-            &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-            query_info.storage_limits);
+        auto new_context = Context::createCopy(context);
+        auto && [sort_description, sort_scope] = getLocalPlanSortDescription(plans, new_context);
 
-        auto remote_plan = std::make_unique<QueryPlan>();
-        remote_plan->addStep(std::move(read_from_remote));
-        remote_plan->addInterpreterContext(context);
-        plans.emplace_back(std::move(remote_plan));
+        for (const auto & shard : remote_shards)
+        {
+            auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
+                shard.coordinator,
+                shard,
+                shard.header,
+                processed_stage,
+                main_table,
+                table_func_ptr,
+                new_context,
+                throttler,
+                scalars,
+                external_tables,
+                &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
+                query_info.storage_limits,
+                sort_description,
+                sort_scope);
+
+            auto remote_plan = std::make_unique<QueryPlan>();
+            remote_plan->addStep(std::move(read_from_remote));
+            remote_plan->addInterpreterContext(new_context);
+            plans.emplace_back(std::move(remote_plan));
+        }
     }
 
     if (plans.empty())
