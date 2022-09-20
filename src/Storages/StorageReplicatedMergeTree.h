@@ -475,6 +475,7 @@ private:
     ThrottlerPtr replicated_sends_throttler;
 
     /// Global ID, synced via ZooKeeper between replicas
+    std::mutex table_shared_id_mutex;
     UUID table_shared_id;
 
     std::mutex last_broken_disks_mutex;
