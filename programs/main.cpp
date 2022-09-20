@@ -402,6 +402,36 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 }
 
 
+/// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
+/// We don't use it. But it can be used by some libraries for implementation of "plugins".
+/// We absolutely discourage the ancient technique of loading
+/// 3rd-party uncontrolled dangerous libraries into the process address space,
+/// because it is insane.
+
+extern "C"
+{
+    void * dlopen(const char *, int)
+    {
+        return nullptr;
+    }
+
+    void * dlmopen(long, const char *, int) // NOLINT
+    {
+        return nullptr;
+    }
+
+    int dlclose(void *)
+    {
+        return 0;
+    }
+
+    const char * dlerror()
+    {
+        return "ClickHouse does not allow dynamic library loading";
+    }
+}
+
+
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
@@ -422,6 +452,7 @@ int main(int argc_, char ** argv_)
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
+    /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
 #ifndef DISABLE_HARMFUL_ENV_VAR_CHECK

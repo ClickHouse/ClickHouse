@@ -1452,7 +1452,7 @@ Port for communicating with clients over MySQL protocol.
 
 **Possible values**
 
-Positive integer.
+Positive integer to specify the port number to listen to or empty value to disable.
 
 Example
 
@@ -1466,7 +1466,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 **Possible values**
 
-Positive integer.
+Positive integer to specify the port number to listen to or empty value to disable.
 
 Example
 
