@@ -195,7 +195,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
 
