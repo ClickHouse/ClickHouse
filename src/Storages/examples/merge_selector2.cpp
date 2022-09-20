@@ -117,7 +117,7 @@ int main(int, char **)
 
         age_passed = static_cast<size_t>(age_passed + time_to_merge);
         for (auto & part : parts)
-            part.age = static_cast<size_t>(part.age + time_to_merge);
+            part.age = static_cast<time_t>(part.age + time_to_merge);
 
         std::cout << "Time passed: " << age_passed << ", num parts: " << parts.size()
             << ", merged " << selected_parts.size() << " parts, " << formatReadableSizeWithBinarySuffix(sum_merged_size)
