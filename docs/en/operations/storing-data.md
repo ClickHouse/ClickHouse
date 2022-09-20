@@ -213,9 +213,31 @@ Cache **commands**:
 
 - `SYSTEM DROP FILESYSTEM CACHE (<path>) (ON CLUSTER)`
 
-- `SHOW FILESYSTEM CACHES` -- show list of caches which were configured on the server. (For versions <= `22.8` commands is named `SHOW CACHES`)
+- `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions <= `22.8` commands is named `SHOW CACHES`)
+
+```sql
+SHOW FILESYSTEM CACHES
+```
+
+Result:
+
+``` text
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
 
 - `DESCRIBE CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW CACHES` command. (For versions <= `22.8` commands is named `DESCRIBE CACHE`)
+
+```sql
+DESCRIBE CACHE 'cache'
+```
+
+``` text
+┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─cache_on_write_operations─┬─enable_cache_hits_threshold─┬─current_size─┬─current_elements─┬─path────────┬─do_not_evict_index_and_mark_files─┐
+│ 10000000000 │      1048576 │             104857600 │                         1 │                           0 │         3276 │               54 │ /s3_cache/  │                                 1 │
+└─────────────┴──────────────┴───────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────┴──────────────────┴─────────────┴───────────────────────────────────┘
+```
 
 Cache current metrics:
 
