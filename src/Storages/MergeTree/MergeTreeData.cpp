@@ -2191,7 +2191,12 @@ void MergeTreeData::dropAllData()
 
         LOG_INFO(log, "dropAllData: remove format_version.txt and detached directory");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
-        disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+
+        if (disk->exists(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+            disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+
+        if (disk->exists(fs::path(relative_data_path) / MOVING_DIR_NAME))
+            disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
 
         try
         {
