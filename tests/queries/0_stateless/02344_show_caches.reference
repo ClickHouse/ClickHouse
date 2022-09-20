@@ -1,4 +1,12 @@
-s3_datasets
-s3disk
-s3
-s3disk_2
+cached_azure
+s3_cache_2
+s3_cache_4
+s3_cache_5
+local_cache
+s3_cache_small
+local_cache_2
+local_cache_3
+s3_cache_multi
+s3_cache_3
+s3_cache
+s3_cache_multi_2
