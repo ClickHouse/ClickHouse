@@ -84,6 +84,26 @@ private:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType>>;
 
 public:
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
+    }
+
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
     {
         if (types.empty())
@@ -185,6 +205,32 @@ public:
 
             nested_func->merge(nested_place, elem.second, arena);
         }
+    }
+
+    template <bool up_to_state>
+    void destroyImpl(AggregateDataPtr __restrict place) const noexcept
+    {
+        AggregateFunctionMapCombinatorData<KeyType> & state = Base::data(place);
+
+        for (const auto & [key, nested_place] : state.merged_maps)
+        {
+            if constexpr (up_to_state)
+                nested_func->destroyUpToState(nested_place);
+            else
+                nested_func->destroy(nested_place);
+        }
+
+        state.~Data();
+    }
+
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<false>(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<true>(place);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
