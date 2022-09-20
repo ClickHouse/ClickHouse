@@ -26,9 +26,18 @@ namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
     extern const Event S3WriteBytes;
-    extern const Event CompleteS3MultipartUpload;
-    extern const Event UploadS3Part;
-    extern const Event PutS3ObjectRequest;
+
+    extern const Event S3HeadObject;
+    extern const Event S3CreateMultipartUpload;
+    extern const Event S3CompleteMultipartUpload;
+    extern const Event S3UploadPart;
+    extern const Event S3PutObject;
+
+    extern const Event DiskS3HeadObject;
+    extern const Event DiskS3CreateMultipartUpload;
+    extern const Event DiskS3CompleteMultipartUpload;
+    extern const Event DiskS3UploadPart;
+    extern const Event DiskS3PutObject;
 }
 
 namespace DB
@@ -172,9 +181,14 @@ void WriteBufferFromS3::finalizeImpl()
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
 
+
         Aws::S3::Model::HeadObjectRequest request;
         request.SetBucket(bucket);
         request.SetKey(key);
+
+        ProfileEvents::increment(ProfileEvents::S3HeadObject);
+        if (write_settings.for_object_storage)
+            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
 
         auto response = client_ptr->HeadObject(request);
 
@@ -196,6 +210,10 @@ void WriteBufferFromS3::createMultipartUpload()
 
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
+
+    ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
+    if (write_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
     auto outcome = client_ptr->CreateMultipartUpload(req);
 
@@ -308,7 +326,10 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 {
-    ProfileEvents::increment(ProfileEvents::UploadS3Part);
+    ProfileEvents::increment(ProfileEvents::S3UploadPart);
+    if (write_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
+
     auto outcome = client_ptr->UploadPart(task.req);
 
     if (outcome.IsSuccess())
@@ -332,7 +353,6 @@ void WriteBufferFromS3::completeMultipartUpload()
     if (tags.empty())
         throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
 
-    ProfileEvents::increment(ProfileEvents::CompleteS3MultipartUpload);
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
@@ -346,6 +366,10 @@ void WriteBufferFromS3::completeMultipartUpload()
     }
 
     req.SetMultipartUpload(multipart_upload);
+
+    ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
+    if (write_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
@@ -436,7 +460,9 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 {
-    ProfileEvents::increment(ProfileEvents::PutS3ObjectRequest);
+    ProfileEvents::increment(ProfileEvents::S3PutObject);
+    if (write_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
     auto outcome = client_ptr->PutObject(task.req);
     bool with_pool = static_cast<bool>(schedule);
     if (outcome.IsSuccess())

@@ -301,6 +301,30 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
     M(DiskS3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
     \
+    M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.") \
+    M(S3CopyObject, "Number of S3 API CopyObject calls.") \
+    M(S3ListObjects, "Number of S3 API ListObjects calls.") \
+    M(S3HeadObject,  "Number of S3 API HeadObject calls.") \
+    M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
+    M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.") \
+    M(S3UploadPart, "Number of S3 API UploadPart calls.") \
+    M(S3AbortMultipartUpload, "Number of S3 API AbortMultipartUpload calls.") \
+    M(S3CompleteMultipartUpload, "Number of S3 API CompleteMultipartUpload calls.") \
+    M(S3PutObject, "Number of S3 API PutObject calls.") \
+    M(S3GetObject, "Number of S3 API GetObject calls.") \
+    \
+    M(DiskS3DeleteObjects, "Number of DiskS3 API DeleteObject(s) calls.") \
+    M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
+    M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
+    M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.") \
+    M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.") \
+    M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.") \
+    M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.") \
+    M(DiskS3AbortMultipartUpload, "Number of DiskS3 API AbortMultipartUpload calls.") \
+    M(DiskS3CompleteMultipartUpload, "Number of DiskS3 API CompleteMultipartUpload calls.") \
+    M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
+    M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
+    \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
@@ -410,17 +434,7 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
-    M(DeleteS3Objects, "Number of s3 API DeleteObjects be called") \
-    M(CopyS3Object, "Number of s3 API CopyObject be called") \
-    M(ListS3Objects, "Number of s3 API ListObjects be called") \
-    M(HeadS3Object,  "Number of s3 API HeadObject be called") \
-    M(CreateS3MultipartUpload, "Number of s3 API CreateMultipartUpload be called") \
-    M(UploadS3PartCopy, "Number of s3 API UploadPartCopy be called") \
-    M(UploadS3Part, "Number of s3 API UploadS3Part be called") \
-    M(AbortS3MultipartUpload, "Number of s3 API AbortMultipartUpload be called") \
-    M(CompleteS3MultipartUpload, "Number of s3 API CompleteS3MultipartUpload be called") \
-    M(PutS3ObjectRequest, "Number of s3 API PutS3ObjectRequest be called") \
-    M(GetS3ObjectRequest, "Number of s3 API GetS3ObjectRequest be called")
+
 
 namespace ProfileEvents
 {
