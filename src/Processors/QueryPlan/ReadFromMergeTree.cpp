@@ -1096,7 +1096,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     Pipe pipe;
 
-    const auto & settings = context->getSettingsRef();
     const auto & input_order_info = query_info.getInputOrderInfo();
 
     if (select.final())
