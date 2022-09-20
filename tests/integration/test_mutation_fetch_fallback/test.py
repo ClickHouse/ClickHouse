@@ -39,4 +39,6 @@ def test_mutation_fetch_fallback(start_cluster):
     node1.query("SYSTEM SYNC REPLICA fetch_fallback", timeout=10)
     node2.query("SYSTEM SYNC REPLICA fetch_fallback", timeout=10)
 
-    assert node2.contains_in_log("We will download merged part from replica to force byte-identical result.")
+    assert node2.contains_in_log(
+        "We will download merged part from replica to force byte-identical result."
+    )
