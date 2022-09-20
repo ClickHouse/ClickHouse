@@ -13,11 +13,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CHECKSUM_DOESNT_MATCH;
-}
-
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
