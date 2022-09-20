@@ -242,7 +242,7 @@ private:
 
     UInt64 genRandom(UInt64 limit)
     {
-        assert(lim > 0);
+        assert(limit > 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (limit <= static_cast<UInt64>(rng.max()))
