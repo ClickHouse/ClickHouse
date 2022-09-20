@@ -30,6 +30,11 @@ def test_mutation_fetch_fallback(start_cluster):
     node1.query("INSERT INTO fetch_fallback(k, v) VALUES (1, 3), (2, 7), (3, 4)")
 
     node2.stop_clickhouse()
+    
+    # Run a mutation using non-deterministic `hostName` function to produce
+    # different results on replicas and exercise the code responsible for
+    # discarding local mutation results and fetching "byte-identical" parts
+    # instead from the replica which first committed the mutation.
     node1.query(
         "ALTER TABLE fetch_fallback UPDATE z = hostName() WHERE 1 = 1",
         settings={"mutations_sync": 1, "allow_nondeterministic_mutations": 1},
