@@ -73,6 +73,7 @@ public:
         bool indexes = false;
         /// Add information about sorting
         bool sorting = false;
+        bool skip_mt = false;
     };
 
     struct ExplainPipelineOptions

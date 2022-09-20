@@ -345,7 +345,13 @@ static void explainStep(
     }
 
     if (options.actions)
-        step.describeActions(settings);
+    {
+        if (options.skip_mt && typeid_cast<const ReadFromMergeTree *>(&step))
+        {
+        }
+        else
+            step.describeActions(settings);
+    }
 
     if (options.indexes)
         step.describeIndexes(settings);
@@ -456,7 +462,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         auto callback = [&buf, this](size_t i)
         {
             buf << "\n================= " << i << "\n";
-            explainPlan(buf, {.header=true, .actions=true});
+            explainPlan(buf, {.header=true, .actions=true, .skip_mt = true});
             buf << "\n----------------- ";
         };
         QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes, std::move(callback));
@@ -466,7 +472,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         if (e.code() == ErrorCodes::ILLEGAL_COLUMN)
         {
             tryLogCurrentException("QueryPlan");
-            explainPlan(buf, {.header=true, .actions=true});
+            explainPlan(buf, {.header=true, .actions=true, .skip_mt = true});
             LOG_TRACE(&Poco::Logger::get("QueryPlan"), "{}", buf.str());
             throw Exception(ErrorCodes::LOGICAL_ERROR, e.message());
         }
