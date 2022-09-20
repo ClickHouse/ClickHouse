@@ -16,7 +16,7 @@ JSONCompactRowInputFormat::JSONCompactRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
         header_, in_, params_, false, false, false, format_settings_, std::make_unique<JSONCompactFormatReader>(in_, format_settings_))
-    , use_metadata(format_settings_.json.use_metadata)
+    , validate_types_from_metadata(format_settings_.json.validate_types_from_metadata)
 {
 }
 
@@ -24,7 +24,7 @@ void JSONCompactRowInputFormat::readPrefix()
 {
     skipBOMIfExists(*in);
     JSONUtils::skipObjectStart(*in);
-    if (use_metadata)
+    if (validate_types_from_metadata)
     {
         auto names_and_types = JSONUtils::readMetadataAndValidateHeader(*in, getPort().getHeader());
         Names column_names;

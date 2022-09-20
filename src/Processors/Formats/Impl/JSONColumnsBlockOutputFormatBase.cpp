@@ -9,7 +9,7 @@ namespace DB
 
 JSONColumnsBlockOutputFormatBase::JSONColumnsBlockOutputFormatBase(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8)
-    : IOutputFormatWithUTF8Validation(validate_utf8, header_, out_)
+    : OutputFormatWithUTF8ValidationAdaptor(validate_utf8, header_, out_)
     , format_settings(format_settings_)
     , serializations(header_.getSerializations())
 {

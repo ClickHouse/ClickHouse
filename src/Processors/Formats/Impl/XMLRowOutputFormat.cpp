@@ -8,7 +8,7 @@ namespace DB
 {
 
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormatWithUTF8Validation(true, header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     field_tag_names.resize(sample.columns());

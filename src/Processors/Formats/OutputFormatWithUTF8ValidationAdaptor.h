@@ -10,10 +10,10 @@ namespace DB
 {
 
 template <typename Base, typename... Args>
-class IIOutputFormatWithUTF8Validation : public Base
+class OutputFormatWithUTF8ValidationAdaptorBase : public Base
 {
 public:
-    IIOutputFormatWithUTF8Validation(bool validate_utf8, const Block & header, WriteBuffer & out_, Args... args)
+    OutputFormatWithUTF8ValidationAdaptorBase(bool validate_utf8, const Block & header, WriteBuffer & out_, Args... args)
         : Base(header, out_, std::forward<Args>(args)...)
     {
         bool values_can_contain_invalid_utf8 = false;
@@ -49,8 +49,8 @@ private:
     std::unique_ptr<WriteBuffer> validating_ostr;
 };
 
-using IOutputFormatWithUTF8Validation = IIOutputFormatWithUTF8Validation<IOutputFormat>;
-using IRowOutputFormatWithUTF8Validation = IIOutputFormatWithUTF8Validation<IRowOutputFormat, const IRowOutputFormat::Params &>;
+using OutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdaptorBase<IOutputFormat>;
+using RowOutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdaptorBase<IRowOutputFormat, const IRowOutputFormat::Params &>;
 
 }
 

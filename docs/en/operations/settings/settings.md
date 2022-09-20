@@ -3700,6 +3700,13 @@ Allow parsing numbers as strings in JSON input formats.
 
 Disabled by default.
 
+### input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
+
+For JSON/JSONCompact/JSONColumnsWithMetadata input formats, if this setting is set to 1,
+the types from metadata in input data will be compared with the types of the corresponding columns from the table.
+
+Enabled by default.
+
 ### output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
@@ -3711,6 +3718,12 @@ Possible values:
 -   1 — Integers are enclosed in quotes.
 
 Default value: 1.
+
+### output_format_json_quote_64bit_floats {#output_format_json_quote_64bit_floats}
+
+Controls quoting of 64-bit [floats](../../sql-reference/data-types/float.md) when they are output in JSON* formats.
+
+Disabled by default.
 
 ### output_format_json_quote_denormals {#output_format_json_quote_denormals}
 
@@ -3813,7 +3826,7 @@ When `output_format_json_quote_denormals = 1`, the query returns:
 
 ### output_format_json_quote_decimals {#output_format_json_quote_decimals}
 
-Controls quoting of decimals in JSON output format.
+Controls quoting of decimals in JSON output formats.
 
 Disabled by default.
 
@@ -3878,7 +3891,7 @@ Result:
 
 ### output_format_json_validate_utf8 {#output_format_json_validate_utf8}
 
-Controls validating of UTF-8 sequences in JSON output formats, doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8.
+Controls validation of UTF-8 sequences in JSON output formats, doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate UTF-8.
 
 Disabled by default.
 

@@ -14,7 +14,7 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     const Block & header_,
     const RowOutputFormatParams & params_,
     const FormatSettings & settings_)
-        : IRowOutputFormatWithUTF8Validation(settings_.json.validate_utf8, header_, out_, params_),
+        : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_, params_),
             settings(settings_)
 {
     fields = JSONUtils::makeNamesValidJSONStrings(getPort(PortKind::Main).getHeader().getNames(), settings, settings.json.validate_utf8);

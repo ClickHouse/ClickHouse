@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/IOutputFormatWithUTF8Validation.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
 
@@ -13,7 +13,7 @@ class WriteBuffer;
 
 /// Base class for Columnar JSON output formats.
 /// It buffers all data and outputs it as a single block in writeSuffix() method.
-class JSONColumnsBlockOutputFormatBase : public IOutputFormatWithUTF8Validation
+class JSONColumnsBlockOutputFormatBase : public OutputFormatWithUTF8ValidationAdaptor
 {
 public:
     JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8);

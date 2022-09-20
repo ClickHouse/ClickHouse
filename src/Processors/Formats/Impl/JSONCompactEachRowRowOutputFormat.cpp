@@ -16,7 +16,7 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
         bool with_names_,
         bool with_types_,
         bool yield_strings_)
-    : IRowOutputFormatWithUTF8Validation(settings_.json.validate_utf8, header_, out_, params_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_, params_)
     , settings(settings_)
     , with_names(with_names_)
     , with_types(with_types_)

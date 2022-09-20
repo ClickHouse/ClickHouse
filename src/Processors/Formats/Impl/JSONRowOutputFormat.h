@@ -4,7 +4,7 @@
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
-#include <Processors/Formats/IOutputFormatWithUTF8Validation.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -13,7 +13,7 @@ namespace DB
 
 /** Stream for output data in JSON format.
   */
-class JSONRowOutputFormat : public IRowOutputFormatWithUTF8Validation
+class JSONRowOutputFormat : public RowOutputFormatWithUTF8ValidationAdaptor
 {
 public:
     JSONRowOutputFormat(
