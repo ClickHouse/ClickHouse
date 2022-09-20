@@ -67,6 +67,14 @@ INSTANTIATE_TEST_SUITE_P(
         {
             "print decimal(1e-5)",
             "SELECT toDecimal128(CAST('1e-5', 'String'), 5)"
+        },
+        {
+            "print time(9nanoseconds)",
+            "SELECT CAST('9e-09', 'Float64')"
+        },
+        {
+            "print time(1tick)",
+            "SELECT CAST('1e-10', 'Float64')"
         }
 
 })));
