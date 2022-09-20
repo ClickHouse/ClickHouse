@@ -1,6 +1,7 @@
 #include <iostream>
 #include <Processors/IProcessor.h>
-
+#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -39,6 +40,19 @@ std::string IProcessor::statusToName(Status status)
 
     __builtin_unreachable();
 }
+
+void IProcessor::process(bool trace_processors)
+{
+    std::unique_ptr<OpenTelemetry::SpanHolder> span;
+    if (trace_processors)
+    {
+        span = std::make_unique<OpenTelemetry::SpanHolder>(demangle(typeid(*this).name()) + "::work()");
+        span->addAttribute("clickhouse.thread_id", CurrentThread::get().thread_id);
+    }
+
+    work();
+}
+
 
 }
 

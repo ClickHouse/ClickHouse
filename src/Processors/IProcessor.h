@@ -192,12 +192,9 @@ public:
     /** You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
-      * Method work can be executed in parallel for different processors.
+      * Method process can be executed in parallel for different processors.
       */
-    virtual void work()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
-    }
+    virtual void process(bool trace_processors = false);
 
     /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -359,6 +356,16 @@ public:
 
 protected:
     virtual void onCancel() {}
+
+    /** You may call this method if 'prepare' returned Ready.
+      * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
+      *
+      * Method work can be executed in parallel for different processors.
+      */
+    virtual void work()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
+    }
 
 private:
     /// For:

@@ -30,6 +30,8 @@ namespace ProfileEvents
 {
     extern const Event SelectedBytes;
     extern const Event SelectedRows;
+    extern const Event InsertedCompactParts;
+    extern const Event InsertedWideParts;
 }
 
 namespace DB
@@ -69,7 +71,7 @@ struct ViewsData
 using ViewsDataPtr = std::shared_ptr<ViewsData>;
 
 /// Copies data inserted into table for every dependent table.
-class CopyingDataToViewsTransform final : public IProcessor
+class CopyingDataToViewsTransform : public IProcessor
 {
 public:
     CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data);
@@ -84,6 +86,7 @@ private:
 };
 
 /// For source chunk, execute view query over it.
+/// It also prepares right OpenTelemetry context on current thread before its successive processors are executed.
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
@@ -91,11 +94,60 @@ public:
 
     String getName() const override { return "ExecutingInnerQueryFromView"; }
 
+    Status prepare() override
+    {
+        auto status = ExceptionKeepingTransform::prepare();
+
+        if (!is_tracing_enabled)
+            return status;
+
+        if (view.span == nullptr)
+        {
+            view.span = std::make_shared<OpenTelemetry::SpanHolder>("MaterializedView");
+            view.span->addAttribute("clickhouse.view", view.table_id.getFullTableName());
+            view.span->addAttribute("clickhouse.source", views_data->source_storage_id.getFullTableName());
+            view.span->addAttribute("clickhouse.target", view.runtime_stats->target_name);
+        }
+
+        if (status == Status::NeedData)
+        {
+            view.span->detach();
+        }
+        else if (status == Status::Finished)
+        {
+            view.span->attach();
+        }
+        // else, for READY status, span is attached in work function
+
+        return status;
+    }
+
+    void process(bool trace_processors) override
+    {
+        if (view.span)
+            view.span->attach();
+        ExceptionKeepingTransform::process(trace_processors);
+    }
+
+    bool isTracingEnabled() const
+    {
+        return is_tracing_enabled;
+    }
+
 protected:
+    void onException() override
+    {
+        if (view.span)
+        {
+            view.span->addAttribute(std::current_exception());
+        }
+    }
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override;
 
 private:
+    bool is_tracing_enabled;
     ViewsDataPtr views_data;
     ViewRuntimeData & view;
 
@@ -170,6 +222,85 @@ private:
     std::exception_ptr any_exception;
 };
 
+class FinishMVTracingTransform final : public IProcessor
+{
+protected:
+    ViewRuntimeData& view;
+
+public:
+    FinishMVTracingTransform(const Block & header, ViewRuntimeData & _view) : IProcessor({header}, {header}), view(_view)
+    {
+    }
+
+    String getName() const override { return "FinishMVTracingTransform"; }
+
+    Status prepare() override
+    {
+        auto & input = inputs.front();
+        auto & output = outputs.front();
+
+        if (output.isFinished())
+        {
+            this->onFinish(nullptr);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize views because output port is finished");
+        }
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (input.isFinished())
+        {
+            output.finish();
+            this->onFinish(nullptr);
+            return Status::Finished;
+        }
+
+        input.setNeeded();
+        if (input.hasData())
+        {
+            auto data = input.pullData();
+            if (data.exception)
+            {
+                output.pushData(std::move(data));
+                this->onFinish(data.exception);
+                return Status::PortFull;
+            }
+        }
+
+        if (input.isFinished())
+        {
+            output.finish();
+            this->onFinish(nullptr);
+            return Status::Finished;
+        }
+
+        return Status::NeedData;
+    }
+
+    void onFinish(std::exception_ptr exception)
+    {
+        if (view.span == nullptr)
+            return;
+
+        if (view.runtime_stats->thread_status)
+        {
+            auto & progress_in = view.runtime_stats->thread_status->progress_in;
+            view.span->addAttributeIfNotZero("clickhouse.read_bytes", progress_in.read_bytes.load(std::memory_order_relaxed));
+            view.span->addAttributeIfNotZero("clickhouse.read_rows", progress_in.read_rows.load(std::memory_order_relaxed));
+
+            auto & progress_out = view.runtime_stats->thread_status->progress_out;
+            view.span->addAttributeIfNotZero("clickhouse.written_rows", progress_out.written_rows.load(std::memory_order_relaxed));
+            view.span->addAttributeIfNotZero("clickhouse.written_bytes", progress_out.written_bytes.load(std::memory_order_relaxed));
+
+            auto events = std::make_shared<ProfileEvents::Counters::Snapshot>(view.runtime_stats->thread_status->performance_counters.getPartiallyAtomicSnapshot());
+            view.span->addAttributeIfNotZero("clickhouse.parts", events->operator[](ProfileEvents::InsertedWideParts) + events->operator[](ProfileEvents::InsertedCompactParts));
+        }
+
+        view.span->addAttribute("clickhouse.duration", view.runtime_stats->elapsed_ms);
+        view.span->addAttribute(exception);
+        view.span->finish();
+    }
+};
 
 Chain buildPushingToViewsChain(
     const StoragePtr & storage,
@@ -327,13 +458,19 @@ Chain buildPushingToViewsChain(
             out.getInputHeader(),
             database_table,
             nullptr,
-            std::move(runtime_stats)});
+            std::move(runtime_stats),
+            nullptr
+        });
 
         if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data);
             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
+
+            /// Add a sink to process OpenTelemetry related things when the processors of one MV complete
+            if (executing_inner_query->isTracingEnabled())
+                out.addSink(std::make_shared<FinishMVTracingTransform>(out.getOutputHeader(), views_data->views.back()));
 
             out.addSource(std::move(executing_inner_query));
         }
@@ -554,12 +691,13 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
     , views_data(std::move(views_data_))
     , view(view_)
 {
+    is_tracing_enabled = OpenTelemetry::CurrentContext().isTraceEnabled();
 }
 
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(process(block, view, *views_data));
+    state.emplace(DB::process(block, view, *views_data));
 }
 
 

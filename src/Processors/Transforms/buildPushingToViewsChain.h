@@ -6,6 +6,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Stopwatch.h>
 
 namespace Poco
@@ -30,6 +31,8 @@ struct ViewRuntimeData
     std::exception_ptr exception;
     /// Info which is needed for query views log.
     std::unique_ptr<QueryViewsLogElement::ViewRuntimeStats> runtime_stats;
+
+    std::shared_ptr<OpenTelemetry::SpanHolder> span;
 
     void setException(std::exception_ptr e)
     {
