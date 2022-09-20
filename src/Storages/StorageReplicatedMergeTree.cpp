@@ -7452,7 +7452,7 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 }
 
 
-void StorageReplicatedMergeTree::createTableSharedID()
+void StorageReplicatedMergeTree::createTableSharedID() const
 {
     LOG_DEBUG(log, "Creating shared ID for table {}", getStorageID().getNameForLogs());
     if (table_shared_id != UUIDHelpers::Nil)
