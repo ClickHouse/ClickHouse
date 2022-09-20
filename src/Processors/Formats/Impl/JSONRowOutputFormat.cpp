@@ -14,7 +14,7 @@ JSONRowOutputFormat::JSONRowOutputFormat(
     const RowOutputFormatParams & params_,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : IRowOutputFormatWithUTF8Validation(true, header, out_, params_), settings(settings_), yield_strings(yield_strings_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(true, header, out_, params_), settings(settings_), yield_strings(yield_strings_)
 {
     names = JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, true);
 }

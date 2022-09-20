@@ -20,7 +20,7 @@ private:
     void readPrefix() override;
     void readSuffix() override;
 
-    bool use_metadata;
+    const bool validate_types_from_metadata;
 };
 
 class JSONCompactFormatReader : public JSONCompactEachRowFormatReader

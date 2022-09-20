@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
-#include <Processors/Formats/IOutputFormatWithUTF8Validation.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -11,7 +11,7 @@ namespace DB
 
 /** The stream for outputting data in JSON format, by object per line.
   */
-class JSONCompactEachRowRowOutputFormat final : public IRowOutputFormatWithUTF8Validation
+class JSONCompactEachRowRowOutputFormat final : public RowOutputFormatWithUTF8ValidationAdaptor
 {
 public:
     JSONCompactEachRowRowOutputFormat(

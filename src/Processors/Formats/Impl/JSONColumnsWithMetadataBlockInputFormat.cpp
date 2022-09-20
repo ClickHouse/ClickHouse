@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 JSONColumnsWithMetadataReader::JSONColumnsWithMetadataReader(ReadBuffer & in_, const Block & header_, const FormatSettings & settings)
-    : JSONColumnsReader(in_), header(header_), use_metadata(settings.json.use_metadata)
+    : JSONColumnsReader(in_), header(header_), validate_types_from_metadata(settings.json.validate_types_from_metadata)
 {
 }
 
@@ -21,7 +21,7 @@ void JSONColumnsWithMetadataReader::readChunkStart()
 {
     skipBOMIfExists(*in);
     JSONUtils::skipObjectStart(*in);
-    if (use_metadata)
+    if (validate_types_from_metadata)
         JSONUtils::readMetadataAndValidateHeader(*in, header);
     else
         JSONUtils::readMetadata(*in);

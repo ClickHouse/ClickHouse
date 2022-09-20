@@ -617,6 +617,9 @@ ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `n
 -   [JSONEachRow](#jsoneachrow) format
 -   [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) setting
 
+For JSON input format, if setting [input_format_json_validate_types_from_metadata](../operations/settings/settings.md#input_format_json_validate_types_from_metadata) is set to 1,
+the types from metadata in input data will be compared with the types of the corresponding columns from the table.
+
 ## JSONStrings {#jsonstrings}
 
 Differs from JSON only in that data fields are output in strings, not in typed JSON values.
@@ -735,6 +738,9 @@ Example:
         }
 }
 ```
+
+For JSONColumnsWithMetadata input format, if setting [input_format_json_validate_types_from_metadata](../operations/settings/settings.md#input_format_json_validate_types_from_metadata) is set to 1,
+the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
 ## JSONAsString {#jsonasstring}
 
@@ -1141,6 +1147,7 @@ SELECT * FROM json_each_row_nested
 - [input_format_json_read_bools_as_numbers](../operations/settings/settings.md#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
 - [input_format_json_read_numbers_as_strings](../operations/settings/settings.md#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `false`.
 - [output_format_json_quote_64bit_integers](../operations/settings/settings.md#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
+- [output_format_json_quote_64bit_floats](../operations/settings/settings.md#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
 - [output_format_json_quote_decimals](../operations/settings/settings.md#output_format_json_quote_decimals) - controls quoting of decimals in JSON output format. Default value - `false`.
 - [output_format_json_escape_forward_slashes](../operations/settings/settings.md#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.

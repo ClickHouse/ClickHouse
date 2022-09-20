@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 JSONRowInputFormat::JSONRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-    : JSONEachRowRowInputFormat(in_, header_, params_, format_settings_, false), use_metadata(format_settings_.json.use_metadata)
+    : JSONEachRowRowInputFormat(in_, header_, params_, format_settings_, false), validate_types_from_metadata(format_settings_.json.validate_types_from_metadata)
 {
 }
 
@@ -19,7 +19,7 @@ void JSONRowInputFormat::readPrefix()
 {
     skipBOMIfExists(*in);
     JSONUtils::skipObjectStart(*in);
-    if (use_metadata)
+    if (validate_types_from_metadata)
         JSONUtils::readMetadataAndValidateHeader(*in, getPort().getHeader());
     else
         JSONUtils::readMetadata(*in);

@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/IOutputFormatWithUTF8Validation.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 
 
 namespace DB
@@ -13,7 +13,7 @@ namespace DB
 
 /** A stream for outputting data in XML format.
   */
-class XMLRowOutputFormat final : public IRowOutputFormatWithUTF8Validation
+class XMLRowOutputFormat final : public RowOutputFormatWithUTF8ValidationAdaptor
 {
 public:
     XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);

@@ -208,10 +208,6 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     if (checkEndOfData(is_first_row))
         return false;
 
-    skipWhitespaceIfAny(*in);
-    if (in->eof())
-        return false;
-
     size_t num_columns = columns.size();
 
     read_columns.assign(num_columns, false);

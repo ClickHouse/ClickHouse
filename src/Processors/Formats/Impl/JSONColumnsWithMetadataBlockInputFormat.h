@@ -16,7 +16,7 @@ public:
 
 private:
     const Block & header;
-    bool use_metadata;
+    const bool validate_types_from_metadata;
 };
 
 class JSONColumnsWithMetadataSchemaReader : public ISchemaReader

@@ -664,9 +664,8 @@ namespace JSONUtils
     bool checkAndSkipArrayStart(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
-        if (in.eof() || *in.position() != '[')
+        if (!checkChar('[', in))
             return false;
-        ++in.position();
         skipWhitespaceIfAny(in);
         return true;
     }
@@ -681,9 +680,8 @@ namespace JSONUtils
     bool checkAndSkipArrayEnd(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
-        if (in.eof() || *in.position() != ']')
+        if (!checkChar(']', in))
             return false;
-        ++in.position();
         skipWhitespaceIfAny(in);
         return true;
     }
@@ -705,9 +703,8 @@ namespace JSONUtils
     bool checkAndSkipObjectEnd(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
-        if (in.eof() || *in.position() != '}')
+        if (!checkChar('}', in))
             return false;
-        ++in.position();
         skipWhitespaceIfAny(in);
         return true;
     }
