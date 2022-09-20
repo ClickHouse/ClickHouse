@@ -6,43 +6,6 @@ sidebar_label: SYSTEM
 
 # Запросы SYSTEM {#query-language-system}
 
--   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
--   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
--   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
--   [RELOAD MODELS](#query_language-system-reload-models)
--   [RELOAD MODEL](#query_language-system-reload-model)
--   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
--   [RELOAD FUNCTION](#query_language-system-reload-functions)
--   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
--   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
--   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
--   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
--   [DROP REPLICA](#query_language-system-drop-replica)
--   [FLUSH LOGS](#query_language-system-flush_logs)
--   [RELOAD CONFIG](#query_language-system-reload-config)
--   [SHUTDOWN](#query_language-system-shutdown)
--   [KILL](#query_language-system-kill)
--   [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
--   [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
--   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
--   [STOP MERGES](#query_language-system-stop-merges)
--   [START MERGES](#query_language-system-start-merges)
--   [STOP TTL MERGES](#query_language-stop-ttl-merges)
--   [START TTL MERGES](#query_language-start-ttl-merges)
--   [STOP MOVES](#query_language-stop-moves)
--   [START MOVES](#query_language-start-moves)
--   [SYSTEM UNFREEZE](#query_language-system-unfreeze)
--   [STOP FETCHES](#query_language-system-stop-fetches)
--   [START FETCHES](#query_language-system-start-fetches)
--   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
--   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
--   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
--   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
--   [SYNC REPLICA](#query_language-system-sync-replica)
--   [RESTART REPLICA](#query_language-system-restart-replica)
--   [RESTORE REPLICA](#query_language-system-restore-replica)
--   [RESTART REPLICAS](#query_language-system-restart-replicas)
-
 ## RELOAD EMBEDDED DICTIONARIES] {#query_language-system-reload-emdedded-dictionaries}
 Перегружает все [Встроенные словари](../dictionaries/internal-dicts.md).
 По умолчанию встроенные словари выключены.
@@ -66,7 +29,12 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS {#query_language-system-reload-models}
 
-Перегружает все модели [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse), если их конфигурация была обновлена, без перезагрузки сервера.
+:::note
+Это утверждение и `SYSTEM RELOAD MODEL` просто выгружают модели catboost из clickhouse-library-bridge. Функция `catboostEvaluate()`
+загружает модель при первом обращении, если она еще не загружена.
+:::
+
+Разгрузите все модели CatBoost.
 
 **Синтаксис**
 
@@ -76,12 +44,12 @@ SYSTEM RELOAD MODELS
 
 ## RELOAD MODEL {#query_language-system-reload-model}
 
-Полностью перегружает модель [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) `model_name`, если ее конфигурация была обновлена, без перезагрузки сервера.
+Выгружает модель CatBoost по адресу `модель_путь`.
 
 **Синтаксис**
 
 ```sql
-SYSTEM RELOAD MODEL <model_name>
+SYSTEM RELOAD MODEL <model_path>
 ```
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}
