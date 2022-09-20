@@ -1,7 +1,6 @@
 #pragma once
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
-#include <list>
 
 namespace DB
 {
@@ -30,13 +29,5 @@ struct StreamLocalLimits
 
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
-
-struct StorageLimits
-{
-    StreamLocalLimits local_limits;
-    SizeLimits leaf_limits;
-};
-
-using StorageLimitsList = std::list<StorageLimits>;
 
 }

@@ -11,9 +11,9 @@ using FunctionSqrt = FunctionMathUnary<UnaryFunctionVectorized<SqrtName, sqrt>>;
 
 }
 
-REGISTER_FUNCTION(Sqrt)
+void registerFunctionSqrt(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionSqrt>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSqrt>(FunctionFactory::CaseInsensitive);
 }
 
 }

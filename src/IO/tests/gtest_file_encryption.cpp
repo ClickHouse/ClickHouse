@@ -4,13 +4,6 @@
 #include <gtest/gtest.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/FileEncryptionCommon.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromEncryptedFile.h>
-#include <IO/ReadBufferFromEncryptedFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <Common/getRandomASCIIString.h>
-#include <filesystem>
 
 
 using namespace DB;
@@ -216,49 +209,5 @@ INSTANTIATE_TEST_SUITE_P(All,
           },
     })
 );
-
-TEST(FileEncryptionPositionUpdateTest, Decryption)
-{
-    String tmp_path = std::filesystem::current_path() / "test_offset_update";
-    if (std::filesystem::exists(tmp_path))
-        std::filesystem::remove(tmp_path);
-
-    String key = "1234567812345678";
-    FileEncryption::Header header;
-    header.algorithm = Algorithm::AES_128_CTR;
-    header.key_id = 1;
-    header.key_hash = calculateKeyHash(key);
-    header.init_vector = InitVector::random();
-
-    auto lwb = std::make_unique<WriteBufferFromFile>(tmp_path);
-    WriteBufferFromEncryptedFile wb(10, std::move(lwb), key, header);
-    auto data = getRandomASCIIString(20);
-    wb.write(data.data(), data.size());
-    wb.finalize();
-
-    auto lrb = std::make_unique<ReadBufferFromFile>(tmp_path);
-    ReadBufferFromEncryptedFile rb(10, std::move(lrb), key, header);
-    rb.ignore(5);
-    rb.ignore(5);
-    rb.ignore(5);
-    ASSERT_EQ(rb.getPosition(), 15);
-
-    String res;
-    readStringUntilEOF(res, rb);
-    ASSERT_EQ(res, data.substr(15));
-    res.clear();
-
-    rb.seek(0, SEEK_SET);
-    ASSERT_EQ(rb.getPosition(), 0);
-    res.resize(5);
-    rb.read(res.data(), res.size());
-    ASSERT_EQ(res, data.substr(0, 5));
-    res.clear();
-
-    rb.seek(1, SEEK_CUR);
-    ASSERT_EQ(rb.getPosition(), 6);
-    readStringUntilEOF(res, rb);
-    ASSERT_EQ(res, data.substr(6));
-}
 
 #endif

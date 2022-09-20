@@ -32,59 +32,25 @@ def cluster():
 
 
 init_list = {
-    "ReadBufferFromS3Bytes": 0,
-    "ReadBufferFromS3Microseconds": 0,
-    "ReadBufferFromS3RequestsErrors": 0,
-    "WriteBufferFromS3Bytes": 0,
     "S3ReadMicroseconds": 0,
+    "S3ReadBytes": 0,
     "S3ReadRequestsCount": 0,
     "S3ReadRequestsErrorsTotal": 0,
     "S3ReadRequestsErrors503": 0,
     "S3ReadRequestsRedirects": 0,
     "S3WriteMicroseconds": 0,
+    "S3WriteBytes": 0,
     "S3WriteRequestsCount": 0,
     "S3WriteRequestsErrorsTotal": 0,
     "S3WriteRequestsErrors503": 0,
     "S3WriteRequestsRedirects": 0,
-    "DiskS3ReadMicroseconds": 0,
-    "DiskS3ReadRequestsCount": 0,
-    "DiskS3ReadRequestsErrorsTotal": 0,
-    "DiskS3ReadRequestsErrors503": 0,
-    "DiskS3ReadRequestsRedirects": 0,
-    "DiskS3WriteMicroseconds": 0,
-    "DiskS3WriteRequestsCount": 0,
-    "DiskS3WriteRequestsErrorsTotal": 0,
-    "DiskS3WriteRequestsErrors503": 0,
-    "DiskS3WriteRequestsRedirects": 0,
-    "S3DeleteObjects": 0,
-    "S3CopyObject": 0,
-    "S3ListObjects": 0,
-    "S3HeadObject": 0,
-    "S3CreateMultipartUpload": 0,
-    "S3UploadPartCopy": 0,
-    "S3UploadPart": 0,
-    "S3AbortMultipartUpload": 0,
-    "S3CompleteMultipartUpload": 0,
-    "S3PutObject": 0,
-    "S3GetObject": 0,
-    "DiskS3DeleteObjects": 0,
-    "DiskS3CopyObject": 0,
-    "DiskS3ListObjects": 0,
-    "DiskS3HeadObject": 0,
-    "DiskS3CreateMultipartUpload": 0,
-    "DiskS3UploadPartCopy": 0,
-    "DiskS3UploadPart": 0,
-    "DiskS3AbortMultipartUpload": 0,
-    "DiskS3CompleteMultipartUpload": 0,
-    "DiskS3PutObject": 0,
-    "DiskS3GetObject": 0,
 }
 
 
 def get_s3_events(instance):
     result = init_list.copy()
     events = instance.query(
-        "SELECT event,value FROM system.events WHERE event LIKE '%S3%'"
+        "SELECT event,value FROM system.events WHERE event LIKE 'S3%'"
     ).split("\n")
     for event in events:
         ev = event.split("\t")
@@ -142,7 +108,7 @@ def get_query_stat(instance, hint):
     for event in events:
         ev = event.split("\t")
         if len(ev) == 2:
-            if "S3" in ev[0]:
+            if ev[0].startswith("S3"):
                 result[ev[0]] += int(ev[1])
     return result
 
@@ -185,9 +151,7 @@ def test_profile_events(cluster):
     stat1 = get_query_stat(instance, query1)
     for metric in stat1:
         assert stat1[metric] == metrics1[metric] - metrics0[metric]
-    assert (
-        metrics1["WriteBufferFromS3Bytes"] - metrics0["WriteBufferFromS3Bytes"] == size1
-    )
+    assert metrics1["S3WriteBytes"] - metrics0["S3WriteBytes"] == size1
 
     query2 = "INSERT INTO test_s3.test_s3 FORMAT Values"
     instance.query(query2 + " (1,1)")
@@ -207,10 +171,7 @@ def test_profile_events(cluster):
     stat2 = get_query_stat(instance, query2)
     for metric in stat2:
         assert stat2[metric] == metrics2[metric] - metrics1[metric]
-    assert (
-        metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"]
-        == size2 - size1
-    )
+    assert metrics2["S3WriteBytes"] - metrics1["S3WriteBytes"] == size2 - size1
 
     query3 = "SELECT * from test_s3.test_s3"
     assert instance.query(query3) == "1\t1\n"

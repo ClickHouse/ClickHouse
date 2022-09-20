@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ReadBufferFromFileBase.h>
+#include <IO/SeekableReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Context.h>
@@ -15,12 +15,11 @@ namespace DB
  *
  * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
-class ReadBufferFromWebServer : public ReadBufferFromFileBase
+class ReadBufferFromWebServer : public SeekableReadBuffer
 {
 public:
     explicit ReadBufferFromWebServer(
-        const String & url_,
-        ContextPtr context_,
+        const String & url_, ContextPtr context_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0);
@@ -31,15 +30,7 @@ public:
 
     off_t getPosition() override;
 
-    String getFileName() const override { return url; }
-
-    void setReadUntilPosition(size_t position) override;
-
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
-
-    Range getRemainingReadRange() const override;
-
-    bool supportsRightBoundedReads() const override { return true; }
 
 private:
     std::unique_ptr<ReadBuffer> initialize();

@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/grant
-sidebar_position: 38
-sidebar_label: GRANT
+toc_priority: 38
+toc_title: GRANT
 ---
 
 # GRANT

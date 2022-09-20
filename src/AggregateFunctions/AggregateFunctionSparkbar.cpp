@@ -19,7 +19,7 @@ namespace
 {
 
 template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
-IAggregateFunction * createWithUIntegerOrTimeType(const std::string & name, const IDataType & argument_type, TArgs && ... args)
+static IAggregateFunction * createWithUIntegerOrTimeType(const std::string & name, const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date || which.idx == TypeIndex::UInt16) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
