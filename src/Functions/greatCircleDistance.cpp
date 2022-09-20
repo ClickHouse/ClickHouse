@@ -2,15 +2,14 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Interpreters/castColumn.h>
 #include <Common/TargetSpecific.h>
 #include <base/range.h>
 #include <cmath>
+#include <numbers>
 
 
 namespace DB
@@ -43,8 +42,9 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr double PI = 3.14159265358979323846;
-constexpr float PI_F = 3.14159265358979323846f;
+constexpr double PI = std::numbers::pi_v<double>;
+constexpr float PI_F = std::numbers::pi_v<float>;
+
 constexpr float RAD_IN_DEG = static_cast<float>(PI / 180.0);
 constexpr float RAD_IN_DEG_HALF = static_cast<float>(PI / 360.0);
 
