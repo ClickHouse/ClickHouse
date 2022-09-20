@@ -222,7 +222,12 @@ TEST(WeakHash32, ColumnVectorI64)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 2;
+#endif
+    checkColumn(hash.getData(), col->getData(), allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnVectorU128)
@@ -247,7 +252,12 @@ TEST(WeakHash32, ColumnVectorU128)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 131070;
+#endif
+    checkColumn(hash.getData(), eq_data, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnVectorI128)
@@ -298,7 +308,12 @@ TEST(WeakHash32, ColumnDecimal64)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 2;
+#endif
+    checkColumn(hash.getData(), col->getData(), allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnDecimal128)
@@ -337,7 +352,12 @@ TEST(WeakHash32, ColumnString1)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 2;
+#endif
+    checkColumn(hash.getData(), data, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnString2)
@@ -375,8 +395,11 @@ TEST(WeakHash32, ColumnString2)
     col->updateWeakHash32(hash);
 
     /// Now there is single collision between 'k' * 544 and 'q' * 2512 (which is calculated twice)
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
     size_t allowed_collisions = 4;
-
+#else
+    size_t allowed_collisions = 130410;
+#endif
     checkColumn(hash.getData(), data, allowed_collisions);
 }
 
@@ -415,7 +438,12 @@ TEST(WeakHash32, ColumnString3)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 130412;
+#endif
+    checkColumn(hash.getData(), data, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnFixedString)
@@ -442,8 +470,12 @@ TEST(WeakHash32, ColumnFixedString)
 
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
-
-    checkColumn(hash.getData(), data);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 130410;
+#endif
+    checkColumn(hash.getData(), data, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnArray)
@@ -490,7 +522,13 @@ TEST(WeakHash32, ColumnArray)
     WeakHash32 hash(col_arr->size());
     col_arr->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 131026;
+#endif
+    checkColumn(hash.getData(), eq_data, allowed_collisions);
+
 }
 
 TEST(WeakHash32, ColumnArray2)
@@ -525,7 +563,12 @@ TEST(WeakHash32, ColumnArray2)
     WeakHash32 hash(col_arr->size());
     col_arr->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 1001046;
+#endif
+    checkColumn(hash.getData(), eq_data, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnArrayArray)
@@ -582,7 +625,12 @@ TEST(WeakHash32, ColumnArrayArray)
     WeakHash32 hash(col_arr_arr->size());
     col_arr_arr->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 5998;
+#endif
+    checkColumn(hash.getData(), eq_data, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnConst)
@@ -679,7 +727,12 @@ TEST(WeakHash32, ColumnTupleUInt64UInt64)
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 4;
+#endif
+    checkColumn(hash.getData(), eq, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnTupleUInt64String)
@@ -717,7 +770,11 @@ TEST(WeakHash32, ColumnTupleUInt64String)
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
 
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
     size_t allowed_collisions = 8;
+#else
+    size_t allowed_collisions = 260820;
+#endif
     checkColumn(hash.getData(), eq, allowed_collisions);
 }
 
@@ -755,8 +812,12 @@ TEST(WeakHash32, ColumnTupleUInt64FixedString)
 
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
-
-    checkColumn(hash.getData(), eq);
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
+    size_t allowed_collisions = 0;
+#else
+    size_t allowed_collisions = 260820;
+#endif
+    checkColumn(hash.getData(), eq, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnTupleUInt64Array)
@@ -807,6 +868,10 @@ TEST(WeakHash32, ColumnTupleUInt64Array)
     /// (0, [array of size 1212 with values 7]) vs (0, [array of size 2265 with values 17])
     /// (0, [array of size 558 with values 5]) vs (1, [array of size 879 with values 21])
 
+#if defined(__SSE4_2__) || (defined(__aarch64__) && defined(__ARM_FEATURE_CRC32))
     size_t allowed_collisions = 8;
+#else
+    size_t allowed_collisions = 262056;
+#endif
     checkColumn(hash.getData(), eq_data, allowed_collisions);
 }
