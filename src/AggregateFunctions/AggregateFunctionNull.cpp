@@ -115,7 +115,7 @@ public:
                 if (serialize_flag)
                     return std::make_shared<AggregateFunctionNullVariadic<false, true, true>>(nested_function, arguments, params);
                 else
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, true>>(nested_function, arguments, params);
             }
         }
     }
