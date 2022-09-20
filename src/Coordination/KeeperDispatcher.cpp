@@ -583,7 +583,7 @@ void KeeperDispatcher::shutdown()
             /// Clear all registered sessions
             std::lock_guard lock(session_to_response_callback_mutex);
 
-            if (hasLeader())
+            if (server && hasLeader())
             {
                 close_requests.reserve(session_to_response_callback.size());
                 // send to leader CLOSE requests for active sessions
@@ -607,7 +607,7 @@ void KeeperDispatcher::shutdown()
         }
 
         // if there is no leader, there is no reason to do CLOSE because it's a write request
-        if (hasLeader() && !close_requests.empty())
+        if (server && hasLeader() && !close_requests.empty())
         {
             LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
             const auto raft_result = server->putRequestBatch(close_requests);
