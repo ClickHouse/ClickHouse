@@ -67,6 +67,7 @@ public:
         const String & access_key_,
         const String & secret_access_key_,
         const StorageID & table_id_,
+        const String & format_name_,
         ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
