@@ -1470,6 +1470,9 @@ bool MutateTask::execute()
             if (task->executeStep())
                 return true;
 
+            // The `new_data_part` is a shared pointer and must be moved to allow
+            // part deletion (happening in the destructor) in case it is needed
+            // in `MutateFromLogEntryTask::finalize`.
             promise.set_value(std::move(ctx->new_data_part));
             return false;
         }
