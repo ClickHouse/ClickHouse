@@ -520,7 +520,7 @@ bool KeeperServer::isFollower() const
 
 bool KeeperServer::isLeaderAlive() const
 {
-    return raft_instance->is_leader_alive();
+    return raft_instance && raft_instance->is_leader_alive();
 }
 
 /// TODO test whether taking failed peer in count

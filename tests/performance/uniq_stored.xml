@@ -5,7 +5,7 @@
             a String,
             b_count AggregateFunction(uniq, UInt64)
         ) Engine=MergeTree partition by tuple()
-        ORDER by tuple()
+        ORDER by a
         SETTINGS index_granularity = 1024;
     </create_query>
 
@@ -15,7 +15,7 @@
             a String,
             b_count AggregateFunction(uniq, String)
         ) Engine=MergeTree partition by tuple()
-        ORDER by tuple()
+        ORDER by a
         SETTINGS index_granularity = 1024;
     </create_query>
 
@@ -28,7 +28,7 @@
         SELECT a, uniqState(b) b_count
         FROM
         (
-            SELECT toString(rand() % 1000) a, toString(number % 10000) b
+            SELECT toString(intDiv(number, 20000)) a, toString(number % 10000) b
             FROM numbers_mt(20000000)
         )
         GROUP BY a

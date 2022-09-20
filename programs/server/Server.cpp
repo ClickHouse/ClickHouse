@@ -1381,7 +1381,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reload();
+        access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
     /// Limit on total number of concurrently executed queries.
