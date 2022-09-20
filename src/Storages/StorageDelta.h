@@ -51,7 +51,14 @@ private:
 
     std::vector<String> getJsonLogFiles();
 
-    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
+    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
+
+    /* every metadata file contains many jsons
+       this function reads one json from buffer
+    */
+    String readJSONStringFromBuffer(std::shared_ptr<ReadBuffer> buf);
+    
+    void handleJSON(const JSON & json);
 
     StorageS3::S3Configuration base_configuration;
     String table_path;

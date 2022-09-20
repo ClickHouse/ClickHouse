@@ -70,51 +70,18 @@ void JsonMetadataGetter::Init()
     for (const String & key : keys)
     {
         auto buf = createS3ReadBuffer(key);
-        String json_str;
-        size_t opening(0), closing(0);
-        char c;
 
-        while (buf->read(c))
+        while (!buf->eof())
         {
-            // skip all space characters for JSON to parse correctly
-            if (isspace(c))
-            {
+            String json_str = readJSONStringFromBuffer(buf);
+            
+            if (json_str.empty()) {
                 continue;
             }
 
-            json_str.push_back(c);
+            const JSON json(json_str);
 
-            if (c == '{')
-                opening++;
-            else if (c == '}')
-                closing++;
-
-            if (opening == closing)
-            {
-                LOG_DEBUG(log, "JSON {}, {}", json_str, json_str.size());
-
-                JSON json(json_str);
-
-                if (json.has("add"))
-                {
-                    auto path = json["add"]["path"].getString();
-                    auto timestamp = json["add"]["modificationTime"].getInt();
-
-                    metadata.add(path, timestamp);
-                }
-                else if (json.has("remove"))
-                {
-                    auto path = json["remove"]["path"].getString();
-                    auto timestamp = json["remove"]["deletionTimestamp"].getInt();
-
-                    metadata.remove(path, timestamp);
-                }
-
-                // reset
-                opening = 0;
-                closing = 0;
-                json_str.clear();
-            }
+            handleJSON(json);
         }
     }
 }
@@ -162,16 +129,64 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
     return keys;
 }
 
-std::unique_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key)
+std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key)
 {
     // TBD: add parallel downloads
-    return std::make_unique<ReadBufferFromS3>(
+    return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
         base_configuration.uri.bucket,
         key,
         base_configuration.uri.version_id,
         /* max single read retries */ 10,
         ReadSettings{});
+}
+
+String JsonMetadataGetter::readJSONStringFromBuffer(std::shared_ptr<ReadBuffer> buf) {
+    String json_str;
+
+    int32_t opening(0), closing(0);
+
+    do {
+        char c;
+        
+        if (!buf->read(c))
+            return json_str;
+
+        // skip all space characters for JSON to parse correctly
+        if (isspace(c))
+        {
+            continue;
+        }
+
+        json_str.push_back(c);
+
+        if (c == '{')
+            opening++;
+        else if (c == '}')
+            closing++;
+    
+    } while (opening != closing || opening == 0);
+
+    LOG_DEBUG(log, "JSON {}", json_str);
+
+    return json_str;
+}
+
+void JsonMetadataGetter::handleJSON(const JSON & json) {
+    if (json.has("add"))
+    {
+        auto path = json["add"]["path"].getString();
+        auto timestamp = json["add"]["modificationTime"].getInt();
+
+        metadata.add(path, timestamp);
+    }
+    else if (json.has("remove"))
+    {
+        auto path = json["remove"]["path"].getString();
+        auto timestamp = json["remove"]["deletionTimestamp"].getInt();
+
+        metadata.remove(path, timestamp);
+    }
 }
 
 StorageDelta::StorageDelta(
