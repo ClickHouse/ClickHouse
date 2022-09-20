@@ -24,6 +24,8 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
+    extern const Event S3GetObject;
+    extern const Event DiskS3GetObject;
 }
 
 namespace DB
@@ -248,7 +250,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, true, read_settings.for_object_storage);
 
     file_size = object_size;
     return *file_size;
@@ -314,6 +316,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             version_id.empty() ? "Latest" : version_id,
             offset);
     }
+
+    ProfileEvents::increment(ProfileEvents::S3GetObject);
+    if (read_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 

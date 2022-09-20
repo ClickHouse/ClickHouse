@@ -121,6 +121,7 @@ S3Settings::ReadWriteSettings::ReadWriteSettings(const Settings & settings)
     max_single_part_upload_size = settings.s3_max_single_part_upload_size;
     max_connections = settings.s3_max_connections;
     check_objects_after_upload = settings.s3_check_objects_after_upload;
+    max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
 }
 
 void S3Settings::ReadWriteSettings::updateFromSettingsIfEmpty(const Settings & settings)
@@ -137,6 +138,8 @@ void S3Settings::ReadWriteSettings::updateFromSettingsIfEmpty(const Settings & s
         max_single_part_upload_size = settings.s3_max_single_part_upload_size;
     if (!max_connections)
         max_connections = settings.s3_max_connections;
+    if (!max_unexpected_write_error_retries)
+        max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
     check_objects_after_upload = settings.s3_check_objects_after_upload;
 }
 
