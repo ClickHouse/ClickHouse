@@ -20,7 +20,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DataType, ParserTest,
         },
         {
             "print dynamic(timespan(1d))",
-            "SELECT 86400."
+            "SELECT CAST('86400', 'Float64')"
         },
         {
             "print dynamic(parse_ipv4('127.0.0.1'))",
@@ -52,6 +52,18 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DataType, ParserTest,
         },
         {
             "print dynamic([date(1), time(1d), 1, 2])",
-            "SELECT [parseDateTime64BestEffortOrNull('1', 9, 'UTC'), 86400., 1, 2]"
+            "SELECT [parseDateTime64BestEffortOrNull('1', 9, 'UTC'), CAST('86400', 'Float64'), 1, 2]"
+        },
+        {
+            "print time('13:00:40.00000')",
+            "SELECT CAST('46840', 'Float64')"
+        },
+        {
+            "print timespan('12.23:12:23');",
+            "SELECT CAST('1120343', 'Float64')"
+        },
+        {
+            "print timespan(12.23:12:23)",
+            "SELECT CAST('1120343', 'Float64')"
         }
 })));

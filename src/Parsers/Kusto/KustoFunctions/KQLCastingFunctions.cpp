@@ -98,9 +98,9 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     else if (pos->type == TokenType::StringLiteral)
         arg = String(pos->begin, pos->end);
     else
-        arg = getConvertedArgument(function_name,pos);
+        arg = getConvertedArgument(function_name, pos);
     
-    if(pos->type == TokenType::StringLiteral || pos->type == TokenType::QuotedIdentifier)
+    if (pos->type == TokenType::StringLiteral || pos->type == TokenType::QuotedIdentifier)
     {
         ++pos;
         try
@@ -110,7 +110,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         }
         catch(...)
         {
-            out = std::format("NULL");
+            out = "NULL";
         }
     }
     else
@@ -128,7 +128,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     String res;
-    int scale =0;
+    int scale = 0;
     int precision;
     
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
@@ -143,29 +143,29 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
         precision = 17;
     }
     static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
-    bool is_string = std::any_of(res.begin(), res.end(), ::isalpha) && !(std::regex_match(res , expr));
+    bool is_string = std::any_of(res.begin(), res.end(), ::isalpha) && !(std::regex_match(res, expr));
      
     if (is_string)
-        out = std::format("NULL");
+        out = "NULL";
     else if (std::regex_match(res , expr))
     {
         auto exponential_pos = res.find("e");
-        if(res[exponential_pos +1] == '+' || res[exponential_pos +1] == '-' )
-            scale = std::stoi(res.substr(exponential_pos+2 , res.length()));
+        if (res[exponential_pos +1] == '+' || res[exponential_pos + 1] == '-' )
+            scale = std::stoi(res.substr(exponential_pos + 2, res.length()));
         else
-            scale = std::stoi(res.substr(exponential_pos+1,res.length()));
+            scale = std::stoi(res.substr(exponential_pos + 1, res.length()));
 
         out = std::format("toDecimal128({}::String,{})", res, scale);
     }
     else
     {
         auto dot_pos = res.find(".");
-        if(dot_pos != String::npos)
+        if (dot_pos != String::npos)
             scale = (precision - (res.substr(0,dot_pos-1)).length()) > 0 ? precision - (res.substr(0,dot_pos-1)).length() : 0;
-        if(scale < 0)
-            out = std::format("NULL");
+        if (scale < 0)
+            out = "NULL";
         else
-          out = std::format("toDecimal128({}::String,{})", res, scale);
+            out = std::format("toDecimal128({}::String,{})", res, scale);
     }
 
     return true;

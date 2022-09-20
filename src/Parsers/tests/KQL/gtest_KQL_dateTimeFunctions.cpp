@@ -56,7 +56,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print dayofweek(datetime(2015-12-20))",
-            "SELECT toDayOfWeek(parseDateTime64BestEffortOrNull('2015-12-20', 9, 'UTC')) % 7"
+            "SELECT concat(CAST(toDayOfWeek(parseDateTime64BestEffortOrNull('2015-12-20', 9, 'UTC')) % 7, 'String'), '.00:00:00')"
         },
         {
             "print now()",
@@ -164,11 +164,19 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print format_timespan(time(1d), 'd-[hh:mm:ss]')",
-            "SELECT leftPad(toString(formatDateTime(toDateTime64(86400., 9, 'UTC'), '%e-[%I:%M:%S]')), length(toString(formatDateTime(toDateTime64(86400., 9, 'UTC'), '%e-[%I:%M:%S]'))) + 0, '0')"
+            "SELECT concat(leftPad('1', 1, '0'), toString(formatDateTime(toDateTime64(CAST('86400', 'Float64'), 9, 'UTC'), '-[%H:%M:%S]')))"
         },
         {
             "print format_timespan(time('12:30:55.123'), 'ddddd-[hh:mm:ss.ffff]')",
-            "SELECT leftPad(concat(substring(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), 1, position(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), '.')), substring(substring(toString(toDateTime64(1038655.123, 9, 'UTC')), position(toString(toDateTime64(1038655.123, 9, 'UTC')), '.') + 1), 1, 4), substring(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), position(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]')), '.') + 1, length(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]'))))), (length(toString(formatDateTime(toDateTime64(1038655.123, 9, 'UTC'), '%d-[%I:%M:%S.]'))) + 3) + 4, '0')"
+            "SELECT concat(leftPad('0', 5, '0'), substring(toString(formatDateTime(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC'), '-[%I:%M:%S.]')), 1, length(toString(formatDateTime(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC'), '-[%I:%M:%S.]'))) - position(reverse(toString(formatDateTime(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC'), '-[%I:%M:%S.]'))), ']')), substring(substring(toString(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC')), position(toString(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC')), '.') + 1), 1, 4), substring(toString(formatDateTime(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC'), '-[%I:%M:%S.]')), position(toString(formatDateTime(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC'), '-[%I:%M:%S.]')), ']'), length(toString(formatDateTime(toDateTime64(CAST('45055.123', 'Float64'), 9, 'UTC'), '-[%I:%M:%S.]')))))"
+        },
+        {
+            "print v1=format_timespan(time('29.09:00:05.12345'), 'dd.hh:mm:ss:FF')",
+            "SELECT concat(leftPad('29', 2, '0'), substring(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S:')), 1, (length(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S:'))) - position(reverse(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S:'))), ':')) + 1), substring(substring(toString(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC')), position(toString(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC')), '.') + 1), 1, 2)) AS v1"
+        },
+        {
+            "print v2=format_timespan(time('29.09:00:05.12345'), 'ddd.h:mm:ss [fffffff]');",
+            "SELECT concat(leftPad('29', 3, '0'), substring(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S []')), 1, length(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S []'))) - position(reverse(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S []'))), ']')), substring(substring(toString(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC')), position(toString(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC')), '.') + 1), 1, 7), substring(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S []')), position(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S []')), ']'), length(toString(formatDateTime(toDateTime64(CAST('2538005.12345', 'Float64'), 9, 'UTC'), '.%I:%M:%S []'))))) AS v2"
         },
         {
             "print datetime_part('day', datetime(2017-10-30 01:02:03.7654321))",
@@ -180,15 +188,15 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print totimespan(time(1d))",
-            "SELECT 86400."
+            "SELECT CAST('86400', 'Float64')"
         },
         {
             "print totimespan('0.01:34:23')",
-            "SELECT 5663."
+            "SELECT CAST('5663', 'Float64')"
         },
         {
             "print totimespan(time('-1:12:34'))",
-            "SELECT -87154."
+            "SELECT CAST('-4354', 'Float64')"
         },
         {
             "print totimespan(-1d)",

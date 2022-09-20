@@ -128,11 +128,11 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception("String is not parsed as double literal " , ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("String is not parsed as double literal", ErrorCodes::BAD_ARGUMENTS);
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format("toInt32({})",arg);
+        out = std::format("toInt32({})", arg);
     }
     return true;
 }
@@ -150,11 +150,11 @@ bool DatatypeReal::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception("String is not parsed as double literal " , ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("String is not parsed as double literal.", ErrorCodes::BAD_ARGUMENTS);
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format("toFloat64({})",arg);
+        out = std::format("toFloat64({})", arg);
     }
     return true;
 }
@@ -185,9 +185,9 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
     if (time_span.parse(pos, node, expected))
     {
         if (sign)
-            out = std::format("-{}", std::to_string(time_span.toSeconds()));
+            out = std::format("-{}::Float64", time_span.toSeconds());
         else
-            out = std::to_string(time_span.toSeconds());
+            out = std::format("{}::Float64", time_span.toSeconds());
         ++pos;
     }
     else
@@ -240,7 +240,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
         throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
 
     if (scale < 0 || Poco::toUpper(arg) == "NULL")
-        out = std::format("NULL");
+        out = "NULL";
     else
         out = std::format("toDecimal128({}::String,{})", arg, scale);
 
