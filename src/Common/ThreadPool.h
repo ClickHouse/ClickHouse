@@ -264,6 +264,18 @@ protected:
     }
 };
 
+/// Schedule jobs/tasks on global thread pool without implicit passing tracing context on current thread to underlying worker as parent tracing context.
+///
+/// If you implement your own job/task scheduling upon global thread pool or schedules a long time running job in a infinite loop way,
+/// you need to use class, or you need to use ThreadFromGlobalPool below.
+///
+/// See the comments of ThreadPool below to know how it works.
+using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
+
+/// An alias of thread that execute jobs/tasks on global thread pool by implicit passing tracing context on current thread to underlying worker as parent tracing context.
+/// If jobs/tasks are directly scheduled by using APIs of this class, you need to use this class or you need to use class above.
+using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
+
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 ///
 /// The template parameter of ThreadFromGlobalPool is set to false to disable tracing context propagation to underlying worker.
@@ -274,9 +286,6 @@ protected:
 /// which means the tracing context initialized at underlying worker level won't be delete for a very long time.
 /// This would cause wrong context for further jobs scheduled in ThreadPool.
 ///
-/// To make sure the tracing context are correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
+/// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
 ///
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
-
-/// An alias for user code to execute a job in the global thread pool
-using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;

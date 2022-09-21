@@ -65,6 +65,10 @@ protected:
     ///  and collect as much as possible diagnostic information about error.
     /// If not implemented, returns empty string.
     virtual std::string getDiagnosticInfo() { return {}; }
+    /// Get diagnostic info and raw data for a row
+    virtual std::pair<std::string, std::string> getDiagnosticAndRawData() { return std::make_pair("", ""); }
+
+    void logError();
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
