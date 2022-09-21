@@ -9,6 +9,8 @@
 namespace DB
 {
 
+/// Used only in MergeJoin
+/// TODO: use `TemporaryDataOnDisk` instead
 /// To read the data that was flushed into the temporary data file.
 struct TemporaryFileStreamLegacy
 {

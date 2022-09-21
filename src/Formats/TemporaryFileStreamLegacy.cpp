@@ -1,4 +1,4 @@
-#include <Formats/TemporaryFileStream.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
