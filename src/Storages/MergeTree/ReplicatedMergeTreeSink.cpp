@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Interpreters/PartLog.h>
+#include "Common/Exception.h"
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/Block.h>
@@ -19,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int OK;
     extern const int TOO_FEW_LIVE_REPLICAS;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
@@ -308,6 +310,63 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
+struct TriesControl
+{
+    TriesControl(UInt64 max_tries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+        : max_tries(max_tries_), curr_backoff_ms(initial_backoff_ms_), max_backoff_ms(max_backoff_ms_)
+    {
+    }
+
+    const UInt64 max_tries;
+    UInt64 curr_backoff_ms;
+    const UInt64 max_backoff_ms;
+    UInt64 tries_count = 0;
+
+    struct Error
+    {
+        Error() = default;
+        Error(int code_, std::string message_) : code(code_), message(std::move(message_)) { }
+
+        int code = ErrorCodes::OK;
+        std::string message;
+    };
+    Error last_error;
+
+    bool shouldTry()
+    {
+        if (tries_count >= max_tries)
+        {
+            if (tries_count == max_tries)
+            { /// if count reach max, throw only once
+                ++tries_count;
+                throwIfError();
+            }
+            return false;
+        }
+
+        if (tries_count > 0 && tries_count < max_tries)
+        {
+            sleepForMilliseconds(curr_backoff_ms);
+            curr_backoff_ms = std::max(curr_backoff_ms * 2, max_backoff_ms);
+        }
+
+        ++tries_count;
+        return true;
+    }
+
+    void throwIfError() const
+    {
+        if (last_error.code != ErrorCodes::OK)
+            throw Exception(last_error.code, last_error.message);
+    }
+
+    template <typename... Args>
+    void setLastError(Args&&... args)
+    {
+        last_error = Error(std::forward<Args>(args)...);
+    }
+};
+
 void ReplicatedMergeTreeSink::commitPart(
     zkutil::ZooKeeperPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
@@ -327,7 +386,12 @@ void ReplicatedMergeTreeSink::commitPart(
 
     bool is_already_existing_part = false;
 
-    while (true)
+    const auto& settings = context->getSettingsRef();
+    TriesControl tries_ctl(
+        settings.insert_part_commit_max_tries,
+        settings.insert_part_commit_retry_initial_backoff_ms,
+        settings.insert_part_commit_retry_max_backoff_ms);
+    while (tries_ctl.shouldTry())
     {
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
@@ -537,8 +601,8 @@ void ReplicatedMergeTreeSink::commitPart(
             storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
             /// We do not know whether or not data has been inserted.
-            throw Exception("Unknown status, client must retry. Reason: " + String(Coordination::errorMessage(multi_code)),
-                ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
+            tries_ctl.setLastError(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Unknown status, client must retry. Reason: " + String(Coordination::errorMessage(multi_code)));
+            continue;
         }
         else if (Coordination::isUserError(multi_code))
         {
