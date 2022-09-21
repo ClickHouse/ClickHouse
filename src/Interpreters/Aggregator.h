@@ -1133,7 +1133,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// For external aggregation.
-    mutable TemporaryDataOnDiskHolder tmp_data;
+    mutable TemporaryDataOnDiskPtr tmp_data;
 
     size_t min_bytes_for_prefetch = 0;
 

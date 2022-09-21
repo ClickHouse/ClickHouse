@@ -15,21 +15,30 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
 }
 
-void TemporaryDataOnDiskScope::deltaAlloc(int comp_delta, int uncomp_delta)
+void TemporaryDataOnDiskScope::deltaAllocAndCheck(int compressed_delta, int uncompressed_delta)
 {
-    size_t current_consuption = stat.compressed_size.fetch_add(comp_delta) + comp_delta;
-    stat.uncompressed_size.fetch_add(uncomp_delta);
-
     if (parent)
-        parent->deltaAlloc(comp_delta, uncomp_delta);
+        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
-    if (comp_delta > 0 && limit && current_consuption > limit)
-        throw Exception("Memory limit exceeded", ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+
+    /// check that we don't go negative
+    if ((compressed_delta < 0 && stat.compressed_size < static_cast<size_t>(-compressed_delta)) ||
+        (uncompressed_delta < 0 && stat.uncompressed_size < static_cast<size_t>(-uncompressed_delta)))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
+    }
+
+    size_t new_consumprion = stat.compressed_size + compressed_delta;
+    if (compressed_delta > 0 && limit && new_consumprion > limit)
+        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES, "Limit for temporary files size exceeded");
+
+    stat.compressed_size += compressed_delta;
+    stat.uncompressed_size += uncompressed_delta;
 }
 
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t reserve_size)
@@ -51,7 +60,7 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, Cu
     auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, metric_scope);
 
     std::lock_guard lock(mutex);
-    TemporaryFileStreamHolder & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
+    TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
     return *tmp_stream;
 }
 
@@ -63,6 +72,12 @@ std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams()
     for (auto & stream : streams)
         res.push_back(stream.get());
     return res;
+}
+
+bool TemporaryDataOnDisk::empty() const
+{
+    std::lock_guard lock(mutex);
+    return streams.empty();
 }
 
 struct TemporaryFileStream::OutputWriter
@@ -86,10 +101,14 @@ struct TemporaryFileStream::OutputWriter
     {
         if (finalized)
             return;
-        out_writer.flush();
-        out_compressed_buf.next();
-        out_file_buf.next();
+
+        /// if we called finalize() explicitly, and got an exception,
+        /// we don't want to get it again in the destructor, so set finalized flag first
         finalized = true;
+
+        out_writer.flush();
+        out_compressed_buf.finalize();
+        out_file_buf.finalize();
     }
 
     ~OutputWriter()
@@ -118,7 +137,6 @@ struct TemporaryFileStream::InputReader
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
     {
-        UNUSED(header_);
     }
 
     explicit InputReader(const String & path)
@@ -148,8 +166,8 @@ void TemporaryFileStream::write(const Block & block)
     if (!out_writer)
         throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
 
+    updateAllocAndCheck();
     out_writer->write(block);
-    updateAlloc(block.rows());
 }
 
 TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
@@ -157,7 +175,9 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
     if (out_writer)
     {
         out_writer->finalize();
-        updateAlloc(0);
+        /// The amount of written data can be changed after finalization, some buffers can be flushed
+        /// Need to update the stat
+        updateAllocAndCheck();
         out_writer.reset();
 
         in_reader = std::make_unique<InputReader>(file->path(), header);
@@ -167,19 +187,19 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
 
 bool TemporaryFileStream::isWriteFinished() const
 {
-    assert((out_writer || in_reader) && (!out_writer || !in_reader));
+    assert((out_writer == nullptr) ^ (in_reader == nullptr));
     return out_writer == nullptr;
 }
 
 Block TemporaryFileStream::read()
 {
-    if (!in_reader)
-        throw Exception("Writing has been not finished", ErrorCodes::LOGICAL_ERROR);
+    if (!isWriteFinished())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
 
     return in_reader->read();
 }
 
-void TemporaryFileStream::updateAlloc(size_t rows_added)
+void TemporaryFileStream::updateAllocAndCheck()
 {
     assert(out_writer);
     size_t new_compressed_size = out_writer->out_compressed_buf.getCompressedBytes();
@@ -187,26 +207,26 @@ void TemporaryFileStream::updateAlloc(size_t rows_added)
 
     if (unlikely(new_compressed_size < stat.compressed_size || new_uncompressed_size < stat.uncompressed_size))
     {
-        LOG_ERROR(&Poco::Logger::get("TemporaryFileStream"),
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Temporary file {} size decreased after write: compressed: {} -> {}, uncompressed: {} -> {}",
             file->path(), new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
     }
 
-    parent->deltaAlloc(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
+    parent->deltaAllocAndCheck(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;
-    stat.written_rows += rows_added;
 }
 
 TemporaryFileStream::~TemporaryFileStream()
 {
     try
     {
-        parent->deltaAlloc(-stat.compressed_size, -stat.uncompressed_size);
+        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        assert(false); /// deltaAllocAndCheck with negative can't throw exception
     }
 }
 

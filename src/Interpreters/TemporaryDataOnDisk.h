@@ -13,14 +13,14 @@ class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class TemporaryDataOnDisk;
-using TemporaryDataOnDiskHolder = std::unique_ptr<TemporaryDataOnDisk>;
+using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
-using TemporaryFileStreamHolder = std::unique_ptr<TemporaryFileStream>;
+using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
 
 
 /*
- * Used to account amount of temporary data written to dicsk.
+ * Used to account amount of temporary data written to disk.
  * If limit is set, throws exception if limit is exceeded.
  * Data can be nested, so parent scope accounts all data written by children.
  * Scopes are: global -> per-user -> per-query -> per-purpose (sorting, aggregation, etc).
@@ -47,7 +47,7 @@ public:
     VolumePtr getVolume() const { return volume; }
 
 protected:
-    void deltaAlloc(int compressed_size, int uncompressed_size);
+    void deltaAllocAndCheck(int compressed_delta, int uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
     VolumePtr volume;
@@ -64,7 +64,7 @@ protected:
  */
 class TemporaryDataOnDisk : private TemporaryDataOnDiskScope
 {
-    friend class TemporaryFileStream; /// to allow it to call `deltaAlloc` to account data
+    friend class TemporaryFileStream; /// to allow it to call `deltaAllocAndCheck` to account data
 public:
     using TemporaryDataOnDiskScope::StatAtomic;
 
@@ -75,13 +75,13 @@ public:
     TemporaryFileStream & createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t reserve_size = 0);
 
     std::vector<TemporaryFileStream *> getStreams();
-    bool empty() const { return streams.empty();}
+    bool empty() const;
 
     const StatAtomic & getStat() const { return stat; }
 
 private:
-    std::mutex mutex; /// Protects streams
-    std::vector<TemporaryFileStreamHolder> streams;
+    mutable std::mutex mutex;
+    std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
 };
 
 /*
@@ -98,7 +98,6 @@ public:
         /// Non-atomic because we don't allow to `read` or `write` into single file from multiple threads
         size_t compressed_size = 0;
         size_t uncompressed_size = 0;
-        size_t written_rows = 0;
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
@@ -115,7 +114,7 @@ public:
     ~TemporaryFileStream();
 
 private:
-    void updateAlloc(size_t rows_added);
+    void updateAllocAndCheck();
 
     TemporaryDataOnDisk * parent;
 

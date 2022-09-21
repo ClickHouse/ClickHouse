@@ -564,6 +564,10 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 }
 
 
+ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
+    : ProcessListForUser(nullptr, global_process_list)
+{}
+
 ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * global_process_list)
     : user_overcommit_tracker(global_process_list, this)
 {

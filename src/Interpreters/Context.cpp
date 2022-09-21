@@ -685,6 +685,7 @@ Strings Context::getWarnings() const
 /// TODO: remove, use `getTempDataOnDisk`
 VolumePtr Context::getTemporaryVolume() const
 {
+    auto lock = getLock();
     if (shared->temp_data_on_disk)
         return shared->temp_data_on_disk->getVolume();
     return nullptr;
@@ -2919,6 +2920,16 @@ void Context::shutdown()
         for (auto & [disk_name, disk] : getDisksMap())
         {
             LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+            disk->shutdown();
+        }
+    }
+
+    // Special volumes might also use disks that require shutdown.
+    if (auto tmp_volume = shared->temp_data_on_disk->getVolume())
+    {
+        auto & disks = tmp_volume->getDisks();
+        for (auto & disk : disks)
+        {
             disk->shutdown();
         }
     }
