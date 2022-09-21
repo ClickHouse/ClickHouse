@@ -145,8 +145,6 @@ ThreadStatus::ThreadStatus()
 
 ThreadStatus::~ThreadStatus()
 {
-    chassert(current_thread == this);
-
     memory_tracker.adjustWithUntrackedMemory(untracked_memory);
 
     if (thread_group)
