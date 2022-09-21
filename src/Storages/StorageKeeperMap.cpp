@@ -502,7 +502,7 @@ void StorageKeeperMap::drop()
     }
 
     std::vector<std::string> children;
-    // if the the tables is not found, some other table removed it
+    // if the tables_path is not found, some other table removed it
     // if there are children, some other tables are still using this path as storage
     if (auto code = client->tryGetChildren(tables_path, children);
         code != Coordination::Error::ZOK || !children.empty())
