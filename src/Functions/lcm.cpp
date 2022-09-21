@@ -61,7 +61,7 @@ using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false, fa
 
 }
 
-REGISTER_FUNCTION(LCM)
+void registerFunctionLCM(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLCM>();
 }

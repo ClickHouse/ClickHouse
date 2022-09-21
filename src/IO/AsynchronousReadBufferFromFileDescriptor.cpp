@@ -90,10 +90,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         prefetch_future = {};
         file_offset_of_buffer_end += size;
 
-        assert(offset <= size);
-        size_t bytes_read = size - offset;
-
-        if (bytes_read)
+        if (size)
         {
             prefetch_buffer.swap(memory);
             /// Adjust the working buffer so that it ignores `offset` bytes.
@@ -112,10 +109,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         auto [size, offset] = asyncReadInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
-        assert(offset <= size);
-        size_t bytes_read = size - offset;
-
-        if (bytes_read)
+        if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
             internal_buffer = Buffer(memory.data(), memory.data() + memory.size());

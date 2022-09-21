@@ -63,7 +63,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(AssumeNotNull)
+void registerFunctionAssumeNotNull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAssumeNotNull>();
 }

@@ -649,7 +649,7 @@ public:
             for (unsigned int region_id : region_ids)
             {
                 const StringRef & name_ref = dict.getRegionName(region_id, language);
-                col_to->insertData(name_ref.data, name_ref.size);
+                col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
 
             return col_to;

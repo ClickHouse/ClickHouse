@@ -29,7 +29,7 @@ using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, fa
 
 }
 
-REGISTER_FUNCTION(GCD)
+void registerFunctionGCD(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGCD>();
 }

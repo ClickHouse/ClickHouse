@@ -10,7 +10,7 @@ struct NameFirstSignificantSubdomainCustom { static constexpr auto name = "first
 
 using FunctionFirstSignificantSubdomainCustom = FunctionCutToFirstSignificantSubdomainCustomImpl<ExtractFirstSignificantSubdomain<true>, NameFirstSignificantSubdomainCustom>;
 
-REGISTER_FUNCTION(FirstSignificantSubdomainCustom)
+void registerFunctionFirstSignificantSubdomainCustom(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFirstSignificantSubdomainCustom>();
 }

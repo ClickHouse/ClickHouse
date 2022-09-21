@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 struct L1Norm
 {
-    static constexpr auto name = "L1";
+    static inline String name = "L1";
 
     struct ConstParams {};
 
@@ -46,7 +46,7 @@ struct L1Norm
 
 struct L2Norm
 {
-    static constexpr auto name = "L2";
+    static inline String name = "L2";
 
     struct ConstParams {};
 
@@ -71,7 +71,7 @@ struct L2Norm
 
 struct L2SquaredNorm : L2Norm
 {
-    static constexpr auto name = "L2Squared";
+    static inline String name = "L2Squared";
 
     template <typename ResultType>
     inline static ResultType finalize(ResultType result, const ConstParams &)
@@ -83,7 +83,7 @@ struct L2SquaredNorm : L2Norm
 
 struct LpNorm
 {
-    static constexpr auto name = "Lp";
+    static inline String name = "Lp";
 
     struct ConstParams
     {
@@ -112,7 +112,7 @@ struct LpNorm
 
 struct LinfNorm
 {
-    static constexpr auto name = "Linf";
+    static inline String name = "Linf";
 
     struct ConstParams {};
 
@@ -140,7 +140,8 @@ template <class Kernel>
 class FunctionArrayNorm : public IFunction
 {
 public:
-    String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
+    static inline auto name = "array" + Kernel::name + "Norm";
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNorm<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }

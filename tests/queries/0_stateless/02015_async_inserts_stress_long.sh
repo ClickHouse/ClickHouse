@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest
+# Tags: no-random-settings
 
 set -e
 

@@ -2,14 +2,13 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
-#include <bit>
 #include "ColumnsCommon.h"
 
 
 namespace DB
 {
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) && defined(__POPCNT__)
 /// Transform 64-byte mask to 64-bit mask.
 static UInt64 toBits64(const Int8 * bytes64)
 {
@@ -42,11 +41,11 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) && defined(__POPCNT__)
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64)
-        count += std::popcount(toBits64(pos));
+        count += __builtin_popcountll(toBits64(pos));
 
     /// TODO Add duff device for tail?
 #endif
@@ -75,11 +74,11 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
     const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) && defined(__POPCNT__)
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64, pos2 += 64)
-        count += std::popcount(toBits64(pos) & ~toBits64(pos2));
+        count += __builtin_popcountll(toBits64(pos) & ~toBits64(pos2));
 
         /// TODO Add duff device for tail?
 #endif
@@ -260,7 +259,7 @@ namespace
             {
                 while (mask)
                 {
-                    size_t index = std::countr_zero(mask);
+                    size_t index = __builtin_ctzll(mask);
                     copy_array(offsets_pos + index);
                 #ifdef __BMI__
                     mask = _blsr_u64(mask);

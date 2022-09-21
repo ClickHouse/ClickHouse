@@ -160,9 +160,4 @@ std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() 
     return registered_names;
 }
 
-bool UserDefinedSQLFunctionFactory::empty() const
-{
-    std::lock_guard lock(mutex);
-    return function_name_to_create_query.empty();
-}
 }
