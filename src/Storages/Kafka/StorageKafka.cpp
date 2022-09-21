@@ -179,8 +179,6 @@ namespace
     void loadFromConfig(cppkafka::Configuration & conf, const Poco::Util::AbstractConfiguration & config, const std::string & path)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
-        std::vector<char> errstr(512);
-
         config.keys(path, keys);
 
         for (const auto & key : keys)
