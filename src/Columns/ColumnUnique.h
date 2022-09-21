@@ -115,6 +115,15 @@ public:
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
+    void forEachSubcolumnRecursively(IColumn::ColumnCallback callback) override
+    {
+        callback(column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (auto rhs_concrete = typeid_cast<const ColumnUnique *>(&rhs))
