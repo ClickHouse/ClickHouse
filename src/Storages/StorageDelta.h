@@ -29,7 +29,7 @@ class DeltaLakeMetadata
 public:
     DeltaLakeMetadata() = default;
 
-    void add(const String & filename, uint64_t timestamp);
+    void setLastModifiedTime(const String & filename, uint64_t timestamp);
     void remove(const String & filename, uint64_t timestamp);
 
     std::vector<String> ListCurrentFiles() &&;
@@ -52,11 +52,6 @@ private:
     std::vector<String> getJsonLogFiles();
 
     std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
-
-    /* every metadata file contains many jsons
-       this function reads one json from buffer
-    */
-    String readJSONStringFromBuffer(std::shared_ptr<ReadBuffer> buf);
     
     void handleJSON(const JSON & json);
 
