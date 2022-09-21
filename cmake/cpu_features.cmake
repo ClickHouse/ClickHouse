@@ -26,7 +26,9 @@ elseif (ARCH_AARCH64)
     option (NO_ARMV81_OR_HIGHER "Disable ARMv8.1 or higher on Aarch64 for maximum compatibility with older/embedded hardware." 0)
 
     if (NO_ARMV81_OR_HIGHER)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8")
+        # In v8.0, crc32 is optional, in v8.1 it's mandatory. Enable it regardless as __crc32()* is used in lot's of places and even very
+        # old ARM CPUs support it.
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
     else ()
         # ARMv8.2 is ancient but the baseline for Graviton 2 and 3 processors [1]. In particular, it includes LSE (first made mandatory with
         # ARMv8.1) which provides nice speedups without having to fall back to v8.0  "-moutline-atomics" compat flag [2, 3, 4] that imposes
