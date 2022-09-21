@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
 
@@ -31,7 +32,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-void DeltaLakeMetadata::add(const String & filename, uint64_t timestamp)
+void DeltaLakeMetadata::setLastModifiedTime(const String & filename, uint64_t timestamp)
 {
     file_update_time[filename] = timestamp;
 }
@@ -72,12 +73,18 @@ void JsonMetadataGetter::Init()
         auto buf = createS3ReadBuffer(key);
 
         while (!buf->eof())
-        {
-            String json_str = readJSONStringFromBuffer(buf);
+        {   
+            // may be some invalid characters before json
+            char c;
+            while ( buf->peek(c) && c != '{') buf->ignore();
+            if (buf->eof()) 
+                break;
+
+            String json_str;
+            readJSONObjectPossiblyInvalid(json_str, *buf);
             
-            if (json_str.empty()) {
+            if (json_str.empty())
                 continue;
-            }
 
             const JSON json(json_str);
 
@@ -141,44 +148,13 @@ std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String 
         ReadSettings{});
 }
 
-String JsonMetadataGetter::readJSONStringFromBuffer(std::shared_ptr<ReadBuffer> buf) {
-    String json_str;
-
-    int32_t opening(0), closing(0);
-
-    do {
-        char c;
-        
-        if (!buf->read(c))
-            return json_str;
-
-        // skip all space characters for JSON to parse correctly
-        if (isspace(c))
-        {
-            continue;
-        }
-
-        json_str.push_back(c);
-
-        if (c == '{')
-            opening++;
-        else if (c == '}')
-            closing++;
-    
-    } while (opening != closing || opening == 0);
-
-    LOG_DEBUG(log, "JSON {}", json_str);
-
-    return json_str;
-}
-
 void JsonMetadataGetter::handleJSON(const JSON & json) {
     if (json.has("add"))
     {
         auto path = json["add"]["path"].getString();
         auto timestamp = json["add"]["modificationTime"].getInt();
 
-        metadata.add(path, timestamp);
+        metadata.setLastModifiedTime(path, timestamp);
     }
     else if (json.has("remove"))
     {
