@@ -335,6 +335,8 @@ public:
             return true;
         }
 
+        void setRow(Int64 row_) { row = row_; }
+
         const DataTypePtr & getType() const { return type; }
         const ColumnPtr & getColumn() const { return column; }
         Int64 getRow() const { return row; }
@@ -1764,7 +1766,7 @@ private:
 
 
 template <typename JSONParser>
-class JSONExtractArrayRawImpl
+class JSONExtractArrayRawImplString
 {
 public:
     using Element = typename JSONParser::Element;
@@ -1792,9 +1794,44 @@ public:
     }
 };
 
+class JSONExtractArrayRawImplObject
+{
+public:
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    static bool insertResultToColumn(IColumn & to, ObjectIterator & iterator)
+    {
+        const auto * type_array = typeid_cast<const DataTypeArray *>(iterator.getType().get());
+        if (!type_array)
+            return false;
+
+        auto row = iterator.getRow();
+        const auto & from_array = assert_cast<const ColumnArray &>(*iterator.getColumn());
+        const auto & offsets = from_array.getOffsets();
+
+        ObjectIterator nested_iter(type_array->getNestedType(), from_array.getDataPtr(), 0);
+
+        auto & to_array = assert_cast<ColumnArray &>(to);
+        for (size_t i = offsets[row - 1]; i < offsets[row]; ++i)
+        {
+            nested_iter.setRow(i);
+            JSONExtractRawImplObject::insertResultToColumn(to_array.getData(), nested_iter);
+        }
+
+        UInt64 array_size = offsets[row] - offsets[row - 1];
+        to_array.getOffsets().push_back(to_array.getOffsets().back() + array_size);
+        return true;
+    }
+};
+
 
 template <typename JSONParser>
-class JSONExtractKeysAndValuesRawImpl
+class JSONExtractKeysAndValuesRawImplString
 {
 public:
     using Element = typename JSONParser::Element;
@@ -1827,6 +1864,48 @@ public:
         }
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
+        return true;
+    }
+};
+
+class JSONExtractKeysAndValuesRawImplObject
+{
+public:
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
+    {
+        DataTypePtr string_type = std::make_unique<DataTypeString>();
+        DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{string_type, string_type});
+        return std::make_unique<DataTypeArray>(tuple_type);
+    }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    static bool insertResultToColumn(IColumn & to, ObjectIterator & iterator)
+    {
+        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(iterator.getType().get());
+        if (!type_tuple || !type_tuple->haveExplicitNames())
+            return false;
+
+        auto row = iterator.getRow();
+        const auto & from_tuple = assert_cast<const ColumnTuple &>(*iterator.getColumn());
+
+        auto & to_array = assert_cast<ColumnArray &>(to);
+        auto & to_tuple = assert_cast<ColumnTuple &>(to_array.getData());
+        auto & to_key = assert_cast<ColumnString &>(to_tuple.getColumn(0));
+        auto & to_value = assert_cast<ColumnString &>(to_tuple.getColumn(1));
+
+        const auto & element_names = type_tuple->getElementNames();
+        const auto & element_types = type_tuple->getElements();
+
+        for (size_t i = 0; i < element_names.size(); ++i)
+        {
+            ObjectIterator elem_iter(element_types[i], from_tuple.getColumnPtr(i), row);
+
+            to_key.insertData(element_names[i].data(), element_names[i].size());
+            JSONExtractRawImplObject::insertResultToColumn(to_value, elem_iter);
+        }
+
+        to_array.getOffsets().push_back(col_arr.getOffsets().back() + element_names.size());
         return true;
     }
 };
@@ -1908,8 +1987,8 @@ REGISTER_FUNCTION(JSON)
     // factory.registerFunction<JSONOverloadResolver<NameJSONExtract, JSONExtractImpl>>();
     // factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractRaw, JSONExtractRawImplString, JSONExtractRawImplObject>>();
-    // factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
-    // factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImplString, JSONExtractArrayRawImplObject>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImplString, JSONExtractKeysAndValuesRawImplObject>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeys, JSONExtractKeysImplString, JSONExtractKeysImplObject>>();
 }
 
