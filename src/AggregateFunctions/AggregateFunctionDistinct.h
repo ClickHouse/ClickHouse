@@ -221,6 +221,12 @@ public:
         nested_func->destroy(getNestedPlace(place));
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        this->data(place).~Data();
+        nested_func->destroyUpToState(getNestedPlace(place));
+    }
+
     String getName() const override
     {
         return nested_func->getName() + "Distinct";
@@ -239,6 +245,21 @@ public:
     bool isState() const override
     {
         return nested_func->isState();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

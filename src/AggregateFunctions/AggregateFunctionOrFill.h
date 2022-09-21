@@ -98,6 +98,11 @@ public:
         nested_function->destroy(place);
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_function->destroyUpToState(place);
+    }
+
     void add(
         AggregateDataPtr place,
         const IColumn ** columns,

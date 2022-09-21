@@ -589,6 +589,18 @@ void ColumnObject::forEachSubcolumn(ColumnCallback callback)
         callback(entry->data.data.back());
 }
 
+void ColumnObject::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    for (auto & entry : subcolumns)
+    {
+        for (auto & part : entry->data.data)
+        {
+            callback(part);
+            part->forEachSubcolumnRecursively(callback);
+        }
+    }
+}
+
 void ColumnObject::insert(const Field & field)
 {
     const auto & object = field.get<const Object &>();

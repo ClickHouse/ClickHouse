@@ -138,6 +138,7 @@ public:
     ColumnPtr compress() const override;
 
     void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumnRecursively(ColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 

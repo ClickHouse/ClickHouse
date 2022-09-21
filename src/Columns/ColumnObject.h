@@ -191,6 +191,7 @@ public:
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumnRecursively(ColumnCallback callback) override;
     void insert(const Field & field) override;
     void insertDefault() override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;

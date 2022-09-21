@@ -62,6 +62,8 @@ public:
         nested_func->destroy(place);
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict) const noexcept override {}
+
     bool hasTrivialDestructor() const override
     {
         return nested_func->hasTrivialDestructor();
