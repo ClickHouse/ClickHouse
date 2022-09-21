@@ -65,7 +65,7 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress()
     {
         if (i != 0)
             writeRowBetweenDelimiter();
-        writeString(Sprogress_lines[i], out);
+        writeString(progress_lines[i], out);
     }
     progress_lines.clear();
     has_progress = false;
