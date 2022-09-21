@@ -36,7 +36,6 @@ def create_random_path(prefix="", depth=1):
 def started_cluster():
     try:
         cluster.start()
-        keeper_utils.wait_until_connected(cluster, node)
 
         yield cluster
 

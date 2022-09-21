@@ -30,7 +30,6 @@ from kazoo.client import KazooClient, KazooState
 def started_cluster():
     try:
         cluster.start()
-        keeper_utils.wait_nodes(cluster, [node1, node2])
 
         yield cluster
 
@@ -40,6 +39,10 @@ def started_cluster():
 
 def smaller_exception(ex):
     return "\n".join(str(ex).split("\n")[0:2])
+
+
+def wait_nodes():
+    keeper_utils.wait_nodes(cluster, [node1, node2])
 
 
 def get_fake_zk(nodename, timeout=30.0):
@@ -52,6 +55,7 @@ def get_fake_zk(nodename, timeout=30.0):
 
 def test_read_write_two_nodes(started_cluster):
     try:
+        wait_nodes()
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
 
@@ -83,6 +87,7 @@ def test_read_write_two_nodes(started_cluster):
 
 def test_read_write_two_nodes_with_blocade(started_cluster):
     try:
+        wait_nodes()
         node1_zk = get_fake_zk("node1", timeout=5.0)
         node2_zk = get_fake_zk("node2", timeout=5.0)
 

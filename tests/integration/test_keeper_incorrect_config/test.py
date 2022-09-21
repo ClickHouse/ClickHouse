@@ -2,7 +2,6 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -225,6 +224,5 @@ def test_invalid_configs(started_cluster):
         "/etc/clickhouse-server/config.d/enable_keeper1.xml", NORMAL_CONFIG
     )
     node1.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node1)
 
     assert node1.query("SELECT 1") == "1\n"
