@@ -42,7 +42,7 @@ private:
 class JsonMetadataGetter
 {
 public:
-    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, Poco::Logger * log_);
+    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_);
 
     std::vector<String> getFiles() { return std::move(metadata).ListCurrentFiles(); }
 
@@ -58,7 +58,6 @@ private:
     StorageS3::S3Configuration base_configuration;
     String table_path;
     DeltaLakeMetadata metadata;
-    Poco::Logger * log;
 };
 
 class StorageDelta : public IStorage

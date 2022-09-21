@@ -57,8 +57,8 @@ std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
     return keys;
 }
 
-JsonMetadataGetter::JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, Poco::Logger * log_)
-    : base_configuration(configuration_), table_path(table_path_), log(log_)
+JsonMetadataGetter::JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_)
+    : base_configuration(configuration_), table_path(table_path_)
 {
     Init();
 }
@@ -183,7 +183,7 @@ StorageDelta::StorageDelta(
     StorageInMemoryMetadata storage_metadata;
     updateS3Configuration(context_, base_configuration);
 
-    JsonMetadataGetter getter{base_configuration, table_path, log};
+    JsonMetadataGetter getter{base_configuration, table_path};
 
     auto keys = getter.getFiles();
 
