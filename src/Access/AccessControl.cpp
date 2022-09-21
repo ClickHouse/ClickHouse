@@ -172,6 +172,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", false));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
+    setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 }
@@ -391,9 +392,9 @@ void AccessControl::addStoragesFromMainConfig(
 }
 
 
-void AccessControl::reload()
+void AccessControl::reload(ReloadMode reload_mode)
 {
-    MultipleAccessStorage::reload();
+    MultipleAccessStorage::reload(reload_mode);
     changes_notifier->sendNotifications();
 }
 
