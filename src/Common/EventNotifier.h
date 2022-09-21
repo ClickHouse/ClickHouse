@@ -22,8 +22,8 @@ public:
     {
         Handler(
             EventNotifier & parent_,
-            UInt64 event_id_,
-            UInt64 callback_id_)
+            size_t event_id_,
+            size_t callback_id_)
             : parent(parent_)
             , event_id(event_id_)
             , callback_id(callback_id_)
@@ -39,8 +39,8 @@ public:
 
     private:
         EventNotifier & parent;
-        UInt64 event_id;
-        UInt64 callback_id;
+        size_t event_id;
+        size_t callback_id;
     };
 
     using HandlerPtr = std::shared_ptr<Handler>;
@@ -74,17 +74,17 @@ public:
 
 private:
     // To move boost include for .h file
-    static UInt64 calculateIdentifier(UInt64 a, UInt64 b);
+    static size_t calculateIdentifier(size_t a, size_t b);
 
     using CallbackType = std::function<void()>;
-    using CallbackStorage = std::map<UInt64, CallbackType>;
-    using EventToCallbacks = std::map<UInt64, std::set<UInt64>>;
+    using CallbackStorage = std::map<size_t, CallbackType>;
+    using EventToCallbacks = std::map<size_t, std::set<size_t>>;
 
     std::mutex mutex;
 
     EventToCallbacks callback_table;
     CallbackStorage storage;
-    UInt64 counter{0};
+    size_t counter{0};
 
     static std::unique_ptr<EventNotifier> event_notifier;
 };

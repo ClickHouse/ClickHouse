@@ -37,9 +37,9 @@ void EventNotifier::shutdown()
       event_notifier.reset();
 }
 
-UInt64 EventNotifier::calculateIdentifier(UInt64 a, UInt64 b)
+size_t EventNotifier::calculateIdentifier(size_t a, size_t b)
 {
-    UInt64 result = 0;
+    size_t result = 0;
     boost::hash_combine(result, a);
     boost::hash_combine(result, b);
     return result;
