@@ -3,8 +3,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <google/protobuf/compiler/js/js_generator.h>
-
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
