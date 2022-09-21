@@ -172,7 +172,6 @@ DB::ContextMutablePtr global_context;
         files->files = {
             "file:///home/hongbin/code/gluten/jvm/src/test/resources/tpch-data/lineitem/"
             "part-00000-d08071cb-0dfa-42dc-9198-83cb334ccda3-c000.snappy.parquet",
-
         };
         auto builder = std::make_unique<QueryPipelineBuilder>();
         builder->init(Pipe(std::make_shared<BatchParquetFileSource>(files, header, SerializedPlanParser::global_context)));

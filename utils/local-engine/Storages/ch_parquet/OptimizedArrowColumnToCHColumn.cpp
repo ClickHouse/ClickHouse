@@ -1,4 +1,4 @@
-#include "ArrowColumnToCHColumn.h"
+#include "OptimizedArrowColumnToCHColumn.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -498,7 +498,7 @@ static void checkStatus(const arrow::Status & status, const String & column_name
         throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
-Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name)
+Block OptimizedArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name)
 {
     ColumnsWithTypeAndName sample_columns;
     for (const auto & field : schema.fields())
@@ -523,13 +523,13 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema,
     return Block(std::move(sample_columns));
 }
 
-ArrowColumnToCHColumn::ArrowColumnToCHColumn(
+OptimizedArrowColumnToCHColumn::OptimizedArrowColumnToCHColumn(
     const Block & header_, const std::string & format_name_, bool import_nested_, bool allow_missing_columns_)
     : header(header_), format_name(format_name_), import_nested(import_nested_), allow_missing_columns(allow_missing_columns_)
 {
 }
 
-void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
+void OptimizedArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     NameToColumnPtr name_to_column_ptr;
     for (const auto & column_name : table->ColumnNames())
@@ -546,7 +546,7 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
     real_convert += sw.elapsedNanoseconds();
 }
 
-void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
+void OptimizedArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
 {
     if (unlikely(name_to_column_ptr.empty()))
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
@@ -620,7 +620,7 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
     res.setColumns(columns_list, num_rows);
 }
 
-std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
+std::vector<size_t> OptimizedArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
 {
     std::vector<size_t> missing_columns;
     auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name);

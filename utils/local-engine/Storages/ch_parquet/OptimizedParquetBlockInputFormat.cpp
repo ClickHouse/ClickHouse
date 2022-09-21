@@ -1,4 +1,4 @@
-#include "ParquetBlockInputFormat.h"
+#include "OptimizedParquetBlockInputFormat.h"
 #include <boost/algorithm/string/case_conv.hpp>
 
 #if USE_PARQUET
@@ -12,7 +12,7 @@
 #include "Storages/ch_parquet/arrow/reader.h"
 #include <parquet/file_reader.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include "ArrowColumnToCHColumn.h"
+#include "OptimizedArrowColumnToCHColumn.h"
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
@@ -31,12 +31,12 @@ namespace ErrorCodes
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
-ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+OptimizedParquetBlockInputFormat::OptimizedParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
 {
 }
 
-Chunk ParquetBlockInputFormat::generate()
+Chunk OptimizedParquetBlockInputFormat::generate()
 {
     Chunk res;
     block_missing_values.clear();
@@ -72,7 +72,7 @@ Chunk ParquetBlockInputFormat::generate()
     return res;
 }
 
-void ParquetBlockInputFormat::resetParser()
+void OptimizedParquetBlockInputFormat::resetParser()
 {
     IInputFormat::resetParser();
 
@@ -83,7 +83,7 @@ void ParquetBlockInputFormat::resetParser()
     block_missing_values.clear();
 }
 
-const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
+const BlockMissingValues & OptimizedParquetBlockInputFormat::getMissingValues() const
 {
     return block_missing_values;
 }
@@ -139,7 +139,7 @@ static void getFileReaderAndSchema(
     }
 }
 
-void ParquetBlockInputFormat::prepareReader()
+void OptimizedParquetBlockInputFormat::prepareReader()
 {
     std::shared_ptr<arrow::Schema> schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
@@ -149,7 +149,7 @@ void ParquetBlockInputFormat::prepareReader()
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns);
+    arrow_column_to_ch_column = std::make_unique<OptimizedArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
@@ -176,17 +176,17 @@ void ParquetBlockInputFormat::prepareReader()
     }
 }
 
-ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_) : ISchemaReader(in_), format_settings(format_settings_)
+OptimizedParquetSchemaReader::OptimizedParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_) : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
-NamesAndTypesList ParquetSchemaReader::readSchema()
+NamesAndTypesList OptimizedParquetSchemaReader::readSchema()
 {
     std::unique_ptr<ch_parquet::arrow::FileReader> file_reader;
     std::shared_ptr<arrow::Schema> schema;
     std::atomic<int> is_stopped = 0;
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, "Parquet");
+    auto header = OptimizedArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, "Parquet");
     return header.getNamesAndTypesList();
 }
 
@@ -199,18 +199,18 @@ void registerInputFormatParquet(FormatFactory & factory)
                 const RowInputFormatParams &,
                 const FormatSettings & settings)
             {
-                return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
+                return std::make_shared<OptimizedParquetBlockInputFormat>(buf, sample, settings);
             });
     factory.markFormatAsColumnOriented("Parquet");
 }
 
-void registerParquetSchemaReader(FormatFactory & factory)
+void registerOptimizedParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Parquet",
         [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
         {
-            return std::make_shared<ParquetSchemaReader>(buf, settings);
+            return std::make_shared<OptimizedParquetSchemaReader>(buf, settings);
         }
         );
 }
@@ -226,7 +226,7 @@ void registerInputFormatParquet(FormatFactory &)
 {
 }
 
-void registerParquetSchemaReader(FormatFactory &) {}
+void registerOptimizedParquetSchemaReader(FormatFactory &) {}
 }
 
 #endif

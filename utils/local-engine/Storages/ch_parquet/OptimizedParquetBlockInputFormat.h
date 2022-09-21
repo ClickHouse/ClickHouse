@@ -13,16 +13,16 @@ namespace arrow { class Buffer; }
 namespace DB
 {
 
-class ArrowColumnToCHColumn;
+class OptimizedArrowColumnToCHColumn;
 
-class ParquetBlockInputFormat : public IInputFormat
+class OptimizedParquetBlockInputFormat : public IInputFormat
 {
 public:
-    ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
+    OptimizedParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
 
     void resetParser() override;
 
-    String getName() const override { return "ParquetBlockInputFormat"; }
+    String getName() const override { return "OptimizedParquetBlockInputFormat"; }
 
     const BlockMissingValues & getMissingValues() const override;
 
@@ -42,7 +42,7 @@ protected:
     // indices of columns to read from Parquet file
     std::vector<int> column_indices;
     std::vector<String> column_names;
-    std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
+    std::unique_ptr<OptimizedArrowColumnToCHColumn> arrow_column_to_ch_column;
     int row_group_current = 0;
     std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;
@@ -51,10 +51,10 @@ protected:
     std::atomic<int> is_stopped{0};
 };
 
-class ParquetSchemaReader : public ISchemaReader
+class OptimizedParquetSchemaReader : public ISchemaReader
 {
 public:
-    ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    OptimizedParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
 

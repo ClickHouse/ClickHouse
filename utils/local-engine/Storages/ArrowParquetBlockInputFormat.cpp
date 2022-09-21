@@ -6,7 +6,7 @@
 #include <boost/range/irange.hpp>
 #include <DataTypes/NestedUtils.h>
 
-#include "ch_parquet/ArrowColumnToCHColumn.h"
+#include "ch_parquet/OptimizedArrowColumnToCHColumn.h"
 
 using namespace DB;
 
@@ -14,7 +14,7 @@ namespace local_engine
 {
 ArrowParquetBlockInputFormat::ArrowParquetBlockInputFormat(
     DB::ReadBuffer & in_, const DB::Block & header, const DB::FormatSettings & formatSettings)
-    : ParquetBlockInputFormat(in_, header, formatSettings)
+    : OptimizedParquetBlockInputFormat(in_, header, formatSettings)
 {
 }
 
@@ -111,13 +111,5 @@ DB::Chunk ArrowParquetBlockInputFormat::generate()
                 block_missing_values.setBit(column_idx, row_idx);
     return res;
 }
-//ArrowParquetBlockInputFormat::~ArrowParquetBlockInputFormat()
-//{
-//    std::cerr<<"convert time: " << convert_time / 1000000.0 <<" ms"<<std::endl;
-//    std::cerr<<"non-convert time: " << non_convert_time / 1000000.0 <<" ms"<<std::endl;
-//    std::cerr<<"convert/non-convert " << 1.0 * convert_time / non_convert_time <<" "<<std::endl;
-//    std::cerr<<"real convert " << 1.0 * arrow_column_to_ch_column->real_convert/ 1000000.0 <<" ms"<<std::endl;
-//    std::cerr<<"cast time " << 1.0 * arrow_column_to_ch_column->cast_time/ 1000000.0 <<" ms"<<std::endl;
-//}
 
 }

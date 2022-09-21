@@ -17,12 +17,12 @@ namespace DB
 class Block;
 class Chunk;
 
-class ArrowColumnToCHColumn
+class OptimizedArrowColumnToCHColumn
 {
 public:
     using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
 
-    ArrowColumnToCHColumn(
+    OptimizedArrowColumnToCHColumn(
         const Block & header_,
         const std::string & format_name_,
         bool import_nested_,

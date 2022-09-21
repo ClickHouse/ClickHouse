@@ -30,7 +30,7 @@ grep_gtest_sources("${ClickHouse_SOURCE_DIR}/utils/local_engine/tests" local_eng
 
 add_executable(unit_tests_local_engine ${local_engine_gtest_sources} )
 
-add_executable(benchmark_local_engine benchmark_local_engine.cpp)
+add_executable(benchmark_local_engine benchmark_local_engine.cpp benchmark_parquet_read.cpp)
 
 target_compile_options(unit_tests_local_engine PRIVATE
         -Wno-error
@@ -47,7 +47,7 @@ target_compile_options(benchmark PUBLIC
 target_include_directories(unit_tests_local_engine PRIVATE
         ${GTEST_INCLUDE_DIRS}/include
         )
-include_directories(benchmark_local_engine SYSTEM PUBLIC ${FETCH_CONTENT_SOURCE_DIR_GOOGLEBENCHMARK}/include)
+include_directories(benchmark_local_engine SYSTEM PUBLIC ${FETCH_CONTENT_SOURCE_DIR_GOOGLEBENCHMARK}/include ${ClickHouse_SOURCE_DIR}/utils/local_engine)
 
 target_link_libraries(unit_tests_local_engine PRIVATE ${LOCALENGINE_SHARED_LIB} _gtest_all)
 target_link_libraries(benchmark_local_engine PRIVATE ${LOCALENGINE_SHARED_LIB} benchmark::benchmark)
