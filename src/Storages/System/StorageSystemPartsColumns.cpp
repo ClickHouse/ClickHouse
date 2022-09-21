@@ -117,7 +117,7 @@ void StorageSystemPartsColumns::processNextStorage(
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-        using State = MergeTreeDataPartState;
+        using State = IMergeTreeDataPart::State;
 
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
@@ -190,9 +190,9 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.engine);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getDiskName());
+                columns[res_index++]->insert(part->volume->getDisk()->getName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getFullPath());
+                columns[res_index++]->insert(part->getFullPath());
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);
@@ -227,7 +227,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
 
-            auto serialization = part->getSerialization(column.name);
+            auto serialization = part->getSerialization(column);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
 
@@ -242,7 +242,7 @@ void StorageSystemPartsColumns::processNextStorage(
             IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
             {
                 /// We count only final subcolumns, which are represented by files on disk
-                /// and skip intermediate subcolumns of types Tuple and Nested.
+                /// and skip intermediate suibcolumns of types Tuple and Nested.
                 if (isTuple(data.type) || isNested(data.type))
                     return;
 
@@ -270,7 +270,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
                 subcolumn_marks_bytes.push_back(size.marks);
 
-            }, ISerialization::SubstreamData(serialization).withType(column.type));
+            }, { serialization, column.type, nullptr, nullptr });
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_names);

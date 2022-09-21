@@ -17,7 +17,6 @@ void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
-void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 
 void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
 
@@ -40,7 +39,6 @@ void registerTableFunctionODBC(TableFunctionFactory & factory);
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 void registerTableFunctionView(TableFunctionFactory & factory);
-void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);

@@ -42,22 +42,6 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("With Fill", with_fill);
 }
 
-bool SortDescription::hasPrefix(const SortDescription & prefix) const
-{
-    if (prefix.empty())
-        return true;
-
-    if (prefix.size() > size())
-        return false;
-
-    for (size_t i = 0; i < prefix.size(); ++i)
-    {
-        if ((*this)[i] != prefix[i])
-            return false;
-    }
-    return true;
-}
-
 #if USE_EMBEDDED_COMPILER
 
 static CHJIT & getJITInstance()
@@ -98,7 +82,7 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
+void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attemps)
 {
     static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
     static std::mutex mutex;
@@ -125,7 +109,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
         UInt64 & current_counter = counter[sort_description_hash_key];
         if (current_counter < description.min_count_to_compile_sort_description)
         {
-            current_counter += static_cast<UInt64>(increase_compile_attempts);
+            current_counter += static_cast<UInt64>(increase_compile_attemps);
             return;
         }
     }
@@ -158,11 +142,11 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
 #else
 
-void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
+void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attemps)
 {
     (void)(description);
     (void)(sort_description_types);
-    (void)(increase_compile_attempts);
+    (void)(increase_compile_attemps);
 }
 
 #endif

@@ -3,7 +3,6 @@
 #if USE_MINIZIP
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/quoteString.h>
-#include <base/errnoToString.h>
 #include <zip.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -189,8 +188,6 @@ namespace
 
         explicit StreamFromWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer_)
             : write_buffer(std::move(write_buffer_)), start_offset(write_buffer->count()) {}
-
-        ~StreamFromWriteBuffer() { write_buffer->finalize(); }
 
         static int closeFileFunc(void *, void * stream)
         {
@@ -381,10 +378,10 @@ void ZipArchiveWriter::checkResult(int code) const
     if (code >= ZIP_OK)
         return;
 
-    String message = "Code = ";
+    String message = "Code= ";
     switch (code)
     {
-        case ZIP_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
+        case ZIP_ERRNO: message += "ERRNO, errno= " + String{strerror(errno)}; break;
         case ZIP_PARAMERROR: message += "PARAMERROR"; break;
         case ZIP_BADZIPFILE: message += "BADZIPFILE"; break;
         case ZIP_INTERNALERROR: message += "INTERNALERROR"; break;

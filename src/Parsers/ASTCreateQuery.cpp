@@ -196,8 +196,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->columns_list, columns_list->clone());
     if (storage)
         res->set(res->storage, storage->clone());
-    if (inner_storage)
-        res->set(res->inner_storage, inner_storage->clone());
     if (select)
         res->set(res->select, select->clone());
     if (table_overrides)
@@ -430,8 +428,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
-    else if (is_create_empty)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
 
     if (select)
     {

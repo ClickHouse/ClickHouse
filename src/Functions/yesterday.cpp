@@ -81,7 +81,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(Yesterday)
+void registerFunctionYesterday(FunctionFactory & factory)
 {
     factory.registerFunction<YesterdayOverloadResolver>();
 }

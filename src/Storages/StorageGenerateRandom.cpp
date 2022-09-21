@@ -2,7 +2,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,6 +12,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
@@ -220,10 +220,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnInt32::create();
             column->getData().resize(limit);
-
-            for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = (rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH;
-
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int32), rng);
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];
@@ -472,16 +469,16 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-            if (!ast_literal.value.isNull())
-                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
+            const Field & value = engine_args[0]->as<const ASTLiteral &>().value;
+            if (!value.isNull())
+                random_seed = value.safeGet<UInt64>();
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+            max_string_length = engine_args[1]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
         if (engine_args.size() == 3)
-            max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+            max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });

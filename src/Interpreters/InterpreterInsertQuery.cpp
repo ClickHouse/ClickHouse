@@ -162,7 +162,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 static bool hasAggregateFunctions(const IAST * ast)
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast))
-        if (AggregateUtils::isAggregateFunction(*func))
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
             return true;
 
     for (const auto & child : ast->children)
@@ -346,7 +346,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::UNION_ALL; };
+                const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::ALL; };
 
                 is_trivial_insert_select =
                     std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))

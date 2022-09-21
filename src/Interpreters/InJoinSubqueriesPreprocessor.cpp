@@ -105,7 +105,7 @@ private:
                     throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
             }
             else if (table_join)
-                table_join->locality = JoinLocality::Global;
+                table_join->locality = ASTTableJoin::Locality::Global;
             else
                 throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
         }
@@ -189,7 +189,7 @@ private:
             return;
 
         ASTTableJoin * table_join = node.table_join->as<ASTTableJoin>();
-        if (table_join->locality != JoinLocality::Global)
+        if (table_join->locality != ASTTableJoin::Locality::Global)
         {
             if (auto * table = node.table_expression->as<ASTTableExpression>())
             {

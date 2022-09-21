@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <optional>
 
 
 namespace DB
@@ -23,7 +22,6 @@ private:
     DataTypes elems;
     Strings names;
     bool have_explicit_names;
-
 public:
     static constexpr bool is_parametric = true;
 
@@ -56,14 +54,12 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const override;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
 
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
-    std::optional<size_t> tryGetPositionByName(const String & name) const;
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }

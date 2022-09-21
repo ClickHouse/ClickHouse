@@ -75,7 +75,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setCurrentUnitNumber(current_ticket_number);
-        input_format->setErrorsLogger(errors_logger);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
@@ -122,7 +121,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
@@ -234,7 +233,7 @@ Chunk ParallelParsingInputFormat::generate()
         else
         {
             // Pass the unit back to the segmentator.
-            std::lock_guard lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             unit.status = READY_TO_INSERT;
             segmentator_condvar.notify_all();
         }

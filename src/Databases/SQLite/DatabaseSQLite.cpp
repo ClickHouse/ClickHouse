@@ -173,16 +173,12 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    StoragePtr storage;
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        storage = fetchTable(table_name, local_context, false);
-    }
+    auto storage = fetchTable(table_name, local_context, false);
     if (!storage)
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "SQLite table {}.{} does not exist",
-                            getDatabaseName(), table_name);
+                            database_name, table_name);
         return nullptr;
     }
     auto table_storage_define = database_engine_define->clone();

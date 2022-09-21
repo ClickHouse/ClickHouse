@@ -16,7 +16,7 @@ from build_check import get_release_or_pr
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import post_commit_status
 from docker_images_check import DockerImage
-from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOWNLOAD
+from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from git_helper import Git
 from pr_info import PRInfo
@@ -303,13 +303,14 @@ def main():
     image = DockerImage(args.image_path, args.image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    NAME = f"Docker image {image.repo} building check"
+    NAME = f"Docker image {image.repo} building check (actions)"
     pr_info = None
     if CI:
         pr_info = PRInfo()
         release_or_pr, _ = get_release_or_pr(pr_info, args.version)
         args.bucket_prefix = (
-            f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}"
+            f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/"
+            f"{release_or_pr}/{pr_info.sha}"
         )
 
     if args.push:
@@ -319,7 +320,7 @@ def main():
             encoding="utf-8",
             shell=True,
         )
-        NAME = f"Docker image {image.repo} build and push"
+        NAME = f"Docker image {image.repo} build and push (actions)"
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
     status = "success"
@@ -335,7 +336,7 @@ def main():
                 status = "failure"
 
     pr_info = pr_info or PRInfo()
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
@@ -350,7 +351,7 @@ def main():
     if len(description) >= 140:
         description = description[:136] + "..."
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

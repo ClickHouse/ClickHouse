@@ -34,7 +34,7 @@ public:
 
     void prefetch() override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> getFileSize() override;
 
     String getFileName() const override;
 

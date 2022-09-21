@@ -61,23 +61,18 @@ public:
         return host_fqdn_id;
     }
 
-    std::string getQueueDir() const
-    {
-        return queue_dir;
-    }
-
     void startup();
     virtual void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
+protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     ZooKeeperPtr getAndSetZooKeeper();
 
-protected:
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
 
@@ -129,7 +124,7 @@ protected:
     std::string queue_dir;      /// dir with queue of queries
 
     mutable std::mutex zookeeper_mutex;
-    ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
+    ZooKeeperPtr current_zookeeper;
 
     /// Save state of executed task to avoid duplicate execution on ZK error
     std::optional<String> last_skipped_entry_name;
@@ -143,7 +138,7 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = true;
+    std::atomic<bool> stop_flag = false;
 
     ThreadFromGlobalPool main_thread;
     ThreadFromGlobalPool cleanup_thread;

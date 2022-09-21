@@ -5,7 +5,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 

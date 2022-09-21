@@ -2,5 +2,6 @@
 ExpressionTransform
   (ReadFromStorage)
   AggregatingTransform
-    ExpressionTransform
-      SourceFromSingleChunk 0 → 1
+    StrictResize
+      ExpressionTransform
+        SourceFromSingleChunk 0 → 1

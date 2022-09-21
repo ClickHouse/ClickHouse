@@ -3,10 +3,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/ASTCreateIndexQuery.h>
-#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
-#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -38,20 +35,15 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
-#include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterBackupQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
-#include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
-#include <Interpreters/InterpreterDropIndexQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -114,6 +106,8 @@ namespace ErrorCodes
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
+    OpenTelemetrySpanHolder span("InterpreterFactory::get()");
+
     ProfileEvents::increment(ProfileEvents::Query);
 
     if (query->as<ASTSelectQuery>())
@@ -205,10 +199,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDescribeQuery>())
     {
         return std::make_unique<InterpreterDescribeQuery>(query, context);
-    }
-    else if (query->as<ASTDescribeCacheQuery>())
-    {
-        return std::make_unique<InterpreterDescribeCacheQuery>(query, context);
     }
     else if (query->as<ASTExplainQuery>())
     {
@@ -302,21 +292,9 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterDropFunctionQuery>(query, context);
     }
-    else if (query->as<ASTCreateIndexQuery>())
-    {
-        return std::make_unique<InterpreterCreateIndexQuery>(query, context);
-    }
-    else if (query->as<ASTDropIndexQuery>())
-    {
-        return std::make_unique<InterpreterDropIndexQuery>(query, context);
-    }
     else if (query->as<ASTBackupQuery>())
     {
         return std::make_unique<InterpreterBackupQuery>(query, context);
-    }
-    else if (query->as<ASTDeleteQuery>())
-    {
-        return std::make_unique<InterpreterDeleteQuery>(query, context);
     }
     else
     {

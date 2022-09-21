@@ -142,7 +142,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(CountDigits)
+void registerFunctionCountDigits(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCountDigits>();
 }

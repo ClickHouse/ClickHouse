@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-s3-storage, no-random-settings
+-- Tags: no-parallel, no-fasttest, no-s3-storage
 
 -- { echo }
 

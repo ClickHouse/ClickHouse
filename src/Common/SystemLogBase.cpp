@@ -139,7 +139,7 @@ void SystemLogBase<LogElement>::flush(bool force)
     uint64_t this_thread_requested_offset;
 
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
 
         if (is_shutdown)
             return;
