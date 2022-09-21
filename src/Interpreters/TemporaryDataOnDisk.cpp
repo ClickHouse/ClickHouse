@@ -170,7 +170,7 @@ void TemporaryFileStream::write(const Block & block)
     out_writer->write(block);
 }
 
-TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
+TemporaryFileStream::Stat TemporaryFileStream::finishWriting(bool use_header)
 {
     if (out_writer)
     {
@@ -180,7 +180,12 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
         updateAllocAndCheck();
         out_writer.reset();
 
-        in_reader = std::make_unique<InputReader>(file->path(), header);
+        /// TODO: workaround to make aggregation work
+        /// For some reason NativeReader constuctors behave differently ?
+        if (use_header)
+            in_reader = std::make_unique<InputReader>(file->path(), header);
+        else
+            in_reader = std::make_unique<InputReader>(file->path());
     }
     return stat;
 }
