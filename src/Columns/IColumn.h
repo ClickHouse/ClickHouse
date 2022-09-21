@@ -421,6 +421,9 @@ public:
     using ColumnCallback = std::function<void(WrappedPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
 
+    /// Similar to forEachSubcolumn but it also do recursive calls.
+    virtual void forEachSubcolumnRecursively(ColumnCallback) {}
+
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
     [[nodiscard]] virtual bool structureEquals(const IColumn &) const
