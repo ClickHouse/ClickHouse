@@ -61,7 +61,7 @@ for ddl_version in 1 2 3; do
     echo "===case ${case_no}===="
 
     trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-    execute_query $trace_id "CREATE TABLE ddl_test_for_opentelemetry ON CLUSTER test_shard_localhost (id UInt64) Engine=MergeTree ORDER BY id" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=${ddl_version}"
+    execute_query $trace_id "CREATE TABLE ddl_test_for_opentelemetry ON CLUSTER test_shard_localhost (id UInt64) Engine=MergeTree ORDER BY id" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=${ddl_version}" "/dev/null"
 
     check_span $trace_id "count()" "HTTPHandler"
     check_span $trace_id "count()" "%DDLWorker::processTask%"
