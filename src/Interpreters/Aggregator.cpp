@@ -1998,7 +1998,7 @@ Block Aggregator::prepareBlockAndFill(
                 {
                     /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
                     if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
-                        for (auto & pool : aggregates_pools)
+                        for (auto & pool : data_variants.aggregates_pools)
                             column_aggregate_func->addArena(pool);
                 };
                 callback(final_aggregate_columns[i]);
