@@ -2360,6 +2360,7 @@ static Aggregator::Params getAggregatorParams(
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
         settings.max_block_size,
+        settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         stats_collecting_params
     };

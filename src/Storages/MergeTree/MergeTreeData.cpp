@@ -154,6 +154,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int ZERO_COPY_REPLICATION_ERROR;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
@@ -2178,6 +2179,9 @@ void MergeTreeData::dropAllData()
         throw;
     }
 
+    LOG_INFO(log, "dropAllData: clearing temporary directories");
+    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+
     column_sizes.clear();
 
     for (const auto & disk : getDisks())
@@ -2185,8 +2189,29 @@ void MergeTreeData::dropAllData()
         if (disk->isBroken())
             continue;
 
+        LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
+        disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+
+        if (disk->exists(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+            disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+
+        if (disk->exists(fs::path(relative_data_path) / MOVING_DIR_NAME))
+            disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
+
+        MergeTreeWriteAheadLog::dropAllWriteAheadLogs(disk, relative_data_path);
+
         try
         {
+            if (!disk->isDirectoryEmpty(relative_data_path) && supportsReplication() && disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
+            {
+                std::vector<std::string> files_left;
+                disk->listFiles(relative_data_path, files_left);
+
+                throw Exception(
+                    ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Directory {} with table {} not empty (files [{}]) after drop. Will not drop.",
+                    relative_data_path, getStorageID().getNameForLogs(), fmt::join(files_left, ", "));
+            }
+
             LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
             disk->removeRecursive(relative_data_path);
         }
