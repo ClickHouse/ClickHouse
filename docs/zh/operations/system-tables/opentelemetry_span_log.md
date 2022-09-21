@@ -51,6 +51,5 @@ attribute.values: []
 
 **另请参阅**
 
--   [OpenTelemetry](../../operations/opentelemetry.md)
+-   [OpenTelemetry](../../operations/opentelemetry.mdx)
 
-[原始文章](https://clickhouse.com/docs/en/operations/system_tables/opentelemetry_span_log) <!--hide-->

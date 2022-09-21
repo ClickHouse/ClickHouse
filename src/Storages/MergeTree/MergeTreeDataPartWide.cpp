@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
 
@@ -47,9 +48,9 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
-    auto ptr = std::static_pointer_cast<const MergeTreeDataPartWide>(shared_from_this());
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
     return std::make_unique<MergeTreeReaderWide>(
-        ptr, columns_to_read,
+        read_info, columns_to_read,
         metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
@@ -103,46 +104,52 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     return size;
 }
 
-void MergeTreeDataPartWide::loadIndexGranularity()
+void MergeTreeDataPartWide::loadIndexGranularityImpl(
+    MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const DataPartStoragePtr & data_part_storage_, const std::string & any_column_file_name)
 {
-    index_granularity_info.changeGranularityIfRequired(data_part_storage);
-
-
-    if (columns.empty())
-        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+    index_granularity_info_.changeGranularityIfRequired(data_part_storage_);
 
     /// We can use any column, it doesn't matter
-    std::string marks_file_path = index_granularity_info.getMarksFilePath(getFileNameForColumn(columns.front()));
-    if (!data_part_storage->exists(marks_file_path))
+    std::string marks_file_path = index_granularity_info_.getMarksFilePath(any_column_file_name);
+    if (!data_part_storage_->exists(marks_file_path))
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART, "Marks file '{}' doesn't exist",
-            std::string(fs::path(data_part_storage->getFullPath()) / marks_file_path));
+            std::string(fs::path(data_part_storage_->getFullPath()) / marks_file_path));
 
-    size_t marks_file_size = data_part_storage->getFileSize(marks_file_path);
+    size_t marks_file_size = data_part_storage_->getFileSize(marks_file_path);
 
-    if (!index_granularity_info.is_adaptive)
+    if (!index_granularity_info_.is_adaptive)
     {
-        size_t marks_count = marks_file_size / index_granularity_info.getMarkSizeInBytes();
-        index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
+        size_t marks_count = marks_file_size / index_granularity_info_.getMarkSizeInBytes();
+        index_granularity_.resizeWithFixedGranularity(marks_count, index_granularity_info_.fixed_index_granularity); /// all the same
     }
     else
     {
-        auto buffer = data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+        auto buffer = data_part_storage_->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
         while (!buffer->eof())
         {
             buffer->seek(sizeof(size_t) * 2, SEEK_CUR); /// skip offset_in_compressed file and offset_in_decompressed_block
             size_t granularity;
             readIntBinary(granularity, *buffer);
-            index_granularity.appendMark(granularity);
+            index_granularity_.appendMark(granularity);
         }
 
-        if (index_granularity.getMarksCount() * index_granularity_info.getMarkSizeInBytes() != marks_file_size)
+        if (index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes() != marks_file_size)
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}",
-                std::string(fs::path(data_part_storage->getFullPath()) / marks_file_path));
+                std::string(fs::path(data_part_storage_->getFullPath()) / marks_file_path));
     }
 
-    index_granularity.setInitialized();
+    index_granularity_.setInitialized();
+}
+
+void MergeTreeDataPartWide::loadIndexGranularity()
+{
+    if (columns.empty())
+        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, data_part_storage, getFileNameForColumn(columns.front()));
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const

@@ -2,9 +2,8 @@
 slug: /en/operations/quotas
 sidebar_position: 51
 sidebar_label: Quotas
+title: Quotas
 ---
-
-# Quotas
 
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
 Quotas are set up in the user config, which is usually ‘users.xml’.
@@ -118,4 +117,3 @@ For distributed query processing, the accumulated amounts are stored on the requ
 
 When the server is restarted, quotas are reset.
 
-[Original article](https://clickhouse.com/docs/en/operations/quotas/) <!--hide-->

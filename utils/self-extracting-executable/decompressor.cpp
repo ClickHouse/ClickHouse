@@ -13,6 +13,8 @@
 #include <cstring>
 #include <iostream>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 #if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
@@ -359,6 +361,35 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #endif
 
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+
+uint32_t getInode(const char * self)
+{
+    std::ifstream maps("/proc/self/maps");
+    if (maps.fail())
+    {
+        perror("open maps");
+        return 0;
+    }
+
+    /// Record example for /proc/self/maps:
+    /// address                   perms offset  device inode                     pathname
+    /// 561a247de000-561a247e0000 r--p 00000000 103:01 1564                      /usr/bin/cat
+    /// see "man 5 proc"
+    for (std::string line; std::getline(maps, line);)
+    {
+        std::stringstream ss(line); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::string addr, mode, offset, id, path;
+        uint32_t inode = 0;
+        if (ss >> addr >> mode >> offset >> id >> inode >> path && path == self)
+            return inode;
+    }
+
+    return 0;
+}
+
+#endif
+
 int main(int/* argc*/, char* argv[])
 {
     char self[4096] = {0};
@@ -381,6 +412,60 @@ int main(int/* argc*/, char* argv[])
     }
     else
         name = file_path;
+
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+    /// get inode of this executable
+    uint32_t inode = getInode(self);
+    if (inode == 0)
+    {
+        std::cerr << "Unable to obtain inode." << std::endl;
+        return 1;
+    }
+
+    std::stringstream lock_path; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    lock_path << "/tmp/" << name << ".decompression." << inode << ".lock";
+    int lock = open(lock_path.str().c_str(), O_CREAT | O_RDWR, 0666);
+    if (lock < 0)
+    {
+        perror("lock open");
+        return 1;
+    }
+
+    /// lock file should be closed on exec call
+    fcntl(lock, F_SETFD, FD_CLOEXEC);
+
+    if (lockf(lock, F_LOCK, 0))
+    {
+        perror("lockf");
+        return 1;
+    }
+
+    struct stat input_info;
+    if (0 != stat(self, &input_info))
+    {
+        perror("stat");
+        return 1;
+    }
+
+    /// if decompression was performed by another process since this copy was started
+    /// then file referred by path "self" is already pointing to different inode
+    if (input_info.st_ino != inode)
+    {
+        struct stat lock_info;
+        if (0 != fstat(lock, &lock_info))
+        {
+            perror("fstat lock");
+            return 1;
+        }
+
+        /// size 1 of lock file indicates that another decompressor has found active executable
+        if (lock_info.st_size == 1)
+            execv(self, argv);
+
+        printf("No target executable - decompression only was performed.\n");
+        return 0;
+    }
+#endif
 
     int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
@@ -443,12 +528,21 @@ int main(int/* argc*/, char* argv[])
 
         if (has_exec)
         {
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+            /// write one byte to the lock in case other copies of compressed are running to indicate that
+            /// execution should be performed
+            write(lock, "1", 1);
+#endif
             execv(self, argv);
 
             /// This part of code will be reached only if error happened
             perror("execv");
             return 1;
         }
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+        /// since inodes can be reused - it's a precaution if lock file already exists and have size of 1
+        ftruncate(lock, 0);
+#endif
 
         printf("No target executable - decompression only was performed.\n");
     }

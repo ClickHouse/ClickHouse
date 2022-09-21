@@ -146,6 +146,9 @@
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     \
+    M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
+    M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
+    \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
@@ -286,6 +289,42 @@ The server successfully detected this situation and will download merged part fr
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     \
+    M(DiskS3ReadMicroseconds, "Time of GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsCount, "Number of GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsErrors, "Number of non-throttling errors in GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsThrottling, "Number of 429 and 503 errors in GET and HEAD requests to DiskS3 storage.") \
+    M(DiskS3ReadRequestsRedirects, "Number of redirects in GET and HEAD requests to DiskS3 storage.") \
+    \
+    M(DiskS3WriteMicroseconds, "Time of POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsCount, "Number of POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsErrors, "Number of non-throttling errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    M(DiskS3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to DiskS3 storage.") \
+    \
+    M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.") \
+    M(S3CopyObject, "Number of S3 API CopyObject calls.") \
+    M(S3ListObjects, "Number of S3 API ListObjects calls.") \
+    M(S3HeadObject,  "Number of S3 API HeadObject calls.") \
+    M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
+    M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.") \
+    M(S3UploadPart, "Number of S3 API UploadPart calls.") \
+    M(S3AbortMultipartUpload, "Number of S3 API AbortMultipartUpload calls.") \
+    M(S3CompleteMultipartUpload, "Number of S3 API CompleteMultipartUpload calls.") \
+    M(S3PutObject, "Number of S3 API PutObject calls.") \
+    M(S3GetObject, "Number of S3 API GetObject calls.") \
+    \
+    M(DiskS3DeleteObjects, "Number of DiskS3 API DeleteObject(s) calls.") \
+    M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
+    M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
+    M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.") \
+    M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.") \
+    M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.") \
+    M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.") \
+    M(DiskS3AbortMultipartUpload, "Number of DiskS3 API AbortMultipartUpload calls.") \
+    M(DiskS3CompleteMultipartUpload, "Number of DiskS3 API CompleteMultipartUpload calls.") \
+    M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
+    M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
+    \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
@@ -318,6 +357,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
+    M(FileSegmentWriteMicroseconds, "Metric per file segment. Time spend writing cache") \
     M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
     M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
     M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
@@ -394,6 +434,7 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
+
 
 namespace ProfileEvents
 {

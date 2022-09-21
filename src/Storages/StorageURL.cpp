@@ -100,20 +100,19 @@ namespace
     ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders(const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_)
     {
         ReadWriteBufferFromHTTP::HTTPHeaderEntries headers(headers_.begin(), headers_.end());
-        // Propagate OpenTelemetry trace context, if any, downstream.
-        if (CurrentThread::isInitialized())
-        {
-            const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
-            if (thread_trace_context.trace_id != UUID())
-            {
-                headers.emplace_back("traceparent", thread_trace_context.composeTraceparentHeader());
 
-                if (!thread_trace_context.tracestate.empty())
-                {
-                    headers.emplace_back("tracestate", thread_trace_context.tracestate);
-                }
+        // Propagate OpenTelemetry trace context, if any, downstream.
+        const auto &current_trace_context = OpenTelemetry::CurrentContext();
+        if (current_trace_context.isTraceEnabled())
+        {
+            headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
+
+            if (!current_trace_context.tracestate.empty())
+            {
+                headers.emplace_back("tracestate", current_trace_context.tracestate);
             }
         }
+
         return headers;
     }
 

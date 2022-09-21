@@ -11,10 +11,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
@@ -32,13 +32,6 @@
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
-
-
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
-
 
 namespace DB
 {
@@ -77,9 +70,11 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 AsynchronousMetrics::AsynchronousMetrics(
     ContextPtr global_context_,
     int update_period_seconds,
+    int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , update_period(update_period_seconds)
+    , heavy_metric_update_period(heavy_metrics_update_period_seconds)
     , protocol_server_metrics_func(protocol_server_metrics_func_)
     , log(&Poco::Logger::get("AsynchronousMetrics"))
 {
@@ -391,7 +386,7 @@ uint64_t updateJemallocEpoch()
 }
 
 template <typename Value>
-static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
+static Value saveJemallocMetricImpl(AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
@@ -399,22 +394,23 @@ static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
     size_t size = sizeof(value);
     mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
     values[clickhouse_full_name] = value;
+    return value;
 }
 
 template<typename Value>
-static void saveJemallocMetric(AsynchronousMetricValues & values,
+static Value saveJemallocMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
-    saveJemallocMetricImpl<Value>(values,
+    return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.{}", metric_name),
         fmt::format("jemalloc.{}", metric_name));
 }
 
 template<typename Value>
-static void saveAllArenasMetric(AsynchronousMetricValues & values,
+static Value saveAllArenasMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
-    saveJemallocMetricImpl<Value>(values,
+    return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
         fmt::format("jemalloc.arenas.all.{}", metric_name));
 }
@@ -563,7 +559,7 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 #endif
 
 
-void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_time)
+void AsynchronousMetrics::update(TimePoint update_time)
 {
     Stopwatch watch;
 
@@ -655,10 +651,39 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
+#endif
+
+#if USE_JEMALLOC
+    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
+    // the following calls will return stale values. It increments and returns
+    // the current epoch number, which might be useful to log as a sanity check.
+    auto epoch = updateJemallocEpoch();
+    new_values["jemalloc.epoch"] = epoch;
+
+    // Collect the statistics themselves.
+    saveJemallocMetric<size_t>(new_values, "allocated");
+    saveJemallocMetric<size_t>(new_values, "active");
+    saveJemallocMetric<size_t>(new_values, "metadata");
+    saveJemallocMetric<size_t>(new_values, "metadata_thp");
+    saveJemallocMetric<size_t>(new_values, "resident");
+    saveJemallocMetric<size_t>(new_values, "mapped");
+    saveJemallocMetric<size_t>(new_values, "retained");
+    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
+    saveAllArenasMetric<size_t>(new_values, "pactive");
+    [[maybe_unused]] size_t je_malloc_pdirty = saveAllArenasMetric<size_t>(new_values, "pdirty");
+    [[maybe_unused]] size_t je_malloc_pmuzzy = saveAllArenasMetric<size_t>(new_values, "pmuzzy");
+    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
+    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
+#endif
+
     /// Process process memory usage according to OS
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
-        MemoryStatisticsOS::Data data = memory_stat.get();
+        MemoryStatisticsOS::Data & data = memory_statistics_data;
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
@@ -674,9 +699,16 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
-            Int64 new_amount = data.resident;
+            Int64 rss = data.resident;
+            Int64 free_memory_in_allocator_arenas = 0;
 
-            Int64 difference = new_amount - amount;
+#if USE_JEMALLOC
+            /// This is a memory which is kept by allocator.
+            /// Will subsract it from RSS to decrease memory drift.
+            free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
+#endif
+
+            Int64 difference = rss - free_memory_in_allocator_arenas - amount;
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
@@ -684,11 +716,10 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
-                    ReadableSize(new_amount),
+                    ReadableSize(rss),
                     ReadableSize(difference));
 
-            total_memory_tracker.set(new_amount);
-            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
+            total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
         }
     }
 #endif
@@ -1559,30 +1590,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 #endif
 
-#if USE_JEMALLOC
-    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
-    // the following calls will return stale values. It increments and returns
-    // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = updateJemallocEpoch();
-    new_values["jemalloc.epoch"] = epoch;
-
-    // Collect the statistics themselves.
-    saveJemallocMetric<size_t>(new_values, "allocated");
-    saveJemallocMetric<size_t>(new_values, "active");
-    saveJemallocMetric<size_t>(new_values, "metadata");
-    saveJemallocMetric<size_t>(new_values, "metadata_thp");
-    saveJemallocMetric<size_t>(new_values, "resident");
-    saveJemallocMetric<size_t>(new_values, "mapped");
-    saveJemallocMetric<size_t>(new_values, "retained");
-    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
-    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
-    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
-    saveAllArenasMetric<size_t>(new_values, "pactive");
-    saveAllArenasMetric<size_t>(new_values, "pdirty");
-    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
-    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
-    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
-#endif
+    updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
 
     /// Add more metrics as you wish.
 
@@ -1599,6 +1607,78 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     // Finally, update the current metrics.
     std::lock_guard lock(mutex);
     values = new_values;
+}
+
+void AsynchronousMetrics::updateDetachedPartsStats()
+{
+    DetachedPartsStats current_values{};
+
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    {
+        if (!db.second->canContainMergeTreeTables())
+            continue;
+
+        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        {
+            const auto & table = iterator->table();
+            if (!table)
+                continue;
+
+            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            {
+                for (const auto & detached_part: table_merge_tree->getDetachedParts())
+                {
+                    if (!detached_part.valid_name)
+                        continue;
+
+                    if (detached_part.prefix.empty())
+                        ++current_values.detached_by_user;
+
+                    ++current_values.count;
+                }
+            }
+        }
+    }
+
+    detached_parts_stats = current_values;
+}
+
+void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values)
+{
+    const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
+    const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
+
+    if (update_heavy_metric)
+    {
+        heavy_metric_previous_update_time = update_time;
+
+        Stopwatch watch;
+
+        /// Test shows that listing 100000 entries consuming around 0.15 sec.
+        updateDetachedPartsStats();
+
+        watch.stop();
+
+        /// Normally heavy metrics don't delay the rest of the metrics calculation
+        /// otherwise log the warning message
+        auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
+        if (watch.elapsedSeconds() > (update_period.count() / 2.))
+            log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
+        else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
+            log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
+        LOG_IMPL(log, log_level.first, log_level.second,
+                 "Update heavy metrics. "
+                 "Update period {} sec. "
+                 "Update heavy metrics period {} sec. "
+                 "Heavy metrics calculation elapsed: {} sec.",
+                 update_period.count(),
+                 heavy_metric_update_period.count(),
+                 watch.elapsedSeconds());
+
+    }
+
+    new_values["NumberOfDetachedParts"] = detached_parts_stats.count;
+    new_values["NumberOfDetachedByUserParts"] = detached_parts_stats.detached_by_user;
 }
 
 }

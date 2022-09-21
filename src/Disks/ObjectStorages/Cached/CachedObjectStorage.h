@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/FileCache.h>
-#include <Common/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 
 namespace Poco
 {

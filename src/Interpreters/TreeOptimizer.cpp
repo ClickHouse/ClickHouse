@@ -154,7 +154,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            /// don't optimise functions that shadow any of it's arguments, e.g.:
+            /// don't optimize functions that shadow any of it's arguments, e.g.:
             /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
             if (!function->alias.empty())
             {
@@ -418,7 +418,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         return;
 
     std::unordered_set<String> distinct_names = getDistinctNames(*subselect);
-    std::unordered_set<String> selected_names;
+    std::unordered_set<std::string_view> selected_names;
 
     /// Check source column names from select list (ignore aliases and table names)
     for (const auto & id : select.select()->children)
@@ -427,11 +427,11 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         if (!identifier)
             return;
 
-        String name = identifier->shortName();
+        const String & name = identifier->shortName();
         if (!distinct_names.contains(name))
             return; /// Not a distinct column, keep DISTINCT for it.
 
-        selected_names.insert(name);
+        selected_names.emplace(name);
     }
 
     /// select columns list != distinct columns list
@@ -453,7 +453,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         return;
 
     /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their undelying tables
+    /// because we can't get the sorting key of their underlying tables
     /// and we can break the matching of the sorting key for `read_in_order`
     /// optimization by removing monotonous functions from the prefix of key.
     if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
@@ -632,7 +632,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
         if (!cnf_form)
             return false;
 
-        cnf_form->pushNotInFuntions();
+        cnf_form->pushNotInFunctions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
         return true;
     }

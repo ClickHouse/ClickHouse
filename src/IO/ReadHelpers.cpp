@@ -636,8 +636,9 @@ concept WithResize = requires (T value)
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
+    /// Empty string
     if (buf.eof())
-        throwReadAfterEOF();
+        return;
 
     const char delimiter = settings.delimiter;
     const char maybe_quote = *buf.position();

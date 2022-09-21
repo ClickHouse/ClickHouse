@@ -1,6 +1,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
+#include <Storages/MutationCommands.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -10,11 +11,15 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
 
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/MutationsInterpreter.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -29,6 +34,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <shared_mutex>
+#include <utility>
 
 
 namespace fs = std::filesystem;
@@ -166,14 +172,21 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         bool attach,
         ContextPtr context_,
         const String & primary_key_,
-        Int32 ttl_)
+        Int32 ttl_,
+        String rocksdb_dir_,
+        bool read_only_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
+    , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
+    , read_only(read_only_)
 {
     setInMemoryMetadata(metadata_);
-    rocksdb_dir = context_->getPath() + relative_data_path_;
+    if (rocksdb_dir.empty())
+    {
+        rocksdb_dir = context_->getPath() + relative_data_path_;
+    }
     if (!attach)
     {
         fs::create_directories(rocksdb_dir);
@@ -190,6 +203,92 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
     initDB();
+}
+
+void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    if (commands.empty())
+        return;
+
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations cannot be combined for EmbeddedRocksDB");
+
+    const auto command_type = commands.front().type;
+    if (command_type != MutationCommand::Type::UPDATE && command_type != MutationCommand::Type::DELETE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only DELETE and UPDATE mutation supported for EmbeddedRocksDB");
+}
+
+void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPtr context_)
+{
+    if (commands.empty())
+        return;
+
+    assert(commands.size() == 1);
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
+
+    if (commands.front().type == MutationCommand::Type::DELETE)
+    {
+        auto interpreter = std::make_unique<MutationsInterpreter>(
+            storage_ptr,
+            metadata_snapshot,
+            commands,
+            context_,
+            /*can_execute_*/ true,
+            /*return_all_columns_*/ true,
+            /*return_deleted_rows_*/ true);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        auto sink = std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
+
+        Block block;
+        while (executor.pull(block))
+        {
+            auto column_it = std::find_if(block.begin(), block.end(), [&](const auto & column) { return column.name == primary_key; });
+            assert(column_it != block.end());
+
+            auto column = column_it->column;
+            auto size = column->size();
+
+            rocksdb::WriteBatch batch;
+            WriteBufferFromOwnString wb_key;
+            for (size_t i = 0; i < size; ++i)
+            {
+                wb_key.restart();
+
+                column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key);
+                auto status = batch.Delete(wb_key.str());
+                if (!status.ok())
+                    throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+            }
+
+            auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+            if (!status.ok())
+                throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+        }
+
+        return;
+    }
+
+    assert(commands.front().type == MutationCommand::Type::UPDATE);
+    if (commands.front().column_to_update_expression.contains(primary_key))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated");
+
+    auto interpreter = std::make_unique<MutationsInterpreter>(
+        storage_ptr, metadata_snapshot, commands, context_, /*can_execute_*/ true, /*return_all_columns*/ true);
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+    PullingPipelineExecutor executor(pipeline);
+
+    auto sink = std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
+
+    Block block;
+    while (executor.pull(block))
+    {
+        sink->consume(Chunk{block.getColumns(), block.rows()});
+    }
 }
 
 void StorageEmbeddedRocksDB::initDB()
@@ -269,7 +368,7 @@ void StorageEmbeddedRocksDB::initDB()
     if (ttl > 0)
     {
         rocksdb::DBWithTTL * db;
-        status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl);
+        status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
@@ -280,7 +379,14 @@ void StorageEmbeddedRocksDB::initDB()
     else
     {
         rocksdb::DB * db;
-        status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        if (read_only)
+        {
+            status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
+        }
+        else
+        {
+            status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        }
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
@@ -351,15 +457,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 {
     // TODO custom RocksDBSettings, table function
     auto engine_args = args.engine_args;
-    if (engine_args.size() > 1)
+    if (engine_args.size() > 3)
     {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} requires at most 1 parameter. ({} given). Correct usage: EmbeddedRocksDB([ttl])",
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} requires at most 3 parameters. ({} given). Correct usage: EmbeddedRocksDB([ttl, rocksdb_dir, read_only])",
             args.engine_name, engine_args.size());
     }
 
     Int32 ttl{0};
+    String rocksdb_dir;
+    bool read_only{false};
     if (!engine_args.empty())
         ttl = checkAndGetLiteralArgument<UInt64>(engine_args[0], "ttl");
+    if (engine_args.size() > 1)
+        rocksdb_dir = checkAndGetLiteralArgument<String>(engine_args[1], "rocksdb_dir");
+    if (engine_args.size() > 2)
+        read_only = checkAndGetLiteralArgument<bool>(engine_args[2], "read_only");
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
@@ -374,7 +486,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
@@ -411,8 +523,7 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr();
-    return metadata ? metadata->getSampleBlock() : Block();
+    return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
 Chunk StorageEmbeddedRocksDB::getBySerializedKeys(

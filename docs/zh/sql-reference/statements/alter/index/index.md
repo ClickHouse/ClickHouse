@@ -1,5 +1,5 @@
 ---
-slug: /zh/sql-reference/statements/alter/
+slug: /zh/sql-reference/statements/alter/index
 toc_hidden_folder: true
 sidebar_position: 42
 sidebar_label: INDEX

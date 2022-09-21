@@ -344,7 +344,7 @@ Eсли суммарное число активных кусков во все�
 
 **Использование**
 
-Значение настройки `min_bytes_to_rebalance_partition_over_jbod` должно быть меньше значения настройки [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool). Иначе ClickHouse сгенерирует исключение.
+Значение настройки `min_bytes_to_rebalance_partition_over_jbod` должно быть не меньше значения настройки [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) / 1024. Иначе ClickHouse сгенерирует исключение.
 
 ## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
 

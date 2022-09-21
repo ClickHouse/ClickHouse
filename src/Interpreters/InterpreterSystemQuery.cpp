@@ -7,12 +7,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
-#include <Common/FileCacheFactory.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -36,6 +35,8 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -180,27 +181,38 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     {
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            for (auto iterator = elem.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-            {
-                StoragePtr table = iterator->table();
-                if (!table)
-                    continue;
-
-                if (!access->isGranted(required_access_type, elem.first, iterator->name()))
-                {
-                    LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), elem.first, iterator->name());
-                    continue;
-                }
-
-                if (start)
-                {
-                    manager->remove(table, action_type);
-                    table->onActionLockRemove(action_type);
-                }
-                else
-                    manager->add(table, action_type);
-            }
+            startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
+    }
+}
+
+void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType action_type, bool start,
+                                                       const String & database_name, const DatabasePtr & database,
+                                                       const ContextPtr & local_context, Poco::Logger * log)
+{
+    auto manager = local_context->getActionLocksManager();
+    auto access = local_context->getAccess();
+    auto required_access_type = getRequiredAccessType(action_type);
+
+    for (auto iterator = database->getTablesIterator(local_context); iterator->isValid(); iterator->next())
+    {
+        StoragePtr table = iterator->table();
+        if (!table)
+            continue;
+
+        if (!access->isGranted(required_access_type, database_name, iterator->name()))
+        {
+            LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), database_name, iterator->name());
+            continue;
+        }
+
+        if (start)
+        {
+            manager->remove(table, action_type);
+            table->onActionLockRemove(action_type);
+        }
+        else
+            manager->add(table, action_type);
     }
 }
 
@@ -376,17 +388,15 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_MODEL:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadModel(query.target_model);
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
+            bridge_helper->removeModel();
             break;
         }
         case Type::RELOAD_MODELS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadAllTriedToLoad();
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
+            bridge_helper->removeAllModels();
             break;
         }
         case Type::RELOAD_FUNCTION:
@@ -412,6 +422,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_CONFIG:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
+            break;
+        case Type::RELOAD_USERS:
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
+            system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
         case Type::RELOAD_SYMBOLS:
         {
@@ -528,7 +542,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
             /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
-            result = Unfreezer().unfreeze(query.backup_name, getContext());
+            result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
         default:
@@ -753,7 +767,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "if you want to clean the data and drop this replica", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
-    /// However, the main usecase is to drop dead replica, which cannot become active.
+    /// However, the main use case is to drop dead replica, which cannot become active.
     /// This check prevents only from accidental drop of some other replica.
     if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
         throw Exception("Can't drop replica: " + query.replica + ", because it's active",
@@ -889,6 +903,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_CONFIG:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_CONFIG);
+            break;
+        }
+        case Type::RELOAD_USERS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
         case Type::RELOAD_SYMBOLS:

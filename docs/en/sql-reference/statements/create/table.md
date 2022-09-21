@@ -2,9 +2,8 @@
 slug: /en/sql-reference/statements/create/table
 sidebar_position: 36
 sidebar_label: TABLE
+title: "CREATE TABLE"
 ---
-
-# CREATE TABLE
 
 Creates a new table. This query can have various syntax forms depending on a use case.
 

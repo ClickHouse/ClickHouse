@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 
 
 namespace DB
@@ -13,7 +13,7 @@ namespace DB
 
 /** A stream for outputting data in XML format.
   */
-class XMLRowOutputFormat final : public IRowOutputFormat
+class XMLRowOutputFormat final : public RowOutputFormatWithUTF8ValidationAdaptor
 {
 public:
     XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
@@ -31,6 +31,9 @@ private:
     void writeMinExtreme(const Columns & columns, size_t row_num) override;
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
     void writeTotals(const Columns & columns, size_t row_num) override;
+
+    bool supportTotals() const override { return true; }
+    bool supportExtremes() const override { return true; }
 
     void writeBeforeTotals() override;
     void writeAfterTotals() override;
@@ -66,9 +69,6 @@ private:
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();
     void writeStatistics();
-
-    std::unique_ptr<WriteBuffer> validating_ostr;    /// Validates UTF-8 sequences, replaces bad sequences with replacement character.
-    WriteBuffer * ostr;
 
     size_t field_number = 0;
     size_t row_count = 0;

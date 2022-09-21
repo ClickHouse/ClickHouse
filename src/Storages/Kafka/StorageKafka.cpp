@@ -179,8 +179,6 @@ namespace
     void loadFromConfig(cppkafka::Configuration & conf, const Poco::Util::AbstractConfiguration & config, const std::string & path)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
-        std::vector<char> errstr(512);
-
         config.keys(path, keys);
 
         for (const auto & key : keys)
@@ -810,7 +808,7 @@ void registerStorageKafka(StorageFactory & factory)
         /** Arguments of engine is following:
           * - Kafka broker list
           * - List of topics
-          * - Group ID (may be a constaint expression with a string result)
+          * - Group ID (may be a constant expression with a string result)
           * - Message format (string)
           * - Row delimiter
           * - Schema (optional, if the format supports it)

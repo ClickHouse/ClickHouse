@@ -1,6 +1,14 @@
+# To run clang-tidy from CMake, build ClickHouse with -DENABLE_CLANG_TIDY=1. To show all warnings, it is
+# recommended to pass "-k0" to Ninja.
+
 # Enable all checks + disale selected checks. Feel free to remove disabled checks from below list if
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
+
+# TODO Let clang-tidy check headers in further directories
+#      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
+HeaderFilterRegex: '^.*/(base)/.*(h|hpp)$'
+
 Checks: '*,
     -abseil-*,
 
@@ -14,6 +22,8 @@ Checks: '*,
     -bugprone-implicit-widening-of-multiplication-result,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
+    -bugprone-unchecked-optional-access,
+    -bugprone-assignment-in-if-condition,
 
     -cert-dcl16-c,
     -cert-err58-cpp,
@@ -95,6 +105,7 @@ Checks: '*,
 
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
+    -misc-const-correctness,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
@@ -106,6 +117,7 @@ Checks: '*,
     -modernize-use-nodiscard,
     -modernize-use-override,
     -modernize-use-trailing-return-type,
+    -modernize-macro-to-enum,
 
     -performance-inefficient-string-concatenation,
     -performance-no-int-to-ptr,
@@ -127,6 +139,7 @@ Checks: '*,
     -readability-suspicious-call-argument,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
+    -readability-simplify-boolean-expr,
 
     -zirkon-*,
 '

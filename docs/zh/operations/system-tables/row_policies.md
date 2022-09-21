@@ -20,7 +20,7 @@ slug: /zh/operations/system-tables/row_policies
 
 -    `select_filter` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — 用于过滤行的条件.
 
--    `is_restrictive` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示行策略是否限制对行的访问, 参考 [CREATE ROW POLICY](../../sql-reference/statements/create/row-policy.md#create-row-policy-as). 值:
+-    `is_restrictive` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示行策略是否限制对行的访问, 参考 [CREATE ROW POLICY](../../sql-reference/statements/create/row-policy.mdx#create-row-policy-as). 值:
 - `0` — 行策略使用 `AS PERMISSIVE` 子句定义.
 - `1` — 行策略使用  `AS RESTRICTIVE` 子句定义.
 

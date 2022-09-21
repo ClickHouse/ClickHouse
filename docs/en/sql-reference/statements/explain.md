@@ -2,9 +2,8 @@
 slug: /en/sql-reference/statements/explain
 sidebar_position: 39
 sidebar_label: EXPLAIN
+title: "EXPLAIN Statement"
 ---
-
-# EXPLAIN Statement
 
 Shows the execution plan of a statement.
 

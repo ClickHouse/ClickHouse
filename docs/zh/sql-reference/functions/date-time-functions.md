@@ -956,7 +956,7 @@ SELECT
 **语法**
 
 ``` sql
-formatDateTime(Time, Format\[, Timezone\])
+formatDateTime(Time, Format[, Timezone])
 ```
 
 **返回值**

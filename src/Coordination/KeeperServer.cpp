@@ -370,6 +370,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     {
         auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
 
+        size_t preprocessed = 0;
         LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
         auto idx = state_machine->last_commit_index() + 1;
         for (const auto & entry : *log_entries)
@@ -378,7 +379,12 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
                 state_machine->pre_commit(idx, entry->get_buf());
 
             ++idx;
+            ++preprocessed;
+
+            if (preprocessed % 50000 == 0)
+                LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
         }
+        LOG_INFO(log, "Preprocessing done");
     }
 
     loadLatestConfig();
@@ -436,9 +442,9 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_machine->shutdownStorage();
     state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_machine->shutdownStorage();
 }
 
 namespace
@@ -514,7 +520,7 @@ bool KeeperServer::isFollower() const
 
 bool KeeperServer::isLeaderAlive() const
 {
-    return raft_instance->is_leader_alive();
+    return raft_instance && raft_instance->is_leader_alive();
 }
 
 /// TODO test whether taking failed peer in count
@@ -611,7 +617,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf);
                 request_for_session.zxid = next_zxid;
-                state_machine->preprocess(request_for_session);
+                if (!state_machine->preprocess(request_for_session))
+                    return nuraft::cb_func::ReturnCode::ReturnNull;
+
                 request_for_session.digest = state_machine->getNodesDigest();
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 break;

@@ -46,7 +46,7 @@ Binary operations on Decimal result in wider result type (with any order of argu
 Rules for scale:
 
 -   add, subtract: S = max(S1, S2).
--   multuply: S = S1 + S2.
+-   multiply: S = S1 + S2.
 -   divide: S = S1.
 
 For similar operations between Decimal and integers, the result is Decimal of the same size as an argument.
