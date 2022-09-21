@@ -873,7 +873,7 @@ private:
             else if constexpr (is_decimal<U>)
                 dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
-                dst[i] = static_cast<U>(dst_default[i]);
+                dst[i] = static_cast<U>(dst_default[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
         }
     }
 
