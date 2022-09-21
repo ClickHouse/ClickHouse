@@ -34,6 +34,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
+#include <Parsers/wipePasswordFromQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -111,8 +112,11 @@ static String prepareQueryForLogging(const String & query, ContextPtr context)
 {
     String res = query;
 
-    // wiping sensitive data before cropping query by log_queries_cut_to_length,
-    // otherwise something like credit card without last digit can go to log
+    // Wiping a password or its hash from CREATE/ALTER USER query because we don't want it to go to logs.
+    res = wipePasswordFromQuery(res);
+
+    // Wiping sensitive data before cropping query by log_queries_cut_to_length,
+    // otherwise something like credit card without last digit can go to log.
     if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
@@ -544,9 +548,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (insert_query)
         {
             if (insert_query->table_id)
+            {
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
+            }
             else if (auto table = insert_query->getTable(); !table.empty())
+            {
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
+            }
         }
 
         if (insert_query && insert_query->select)
