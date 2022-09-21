@@ -32,10 +32,10 @@ void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const
         WriteBufferFromOwnString buf;
 
         serialization.serializeText(column, row_num, buf, settings);
-        writeJSONString(buf.str(), out, settings);
+        writeJSONString(buf.str(), *ostr, settings);
     }
     else
-        serialization.serializeTextJSON(column, row_num, out, settings);
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
 }
 
 
@@ -47,7 +47,7 @@ void JSONCompactEachRowRowOutputFormat::writeFieldDelimiter()
 
 void JSONCompactEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    writeChar('[', out);
+    writeChar('[', *ostr);
 }
 
 
@@ -77,9 +77,9 @@ void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & va
     writeRowStartDelimiter();
     for (size_t i = 0; i < values.size(); ++i)
     {
-        writeChar('\"', out);
-        writeString(values[i], out);
-        writeChar('\"', out);
+        writeChar('\"', *ostr);
+        writeString(values[i], *ostr);
+        writeChar('\"', *ostr);
         if (i != values.size() - 1)
             writeFieldDelimiter();
     }
