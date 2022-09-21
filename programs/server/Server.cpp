@@ -51,7 +51,6 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
@@ -1158,7 +1157,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setExternalAuthenticatorsConfig(*config);
 
             global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             global_context->setRemoteHostFilter(*config);
@@ -1383,7 +1381,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reload();
+        access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -1475,6 +1473,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
+
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
+    }
+
+    if (dns_cache_updater)
+        dns_cache_updater->start();
 
     SCOPE_EXIT({
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
@@ -1629,20 +1644,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
-    }
-
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
     if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
@@ -1707,8 +1708,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
-        if (dns_cache_updater)
-            dns_cache_updater->start();
 
         {
             LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
@@ -1736,17 +1735,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         catch (...)
         {
             tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
-            throw;
-        }
-
-        /// try to load models immediately, throw on error and die
-        try
-        {
-            global_context->loadOrReloadModels(config());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
             throw;
         }
 

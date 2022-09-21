@@ -71,6 +71,7 @@ public:
     virtual const String & getName() const = 0;
 
     /// Reserve the specified number of bytes.
+    /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
 
     virtual ~Space() = default;

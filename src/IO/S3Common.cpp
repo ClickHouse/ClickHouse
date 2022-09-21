@@ -37,6 +37,12 @@
 
 #    include <fstream>
 
+namespace ProfileEvents
+{
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
+}
+
 namespace DB
 {
 
@@ -805,8 +811,12 @@ namespace S3
     }
 
 
-    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
+        ProfileEvents::increment(ProfileEvents::S3HeadObject);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
@@ -828,9 +838,9 @@ namespace S3
         return {};
     }
 
-    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
-        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error).size;
+        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error, for_disk_s3).size;
     }
 
 }

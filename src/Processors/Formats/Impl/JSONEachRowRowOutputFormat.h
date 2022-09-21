@@ -39,10 +39,6 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
 
-    /// No totals and extremes.
-    void consumeTotals(Chunk) override {}
-    void consumeExtremes(Chunk) override {}
-
     size_t field_number = 0;
 
 private:
