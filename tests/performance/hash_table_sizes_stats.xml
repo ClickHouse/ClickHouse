@@ -1,4 +1,5 @@
 <test>
+    <!-- -->
     <settings>
         <max_size_to_preallocate_for_aggregation>1000000000</max_size_to_preallocate_for_aggregation>
     </settings>
