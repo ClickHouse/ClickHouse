@@ -194,7 +194,7 @@ public:
       *
       * Method process can be executed in parallel for different processors.
       */
-    virtual void process(bool trace_processors = false);
+    virtual void process(bool trace_processors);
 
     /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -354,6 +354,17 @@ public:
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
+    struct WorkHook
+    {
+        virtual ~WorkHook() = default;
+        virtual void onEnter() noexcept {}
+        virtual void onLeave() noexcept {}
+    };
+    void setWorkHook(const std::shared_ptr<WorkHook> & workHook_)
+    {
+        this->workHook = workHook_;
+    }
+
 protected:
     virtual void onCancel() {}
 
@@ -391,6 +402,8 @@ private:
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
+
+    std::shared_ptr<WorkHook> workHook;
 };
 
 

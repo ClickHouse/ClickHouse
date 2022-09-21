@@ -98,16 +98,8 @@ public:
     {
         auto status = ExceptionKeepingTransform::prepare();
 
-        if (!is_tracing_enabled)
+        if (!is_tracing_enabled || view.span == nullptr)
             return status;
-
-        if (view.span == nullptr)
-        {
-            view.span = std::make_shared<OpenTelemetry::SpanHolder>("MaterializedView");
-            view.span->addAttribute("clickhouse.view", view.table_id.getFullTableName());
-            view.span->addAttribute("clickhouse.source", views_data->source_storage_id.getFullTableName());
-            view.span->addAttribute("clickhouse.target", view.runtime_stats->target_name);
-        }
 
         if (status == Status::NeedData)
         {
@@ -117,30 +109,36 @@ public:
         {
             view.span->attach();
         }
-        // else, for READY status, span is attached in work function
+        /// else, for READY status, span is attached in work function
 
         return status;
     }
 
     void process(bool trace_processors) override
     {
-        if (view.span)
-            view.span->attach();
+        if (is_tracing_enabled)
+        {
+            if (view.span == nullptr)
+            {
+                view.span = std::make_shared<OpenTelemetry::SpanHolder>("MaterializedView");
+                view.span->addAttribute("clickhouse.view", view.table_id.getFullTableName());
+                view.span->addAttribute("clickhouse.source", views_data->source_storage_id.getFullTableName());
+                view.span->addAttribute("clickhouse.target", view.runtime_stats->target_name);
+            }
+            else
+            {
+                view.span->attach();
+            }
+        }
+        
         ExceptionKeepingTransform::process(trace_processors);
-    }
-
-    bool isTracingEnabled() const
-    {
-        return is_tracing_enabled;
     }
 
 protected:
     void onException() override
     {
         if (view.span)
-        {
             view.span->addAttribute(std::current_exception());
-        }
     }
 
     void onConsume(Chunk chunk) override;
@@ -222,17 +220,17 @@ private:
     std::exception_ptr any_exception;
 };
 
-class FinishMVTracingTransform final : public IProcessor
+class FinalizeOneMaterializedViewTransform final : public IProcessor
 {
 protected:
     ViewRuntimeData& view;
 
 public:
-    FinishMVTracingTransform(const Block & header, ViewRuntimeData & _view) : IProcessor({header}, {header}), view(_view)
+    FinalizeOneMaterializedViewTransform(const Block & header, ViewRuntimeData & _view) : IProcessor({header}, {header}), view(_view)
     {
     }
 
-    String getName() const override { return "FinishMVTracingTransform"; }
+    String getName() const override { return "FinalizeOneMaterializedViewTransform"; }
 
     Status prepare() override
     {
@@ -300,6 +298,41 @@ public:
         view.span->addAttribute(exception);
         view.span->finish();
     }
+};
+
+/// Setup a virtual OpenTelemetry span for processors to ensure they're under that given span.
+///
+/// Why we need this?
+/// 1st, for MV(Materialized View), a 'virtual' span is created so that span logs of all processors for one MV are under that virtual span.
+/// This makes the span log very clear and meaningful.
+///
+/// 2nd, processors of one MV are not executed sequentially, especially if there're two or more MVs for one source table.
+/// Processors of the 2nd MV might be scheduled before the MergeTreeSink processor of the first MV is executed.
+/// This is how current processors scheduling is designed.
+///
+/// So, for all processors of one MV, we need a 'context' to keep the span information(which is stored in ViewRuntimeData),
+/// and we set up the tracing context as the given span before a processor is scheduled to work.
+class ViewSpanAttacher : public IProcessor::WorkHook
+{
+public:
+    ViewSpanAttacher(ViewRuntimeData & view_ ) : view(view_)
+    {
+    }
+
+    void onEnter() noexcept override
+    {
+        if (view.span)
+            view.span->attach();
+    }
+
+    void onLeave() noexcept override
+    {
+        if (view.span)
+            view.span->detach();
+    }
+
+private:
+    ViewRuntimeData & view;
 };
 
 Chain buildPushingToViewsChain(
@@ -464,13 +497,25 @@ Chain buildPushingToViewsChain(
 
         if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
+            if (OpenTelemetry::CurrentContext().isTraceEnabled())
+            {
+                ViewRuntimeData & view = views_data->views.back();
+
+                // Attach hook to each processor of this Materialized View
+                auto attacher = std::make_shared<ViewSpanAttacher>(view);
+                auto & processors = out.getProcessors();
+                for (auto & processor : processors)
+                {
+                    processor->setWorkHook(attacher);
+                }
+
+                /// Add a sink to process OpenTelemetry related things when the processors of one MV complete
+                out.addSink(std::make_shared<FinalizeOneMaterializedViewTransform>(out.getOutputHeader(), view));
+            }
+
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data);
             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
-
-            /// Add a sink to process OpenTelemetry related things when the processors of one MV complete
-            if (executing_inner_query->isTracingEnabled())
-                out.addSink(std::make_shared<FinishMVTracingTransform>(out.getOutputHeader(), views_data->views.back()));
 
             out.addSource(std::move(executing_inner_query));
         }

@@ -43,14 +43,33 @@ std::string IProcessor::statusToName(Status status)
 
 void IProcessor::process(bool trace_processors)
 {
-    std::unique_ptr<OpenTelemetry::SpanHolder> span;
+    if (this->workHook)
+        this->workHook->onEnter();
+
+    OpenTelemetry::SpanHolderPtr span;
     if (trace_processors)
     {
         span = std::make_unique<OpenTelemetry::SpanHolder>(demangle(typeid(*this).name()) + "::work()");
         span->addAttribute("clickhouse.thread_id", CurrentThread::get().thread_id);
     }
+    
+    try
+    {
+        work();
 
-    work();
+        /// Explicitly release the object to finish the span
+        span.reset();
+    }
+    catch(...)
+    {
+        if (this->workHook)
+            this->workHook->onLeave();
+
+        throw;
+    }
+
+    if (this->workHook)
+        this->workHook->onLeave();
 }
 
 
