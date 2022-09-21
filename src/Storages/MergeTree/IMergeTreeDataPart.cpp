@@ -445,11 +445,11 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
+    for (const auto & column : columns)
+        column_name_to_position.emplace(column.name, pos++);
 
     for (const auto & column : columns)
     {
-        column_name_to_position.emplace(column.name, pos++);
-
         auto it = serialization_infos.find(column.name);
         auto serialization = it == serialization_infos.end()
             ? IDataType::getSerialization(column)
@@ -461,7 +461,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         {
             auto full_name = Nested::concatenateName(column.name, subname);
             serializations.emplace(full_name, subdata.serialization);
-        }, ISerialization::SubstreamData(serialization));
+        }, {serialization, nullptr, nullptr, nullptr});
     }
 
     columns_description = ColumnsDescription(columns);
@@ -534,11 +534,14 @@ void IMergeTreeDataPart::removeIfNeeded()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while removing part {} with path {}", name, path));
-
         /// FIXME If part it temporary, then directory will not be removed for 1 day (temporary_directories_lifetime).
         /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
         /// then all future attempts to execute part producing operation will fail with "directory already exists".
+        /// Seems like it's especially important for remote disks, because removal may fail due to network issues.
+        tryLogCurrentException(__PRETTY_FUNCTION__, "while removiong path: " + path);
+        assert(!is_temp);
+        assert(state != MergeTreeDataPartState::DeleteOnDestroy);
+        assert(state != MergeTreeDataPartState::Temporary);
     }
 }
 
@@ -1228,9 +1231,9 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
     assert(!txn || data_part_storage->exists(TXN_VERSION_METADATA_FILE_NAME));
 }
 
-void IMergeTreeDataPart::storeVersionMetadata(bool force) const
+void IMergeTreeDataPart::storeVersionMetadata() const
 {
-    if (!wasInvolvedInTransaction() && !force)
+    if (!wasInvolvedInTransaction())
         return;
 
     LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
@@ -1282,6 +1285,8 @@ void IMergeTreeDataPart::loadVersionMetadata() const
 try
 {
     data_part_storage->loadVersionMetadata(version, storage.log);
+
+
 }
 catch (Exception & e)
 {
@@ -1291,7 +1296,7 @@ catch (Exception & e)
 
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 {
-    assert(!storage.data_parts_loading_finished || !version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
+    assert(!version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
     bool created_by_transaction = !version.creation_tid.isPrehistoric();
     bool removed_by_transaction = version.isRemovalTIDLocked() && version.removal_tid_lock != Tx::PrehistoricTID.getHash();
     return created_by_transaction || removed_by_transaction;
@@ -1352,6 +1357,7 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     }
 }
 
+
 void IMergeTreeDataPart::appendFilesOfColumns(Strings & files)
 {
     files.push_back("columns.txt");
@@ -1408,10 +1414,7 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 {
     /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
-    {
-        LOG_DEBUG(storage.log, "Blobs for part {} cannot be removed because it's forced to be keeped", name);
         return std::make_pair(false, NameSet{});
-    }
 
     return storage.unlockSharedData(*this);
 }
@@ -1433,18 +1436,7 @@ void IMergeTreeDataPart::remove() const
     assert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
-    auto can_remove_callback = [this] ()
-    {
-        auto [can_remove, files_not_to_remove] = canRemovePart();
-        if (!can_remove)
-            LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
-
-        if (!files_not_to_remove.empty())
-            LOG_TRACE(storage.log, "Some blobs ({}) of part {} cannot be removed", fmt::join(files_not_to_remove, ", "), name);
-
-        return CanRemoveDescription{.can_remove_anything = can_remove, .files_not_to_remove = files_not_to_remove };
-    };
-
+    auto [can_remove, files_not_to_remove] = canRemovePart();
 
     if (!isStoredOnDisk())
         return;
@@ -1464,7 +1456,7 @@ void IMergeTreeDataPart::remove() const
         projection_checksums.emplace_back(IDataPartStorage::ProjectionChecksums{.name = p_name, .checksums = projection_part->checksums});
     }
 
-    data_part_storage->remove(std::move(can_remove_callback), checksums, projection_checksums, is_temp, getState(), storage.log);
+    data_part_storage->remove(can_remove, files_not_to_remove, checksums, projection_checksums, is_temp, getState(), storage.log);
 }
 
 String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached) const

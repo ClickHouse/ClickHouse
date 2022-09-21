@@ -63,10 +63,9 @@ ColumnsDescription readSchemaFromFormat(
         {
             names_and_types = external_schema_reader->readSchema();
         }
-        catch (Exception & e)
+        catch (const DB::Exception & e)
         {
-            e.addMessage(fmt::format("Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
-            throw;
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, e.message());
         }
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
@@ -85,12 +84,6 @@ ColumnsDescription readSchemaFromFormat(
                 if (!buf)
                     break;
                 is_eof = buf->eof();
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(fmt::format(
-                    "Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
-                throw;
             }
             catch (...)
             {
@@ -143,21 +136,7 @@ ColumnsDescription readSchemaFromFormat(
                 }
 
                 if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
-                {
-                    try
-                    {
-                        throw;
-                    }
-                    catch (Exception & e)
-                    {
-                        e.addMessage(fmt::format("Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
-                        throw;
-                    }
-                    catch (...)
-                    {
-                        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
-                    }
-                }
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
 
                 exception_messages += "\n" + exception_message;
             }

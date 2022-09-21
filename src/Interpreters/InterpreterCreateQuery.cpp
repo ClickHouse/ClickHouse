@@ -1001,26 +1001,26 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
-    DDLGuardPtr ddl_guard;
-
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
+
+        if (database->getEngineName() == "Replicated")
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
-            create.setDatabase(database_name);
-            guard->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+
+            if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
+                ptr && !getContext()->getClientInfo().is_replicated_database_internal)
+            {
+                create.setDatabase(database_name);
+                guard->releaseTableLock();
+                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+            }
         }
 
         if (!create.cluster.empty())
             return executeQueryOnCluster(create);
-
-        /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
-        /// and hold it until table is attached
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
 
         bool if_not_exists = create.if_not_exists;
 
@@ -1053,7 +1053,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.attach_from_path)
     {
-        chassert(!ddl_guard);
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
@@ -1146,30 +1145,27 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (need_add_to_database && database->getEngineName() == "Replicated")
     {
-        chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
-        assertOrSetUUID(create, database);
-        guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+
+        if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
+            ptr && !getContext()->getClientInfo().is_replicated_database_internal)
+        {
+            assertOrSetUUID(create, database);
+            guard->releaseTableLock();
+            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+        }
     }
 
     if (!create.cluster.empty())
-    {
-        chassert(!ddl_guard);
         return executeQueryOnCluster(create);
-    }
 
     if (create.replace_table)
-    {
-        chassert(!ddl_guard);
         return doCreateOrReplaceTable(create, properties);
-    }
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, ddl_guard);
-    ddl_guard.reset();
+    bool created = doCreateTable(create, properties);
 
     if (!created)   /// Table already exists
         return {};
@@ -1184,8 +1180,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 }
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
-                                           const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard)
+                                           const InterpreterCreateQuery::TableProperties & properties)
 {
     if (create.temporary)
     {
@@ -1198,11 +1193,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         return true;
     }
 
-    if (!ddl_guard)
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+    std::unique_ptr<DDLGuard> guard;
 
     String data_path;
     DatabasePtr database;
+
+    /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
+      * If table doesn't exist, one thread is creating table, while others wait in DDLGuard.
+      */
+    guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
 
     database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
     assertOrSetUUID(create, database);
@@ -1412,9 +1411,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     try
     {
         /// Create temporary table (random name will be generated)
-        DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard);
-        ddl_guard.reset();
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties);
         assert(done);
         created = true;
 

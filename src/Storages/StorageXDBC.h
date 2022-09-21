@@ -32,8 +32,7 @@ public:
         const StorageID & table_id_,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        ColumnsDescription columns_,
-        ConstraintsDescription constraints_,
+        const ColumnsDescription & columns_,
         const String & comment,
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);

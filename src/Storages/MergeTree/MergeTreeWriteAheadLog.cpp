@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
@@ -123,10 +122,7 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
     init();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    std::unique_lock<std::mutex> & parts_lock)
+MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::unique_lock lock(write_mutex);
 
@@ -176,9 +172,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 part->uuid = metadata.part_uuid;
 
                 block = block_in.read();
-
-                if (storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock))
-                    continue;
             }
             else
             {
@@ -244,15 +237,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     MergeTreeData::MutableDataPartsVector result;
     std::copy_if(parts.begin(), parts.end(), std::back_inserter(result),
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
-
-    /// All parts in WAL had been already committed into the disk -> clear the WAL
-    if (result.empty())
-    {
-        LOG_DEBUG(log, "WAL file '{}' had been completely processed. Removing.", path);
-        disk->removeFile(path);
-        init();
-        return {};
-    }
 
     return result;
 }

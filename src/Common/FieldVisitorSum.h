@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -34,7 +33,7 @@ public:
     template <typename T>
     bool operator() (DecimalField<T> & x) const
     {
-        x += rhs.get<DecimalField<T>>();
+        x += get<DecimalField<T>>(rhs);
         return x.getValue() != T(0);
     }
 
@@ -42,9 +41,10 @@ public:
     requires is_big_int_v<T>
     bool operator() (T & x) const
     {
-        x += applyVisitor(FieldVisitorConvertToNumber<T>(), rhs);
+        x += rhs.reinterpret<T>();
         return x != T(0);
     }
 };
 
 }
+

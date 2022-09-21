@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/dictionaries/
 sidebar_label: Dictionaries
 sidebar_position: 35
 ---

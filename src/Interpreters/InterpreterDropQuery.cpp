@@ -139,6 +139,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = !query_ptr->as<ASTDropQuery>()->table;
+        bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
+                                       !context_->getClientInfo().is_replicated_database_internal &&
+                                       !is_drop_or_detach_database;
 
         AccessFlags drop_storage;
 
@@ -149,7 +152,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         else
             drop_storage = AccessType::DROP_TABLE;
 
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
+        if (is_replicated_ddl_query)
         {
             if (query.kind == ASTDropQuery::Kind::Detach)
                 context_->checkAccess(drop_storage, table_id);
@@ -160,7 +163,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             ddl_guard->releaseTableLock();
             table.reset();
-            return database->tryEnqueueReplicatedDDL(query.clone(), context_);
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query.clone(), context_);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)

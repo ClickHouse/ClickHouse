@@ -8,7 +8,6 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
-#include <QueryPipeline/BlockIO.h>
 
 #include <ctime>
 #include <functional>
@@ -337,13 +336,6 @@ public:
     virtual void stopReplication()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
-    }
-
-    virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
-
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] bool internal = false) /// NOLINT
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
     }
 
     /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.

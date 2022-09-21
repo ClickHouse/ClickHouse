@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/replication_queue
----
 # system.replication_queue {#system_tables-replication_queue}
 
 Содержит информацию о задачах из очередей репликации, хранящихся в ZooKeeper, для таблиц семейства `ReplicatedMergeTree`.

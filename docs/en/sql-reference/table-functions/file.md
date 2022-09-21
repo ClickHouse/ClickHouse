@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/file
 sidebar_position: 37
 sidebar_label: file
 ---
@@ -13,7 +12,7 @@ Creates a table from a file. This table function is similar to [url](../../sql-r
 **Syntax**
 
 ``` sql
-file(path [,format] [,structure])
+file(path, format, structure)
 ```
 
 **Parameters**

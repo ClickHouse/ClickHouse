@@ -18,10 +18,11 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# Don't create self-extracting clickhouse for split build
-if (ENABLE_CLICKHOUSE_SELF_EXTRACTING AND SPLIT_SHARED_LIBRARIES)
-    message (STATUS "Self-extracting on split build is not supported")
-    unset (ENABLE_CLICKHOUSE_SELF_EXTRACTING CACHE)
+if (SPLIT_SHARED_LIBRARIES)
+    # Don't create self-extracting clickhouse for split build
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
+else ()
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
 endif ()
 
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
@@ -54,7 +55,7 @@ else ()
 endif ()
 
 if (NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to external dynamically loaded libraries" ${ENABLE_CLICKHOUSE_ALL})
+    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source" ${ENABLE_CLICKHOUSE_ALL})
 endif ()
 
 # https://presentations.clickhouse.com/matemarketing_2020/
