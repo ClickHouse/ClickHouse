@@ -1,3 +1,52 @@
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"statistics":
+	{
+		"elapsed": 0.005748046,
+		"rows_read": 0,
+		"bytes_read": 0
+	}
+}
+number
+UInt64
+"number"
+"UInt64"
+["number"]
+["UInt64"]
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+
+	</data>
+	<rows>0</rows>
+	<statistics>
+		<elapsed>0.005007338</elapsed>
+		<rows_read>0</rows_read>
+		<bytes_read>0</bytes_read>
+	</statistics>
+</result>
  number
 
       0 
