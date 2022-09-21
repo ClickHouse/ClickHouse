@@ -494,9 +494,18 @@ void StorageKeeperMap::drop()
     checkTable<true>();
     auto client = getClient();
 
-    client->remove(table_path);
+    // we allow ZNONODE in case we got hardware error on previous drop
+    if (auto code = client->tryRemove(table_path); code == Coordination::Error::ZNOTEMPTY)
+    {
+        throw zkutil::KeeperException(
+            code, "{} contains children which shouldn't happen. Please DETACH the table if you want to delete it", table_path);
+    }
 
-    if (!client->getChildren(tables_path).empty())
+    std::vector<std::string> children;
+    // if the the tables is not found, some other table removed it
+    // if there are children, some other tables are still using this path as storage
+    if (auto code = client->tryGetChildren(tables_path, children);
+        code != Coordination::Error::ZOK || !children.empty())
         return;
 
     Coordination::Requests ops;
