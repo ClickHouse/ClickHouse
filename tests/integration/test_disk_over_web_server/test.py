@@ -25,15 +25,17 @@ def cluster():
         global uuids
         for i in range(3):
             node1.query(
-                """ CREATE TABLE data{} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def';""".format(
+                """ CREATE TABLE data{} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1;""".format(
                     i
                 )
             )
-            node1.query(
-                "INSERT INTO data{} SELECT number FROM numbers(500000 * {})".format(
-                    i, i + 1
+
+            for _ in range(10):
+                node1.query(
+                    "INSERT INTO data{} SELECT number FROM numbers(500000 * {})".format(
+                        i, i + 1
+                    )
                 )
-            )
             expected = node1.query("SELECT * FROM data{} ORDER BY id".format(i))
 
             metadata_path = node1.query(
