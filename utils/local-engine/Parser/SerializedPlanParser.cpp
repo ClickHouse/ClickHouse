@@ -1029,114 +1029,6 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                     return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.date()), type, getUniqueName(std::to_string(literal.date()))));
                 }
-                case substrait::Expression_Literal::kList: {
-                    SizeLimits limit;
-                    if (literal.has_empty_list())
-                    {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "empty list not support!");
-                    }
-                    MutableColumnPtr values;
-                    DataTypePtr type;
-                    auto first_value = literal.list().values(0);
-                    if (first_value.has_boolean())
-                    {
-                        type = std::make_shared<DataTypeUInt8>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).boolean() ? 1 : 0);
-                        }
-                    }
-                    else if (first_value.has_i8())
-                    {
-                        type = std::make_shared<DataTypeInt8>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).i8());
-                        }
-                    }
-                    else if (first_value.has_i16())
-                    {
-                        type = std::make_shared<DataTypeInt16>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).i16());
-                        }
-                    }
-                    else if (first_value.has_i32())
-                    {
-                        type = std::make_shared<DataTypeInt32>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).i32());
-                        }
-                    }
-                    else if (first_value.has_i64())
-                    {
-                        type = std::make_shared<DataTypeInt64>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).i64());
-                        }
-                    }
-                    else if (first_value.has_fp32())
-                    {
-                        type = std::make_shared<DataTypeFloat32>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).fp32());
-                        }
-                    }
-                    else if (first_value.has_fp64())
-                    {
-                        type = std::make_shared<DataTypeFloat64>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).fp64());
-                        }
-                    }
-                    else if (first_value.has_date())
-                    {
-                        type = std::make_shared<DataTypeDate32>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).date());
-                        }
-                    }
-                    else if (first_value.has_string())
-                    {
-                        type = std::make_shared<DataTypeString>();
-                        values = type->createColumn();
-                        for (int i = 0; i < literal.list().values_size(); ++i)
-                        {
-                            values->insert(literal.list().values(i).string());
-                        }
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::UNKNOWN_TYPE,
-                            "unsupported literal list type. {}",
-                            magic_enum::enum_name(first_value.literal_type_case()));
-                    }
-                    auto set = std::make_shared<Set>(limit, true, false);
-                    Block values_block;
-                    auto name = getUniqueName("__set");
-                    values_block.insert(ColumnWithTypeAndName(std::move(values), type, name));
-                    set->setHeader(values_block.getColumnsWithTypeAndName());
-                    set->insertFromBlock(values_block.getColumnsWithTypeAndName());
-                    set->finishInsert();
-
-                    auto arg = ColumnSet::create(set->getTotalRowCount(), set);
-                    return &action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name));
-                }
                 case substrait::Expression_Literal::kNull: {
                     DataTypePtr nested_type;
                     if (literal.null().has_i8())
@@ -1265,7 +1157,93 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
         case substrait::Expression::RexTypeCase::kSingularOrList: {
             DB::ActionsDAG::NodeRawConstPtrs args;
             args.emplace_back(parseArgument(action_dag, rel.singular_or_list().value()));
-            args.emplace_back(parseArgument(action_dag, rel.singular_or_list().options(0)));
+            const auto & options = rel.singular_or_list().options();
+
+            SizeLimits limit;
+            if (options.empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "empty list not support!");
+            }
+            ColumnPtr values;
+            DataTypePtr type;
+            if (!options[0].has_literal())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "in expression values must be the literal!");
+            }
+            auto first_value = options[0].literal();
+            using FieldGetter = std::function<Field (substrait::Expression_Literal)>;
+            auto fill_values = [options](DataTypePtr type, FieldGetter getter) -> ColumnPtr {
+                auto values = type->createColumn();
+                for (const auto & v : options)
+                {
+                    values->insert(getter(v.literal()));
+                }
+                return values;
+            };
+            if (first_value.has_boolean())
+            {
+                type = std::make_shared<DataTypeUInt8>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.boolean() ? 1 : 0;});
+            }
+            else if (first_value.has_i8())
+            {
+                type = std::make_shared<DataTypeInt8>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i8();});
+            }
+            else if (first_value.has_i16())
+            {
+                type = std::make_shared<DataTypeInt16>();
+                values = type->createColumn();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i16();});
+            }
+            else if (first_value.has_i32())
+            {
+                type = std::make_shared<DataTypeInt32>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i32();});
+            }
+            else if (first_value.has_i64())
+            {
+                type = std::make_shared<DataTypeInt64>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i64();});
+            }
+            else if (first_value.has_fp32())
+            {
+                type = std::make_shared<DataTypeFloat32>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.fp32();});
+            }
+            else if (first_value.has_fp64())
+            {
+                type = std::make_shared<DataTypeFloat64>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.fp64();});
+            }
+            else if (first_value.has_date())
+            {
+                type = std::make_shared<DataTypeDate32>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.date();});
+            }
+            else if (first_value.has_string())
+            {
+                type = std::make_shared<DataTypeString>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.string();});
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TYPE,
+                    "unsupported literal list type. {}",
+                    magic_enum::enum_name(first_value.literal_type_case()));
+            }
+            auto set = std::make_shared<Set>(limit, true, false);
+            Block values_block;
+            auto name = getUniqueName("__set");
+            values_block.insert(ColumnWithTypeAndName(values, type, name));
+            set->setHeader(values_block.getColumnsWithTypeAndName());
+            set->insertFromBlock(values_block.getColumnsWithTypeAndName());
+            set->finishInsert();
+
+            auto arg = ColumnSet::create(set->getTotalRowCount(), set);
+            args.emplace_back(&action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name)));
+
             const auto * function_node = toFunctionNode(action_dag, "in", args);
             action_dag->addOrReplaceInIndex(*function_node);
             return function_node;
