@@ -30,13 +30,13 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISeria
 
 void JSONEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    writeChar(',', out);
+    writeChar(',', *ostr);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    writeChar('{', out);
+    writeChar('{', *ostr);
 }
 
 
@@ -92,7 +92,7 @@ void JSONEachRowRowOutputFormat::writePrefix()
 {
     if (settings.json.array_of_rows)
     {
-        writeCString("[\n", out);
+        writeCString("[\n", *ostr);
     }
 }
 
