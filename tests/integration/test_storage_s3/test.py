@@ -1704,7 +1704,8 @@ def test_ast_auth_headers(started_cluster):
         f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
     )
 
-    assert "Forbidden Error. (S3_ERROR)" in result
+    assert "Forbidden Error" in result
+    assert "S3Exception" in result
 
     result = instance.query(
         f"select * from s3('http://resolver:8080/{bucket}/{filename}', 'CSV', headers(Authorization=`Bearer TOKEN`))"
