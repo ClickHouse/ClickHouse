@@ -654,6 +654,11 @@ struct ToStartOfHourImpl
         return dateIsNotSupported(name);
     }
 
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toStartOfHour(Int64(t.whole)), 0};
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
