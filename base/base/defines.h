@@ -16,10 +16,10 @@
 #endif
 
 #if !defined(likely)
-#    define likely(x)   (__builtin_expect(!!(x), 1))
+#    define likely(x)   (x)
 #endif
 #if !defined(unlikely)
-#    define unlikely(x) (__builtin_expect(!!(x), 0))
+#    define unlikely(x) (x)
 #endif
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
