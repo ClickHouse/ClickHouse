@@ -103,7 +103,7 @@ public:
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
 
     void write(const Block & block);
-    Stat finishWriting(bool use_header = true);
+    Stat finishWriting();
     bool isWriteFinished() const;
 
     Block read();

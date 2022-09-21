@@ -1601,7 +1601,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         data_variants.without_key = place;
     }
 
-    auto stat = out_stream.finishWriting(false);
+    auto stat = out_stream.finishWriting();
 
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, stat.compressed_size);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, stat.uncompressed_size);
