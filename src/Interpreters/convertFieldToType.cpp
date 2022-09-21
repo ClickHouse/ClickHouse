@@ -3,6 +3,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
+#include <google/protobuf/compiler/js/js_generator.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
@@ -116,13 +118,11 @@ Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & t
     if (!type.canStoreWhole(dValue))
         throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    std::stringstream stream;
-    stream<<dValue;
-    String sValue  = stream.str();
+    String sValue = convertFieldToString(from);
     int fromScale = sValue.length()- sValue.find('.') - 1;
 
-    auto scaled_value = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(dValue, fromScale);
-    return DecimalField<T>(scaled_value, fromScale);
+    auto scaledValue = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(dValue, fromScale);
+    return DecimalField<T>(scaledValue, fromScale);
 }
 
 template <typename To>
