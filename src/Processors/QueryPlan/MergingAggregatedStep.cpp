@@ -1,3 +1,4 @@
+#include <Interpreters/Context.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -9,15 +10,25 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
+static bool memoryBoundMergingWillBeUsed(
+    const DataStream & input_stream,
+    bool memory_bound_merging_of_aggregation_results_enabled,
+    const SortDescription & group_by_sort_description)
+{
+    return memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty()
+        && input_stream.sort_scope >= DataStream::SortScope::Stream && input_stream.sort_description.hasPrefix(group_by_sort_description);
+}
+
+static ITransformingStep::Traits getTraits(bool precedes_merging, bool memory_efficient_aggregation, bool memory_bound_merging_will_be_used)
 {
     return ITransformingStep::Traits
     {
         {
             .preserves_distinct_columns = false,
-            .returns_single_stream = should_produce_results_in_order_of_bucket_number,
+            .returns_single_stream = precedes_merging && (memory_efficient_aggregation || memory_bound_merging_will_be_used),
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
+            .can_enforce_sorting_properties_in_distributed_query = memory_bound_merging_will_be_used,
         },
         {
             .preserves_number_of_rows = false,
@@ -38,7 +49,13 @@ MergingAggregatedStep::MergingAggregatedStep(
     bool precedes_merging_,
     bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
-        input_stream_, params_.getHeader(input_stream_.header, final_), getTraits(precedes_merging_ && memory_efficient_aggregation_))
+        input_stream_,
+        params_.getHeader(input_stream_.header, final_),
+        getTraits(
+            precedes_merging_,
+            memory_efficient_aggregation_,
+            DB::memoryBoundMergingWillBeUsed(
+                input_stream_, memory_bound_merging_of_aggregation_results_enabled_, group_by_sort_description_)))
     , params(std::move(params_))
     , final(final_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
@@ -133,10 +150,14 @@ void MergingAggregatedStep::updateOutputStream()
         output_stream->distinct_columns.insert(key);
 }
 
+void MergingAggregatedStep::adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr context) const
+{
+    context->setSetting("enable_memory_bound_merging_of_aggregation_results", true);
+}
+
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const
 {
-    const auto & input_stream = input_streams.front();
-    return memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty()
-        && input_stream.sort_scope >= DataStream::SortScope::Stream && input_stream.sort_description.hasPrefix(group_by_sort_description);
+    return DB::memoryBoundMergingWillBeUsed(
+        input_streams.front(), memory_bound_merging_of_aggregation_results_enabled, group_by_sort_description);
 }
 }

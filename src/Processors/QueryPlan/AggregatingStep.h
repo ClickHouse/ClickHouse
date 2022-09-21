@@ -54,10 +54,12 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
-    bool memoryBoundMergingWillBeUsed() const;
+    void adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr context) const override;
 
 private:
     void updateOutputStream() override;
+
+    bool memoryBoundMergingWillBeUsed() const;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;

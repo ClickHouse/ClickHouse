@@ -27,27 +27,16 @@ namespace
 
 /// We determine output stream sort properties by a local plan (local because otherwise table could be unknown).
 /// If no local shard exist for this cluster, no sort properties will be provided, c'est la vie.
-auto getLocalPlanSortDescription(const std::vector<QueryPlanPtr> & plans, ContextMutablePtr context)
+auto getRemoteShardsOutputStreamSortingProperties(const std::vector<QueryPlanPtr> & plans, ContextMutablePtr context)
 {
     SortDescription sort_description;
     DataStream::SortScope sort_scope = DataStream::SortScope::None;
     if (!plans.empty())
     {
-        /// Currently we've implemented sorting properties enforcing only for memory bound merging (and MBM is implemented only for aggregation in order).
-        const IQueryPlanStep * step = nullptr;
-        if (const auto * aggregating_step = dynamic_cast<const AggregatingStep *>(plans.front()->getRootNode()->step.get());
-            aggregating_step && aggregating_step->memoryBoundMergingWillBeUsed())
-            step = aggregating_step;
-        if (const auto * merging_step = dynamic_cast<const MergingAggregatedStep *>(plans.front()->getRootNode()->step.get());
-            merging_step && merging_step->memoryBoundMergingWillBeUsed())
-            step = merging_step;
-        if (step)
+        if (const auto * step = dynamic_cast<const ITransformingStep *>(plans.front()->getRootNode()->step.get());
+            step && step->getDataStreamTraits().can_enforce_sorting_properties_in_distributed_query)
         {
-            /// So, we synchronize the corresponding settings.
-            context->setSetting("enable_memory_bound_merging_of_aggregation_results", true);
-            context->setSetting("optimize_aggregation_in_order", true);
-            /// And explicitly set the setting which will tell remote node to use aggregation in order and memory bound merging no matter what.
-            context->setSetting("force_aggregation_in_order", true);
+            step->adjustSettingsToEnforceSortingPropertiesInDistributedQuery(context);
             sort_description = step->getOutputStream().sort_description;
             sort_scope = step->getOutputStream().sort_scope;
         }
@@ -231,7 +220,7 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
-        auto && [sort_description, sort_scope] = getLocalPlanSortDescription(plans, new_context);
+        auto && [sort_description, sort_scope] = getRemoteShardsOutputStreamSortingProperties(plans, new_context);
 
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
@@ -344,7 +333,7 @@ void executeQueryWithParallelReplicas(
     if (!remote_shards.empty())
     {
         auto new_context = Context::createCopy(context);
-        auto && [sort_description, sort_scope] = getLocalPlanSortDescription(plans, new_context);
+        auto && [sort_description, sort_scope] = getRemoteShardsOutputStreamSortingProperties(plans, new_context);
 
         for (const auto & shard : remote_shards)
         {
