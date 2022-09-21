@@ -1058,9 +1058,9 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
+    const auto & config_rw_settings = settings.rw_settings;
 
-    bool s3_rw_config_changed = upd.rw_settings != settings.rw_settings;
-    if (s3_rw_config_changed)
+    if (upd.rw_settings != config_rw_settings)
         upd.rw_settings = settings.rw_settings;
 
     upd.rw_settings.updateFromSettingsIfEmpty(ctx->getSettings());
@@ -1070,19 +1070,14 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
         if (upd.static_configuration)
             return;
 
-        bool s3_auth_config_changed = settings.auth_settings != upd.auth_settings;
-        if (s3_auth_config_changed)
+        if (settings.auth_settings == upd.auth_settings)
             return;
     }
 
-    auto credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
-    auto headers = settings.auth_settings.headers;
-
-    if (!upd.headers_from_ast.empty())
-        headers.insert(headers.end(), upd.headers_from_ast.begin(), upd.headers_from_ast.end());
+    upd.auth_settings.updateFrom(settings.auth_settings);
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        settings.auth_settings.region,
+        upd.auth_settings.region,
         ctx->getRemoteHostFilter(),
         ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
         ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
@@ -1091,17 +1086,20 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.rw_settings.max_connections;
 
+    auto credentials = Aws::Auth::AWSCredentials(upd.auth_settings.access_key_id, upd.auth_settings.secret_access_key);
+    auto headers = upd.auth_settings.headers;
+    if (!upd.headers_from_ast.empty())
+        headers.insert(headers.end(), upd.headers_from_ast.begin(), upd.headers_from_ast.end());
+
     upd.client = S3::ClientFactory::instance().create(
         client_configuration,
         upd.uri.is_virtual_hosted_style,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
-        settings.auth_settings.server_side_encryption_customer_key_base64,
+        upd.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
-        settings.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        settings.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
-
-    upd.auth_settings = std::move(settings.auth_settings);
+        upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
+        upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
 }
 
 

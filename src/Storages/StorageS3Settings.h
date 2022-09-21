@@ -42,6 +42,21 @@ struct S3Settings
                 && use_environment_credentials == other.use_environment_credentials
                 && use_insecure_imds_request == other.use_insecure_imds_request;
         }
+
+        void updateFrom(const AuthSettings & from)
+        {
+            /// Update with check for emptyness only parameters which
+            /// can be passed not only from config, but via ast.
+
+            if (!from.access_key_id.empty())
+                access_key_id = from.access_key_id;
+            if (!from.secret_access_key.empty())
+                secret_access_key = from.secret_access_key;
+
+            headers = from.headers;
+            region = from.region;
+            server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
+        }
     };
 
     struct ReadWriteSettings
