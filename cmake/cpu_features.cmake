@@ -11,49 +11,68 @@ cmake_push_check_state ()
 # All of them are unrelated to the instruction set at the host machine
 # (you can compile for newer instruction set on old machines and vice versa).
 
-option (ENABLE_SSSE3 "Use SSSE3 instructions on x86_64" 1)
-option (ENABLE_SSE41 "Use SSE4.1 instructions on x86_64" 1)
-option (ENABLE_SSE42 "Use SSE4.2 instructions on x86_64" 1)
-option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
-option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
-option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
-option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
-option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
-option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
-option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
-option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
-option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
-
-# X86: Allow compilation for a SSE2-only target machine. Done by a special build in CI for embedded or very old hardware.
-option (NO_SSE3_OR_HIGHER "Disable SSE3 or higher on x86_64" 0)
-if (NO_SSE3_OR_HIGHER)
-    SET(ENABLE_SSSE3 0)
-    SET(ENABLE_SSE41 0)
-    SET(ENABLE_SSE42 0)
-    SET(ENABLE_PCLMULQDQ 0)
-    SET(ENABLE_POPCNT 0)
-    SET(ENABLE_AVX 0)
-    SET(ENABLE_AVX2 0)
-    SET(ENABLE_AVX512 0)
-    SET(ENABLE_AVX512_VBMI 0)
-    SET(ENABLE_BMI 0)
-    SET(ENABLE_AVX2_FOR_SPEC_OP 0)
-    SET(ENABLE_AVX512_FOR_SPEC_OP 0)
-endif()
-
 option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
 
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs")
+    # ARM publishes almost every year a new revision of it's ISA [1]. Each revision comes with new mandatory and optional features from
+    # which CPU vendors can pick and choose. This creates a lot of variability ... We provide two build "profiles", one for maximum
+    # compatibility intended to run on all 64-bit ARM hardware released after 2013 (e.g. Raspberry Pi 4), and one for modern ARM server
+    # CPUs, (e.g. Graviton).
+    #
+    # [1] https://en.wikipedia.org/wiki/AArch64
+    option (NO_ARMV81_OR_HIGHER "Disable ARMv8.1 or higher on Aarch64 for maximum compatibility with older/embedded hardware." 0)
+
+    if (NO_ARMV81_OR_HIGHER)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8")
+    else ()
+        # ARMv8.2 is ancient but the baseline for Graviton 2 and 3 processors [1]. In particular, it includes LSE (first made mandatory with
+        # ARMv8.1) which provides nice speedups without having to fall back to v8.0  "-moutline-atomics" compat flag [2, 3, 4] that imposes
+        # a recent glibc with runtime dispatch helper, limiting our ability to run on old OSs.
+        #
+        # [1] https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
+        # [2] https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
+        # [3] https://mysqlonarm.github.io/ARM-LSE-and-MySQL/
+        # [4] https://dev.to/aws-builders/large-system-extensions-for-aws-graviton-processors-3eci
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+crc+simd+crypto+dotprod+ssbs")
+    endif ()
 
 elseif (ARCH_PPC64LE)
     # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
 
 elseif (ARCH_AMD64)
+    option (ENABLE_SSSE3 "Use SSSE3 instructions on x86_64" 1)
+    option (ENABLE_SSE41 "Use SSE4.1 instructions on x86_64" 1)
+    option (ENABLE_SSE42 "Use SSE4.2 instructions on x86_64" 1)
+    option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
+    option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
+    option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
+    option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
+    option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
+    option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
+    option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
+    option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
+    option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
+
+    option (NO_SSE3_OR_HIGHER "Disable SSE3 or higher on x86_64 for maximum compatibility with older/embedded hardware." 0)
+    if (NO_SSE3_OR_HIGHER)
+        SET(ENABLE_SSSE3 0)
+        SET(ENABLE_SSE41 0)
+        SET(ENABLE_SSE42 0)
+        SET(ENABLE_PCLMULQDQ 0)
+        SET(ENABLE_POPCNT 0)
+        SET(ENABLE_AVX 0)
+        SET(ENABLE_AVX2 0)
+        SET(ENABLE_AVX512 0)
+        SET(ENABLE_AVX512_VBMI 0)
+        SET(ENABLE_BMI 0)
+        SET(ENABLE_AVX2_FOR_SPEC_OP 0)
+        SET(ENABLE_AVX512_FOR_SPEC_OP 0)
+    endif()
+
     set (TEST_FLAG "-mssse3")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
