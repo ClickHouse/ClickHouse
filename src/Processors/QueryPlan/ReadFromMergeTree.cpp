@@ -143,7 +143,12 @@ ReadFromMergeTree::ReadFromMergeTree(
         {
             auto const & settings = context->getSettingsRef();
             if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
+            {
                 output_stream->sort_scope = DataStream::SortScope::Stream;
+                const size_t used_prefix_of_sorting_key_size = query_info.getInputOrderInfo()->used_prefix_of_sorting_key_size;
+                if (sort_description.size() > used_prefix_of_sorting_key_size)
+                    sort_description.resize(used_prefix_of_sorting_key_size);
+            }
             else
                 output_stream->sort_scope = DataStream::SortScope::Chunk;
         }
@@ -179,7 +184,6 @@ Pipe ReadFromMergeTree::readFromPool(
         sum_marks,
         min_marks_for_concurrent_read,
         std::move(parts_with_range),
-        data,
         storage_snapshot,
         prewhere_info,
         required_columns,
