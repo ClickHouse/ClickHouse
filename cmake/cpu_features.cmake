@@ -17,7 +17,7 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    # ARM publishes almost every year a new revision of it's ISA [1]. Each revision comes with new mandatory and optional features from
+    # ARM publishes almost every year a new revision of it's ISA [1]. Each version comes with new mandatory and optional features from
     # which CPU vendors can pick and choose. This creates a lot of variability ... We provide two build "profiles", one for maximum
     # compatibility intended to run on all 64-bit ARM hardware released after 2013 (e.g. Raspberry Pi 4), and one for modern ARM server
     # CPUs, (e.g. Graviton).
@@ -26,19 +26,35 @@ elseif (ARCH_AARCH64)
     option (NO_ARMV81_OR_HIGHER "Disable ARMv8.1 or higher on Aarch64 for maximum compatibility with older/embedded hardware." 0)
 
     if (NO_ARMV81_OR_HIGHER)
-        # In v8.0, crc32 is optional, in v8.1 it's mandatory. Enable it regardless as __crc32()* is used in lot's of places and even very
-        # old ARM CPUs support it.
+        # crc32 is optional in v8.0 and mandatory in v8.1. Enable it as __crc32()* is used in lot's of places and even very old ARM CPUs
+        # support it.
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
     else ()
-        # ARMv8.2 is ancient but the baseline for Graviton 2 and 3 processors [1]. In particular, it includes LSE (first made mandatory with
-        # ARMv8.1) which provides nice speedups without having to fall back to v8.0  "-moutline-atomics" compat flag [2, 3, 4] that imposes
-        # a recent glibc with runtime dispatch helper, limiting our ability to run on old OSs.
+        # ARMv8.2 is quite ancient but the lowest common denominator supported by both Graviton 2 and 3 processors [1]. In particular, it
+        # includes LSE (made mandatory with ARMv8.1) which provides nice speedups without having to fall back to compat flag
+        # "-moutline-atomics" for v8.0 [2, 3, 4] that requires a recent glibc with runtime dispatch helper, limiting our ability to run on
+        # old OSs.
+        #
+        # simd:    NEON, introduced as optional in v8.0, A few extensions were added with v8.1 but it's still not mandatory. Enables the
+        #          compiler to auto-vectorize.
+        # sve:     Scalable Vector Extensions, introduced as optional in v8.2. Available in Graviton 3 but not in Graviton 2, and most likely
+        #          also not in CI machines. Compiler support for autovectorization is rudimentary at the time of writing, see [5]. Can be
+        #          enabled one-fine-day (TM) but not now.
+        # ssbs:    "Speculative Store Bypass Safe". Optional in v8.0, mandatory in v8.5. Meltdown/spectre countermeasure.
+        # crypto:  SHA1, SHA256, AES. Optional in v8.0. In v8.4, further algorithms were added but it's still optional, see [6].
+        # dotprod: Scalar vector product (SDOT and UDOT instructions). Probably the most obscure extra flag with doubtful performance benefits
+        #          but it has been activated since always, so why not enable it. It's not 100% clear in which revision this flag was
+        #          introduced as optional, either in v8.2 [7] or in v8.4 [8].
         #
         # [1] https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
         # [2] https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
         # [3] https://mysqlonarm.github.io/ARM-LSE-and-MySQL/
         # [4] https://dev.to/aws-builders/large-system-extensions-for-aws-graviton-processors-3eci
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+crc+simd+crypto+dotprod+ssbs")
+        # [5] https://developer.arm.com/tools-and-software/open-source-software/developer-tools/llvm-toolchain/sve-support
+        # [6] https://developer.arm.com/documentation/100067/0612/armclang-Command-line-Options/-mcpu?lang=en
+        # [7] https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html
+        # [8] https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs")
     endif ()
 
 elseif (ARCH_PPC64LE)
