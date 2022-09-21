@@ -3649,7 +3649,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
         {
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
-            LOG_TRACE(log, "Got {} (of {}) replicas confirmed quorum {}, going to remove node",
+            LOG_TRACE(log, "Got {} (of {} required) replicas confirmed quorum {}, going to remove node",
                       quorum_entry.replicas.size(), quorum_entry.required_number_of_replicas, quorum_status_path);
 
             Coordination::Requests ops;
@@ -4647,6 +4647,13 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         metadata_version = entry.alter_version;
 
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", metadata_version);
+    }
+
+    {
+        /// Reset Object columns, because column of type
+        /// Object may be added or dropped by alter.
+        auto parts_lock = lockParts();
+        resetObjectColumnsFromActiveParts(parts_lock);
     }
 
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
@@ -7433,12 +7440,21 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 
 String StorageReplicatedMergeTree::getTableSharedID() const
 {
+    /// Lock is not required in other places because createTableSharedID()
+    /// can be called only during table initialization
+    std::lock_guard lock(table_shared_id_mutex);
+
+    /// Can happen if table was partially initialized before drop by DatabaseCatalog
+    if (table_shared_id == UUIDHelpers::Nil)
+        createTableSharedID();
+
     return toString(table_shared_id);
 }
 
 
-void StorageReplicatedMergeTree::createTableSharedID()
+void StorageReplicatedMergeTree::createTableSharedID() const
 {
+    LOG_DEBUG(log, "Creating shared ID for table {}", getStorageID().getNameForLogs());
     if (table_shared_id != UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
 
@@ -7447,6 +7463,7 @@ void StorageReplicatedMergeTree::createTableSharedID()
     String id;
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))
     {
+        LOG_DEBUG(log, "Shared ID for table {} doesn't exist in ZooKeeper on path {}", getStorageID().getNameForLogs(), zookeeper_table_id_path);
         UUID table_id_candidate;
         auto local_storage_id = getStorageID();
         if (local_storage_id.uuid != UUIDHelpers::Nil)
@@ -7455,11 +7472,13 @@ void StorageReplicatedMergeTree::createTableSharedID()
             table_id_candidate = UUIDHelpers::generateV4();
 
         id = toString(table_id_candidate);
+        LOG_DEBUG(log, "Got candidate ID {}, will try to create it in ZooKeeper on path {}", id, zookeeper_table_id_path);
 
         auto code = zookeeper->tryCreate(zookeeper_table_id_path, id, zkutil::CreateMode::Persistent);
         if (code == Coordination::Error::ZNODEEXISTS)
         { /// Other replica create node early
             id = zookeeper->get(zookeeper_table_id_path);
+            LOG_DEBUG(log, "Shared ID on path {} concurrently created, will set ID {}", zookeeper_table_id_path, id);
         }
         else if (code != Coordination::Error::ZOK)
         {
@@ -7467,6 +7486,7 @@ void StorageReplicatedMergeTree::createTableSharedID()
         }
     }
 
+    LOG_DEBUG(log, "Initializing table shared ID with {}", id);
     table_shared_id = parseFromString<UUID>(id);
 }
 
@@ -7597,7 +7617,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     }
     else
     {
-        LOG_TRACE(log, "Part {} looks temporary, because checksums file doesn't exists, blobs can be removed", part.name);
+        LOG_TRACE(log, "Part {} looks temporary, because {} file doesn't exists, blobs can be removed", part.name, IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
         /// Temporary part with some absent file cannot be locked in shared mode
         return std::make_pair(true, NameSet{});
     }
@@ -8222,25 +8242,12 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     }
 }
 
-bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
+bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name)
 {
     if (disk->supportZeroCopyReplication())
     {
-        if (is_freezed)
-        {
-            FreezeMetaData meta;
-            if (meta.load(disk, path))
-            {
-                FreezeMetaData::clean(disk, path);
-                return removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", getContext());
-            }
-        }
-        else
-        {
-            String table_id = getTableSharedID();
-
-            return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext());
-        }
+        String table_id = getTableSharedID();
+        return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext(), current_zookeeper);
     }
 
     disk->removeRecursive(path);
@@ -8250,11 +8257,10 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
 
 
 bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-    const String &, const String & detached_replica_name, const String & detached_zookeeper_path, ContextPtr local_context)
+    const String &, const String & detached_replica_name, const String & detached_zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper)
 {
     bool keep_shared = false;
 
-    zkutil::ZooKeeperPtr zookeeper = local_context->getZooKeeper();
     NameSet files_not_to_remove;
 
     fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;

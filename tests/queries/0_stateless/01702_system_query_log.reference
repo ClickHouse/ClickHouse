@@ -21,7 +21,7 @@ Create	CREATE DATABASE sqllt;
 Create	CREATE TABLE sqllt.table\n(\n    i UInt8, s String\n)\nENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();
 Create	CREATE VIEW sqllt.view AS SELECT i, s FROM sqllt.table;
 Create	CREATE DICTIONARY sqllt.dictionary (key UInt64, value UInt64) PRIMARY KEY key SOURCE(CLICKHOUSE(DB \'sqllt\' TABLE \'table\' HOST \'localhost\' PORT 9001)) LIFETIME(0) LAYOUT(FLAT());
-	CREATE USER sqllt_user IDENTIFIED WITH PLAINTEXT_PASSWORD BY \'password\';
+	CREATE USER sqllt_user IDENTIFIED WITH plaintext_password
 	CREATE ROLE sqllt_role;
 	CREATE POLICY sqllt_policy ON sqllt.table, sqllt.view, sqllt.dictionary AS PERMISSIVE TO ALL;
 	CREATE POLICY sqllt_row_policy ON sqllt.table, sqllt.view, sqllt.dictionary AS PERMISSIVE TO ALL;

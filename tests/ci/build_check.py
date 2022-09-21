@@ -291,7 +291,9 @@ def main():
 
     logging.info("Will try to fetch cache for our build")
     try:
-        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+        get_ccache_if_not_exists(
+            ccache_path, s3_helper, pr_info.number, TEMP_PATH, pr_info.release_pr
+        )
     except Exception as e:
         # In case there are issues with ccache, remove the path and do not fail a build
         logging.info("Failed to get ccache, building without it. Error: %s", e)

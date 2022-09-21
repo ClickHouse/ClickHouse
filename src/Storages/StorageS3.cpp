@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include <Common/ProfileEvents.h>
 #include "IO/ParallelReadBuffer.h"
 #include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
@@ -63,6 +64,12 @@ namespace fs = std::filesystem;
 
 
 static const String PARTITION_ID_WILDCARD = "{_partition_id}";
+
+namespace ProfileEvents
+{
+    extern const Event S3DeleteObjects;
+    extern const Event S3ListObjects;
+}
 
 namespace DB
 {
@@ -165,6 +172,7 @@ private:
     {
         buffer.clear();
 
+        ProfileEvents::increment(ProfileEvents::S3ListObjects);
         outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
             throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
@@ -476,7 +484,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     if (it != object_infos.end())
         object_size = it->second.size;
     else
-        object_size = DB::S3::getObjectSize(client, bucket, key, version_id, false);
+        object_size = DB::S3::getObjectSize(client, bucket, key, version_id, false, false);
 
     auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
     const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
@@ -560,6 +568,7 @@ static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> &
     request.SetPrefix(key);
     while (!is_finished)
     {
+        ProfileEvents::increment(ProfileEvents::S3ListObjects);
         outcome = client->ListObjectsV2(request);
         if (!outcome.IsSuccess())
             throw Exception(
@@ -1032,6 +1041,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
         delkeys.AddObjects(std::move(obj));
     }
 
+    ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
     Aws::S3::Model::DeleteObjectsRequest request;
     request.SetBucket(s3_configuration.uri.bucket);
     request.SetDelete(delkeys);
@@ -1379,7 +1389,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
                 /// Note that in case of exception in getObjectInfo returned info will be empty,
                 /// but schema cache will handle this case and won't return columns from cache
                 /// because we can't say that it's valid without last modification time.
-                info = S3::getObjectInfo(s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, false);
+                info = S3::getObjectInfo(s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, false, false);
                 if (object_infos)
                     (*object_infos)[path] = info;
             }
