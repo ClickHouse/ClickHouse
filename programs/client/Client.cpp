@@ -44,6 +44,12 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 
+#if USE_SSL
+#   include <Poco/Net/ConsoleCertificateHandler.h>
+#   include <Poco/Net/SSLManager.h>
+#endif
+
+
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
@@ -233,6 +239,35 @@ try
     UseSSL use_ssl;
     MainThreadStatus::getInstance();
     setupSignalHandler();
+
+#if USE_SSL
+    class ClientCertificateHandler: public Poco::Net::InvalidCertificateHandler
+    {
+    private:
+        bool ignore = false;
+    public:
+        explicit ClientCertificateHandler(bool ignore_): Poco::Net::InvalidCertificateHandler(false), ignore(ignore_) {}
+        void onInvalidCertificate(const void* /* pSender*/, Poco::Net::VerificationErrorArgs& error) override
+        {
+            const Poco::Net::X509Certificate& cert = error.certificate();
+            std::cout << "\n";
+            std::cout << (ignore ? "WARNING" : "ERROR") << ": Certificate verification failed\n";
+            std::cout << "----------------------------------------\n";
+            std::cout << "Issuer Name:  " << cert.issuerName() << "\n";
+            std::cout << "Subject Name: " << cert.subjectName() << "\n\n";
+            std::cout << "The certificate yielded the error: " << error.errorMessage() << "\n\n";
+            std::cout << "The error occurred in the certificate chain at position " << error.errorDepth() << "\n";
+            if (ignore)
+                std::cout << "Continue due to '--ignore-cert-err' is present.\n\n";
+            else
+                std::cout << "Use '--ignore-cert-err' to ignore certificate verification errors.\n\n";
+            error.setIgnoreError(ignore);
+        }
+    };
+
+    Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> cert_handler = new ClientCertificateHandler(config().getBool("ignore-cert-err", false));
+    Poco::Net::SSLManager::instance().initializeClient(nullptr, cert_handler, nullptr);
+#endif
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
@@ -819,6 +854,7 @@ void Client::addOptions(OptionsDescription & options_description)
     options_description.main_description->add_options()
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("secure,s", "Use TLS connection")
+        ("ignore-cert-err", "Ignore certificate verification errors")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
             * implicit_value is used to avoid this exception (to allow user to type just "--password")
@@ -960,6 +996,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.count("secure"))
         config().setBool("secure", true);
+    if (options.count("ignore-cert-err"))
+        config().setBool("ignore-cert-err", true);
     if (options.count("user") && !options["user"].defaulted())
         config().setString("user", options["user"].as<std::string>());
     if (options.count("password"))
