@@ -1474,23 +1474,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
-    }
-
-    if (dns_cache_updater)
-        dns_cache_updater->start();
-
     SCOPE_EXIT({
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
         /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
@@ -1546,6 +1529,27 @@ int Server::main(const std::vector<std::string> & /*args*/)
         shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
     });
+
+    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
+    /// and thus this object must be created after the SCOPE_EXIT object where shared
+    /// context is destroyed.
+    /// In addition this object has to be created before the loading of the tables.
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
+    }
+
+    if (dns_cache_updater)
+        dns_cache_updater->start();
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
