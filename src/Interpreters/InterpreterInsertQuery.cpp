@@ -214,18 +214,18 @@ Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & columns,
-    ThreadStatus * thread_status,
+    ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
-    return buildChainImpl(table, metadata_snapshot, sample, thread_status, elapsed_counter_ms);
+    return buildChainImpl(table, metadata_snapshot, sample, thread_status_holder, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Block & query_sample_block,
-    ThreadStatus * thread_status,
+    ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto context_ptr = getContext();
@@ -247,12 +247,12 @@ Chain InterpreterInsertQuery::buildChainImpl(
     if (table->noPushingToViews() && !no_destination)
     {
         auto sink = table->write(query_ptr, metadata_snapshot, context_ptr);
-        sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        sink->setRuntimeData(current_thread, elapsed_counter_ms);
         out.addSource(std::move(sink));
     }
     else
     {
-        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status, elapsed_counter_ms);
+        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status_holder, elapsed_counter_ms);
     }
 
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
@@ -290,7 +290,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
             table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
     }
 
-    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());
+    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, getContext()->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
     out.addSource(std::move(counting));
 
