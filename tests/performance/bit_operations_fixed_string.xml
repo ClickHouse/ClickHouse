@@ -1,4 +1,8 @@
 <test>
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
     <settings>
         <max_threads>1</max_threads>
     </settings>

@@ -2,7 +2,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 
 
 namespace DB
@@ -16,16 +15,16 @@ namespace ErrorCodes
 class PushingSource : public ISource
 {
 public:
-    explicit PushingSource(const Block & header, std::atomic_bool & input_wait_flag_)
+    explicit PushingSource(const Block & header, std::atomic_bool & need_data_flag_)
         : ISource(header)
-        , input_wait_flag(input_wait_flag_)
+        , need_data_flag(need_data_flag_)
     {}
 
     String getName() const override { return "PushingSource"; }
 
     void setData(Chunk chunk)
     {
-        input_wait_flag = false;
+        need_data_flag = false;
         data = std::move(chunk);
     }
 
@@ -35,7 +34,7 @@ protected:
     {
         auto status = ISource::prepare();
         if (status == Status::Ready)
-            input_wait_flag = true;
+            need_data_flag = true;
 
         return status;
     }
@@ -47,7 +46,7 @@ protected:
 
 private:
     Chunk data;
-    std::atomic_bool & input_wait_flag;
+    std::atomic_bool & need_data_flag;
 };
 
 
@@ -56,7 +55,7 @@ PushingPipelineExecutor::PushingPipelineExecutor(QueryPipeline & pipeline_) : pi
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingSource>(pipeline.input->getHeader(), input_wait_flag);
+    pushing_source = std::make_shared<PushingSource>(pipeline.input->getHeader(), need_data_flag);
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors.emplace_back(pushing_source);
 }
@@ -86,9 +85,8 @@ void PushingPipelineExecutor::start()
 
     started = true;
     executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
-    executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
-    if (!executor->executeStep(&input_wait_flag))
+    if (!executor->executeStep(&need_data_flag))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
 }
@@ -100,7 +98,7 @@ void PushingPipelineExecutor::push(Chunk chunk)
 
     pushing_source->setData(std::move(chunk));
 
-    if (!executor->executeStep(&input_wait_flag))
+    if (!executor->executeStep(&need_data_flag))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
 }

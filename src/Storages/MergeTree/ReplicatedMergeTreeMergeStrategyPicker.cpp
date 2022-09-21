@@ -97,7 +97,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
         threshold_init = settings->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
 
     if (threshold == 0)
-        /// we can reset the settings without lock (it's atomic)
+        /// we can reset the settings w/o lock (it's atomic)
         execute_merges_on_single_replica_time_threshold = threshold;
     if (threshold_init == 0)
         remote_fs_execute_merges_on_single_replica_time_threshold = threshold_init;
@@ -137,7 +137,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
         if (execute_merges_on_single_replica_time_threshold > 0)
         {
             LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use 'execute_merges_on_single_replica_time_threshold'");
-            /// we can reset the settings without lock (it's atomic)
+            /// we can reset the settings w/o lock (it's atomic)
             execute_merges_on_single_replica_time_threshold = 0;
         }
         /// default value of remote_fs_execute_merges_on_single_replica_time_threshold is not 0

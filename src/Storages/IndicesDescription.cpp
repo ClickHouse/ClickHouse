@@ -19,7 +19,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-}
+};
 
 IndexDescription::IndexDescription(const IndexDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)

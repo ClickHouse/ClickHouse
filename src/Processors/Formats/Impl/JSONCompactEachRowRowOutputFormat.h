@@ -36,8 +36,9 @@ private:
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
 
-    bool supportTotals() const override { return true; }
     void consumeTotals(Chunk) override;
+    /// No extremes.
+    void consumeExtremes(Chunk) override {}
 
     void writeLine(const std::vector<String> & values);
 
