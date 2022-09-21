@@ -132,16 +132,7 @@ void KeeperDispatcher::requestThread()
                 return;
             }
 
-            // if it's local no need to batch it, just process it instantly
-            if (coordination_settings->read_mode.toString() == "nonlinear")
-            {
-                if (!read_requests_queue.push({std::move(request)}))
-                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
-
-                return;
-            }
-
-            read_requests.emplace_back(std::move(new_request));
+            processReadRequest(coordination_settings, std::move(new_request));
         };
 
         try
@@ -160,32 +151,15 @@ void KeeperDispatcher::requestThread()
                     if (quorum_requests.size() > max_batch_size)
                         break;
 
-                    if (read_requests.size() > max_batch_size)
-                    {
-                        processReadRequests(coordination_settings, read_requests);
-
-                        if (previous_quorum_done())
-                            break;
-                    }
-
                     /// Trying to get batch requests as fast as possible
                     if (active_requests_queue->tryPop(request, 1))
                     {
                         CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                         handle_request(request);
                     }
-                    else
-                    {
-                        /// batch of read requests can send at most one request
-                        /// so we don't care if the previous batch hasn't received response
-                        if (!read_requests.empty())
-                            processReadRequests(coordination_settings, read_requests);
 
-                        /// if we still didn't process previous batch we can
-                        /// increase the current batch even more
-                        if (previous_quorum_done())
-                            break;
-                    }
+                    if (previous_quorum_done())
+                        break;
 
                     if (shutdown_called)
                         break;
@@ -206,10 +180,16 @@ void KeeperDispatcher::requestThread()
     }
 }
 
-void KeeperDispatcher::processReadRequests([[maybe_unused]] const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestsForSessions & read_requests)
+void KeeperDispatcher::processReadRequest(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestForSession read_request)
 {
-    if (read_requests.empty())
+    // if it's local no need to batch it, just process it instantly
+    if (coordination_settings->read_mode.toString() == "nonlinear")
+    {
+        if (!read_requests_queue.push({std::move(read_request)}))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+
         return;
+    }
 
     assert(coordination_settings->read_mode.toString() == "fastlinear");
 
@@ -217,24 +197,24 @@ void KeeperDispatcher::processReadRequests([[maybe_unused]] const CoordinationSe
     auto leader_info_result = server->getLeaderInfo();
     if (leader_info_result)
     {
-        leader_info_result->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
+        leader_info_result->when_ready([&, request_for_session = std::move(read_request)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
         {
             if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
             {
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+                addErrorResponses({request_for_session}, Coordination::Error::ZOPERATIONTIMEOUT);
                 return;
             }
 
             if (result.get_result_code() != nuraft::cmd_result_code::OK)
             {
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                addErrorResponses({request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
                 return;
             }
 
             if (exception)
             {
                 LOG_INFO(log, "Got exception while waiting for read results {}", exception->what());
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                addErrorResponses({request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
                 return;
             }
 
@@ -242,7 +222,7 @@ void KeeperDispatcher::processReadRequests([[maybe_unused]] const CoordinationSe
 
             if (!leader_info_ctx)
             {
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                addErrorResponses({request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
                 return;
             }
 
@@ -256,16 +236,14 @@ void KeeperDispatcher::processReadRequests([[maybe_unused]] const CoordinationSe
             if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
             {
                 auto & leader_waiter = leader_waiters[leader_info];
-                leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
+                leader_waiter.push_back(std::move(request_for_session));
                 LOG_TRACE(log, "waiting for term {}, idx {}", leader_info.term, leader_info.last_committed_index);
             }
             /// process it in background thread
-            else if (!read_requests_queue.push(std::move(requests_for_sessions)))
+            else if (!read_requests_queue.push(std::move(request_for_session)))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
         });
     }
-
-    read_requests.clear();
 }
 
 void KeeperDispatcher::responseThread()
@@ -323,8 +301,8 @@ void KeeperDispatcher::readRequestThread()
     setThreadName("KeeperReadT");
     while (!shutdown_called)
     {
-        KeeperStorage::RequestsForSessions requests;
-        if (!read_requests_queue.pop(requests))
+        KeeperStorage::RequestForSession request;
+        if (!read_requests_queue.pop(request))
             break;
 
         if (shutdown_called)
@@ -332,15 +310,12 @@ void KeeperDispatcher::readRequestThread()
 
         try
         {
-            for (const auto & request_info : requests)
-            {
-                if (server->isLeaderAlive())
-                    server->putLocalReadRequest(request_info);
-                else
-                    addErrorResponses({request_info}, Coordination::Error::ZCONNECTIONLOSS);
-            }
+            if (server->isLeaderAlive())
+                server->putLocalReadRequest(request);
+            else
+                addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
 
-            if (!finalize_requests_queue.push(std::move(requests)))
+            if (!finalize_requests_queue.push(std::move(request)))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
         }
         catch (...)
@@ -358,8 +333,8 @@ void KeeperDispatcher::finalizeRequestsThread()
     setThreadName("KeeperFinalT");
     while (!shutdown_called)
     {
-        KeeperStorage::RequestsForSessions requests;
-        if (!finalize_requests_queue.pop(requests))
+        KeeperStorage::RequestForSession request;
+        if (!finalize_requests_queue.pop(request))
             break;
 
         if (shutdown_called)
@@ -367,7 +342,7 @@ void KeeperDispatcher::finalizeRequestsThread()
 
         try
         {
-            finalizeRequests(requests);
+            finalizeRequests(request);
         }
         catch (...)
         {
@@ -450,12 +425,13 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
             auto & unprocessed_requests = unprocessed_requests_it->second;
 
             /// queue is not empty, or the request types don't match, put it in the waiting queue
-            if (!unprocessed_requests.request_queue.empty() || unprocessed_requests.is_read != request->isReadRequest())
+            if (!unprocessed_requests.request_queue.empty() || (unprocessed_requests.unprocessed_num != 0 && unprocessed_requests.is_read != request->isReadRequest()))
             {
                 unprocessed_requests.request_queue.push_back(std::move(request_info));
                 return true;
             }
 
+            unprocessed_requests.is_read = request->isReadRequest();
             ++unprocessed_requests.unprocessed_num;
         }
     }
@@ -884,55 +860,38 @@ void KeeperDispatcher::updateConfigurationThread()
 // - update the number of current unprocessed requests for the session
 // - if the number of unprocessed requests is 0, we can start adding next type of requests
 //   from unprocessed requests queue to the active queue
-void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestsForSessions & requests_for_sessions)
+void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestForSession & request_for_session)
 {
-    std::unordered_map<int64_t, size_t> counts_for_session;
-
-    for (const auto & request_for_session : requests_for_sessions)
-    {
-        ++counts_for_session[request_for_session.session_id];
-    }
-
     std::lock_guard lock{unprocessed_request_mutex};
-    for (const auto [session_id, count] : counts_for_session)
+    auto unprocessed_requests_it = unprocessed_requests_for_session.find(request_for_session.session_id);
+    if (unprocessed_requests_it == unprocessed_requests_for_session.end())
+        return;
+
+    auto & unprocessed_requests = unprocessed_requests_it->second;
+    --unprocessed_requests.unprocessed_num;
+
+    if (unprocessed_requests.unprocessed_num == 0 && !unprocessed_requests.request_queue.empty())
     {
-        auto unprocessed_requests_it = unprocessed_requests_for_session.find(session_id);
-        if (unprocessed_requests_it == unprocessed_requests_for_session.end())
-            continue;
-
-        auto & unprocessed_requests = unprocessed_requests_it->second;
-        unprocessed_requests.unprocessed_num -= count;
-
-        if (unprocessed_requests.unprocessed_num == 0)
+        auto & unprocessed_requests_queue = unprocessed_requests.request_queue;
+        unprocessed_requests.is_read = !unprocessed_requests.is_read;
+        // start adding next type of requests
+        while (!unprocessed_requests_queue.empty() && unprocessed_requests_queue.front().request->isReadRequest() == unprocessed_requests.is_read)
         {
-            if (!unprocessed_requests.request_queue.empty())
-            {
-                auto & unprocessed_requests_queue = unprocessed_requests.request_queue;
-                unprocessed_requests.is_read = !unprocessed_requests.is_read;
-                // start adding next type of requests
-                while (!unprocessed_requests_queue.empty() && unprocessed_requests_queue.front().request->isReadRequest() == unprocessed_requests.is_read)
-                {
-                    auto & front_request = unprocessed_requests_queue.front();
+            auto & front_request = unprocessed_requests_queue.front();
 
-                    /// Put close requests without timeouts
-                    if (front_request.request->getOpNum() == Coordination::OpNum::Close)
-                    {
-                        if (!active_requests_queue->push(std::move(front_request)))
-                            throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
-                    }
-                    else if (!active_requests_queue->tryPush(std::move(front_request), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
-                    {
-                        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
-                    }
-
-                    ++unprocessed_requests.unprocessed_num;
-                    unprocessed_requests_queue.pop_front();
-                }
-            }
-            else
+            /// Put close requests without timeouts
+            if (front_request.request->getOpNum() == Coordination::OpNum::Close)
             {
-                unprocessed_requests_for_session.erase(unprocessed_requests_it);
+                if (!active_requests_queue->push(std::move(front_request)))
+                    throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
             }
+            else if (!active_requests_queue->tryPush(std::move(front_request), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+            {
+                throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+            }
+
+            ++unprocessed_requests.unprocessed_num;
+            unprocessed_requests_queue.pop_front();
         }
     }
 }
@@ -941,7 +900,7 @@ void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestsForSessions
 // Process read requests that were waiting for this commit
 void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx)
 {
-    if (!finalize_requests_queue.push({request_for_session}))
+    if (!finalize_requests_queue.push(request_for_session))
         throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
 
     KeeperStorage::RequestsForSessions requests;
@@ -958,8 +917,11 @@ void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & 
     if (requests.empty())
         return;
 
-    if (!read_requests_queue.push(std::move(requests)))
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+    for (auto & request : requests)
+    {
+        if (!read_requests_queue.push(std::move(request)))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+    }
 }
 
 /// Process all read request that are waiting for lower or currently last processed log index
@@ -992,8 +954,11 @@ void KeeperDispatcher::onApplySnapshot(uint64_t term, uint64_t last_idx)
     if (requests.empty())
         return;
 
-    if (!read_requests_queue.push(std::move(requests)))
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+    for (auto & request : requests)
+    {
+        if (!read_requests_queue.push(std::move(request)))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+    }
 }
 
 bool KeeperDispatcher::isServerActive() const

@@ -36,8 +36,8 @@ private:
     std::unique_ptr<RequestsQueue> active_requests_queue;
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
-    ConcurrentBoundedQueue<KeeperStorage::RequestsForSessions> read_requests_queue;
-    ConcurrentBoundedQueue<KeeperStorage::RequestsForSessions> finalize_requests_queue;
+    ConcurrentBoundedQueue<KeeperStorage::RequestForSession> read_requests_queue;
+    ConcurrentBoundedQueue<KeeperStorage::RequestForSession> finalize_requests_queue;
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -105,7 +105,7 @@ private:
     };
 
     // Called every time a batch of requests are processed.
-    void finalizeRequests(const KeeperStorage::RequestsForSessions & requests_for_sessions);
+    void finalizeRequests(const KeeperStorage::RequestForSession & request_for_session);
 
     std::unordered_map<int64_t, UnprocessedRequests> unprocessed_requests_for_session;
     std::mutex unprocessed_request_mutex;
@@ -125,7 +125,7 @@ private:
 
     void finalizeRequestsThread();
 
-    void processReadRequests(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestsForSessions & read_requests);
+    void processReadRequest(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestForSession read_request);
 
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
