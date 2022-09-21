@@ -141,7 +141,13 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 {
     /// TODO: add a setting for graceful shutdown.
 
-    shutdown = true;
+    LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
+
+    {
+        std::lock_guard lock(shutdown_mutex);
+        shutdown = true;
+        shutdown_cv.notify_all();
+    }
 
     assert(dump_by_first_update_thread.joinable());
     dump_by_first_update_thread.join();
@@ -162,6 +168,8 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
                 ErrorCodes::TIMEOUT_EXCEEDED,
                 "Wait for async insert timeout exceeded)")));
     }
+
+    LOG_TRACE(log, "Asynchronous insertion queue finished");
 }
 
 void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
@@ -276,10 +284,8 @@ void AsynchronousInsertQueue::busyCheck()
 {
     auto timeout = busy_timeout;
 
-    while (!shutdown)
+    while (!waitForShutdown(timeout))
     {
-        std::this_thread::sleep_for(timeout);
-
         /// TODO: use priority queue instead of raw unsorted queue.
         timeout = busy_timeout;
         std::shared_lock read_lock(rwlock);
@@ -301,9 +307,8 @@ void AsynchronousInsertQueue::busyCheck()
 
 void AsynchronousInsertQueue::staleCheck()
 {
-    while (!shutdown)
+    while (!waitForShutdown(stale_timeout))
     {
-        std::this_thread::sleep_for(stale_timeout);
         std::shared_lock read_lock(rwlock);
 
         for (auto & [key, elem] : queue)
@@ -325,9 +330,8 @@ void AsynchronousInsertQueue::cleanup()
     /// because it holds exclusive lock.
     auto timeout = busy_timeout * 5;
 
-    while (!shutdown)
+    while (!waitForShutdown(timeout))
     {
-        std::this_thread::sleep_for(timeout);
         std::vector<InsertQuery> keys_to_remove;
 
         {
@@ -377,6 +381,12 @@ void AsynchronousInsertQueue::cleanup()
             }
         }
     }
+}
+
+bool AsynchronousInsertQueue::waitForShutdown(const Milliseconds & timeout)
+{
+    std::unique_lock shutdown_lock(shutdown_mutex);
+    return shutdown_cv.wait_for(shutdown_lock, timeout, [this]() { return shutdown; });
 }
 
 // static
@@ -447,17 +457,20 @@ try
 
     format->addBuffer(std::move(last_buffer));
 
-    auto chunk = Chunk(executor.getResultColumns(), total_rows);
-    size_t total_bytes = chunk.bytes();
+    if (total_rows)
+    {
+        auto chunk = Chunk(executor.getResultColumns(), total_rows);
+        size_t total_bytes = chunk.bytes();
 
-    auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
-    pipeline.complete(Pipe(std::move(source)));
+        auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+        pipeline.complete(Pipe(std::move(source)));
 
-    CompletedPipelineExecutor completed_executor(pipeline);
-    completed_executor.execute();
+        CompletedPipelineExecutor completed_executor(pipeline);
+        completed_executor.execute();
 
-    LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'",
-        total_rows, total_bytes, queryToString(key.query));
+        LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'",
+            total_rows, total_bytes, queryToString(key.query));
+    }
 
     for (const auto & entry : data->entries)
         if (!entry->isFinished())
