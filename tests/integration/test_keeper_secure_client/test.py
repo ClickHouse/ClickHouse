@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import string
 import os
 import time

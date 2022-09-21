@@ -31,7 +31,6 @@ NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving request
 def started_cluster():
     try:
         cluster.start()
-        keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
         yield cluster
 

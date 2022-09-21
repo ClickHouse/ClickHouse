@@ -2,7 +2,6 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -47,8 +46,6 @@ from kazoo.client import KazooClient, KazooState
 def started_cluster():
     try:
         cluster.start()
-
-        keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
         yield cluster
 

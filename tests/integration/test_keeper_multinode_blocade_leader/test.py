@@ -45,7 +45,6 @@ TODO remove this when jepsen tests will be written.
 def started_cluster():
     try:
         cluster.start()
-        keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
         yield cluster
 
@@ -65,10 +64,15 @@ def get_fake_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
+def wait_nodes():
+    keeper_utils.wait_nodes(cluster, [node1, node2, node3])
+
+
 # in extremely rare case it can take more than 5 minutes in debug build with sanitizer
 @pytest.mark.timeout(600)
 def test_blocade_leader(started_cluster):
     for i in range(100):
+        wait_nodes()
         try:
             for i, node in enumerate([node1, node2, node3]):
                 node.query(
@@ -272,6 +276,7 @@ def restart_replica_for_sure(node, table_name, zk_replica_path):
 @pytest.mark.timeout(600)
 def test_blocade_leader_twice(started_cluster):
     for i in range(100):
+        wait_nodes()
         try:
             for i, node in enumerate([node1, node2, node3]):
                 node.query(

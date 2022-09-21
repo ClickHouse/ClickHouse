@@ -3,7 +3,6 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 
 cluster = ClickHouseCluster(__file__)
 
@@ -16,7 +15,6 @@ node1 = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
-        keeper_utils.wait_until_connected(cluster, node1)
 
         yield cluster
     finally:

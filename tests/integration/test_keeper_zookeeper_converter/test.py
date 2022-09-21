@@ -12,7 +12,6 @@ from kazoo.exceptions import (
 )
 import os
 import time
-import socket
 
 cluster = ClickHouseCluster(__file__)
 

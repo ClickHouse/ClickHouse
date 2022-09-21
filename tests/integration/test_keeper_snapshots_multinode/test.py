@@ -29,7 +29,6 @@ def wait_nodes():
 def started_cluster():
     try:
         cluster.start()
-        wait_nodes()
 
         yield cluster
 
