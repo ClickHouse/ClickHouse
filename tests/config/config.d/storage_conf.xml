@@ -59,6 +59,7 @@
                 <path>s3_cache_2/</path>
                 <max_size>2Gi</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <max_file_segment_size>100Mi</max_file_segment_size>
             </s3_cache_2>
             <s3_cache_3>
                 <type>cache</type>
