@@ -119,9 +119,8 @@ void registerJSONObjectEachRowSchemaReader(FormatFactory & factory)
     factory.registerAdditionalInfoForSchemaCacheGetter("JSONObjectEachRow", [](const FormatSettings & settings)
     {
             return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON)
-                + fmt::format(
-                       ", format_json_object_each_row_column_for_object_name={}", settings.json_object_each_row.column_for_object_name);
-        });
+                + fmt::format(", format_json_object_each_row_column_for_object_name={}", settings.json_object_each_row.column_for_object_name);
+    });
 }
 
 }
