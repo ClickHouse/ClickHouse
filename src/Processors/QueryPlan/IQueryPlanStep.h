@@ -87,8 +87,8 @@ public:
     const DataStream & getOutputStream() const;
 
     /// Methods to describe what this step is needed for.
-    const std::string & getStepDescription() const { return step_description; }
-    void setStepDescription(std::string description) { step_description = std::move(description); }
+    const String & getStepDescription() const { return step_description; }
+    void setStepDescription(String description) { step_description = std::move(description); }
 
     struct FormatSettings
     {
@@ -115,7 +115,7 @@ protected:
     std::optional<DataStream> output_stream;
 
     /// Text description about what current step does.
-    std::string step_description;
+    String step_description;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };

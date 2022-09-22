@@ -2,6 +2,7 @@
 
 #include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
+#include <Processors/Transforms/ReverseTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
@@ -362,6 +363,26 @@ private:
         for (auto & block : blocks)
             single_level_chunks.emplace_back(convertToChunk(block));
 
+        // TODO make cfg able
+        // TODO move into separate processor
+        // TODO reuse ReverseTransform?
+        // TODO shuffle in random order
+        /// for (auto & chunk : single_level_chunks)
+        /// {
+        ///     IColumn::Permutation permutation;
+        ///
+        ///     size_t num_rows = chunk.getNumRows();
+        ///     for (size_t i = 0; i < num_rows; ++i)
+        ///         permutation.emplace_back(num_rows - 1 - i);
+        ///
+        ///     auto columns = chunk.detachColumns();
+        ///
+        ///     for (auto & column : columns)
+        ///         column = column->permute(permutation, 0);
+        ///
+        ///     chunk.setColumns(std::move(columns), num_rows);
+        /// }
+
         finished = true;
     }
 
@@ -578,6 +599,7 @@ void AggregatingTransform::initGenerate()
         auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
         auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
         processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
+        /// processors.emplace_back(std::make_shared<ReverseTransform>(params->getHeader()));
     }
     else
     {
