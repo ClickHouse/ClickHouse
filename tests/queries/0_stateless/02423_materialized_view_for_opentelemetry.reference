@@ -1,0 +1,9 @@
+{"source":"opentelemetry_mv_source","view":"opentelemetry_mv1","target":"opentelemetry_mv_target1","readRows":"1","writtenRows":"1","parts":"1"}
+{"source":"opentelemetry_mv_source","view":"opentelemetry_mv2","target":"opentelemetry_mv_target2","readRows":"1","writtenRows":"1","parts":"1"}
+{"source":"opentelemetry_mv_source","view":"opentelemetry_mv1","target":"opentelemetry_mv_target1","readRows":"1","writtenRows":"1","parts":"1"}
+{"source":"opentelemetry_mv_source","view":"opentelemetry_mv2","target":"opentelemetry_mv_target2","readRows":"1","writtenRows":"1","parts":"1"}
+===Check target table===
+1
+2
+1
+2
