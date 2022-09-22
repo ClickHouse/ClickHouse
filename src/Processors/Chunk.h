@@ -19,7 +19,7 @@ using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
  * Chunk is a list of columns with the same length.
  * Chunk stores the number of rows in a separate field and supports invariant of equal column length.
  *
- * Chunk has move-only semantic. It's more lightweight than block cause doesn't store names, types and index_by_name.
+ * Chunk has move-only semantic. It's more lightweight than Block because it doesn't store names, types and index_by_name.
  *
  * Chunk can have empty set of columns but non-zero number of rows. It helps when only the number of rows is needed.
  * Chunk can have columns with zero number of rows. It may happen, for example, if all rows were filtered.
