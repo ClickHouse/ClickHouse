@@ -1,3 +1,3 @@
 -- Tags: no-fasttest
 
-DESCRIBE CACHE 's3_cache';
+DESCRIBE FILESYSTEM CACHE 's3_cache';
