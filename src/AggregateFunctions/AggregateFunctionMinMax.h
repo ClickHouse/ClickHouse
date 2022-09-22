@@ -935,7 +935,7 @@ public:
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
             auto final_null_flags = std::make_unique<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_null_flags[i] = null_map[i] & !if_flags[i];
+                final_null_flags[i] = null_map[i] | !if_flags[i];
 
             this->data(place).addManyNotNull(*columns[0], final_null_flags.get(), row_begin, row_end, arena);
         }
