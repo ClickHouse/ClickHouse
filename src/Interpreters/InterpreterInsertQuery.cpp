@@ -228,6 +228,11 @@ Chain InterpreterInsertQuery::buildChainImpl(
     ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
+    ThreadStatus * thread_status = current_thread;
+
+    if (!thread_status_holder)
+        thread_status = nullptr;
+
     auto context_ptr = getContext();
     const ASTInsertQuery * query = nullptr;
     if (query_ptr)
@@ -247,7 +252,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
     if (table->noPushingToViews() && !no_destination)
     {
         auto sink = table->write(query_ptr, metadata_snapshot, context_ptr);
-        sink->setRuntimeData(current_thread, elapsed_counter_ms);
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
         out.addSource(std::move(sink));
     }
     else
@@ -290,7 +295,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
             table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
     }
 
-    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, getContext()->getQuota());
+    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
     out.addSource(std::move(counting));
 
