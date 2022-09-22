@@ -1,9 +1,7 @@
 #include <Common/StackTrace.h>
 
-#include <Common/CacheBase.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
 #include <base/demangle.h>
@@ -433,17 +431,6 @@ static void toStringEveryLineImpl(
 #endif
 }
 
-struct StackTraceRepresentation
-{
-    StackTrace::FramePointers frame_pointers;
-    size_t offset;
-    size_t size;
-
-    constexpr bool operator==(const StackTraceRepresentation &) const = default;
-};
-
-using StackTraceCache = DB::CacheBase<StackTraceRepresentation, std::string, DefaultHash<StackTraceRepresentation>>;
-
 static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
     std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -474,9 +461,12 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     return toStringStatic(frame_pointers_copy, offset, size);
 }
 
+using StackTraceRepresentation = std::tuple<StackTrace::FramePointers, size_t, size_t>;
+using StackTraceCache = std::map<StackTraceRepresentation, std::string>;
+
 static StackTraceCache & cacheInstance()
 {
-    static StackTraceCache cache{100};
+    static StackTraceCache cache;
     return cache;
 }
 
@@ -484,13 +474,19 @@ std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_p
 {
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    auto [result, _] = cacheInstance().getOrSet(
-        StackTraceRepresentation{frame_pointers, offset, size},
-        [&]() { return std::make_shared<std::string>(toStringImpl(frame_pointers, offset, size)); });
-    return *result;
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+
+    StackTraceRepresentation key{frame_pointers, offset, size};
+    auto & cache = cacheInstance();
+    if (cache.contains(key))
+        return cache[key];
+
+    auto result = toStringImpl(frame_pointers, offset, size);
+    cache.insert({key, result});
+    return result;
 }
 
 void StackTrace::dropCache()
 {
-    cacheInstance().reset();
+    cacheInstance().clear();
 }
