@@ -180,14 +180,14 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
         updateAllocAndCheck();
         out_writer.reset();
 
-        in_reader = std::make_unique<InputReader>(file->path(), header);
+        /// reader will be created at the first read call, not to consume memory before it is needed
     }
     return stat;
 }
 
 bool TemporaryFileStream::isWriteFinished() const
 {
-    assert((out_writer == nullptr) ^ (in_reader == nullptr));
+    assert(in_reader == nullptr || out_writer == nullptr);
     return out_writer == nullptr;
 }
 
@@ -196,7 +196,21 @@ Block TemporaryFileStream::read()
     if (!isWriteFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
 
-    return in_reader->read();
+    if (isFinalized())
+        return {};
+
+    if (!in_reader)
+    {
+        in_reader = std::make_unique<InputReader>(file->path(), header);
+    }
+
+    Block block = in_reader->read();
+    if (!block)
+    {
+        /// finalize earlier to release resources, do not wait for the destructor
+        this->finalize();
+    }
+    return block;
 }
 
 void TemporaryFileStream::updateAllocAndCheck()
@@ -217,11 +231,34 @@ void TemporaryFileStream::updateAllocAndCheck()
     stat.uncompressed_size = new_uncompressed_size;
 }
 
+bool TemporaryFileStream::isFinalized() const
+{
+    return file == nullptr;
+}
+
+void TemporaryFileStream::finalize()
+{
+    if (file)
+    {
+        file.reset();
+        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
+    }
+
+    if (in_reader)
+        in_reader.reset();
+
+    if (out_writer)
+    {
+        out_writer->finalize();
+        out_writer.reset();
+    }
+}
+
 TemporaryFileStream::~TemporaryFileStream()
 {
     try
     {
-        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
+        finalize();
     }
     catch (...)
     {

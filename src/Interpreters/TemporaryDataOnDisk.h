@@ -116,6 +116,10 @@ public:
 private:
     void updateAllocAndCheck();
 
+    /// Finalize everything, close reader and writer, delete file
+    void finalize();
+    bool isFinalized() const;
+
     TemporaryDataOnDisk * parent;
 
     Block header;
