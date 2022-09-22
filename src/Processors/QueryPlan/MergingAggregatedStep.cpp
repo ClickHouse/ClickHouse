@@ -19,13 +19,13 @@ static bool memoryBoundMergingWillBeUsed(
         && input_stream.sort_scope >= DataStream::SortScope::Stream && input_stream.sort_description.hasPrefix(group_by_sort_description);
 }
 
-static ITransformingStep::Traits getTraits(bool precedes_merging, bool memory_efficient_aggregation, bool memory_bound_merging_will_be_used)
+static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number, bool memory_bound_merging_will_be_used)
 {
     return ITransformingStep::Traits
     {
         {
             .preserves_distinct_columns = false,
-            .returns_single_stream = precedes_merging && (memory_efficient_aggregation || memory_bound_merging_will_be_used),
+            .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
             .can_enforce_sorting_properties_in_distributed_query = memory_bound_merging_will_be_used,
@@ -43,17 +43,16 @@ MergingAggregatedStep::MergingAggregatedStep(
     bool memory_efficient_aggregation_,
     size_t max_threads_,
     size_t memory_efficient_merge_threads_,
+    bool should_produce_results_in_order_of_bucket_number_,
     size_t max_block_size_,
     size_t memory_bound_merging_max_block_bytes_,
     SortDescription group_by_sort_description_,
-    bool precedes_merging_,
     bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
         input_stream_,
         params_.getHeader(input_stream_.header, final_),
         getTraits(
-            precedes_merging_,
-            memory_efficient_aggregation_,
+            should_produce_results_in_order_of_bucket_number_,
             DB::memoryBoundMergingWillBeUsed(
                 input_stream_, memory_bound_merging_of_aggregation_results_enabled_, group_by_sort_description_)))
     , params(std::move(params_))
@@ -64,14 +63,14 @@ MergingAggregatedStep::MergingAggregatedStep(
     , max_block_size(max_block_size_)
     , memory_bound_merging_max_block_bytes(memory_bound_merging_max_block_bytes_)
     , group_by_sort_description(std::move(group_by_sort_description_))
-    , precedes_merging(precedes_merging_)
+    , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
     /// Aggregation keys are distinct
     for (const auto & key : params.keys)
         output_stream->distinct_columns.insert(key);
 
-    if (memoryBoundMergingWillBeUsed() && precedes_merging)
+    if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
     {
         output_stream->sort_description = group_by_sort_description;
         output_stream->sort_scope = DataStream::SortScope::Global;
@@ -97,11 +96,13 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         /// Do merge of aggregated data in parallel.
         pipeline.resize(max_threads);
 
-        const auto & required_sort_description = precedes_merging ? group_by_sort_description : SortDescription{};
+        const auto & required_sort_description
+            = should_produce_results_in_order_of_bucket_number ? group_by_sort_description : SortDescription{};
+
         pipeline.addSimpleTransform(
             [&](const Block &) { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
 
-        if (precedes_merging)
+        if (should_produce_results_in_order_of_bucket_number)
         {
             pipeline.addTransform(std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(
                 pipeline.getHeader(), pipeline.getNumStreams(), group_by_sort_description));
@@ -128,7 +129,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
     }
 
-    pipeline.resize(precedes_merging && memory_efficient_aggregation ? 1 : max_threads);
+    pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
 }
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const

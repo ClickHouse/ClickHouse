@@ -1748,8 +1748,8 @@ static void executeMergeAggregatedImpl(
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
     const AggregateDescriptions & aggregates,
-    SortDescription group_by_sort_description,
-    bool precedes_merging)
+    bool should_produce_results_in_order_of_bucket_number,
+    SortDescription group_by_sort_description)
 {
     auto keys = aggregation_keys.getNames();
     if (has_grouping_sets)
@@ -1779,10 +1779,10 @@ static void executeMergeAggregatedImpl(
         settings.distributed_aggregation_memory_efficient && is_remote_storage,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
+        should_produce_results_in_order_of_bucket_number,
         settings.max_block_size,
         settings.aggregation_in_order_max_block_bytes,
         std::move(group_by_sort_description),
-        precedes_merging,
         settings.enable_memory_bound_merging_of_aggregation_results);
 
     query_plan.addStep(std::move(merging_aggregated));
@@ -1859,8 +1859,8 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 context_->getSettingsRef(),
                 query_info.projection->aggregation_keys,
                 query_info.projection->aggregate_descriptions,
-                std::move(group_by_sort_description),
-                should_produce_results_in_order_of_bucket_number);
+                should_produce_results_in_order_of_bucket_number,
+                std::move(group_by_sort_description));
         }
     }
 }
@@ -2483,13 +2483,14 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
             group_by_sort_description,
             settings.max_block_size,
             0 /* LIMIT */,
-            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
+            SizeLimits{} /* no limits */,
             settings.max_bytes_before_remerge_sort,
             settings.remerge_sort_lowered_memory_bytes_ratio,
             settings.max_bytes_before_external_sort,
             context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data,
             settings.optimize_sorting_by_input_stream_properties);
+        sorting_step->setStepDescription("Enforced sorting for aggregation in order");
 
         query_plan.addStep(std::move(sorting_step));
 
@@ -2504,7 +2505,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
 
-    const bool precedes_merging = options.to_stage == QueryProcessingStage::WithMergeableState;
+    const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
+        && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentDataStream(),
@@ -2519,8 +2521,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.group_by_use_nulls,
         std::move(group_by_info),
         std::move(group_by_sort_description),
-        precedes_merging,
-        settings.distributed_aggregation_memory_efficient,
+        should_produce_results_in_order_of_bucket_number,
         settings.enable_memory_bound_merging_of_aggregation_results);
     query_plan.addStep(std::move(aggregating_step));
 }
@@ -2534,11 +2535,14 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
         return;
 
+    const Settings & settings = context->getSettingsRef();
+
     /// Used to determine if we should use memory bound merging strategy.
     auto group_by_sort_description
         = !query_analyzer->useGroupingSetKey() ? getSortDescriptionFromGroupBy(getSelectQuery()) : SortDescription{};
 
-    const bool precedes_merging = options.to_stage == QueryProcessingStage::WithMergeableState;
+    const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
+        && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
 
     executeMergeAggregatedImpl(
         query_plan,
@@ -2549,8 +2553,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregates(),
-        std::move(group_by_sort_description),
-        precedes_merging);
+        should_produce_results_in_order_of_bucket_number,
+        std::move(group_by_sort_description));
 }
 
 

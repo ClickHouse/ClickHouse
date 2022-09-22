@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 create table t(a UInt64, b UInt64) engine=MergeTree order by a;
 system stop merges t;
 insert into t select number, number from numbers_mt(1e6);
@@ -66,6 +68,5 @@ drop table dist_pr_t;
 drop table dist_t_different_dbs;
 drop table shard_1.t_different_dbs;
 drop table t_different_dbs;
-drop database shard_1;
 drop table dist_t;
 drop table t;

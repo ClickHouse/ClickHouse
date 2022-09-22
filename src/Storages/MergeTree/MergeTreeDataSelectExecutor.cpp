@@ -393,7 +393,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
                 // We don't have information regarding the `to_stage` of the query processing, only about `from_stage` (which is passed through `processed_stage` argument).
                 // Thus we cannot assign false here since it may be a query over distributed table.
-                const bool precedes_merging = true;
                 const bool should_produce_results_in_order_of_bucket_number = true;
 
                 auto aggregating_step = std::make_unique<AggregatingStep>(
@@ -409,7 +408,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     /* group_by_use_nulls */ false,
                     std::move(group_by_info),
                     std::move(group_by_sort_description),
-                    precedes_merging,
                     should_produce_results_in_order_of_bucket_number,
                     settings.enable_memory_bound_merging_of_aggregation_results);
                 query_plan->addStep(std::move(aggregating_step));

@@ -20,10 +20,10 @@ public:
         bool memory_efficient_aggregation_,
         size_t max_threads_,
         size_t memory_efficient_merge_threads_,
+        bool should_produce_results_in_order_of_bucket_number_,
         size_t max_block_size_,
         size_t memory_bound_merging_max_block_bytes_,
         SortDescription group_by_sort_description_,
-        bool precedes_merging_,
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
     String getName() const override { return "MergingAggregated"; }
@@ -49,9 +49,8 @@ private:
     const size_t memory_bound_merging_max_block_bytes;
     const SortDescription group_by_sort_description;
 
-    /// It is used to determine if we should resize pipeline to 1 at the end.
-    const bool precedes_merging;
-
+    /// These settings are used to determine if we should resize pipeline to 1 at the end.
+    const bool should_produce_results_in_order_of_bucket_number;
     const bool memory_bound_merging_of_aggregation_results_enabled;
 };
 
