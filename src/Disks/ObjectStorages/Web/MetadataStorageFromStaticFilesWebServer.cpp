@@ -66,9 +66,17 @@ bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) c
     if (object_storage.files.contains(path))
         return true;
 
-    for (const auto & [object_path, _] : object_storage.files)
-        if (startsWith(object_path, path))
-            return true;
+    /// `object_storage.files` contains files + directories only inside `metadata_path / uuid_3_digit / uuid /`
+    /// (spicific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
+    auto it = std::lower_bound(
+        object_storage.files.begin(),
+        object_storage.files.end(),
+        path,
+        [](const auto & file, const std::string & path_) { return file.first < path_; }
+    );
+    if (startsWith(it->first, path)
+        || (it != object_storage.files.begin() && startsWith(std::prev(it)->first, path)))
+        return true;
 
     return false;
 }
