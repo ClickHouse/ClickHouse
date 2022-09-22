@@ -157,7 +157,7 @@ public:
                 switch (max_unit) /// A kind of Duff Device.
                 {
                     case Years:     processUnit(365 * 24 * 3600, " year", 5, value, buf_to, has_output); [[fallthrough]];
-                    case Months:    processUnit(30.5 * 24 * 3600, " month", 6, value, buf_to, has_output); [[fallthrough]];
+                    case Months:    processUnit(static_cast<UInt64>(30.5 * 24 * 3600), " month", 6, value, buf_to, has_output); [[fallthrough]];
                     case Days:      processUnit(24 * 3600, " day", 4, value, buf_to, has_output); [[fallthrough]];
                     case Hours:     processUnit(3600, " hour", 5, value, buf_to, has_output); [[fallthrough]];
                     case Minutes:   processUnit(60, " minute", 7, value, buf_to, has_output); [[fallthrough]];
@@ -188,7 +188,7 @@ public:
             return;
         }
 
-        UInt64 num_units = value / unit_size;
+        UInt64 num_units = static_cast<UInt64>(value / unit_size);
 
         if (!num_units)
         {
@@ -228,4 +228,3 @@ REGISTER_FUNCTION(FormatReadableTimeDelta)
 }
 
 }
-

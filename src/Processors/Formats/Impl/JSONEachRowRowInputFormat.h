@@ -18,7 +18,7 @@ class ReadBuffer;
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
-class JSONEachRowRowInputFormat final : public IRowInputFormat
+class JSONEachRowRowInputFormat : public IRowInputFormat
 {
 public:
     JSONEachRowRowInputFormat(
@@ -47,6 +47,9 @@ private:
     void readField(size_t index, MutableColumns & columns);
     void readJSONObject(MutableColumns & columns);
     void readNestedData(const String & name, MutableColumns & columns);
+
+    virtual void readRowStart() {}
+    virtual bool checkEndOfData(bool is_first_row);
 
     const FormatSettings format_settings;
 
@@ -77,12 +80,13 @@ private:
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
     std::vector<NameMap::LookupResult> prev_positions;
 
-    /// This flag is needed to know if data is in square brackets.
-    bool data_in_square_brackets = false;
-
     bool allow_new_rows = true;
 
     bool yield_strings;
+
+protected:
+    /// This flag is needed to know if data is in square brackets.
+    bool data_in_square_brackets = false;
 };
 
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
