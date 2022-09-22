@@ -7310,13 +7310,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
-
         /// The name could be non-unique in case of stale files from previous runs.
         String full_path = new_data_part->getFullRelativePath();
 
         if (new_data_part->volume->getDisk()->exists(full_path))
         {
             LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
+            /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
+            /// New part have to capture its name, therefore there is no concurrentcy in directory creation
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "New empty part is about to matirialize but the dirrectory already exist"
                             ", new part {}"

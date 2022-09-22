@@ -1255,7 +1255,6 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
                     else:
                         raise e
 
-
         insert(100)
         p = Pool(15)
         tasks = []

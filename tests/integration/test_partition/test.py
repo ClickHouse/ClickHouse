@@ -457,10 +457,7 @@ def test_system_detached_parts(drop_detached_parts_table):
 
 
 def test_detached_part_dir_exists(started_cluster):
-    q(
-        "create table detached_part_dir_exists (n int) "
-        "engine=MergeTree order by n"
-    )
+    q("create table detached_part_dir_exists (n int) engine=MergeTree order by n")
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
