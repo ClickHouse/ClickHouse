@@ -32,9 +32,11 @@ public:
     {
         static constexpr auto assumed_load_latency_ns = 100;
         static constexpr auto just_coefficient = 4;
-        const auto single_iteration_latency = std::max<double>(1.0L * watch.elapsedNanoseconds() / iterations_to_measure, 1);
+        const auto single_iteration_latency = std::max<double>(static_cast<double>(1.0L * watch.elapsedNanoseconds() / iterations_to_measure), 1.0);
         return std::clamp<size_t>(
-            ceil(just_coefficient * assumed_load_latency_ns / single_iteration_latency), min_look_ahead_value, max_look_ahead_value);
+            static_cast<size_t>(ceil(just_coefficient * assumed_load_latency_ns / single_iteration_latency)),
+            min_look_ahead_value,
+            max_look_ahead_value);
     }
 
     static constexpr size_t getInitialLookAheadValue() { return min_look_ahead_value; }
