@@ -101,7 +101,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
-        read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
+        read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
     }
 
