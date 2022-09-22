@@ -225,7 +225,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -234,7 +234,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -243,7 +243,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -252,7 +252,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }

@@ -14,7 +14,7 @@ namespace ErrorCodes
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     if (!config.has(config_prefix + ".max_size"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected cache size (`size`) in configuration");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected cache size (`max_size`) in configuration");
 
     max_size = config.getUInt64(config_prefix + ".max_size", 0);
     if (max_size == 0)

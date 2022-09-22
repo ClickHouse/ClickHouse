@@ -74,7 +74,10 @@
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeFixedString.h>
 
+
+#define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
 
 namespace DB
 {
@@ -668,8 +671,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
+            {
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
+                    if (properties.indices.back().type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
+                        throw Exception("Annoy index is disabled. Turn on allow_experimental_annoy_index", ErrorCodes::INCORRECT_QUERY);
+            }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
@@ -803,6 +810,22 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                     "because experimental Object type is not allowed. "
                     "Set setting allow_experimental_object_type = 1 in order to allow it",
                     name, type->getName());
+            }
+        }
+    }
+    if (!create.attach && !settings.allow_suspicious_fixed_string_types)
+    {
+        for (const auto & [name, type] : properties.columns.getAllPhysical())
+        {
+            auto basic_type = removeLowCardinality(removeNullable(type));
+            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
+            {
+                if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot create table with column '{}' which type is '{}' "
+                        "because fixed string with size > {} is suspicious. "
+                        "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
+                        name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
             }
         }
     }
