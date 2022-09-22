@@ -12,14 +12,7 @@
 
 	],
 
-	"rows": 0,
-
-	"statistics":
-	{
-		"elapsed": 0.005748046,
-		"rows_read": 0,
-		"bytes_read": 0
-	}
+	"rows": 0
 }
 number
 UInt64
@@ -41,11 +34,6 @@ UInt64
 
 	</data>
 	<rows>0</rows>
-	<statistics>
-		<elapsed>0.005007338</elapsed>
-		<rows_read>0</rows_read>
-		<bytes_read>0</bytes_read>
-	</statistics>
 </result>
  number
 
