@@ -659,6 +659,11 @@ struct ToStartOfHourImpl
         return {time_zone.toStartOfHour(Int64(t.whole)), 0};
     }
 
+    static inline UInt32 execute_extended_result(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
