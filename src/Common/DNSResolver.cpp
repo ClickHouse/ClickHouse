@@ -1,5 +1,5 @@
 #include "DNSResolver.h"
-#include <base/CachedFn.h>
+#include <Common/CacheBase.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Names.h>
@@ -12,6 +12,7 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
+#include <unordered_set>
 #include "DNSPTRResolverProvider.h"
 
 namespace ProfileEvents
@@ -41,9 +42,11 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
 }
 
+namespace
+{
 
 /// Slightly altered implementation from https://github.com/pocoproject/poco/blob/poco-1.6.1/Net/src/SocketAddress.cpp#L86
-static void splitHostAndPort(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
+void splitHostAndPort(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
 {
     String port_str;
     out_host.clear();
@@ -84,7 +87,7 @@ static void splitHostAndPort(const std::string & host_and_port, std::string & ou
         throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
 }
 
-static DNSResolver::IPAddresses hostByName(const std::string & host)
+DNSResolver::IPAddresses hostByName(const std::string & host)
 {
     /// Do not resolve IPv6 (or IPv4) if no local IPv6 (or IPv4) addresses are configured.
     /// It should not affect client address checking, since client cannot connect from IPv6 address
@@ -112,7 +115,7 @@ static DNSResolver::IPAddresses hostByName(const std::string & host)
     return addresses;
 }
 
-static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
+DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 {
     Poco::Net::IPAddress ip;
 
@@ -136,7 +139,13 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     return addresses;
 }
 
-static std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & address)
+DNSResolver::IPAddresses resolveIPAddressWithCache(CacheBase<std::string, DNSResolver::IPAddresses> & cache, const std::string & host)
+{
+    auto [result, _ ] = cache.getOrSet(host, [&host]() { return std::make_shared<DNSResolver::IPAddresses>(resolveIPAddressImpl(host)); });
+    return *result;
+}
+
+std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & address)
 {
     auto ptr_resolver = DB::DNSPTRResolverProvider::get();
 
@@ -149,13 +158,22 @@ static std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress 
     }
 }
 
+std::unordered_set<String> reverseResolveWithCache(
+    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> & cache, const Poco::Net::IPAddress & address)
+{
+    auto [result, _ ] = cache.getOrSet(address, [&address]() { return std::make_shared<std::unordered_set<String>>(reverseResolveImpl(address)); });
+    return *result;
+}
+
+}
+
 struct DNSResolver::Impl
 {
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CachedFn<&resolveIPAddressImpl> cache_host;
-    CachedFn<&reverseResolveImpl> cache_address;
+    CacheBase<std::string, DNSResolver::IPAddresses> cache_host{100};
+    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{100};
 
     std::mutex drop_mutex;
     std::mutex update_mutex;
@@ -189,7 +207,7 @@ DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
         return resolveIPAddressImpl(host);
 
     addToNewHosts(host);
-    return impl->cache_host(host);
+    return resolveIPAddressWithCache(impl->cache_host, host);
 }
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
@@ -202,7 +220,7 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_an
     splitHostAndPort(host_and_port, host, port);
 
     addToNewHosts(host);
-    return Poco::Net::SocketAddress(impl->cache_host(host).front(), port);
+    return Poco::Net::SocketAddress(resolveIPAddressWithCache(impl->cache_host, host).front(), port);
 }
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, UInt16 port)
@@ -211,7 +229,7 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
         return Poco::Net::SocketAddress(host, port);
 
     addToNewHosts(host);
-    return  Poco::Net::SocketAddress(impl->cache_host(host).front(), port);
+    return  Poco::Net::SocketAddress(resolveIPAddressWithCache(impl->cache_host, host).front(), port);
 }
 
 std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std::string & host, UInt16 port)
@@ -224,7 +242,7 @@ std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std:
     if (!impl->disable_cache)
         addToNewHosts(host);
 
-    std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : impl->cache_host(host);
+    std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : resolveIPAddressWithCache(impl->cache_host, host);
     auto ips_end = std::unique(ips.begin(), ips.end());
 
     addresses.reserve(ips_end - ips.begin());
@@ -240,13 +258,13 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
         return reverseResolveImpl(address);
 
     addToNewAddresses(address);
-    return impl->cache_address(address);
+    return reverseResolveWithCache(impl->cache_address, address);
 }
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.drop();
-    impl->cache_address.drop();
+    impl->cache_host.reset();
+    impl->cache_address.reset();
 
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
@@ -255,6 +273,11 @@ void DNSResolver::dropCache()
     impl->new_hosts.clear();
     impl->new_addresses.clear();
     impl->host_name.reset();
+}
+
+void DNSResolver::removeHostFromCache(const std::string & host)
+{
+    impl->cache_host.remove(host);
 }
 
 void DNSResolver::setDisableCacheFlag(bool is_disabled)
@@ -378,17 +401,20 @@ bool DNSResolver::updateCache(UInt32 max_consecutive_failures)
 
 bool DNSResolver::updateHost(const String & host)
 {
-    /// Usage of updateHost implies that host is already in cache and there is no extra computations
-    auto old_value = impl->cache_host(host);
-    impl->cache_host.update(host);
-    return old_value != impl->cache_host(host);
+    const auto old_value = resolveIPAddressWithCache(impl->cache_host, host);
+    auto new_value = resolveIPAddressImpl(host);
+    const bool result = old_value != new_value;
+    impl->cache_host.set(host, std::make_shared<DNSResolver::IPAddresses>(std::move(new_value)));
+    return result;
 }
 
 bool DNSResolver::updateAddress(const Poco::Net::IPAddress & address)
 {
-    auto old_value = impl->cache_address(address);
-    impl->cache_address.update(address);
-    return old_value == impl->cache_address(address);
+    const auto old_value = reverseResolveWithCache(impl->cache_address, address);
+    auto new_value = reverseResolveImpl(address);
+    const bool result = old_value != new_value;
+    impl->cache_address.set(address, std::make_shared<std::unordered_set<String>>(std::move(new_value)));
+    return result;
 }
 
 void DNSResolver::addToNewHosts(const String & host)

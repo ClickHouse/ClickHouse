@@ -1,10 +1,11 @@
 #include <Common/StackTrace.h>
 
+#include <Common/CacheBase.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <base/CachedFn.h>
 #include <base/demangle.h>
 
 #include <atomic>
@@ -432,6 +433,17 @@ static void toStringEveryLineImpl(
 #endif
 }
 
+struct StackTraceRepresentation
+{
+    StackTrace::FramePointers frame_pointers;
+    size_t offset;
+    size_t size;
+
+    constexpr bool operator==(const StackTraceRepresentation &) const = default;
+};
+
+using StackTraceCache = DB::CacheBase<StackTraceRepresentation, std::string, DefaultHash<StackTraceRepresentation>>;
+
 static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
     std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -462,9 +474,9 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     return toStringStatic(frame_pointers_copy, offset, size);
 }
 
-static CachedFn<&toStringImpl> & cacheInstance()
+static StackTraceCache & cacheInstance()
 {
-    static CachedFn<&toStringImpl> cache;
+    static StackTraceCache cache{100};
     return cache;
 }
 
@@ -472,10 +484,13 @@ std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_p
 {
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    return cacheInstance()(frame_pointers, offset, size);
+    auto [result, _] = cacheInstance().getOrSet(
+        StackTraceRepresentation{frame_pointers, offset, size},
+        [&]() { return std::make_shared<std::string>(toStringImpl(frame_pointers, offset, size)); });
+    return *result;
 }
 
 void StackTrace::dropCache()
 {
-    cacheInstance().drop();
+    cacheInstance().reset();
 }
