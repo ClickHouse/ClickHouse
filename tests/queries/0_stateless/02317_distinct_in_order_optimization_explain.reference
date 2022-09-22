@@ -77,3 +77,7 @@ Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a DESC, b DESC
 Sorting (Stream): a DESC, b DESC
 Sorting (Stream): a DESC, b DESC
+-- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization
+Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
