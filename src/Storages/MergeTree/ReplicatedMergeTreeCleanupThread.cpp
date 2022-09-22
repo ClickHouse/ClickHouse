@@ -97,7 +97,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// Numbers are arbitrary.
     std::uniform_real_distribution<double> distr(1.05, 1.15);
     double ratio = distr(rng);
-    size_t min_replicated_logs_to_keep = storage_settings->min_replicated_logs_to_keep * ratio;
+    size_t min_replicated_logs_to_keep = static_cast<size_t>(storage_settings->min_replicated_logs_to_keep * ratio);
 
     if (static_cast<double>(children_count) < min_replicated_logs_to_keep)
         return;
