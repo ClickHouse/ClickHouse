@@ -92,4 +92,7 @@ $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan 
 echo "-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (2), - direction used from ORDER BY clause"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a DESC, b DESC" | eval $FIND_SORTING_PROPERTIES
 
+echo "-- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;set optimize_read_in_order=0;set optimize_aggregation_in_order=0;set optimize_read_in_window_order=0;explain plan sorting=1 select distinct a,b from distinct_in_order_explain" | eval $FIND_SORTING_PROPERTIES
+
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
