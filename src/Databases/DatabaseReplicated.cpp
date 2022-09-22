@@ -849,7 +849,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
                 /// Yep, I hate inner tables of materialized views.
                 auto mv_drop_inner_table_context = make_query_context();
-                table->dropInnerTableIfAny(sync, mv_drop_inner_table_context);
+                table->dropInnerTableIfAny(/* sync */ true, mv_drop_inner_table_context);
                 mv_drop_inner_table_context->getZooKeeperMetadataTransaction()->commit();
             }
 
@@ -1331,6 +1331,26 @@ void DatabaseReplicated::createTableRestoredFromBackup(
                             "Couldn't restore table {}.{} on other node or sync it (elapsed {})",
                             backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), to_string(elapsed));
     }
+}
+
+bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const
+{
+    if (query_context->getClientInfo().is_replicated_database_internal)
+        return false;
+
+    /// Some ALTERs are not replicated on database level
+    if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
+    {
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
+    }
+
+    /// DROP DATABASE is not replicated
+    if (const auto * drop = query_ptr->as<const ASTDropQuery>())
+    {
+        return drop->table.get();
+    }
+
+    return true;
 }
 
 }

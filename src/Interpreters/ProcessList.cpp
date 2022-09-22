@@ -224,7 +224,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             }
 
             thread_group->memory_tracker.setDescription("(for query)");
-            if (settings.memory_tracker_fault_probability)
+            if (settings.memory_tracker_fault_probability > 0.0)
                 thread_group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
 
             thread_group->memory_tracker.setOvercommitWaitingTime(settings.memory_usage_overcommit_max_wait_microseconds);
@@ -296,6 +296,9 @@ ProcessListEntry::~ProcessListEntry()
             found = true;
         }
     }
+
+    /// Wait for the query if it is in the cancellation right now.
+    parent.cancelled_cv.wait(lock.lock, [&]() { return it->is_cancelling == false; });
 
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
@@ -369,6 +372,12 @@ CancellationCode QueryStatus::cancelQuery(bool)
 
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
 {
+    /// In case of asynchronous distributed queries it is possible to call
+    /// addPipelineExecutor() from the cancelQuery() context, and this will
+    /// lead to deadlock.
+    if (is_killed.load())
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+
     std::lock_guard lock(executors_mutex);
     assert(std::find(executors.begin(), executors.end(), e) == executors.end());
     executors.push_back(e);
@@ -430,12 +439,35 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    auto lock = safeLock();
+    QueryStatus * elem;
 
-    QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
+    /// Cancelling the query should be done without the lock.
+    ///
+    /// Since it may be not that trivial, for example in case of distributed
+    /// queries it tries to cancel the query gracefully on shards and this can
+    /// take a while, so acquiring a lock during this time will lead to wait
+    /// all new queries for this cancellation.
+    ///
+    /// Another problem is that it can lead to a deadlock, because of
+    /// OvercommitTracker.
+    ///
+    /// So here we first set is_cancelling, and later reset it.
+    /// The ProcessListEntry cannot be destroy if is_cancelling is true.
+    {
+        auto lock = safeLock();
+        elem = tryGetProcessListElement(current_query_id, current_user);
+        if (!elem)
+            return CancellationCode::NotFound;
+        elem->is_cancelling = true;
+    }
 
-    if (!elem)
-        return CancellationCode::NotFound;
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        auto lock = unsafeLock();
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
 
     return elem->cancelQuery(kill);
 }
@@ -443,10 +475,28 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 
 void ProcessList::killAllQueries()
 {
-    auto lock = safeLock();
+    std::vector<QueryStatus *> cancelled_processes;
 
-    for (auto & process : processes)
-        process.cancelQuery(true);
+    SCOPE_EXIT({
+        auto lock = safeLock();
+        for (auto & cancelled_process : cancelled_processes)
+            cancelled_process->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    {
+        auto lock = safeLock();
+        cancelled_processes.reserve(processes.size());
+        for (auto & process : processes)
+        {
+            cancelled_processes.push_back(&process);
+            process.is_cancelling = true;
+        }
+    }
+
+    for (auto & cancelled_process : cancelled_processes)
+        cancelled_process->cancelQuery(true);
+
 }
 
 

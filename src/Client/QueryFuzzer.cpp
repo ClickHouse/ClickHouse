@@ -54,7 +54,7 @@ Field QueryFuzzer::getRandomField(int type)
     }
     case 1:
     {
-        static constexpr float values[]
+        static constexpr double values[]
                 = {NAN, INFINITY, -INFINITY, 0., -0., 0.0001, 0.5, 0.9999,
                    1., 1.0001, 2., 10.0001, 100.0001, 1000.0001, 1e10, 1e20,
                   FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % (sizeof(values) / sizeof(*values))];
@@ -137,9 +137,41 @@ Field QueryFuzzer::fuzzField(Field field)
             break;
         }
     }
-    else if (type == Field::Types::Array || type == Field::Types::Tuple)
+    else if (type == Field::Types::Array)
     {
-        auto & arr = field.reinterpret<FieldVector>();
+        auto & arr = field.get<Array>();
+
+        if (fuzz_rand() % 5 == 0 && !arr.empty())
+        {
+            size_t pos = fuzz_rand() % arr.size();
+            arr.erase(arr.begin() + pos);
+            std::cerr << "erased\n";
+        }
+
+        if (fuzz_rand() % 5 == 0)
+        {
+            if (!arr.empty())
+            {
+                size_t pos = fuzz_rand() % arr.size();
+                arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
+                std::cerr << fmt::format("inserted (pos {})\n", pos);
+            }
+            else
+            {
+                arr.insert(arr.begin(), getRandomField(0));
+                std::cerr << "inserted (0)\n";
+            }
+
+        }
+
+        for (auto & element : arr)
+        {
+            element = fuzzField(element);
+        }
+    }
+    else if (type == Field::Types::Tuple)
+    {
+        auto & arr = field.get<Tuple>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {

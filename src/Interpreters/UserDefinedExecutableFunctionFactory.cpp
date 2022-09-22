@@ -28,16 +28,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 class UserDefinedFunction final : public IFunction
 {
 public:
-
     explicit UserDefinedFunction(
         ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function_,
         ContextPtr context_,
         Array parameters_)
         : executable_function(std::move(executable_function_))
-        , context(context_)
+        , context(std::move(context_))
     {
         const auto & configuration = executable_function->getConfiguration();
         size_t command_parameters_size = configuration.parameters.size();
@@ -229,6 +231,8 @@ private:
     String command_with_parameters;
     std::vector<std::string> command_arguments_with_parameters;
 };
+
+}
 
 UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::instance()
 {

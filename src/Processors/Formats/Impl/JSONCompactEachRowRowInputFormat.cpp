@@ -49,20 +49,17 @@ JSONCompactEachRowFormatReader::JSONCompactEachRowFormatReader(ReadBuffer & in_,
 
 void JSONCompactEachRowFormatReader::skipRowStartDelimiter()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar('[', *in);
+    JSONUtils::skipArrayStart(*in);
 }
 
 void JSONCompactEachRowFormatReader::skipFieldDelimiter()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar(',', *in);
+    JSONUtils::skipComma(*in);
 }
 
 void JSONCompactEachRowFormatReader::skipRowEndDelimiter()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar(']', *in);
+    JSONUtils::skipArrayEnd(*in);
 
     skipWhitespaceIfAny(*in);
     if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
@@ -130,8 +127,7 @@ bool JSONCompactEachRowFormatReader::parseFieldDelimiterWithDiagnosticInfo(Write
 {
     try
     {
-        skipWhitespaceIfAny(*in);
-        assertChar(',', *in);
+        JSONUtils::skipComma(*in);
     }
     catch (const DB::Exception &)
     {
@@ -245,11 +241,16 @@ void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<JSONCompactEachRowRowSchemaReader>(buf, with_names, with_types, json_strings, settings);
             });
-            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+            if (!with_types)
             {
-                auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
-                return result + fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
-            });
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
+                {
+                    auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+                    if (!with_names)
+                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                    return result;
+                });
+            }
         };
         registerWithNamesAndTypes(json_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
     }

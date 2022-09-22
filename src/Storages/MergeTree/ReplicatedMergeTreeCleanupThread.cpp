@@ -66,7 +66,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         storage.clearOldWriteAheadLogs();
         storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
         if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
-            storage.clearOldBrokenPartsFromDetachedDirecory();
+            storage.clearOldBrokenPartsFromDetachedDirectory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -97,7 +97,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// Numbers are arbitrary.
     std::uniform_real_distribution<double> distr(1.05, 1.15);
     double ratio = distr(rng);
-    size_t min_replicated_logs_to_keep = storage_settings->min_replicated_logs_to_keep * ratio;
+    size_t min_replicated_logs_to_keep = static_cast<size_t>(storage_settings->min_replicated_logs_to_keep * ratio);
 
     if (static_cast<double>(children_count) < min_replicated_logs_to_keep)
         return;
