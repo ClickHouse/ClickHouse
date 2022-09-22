@@ -1020,6 +1020,49 @@ Example:
 }
 ```
 
+To use object name as column value you can use special setting [format_json_object_each_row_column_for_object_name](../operations/settings/settings.md#format_json_object_each_row_column_for_object_name).
+Examples:
+
+For output:
+```sql
+insert into function file('data.json', JSONObjectEachRow) select 'obj' as object_name, number from numbers(3) settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+File "data.json" will contain:
+```json
+{
+	"obj": {"number":"0"},
+	"obj": {"number":"1"},
+	"obj": {"number":"2"}
+}
+```
+
+For input:
+```sql
+select * from file('data.json', JSONObjectEachRow, 'obj String, number UInt64') settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```
+┌─object_name─┬─number─┐
+│ obj         │      0 │
+│ obj         │      1 │
+│ obj         │      2 │
+└─────────────┴────────┘
+```
+
+It also works in schema inference:
+
+```sql
+desc file('data.json', JSONObjectEachRow) settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```
+┌─name────────┬─type────────────┐
+│ object_name │ String          │
+│ number      │ Nullable(Int64) │
+└─────────────┴─────────────────┘
+```
+
 
 ### Inserting Data {#json-inserting-data}
 
