@@ -199,8 +199,13 @@ Chain buildPushingToViewsChain(
     checkStackSize();
     Chain result_chain;
 
+    ThreadStatus * thread_status = current_thread;
+
     if (!thread_status_holder)
+    {
         thread_status_holder = std::make_shared<ThreadStatusesHolder>();
+        thread_status = nullptr;
+    }
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
@@ -409,13 +414,13 @@ Chain buildPushingToViewsChain(
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
         auto sink = std::make_shared<PushingToLiveViewSink>(live_view_header, *live_view, storage, context);
-        sink->setRuntimeData(current_thread, elapsed_counter_ms);
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
-        sink->setRuntimeData(current_thread, elapsed_counter_ms);
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
     /// Do not push to destination table if the flag is set
@@ -423,7 +428,7 @@ Chain buildPushingToViewsChain(
     {
         auto sink = storage->write(query_ptr, metadata_snapshot, context);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
-        sink->setRuntimeData(current_thread, elapsed_counter_ms);
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
 
