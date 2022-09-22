@@ -59,14 +59,14 @@ public:
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
-        // if (which.isDate())
-        //     return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
-        // else if (which.isDate32())
-        //     if (enable_extended_results_for_datetime_functions)
-        //         return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
-        //     else
-        //         return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
-        // else
+        if (which.isDate())
+            return DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, Transform>::execute(arguments, result_type, input_rows_count);
+        else if (which.isDate32())
+            if (enable_extended_results_for_datetime_functions)
+                return DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime64, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
+            else
+                return DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime, Transform>::execute(arguments, result_type, input_rows_count);
+        else
         if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
@@ -75,11 +75,7 @@ public:
 
             const TransformDateTime64<Transform> transformer(scale);
             if (enable_extended_results_for_datetime_functions)
-            {
-                const auto result_scale = static_cast<const DataTypeDateTime64 *>(result_type.get())->getScale();
-                assert(result_scale>=0);
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime64, decltype(transformer), /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count, transformer);
-            }
             else
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
