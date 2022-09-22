@@ -1705,7 +1705,7 @@ def test_ast_auth_headers(started_cluster):
     )
 
     assert "Forbidden Error" in result
-    assert "S3Exception" in result
+    assert "S3_ERROR" in result
 
     result = instance.query(
         f"select * from s3('http://resolver:8080/{bucket}/{filename}', 'CSV', headers(Authorization=`Bearer TOKEN`))"
