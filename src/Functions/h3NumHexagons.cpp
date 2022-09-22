@@ -89,7 +89,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3NumHexagons)
+void registerFunctionH3NumHexagons(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3NumHexagons>();
 }

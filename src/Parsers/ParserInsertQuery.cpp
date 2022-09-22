@@ -41,7 +41,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserToken s_semicolon(TokenType::Semicolon);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
@@ -131,26 +130,15 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// Read SETTINGS if they are defined
-    if (s_settings.ignore(pos, expected))
-    {
-        /// Settings are written like SET query, so parse them with ParserSetQuery
-        ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, settings_ast, expected))
-            return false;
-    }
-
-    String format_str;
     Pos before_values = pos;
+    String format_str;
 
     /// VALUES or FORMAT or SELECT or WITH or WATCH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
     if (!infile && s_values.ignore(pos, expected))
     {
-        /// If VALUES is defined in query, everything except setting will be parsed as data,
-        /// and if values followed by semicolon, the data should be null.
-        if (!s_semicolon.checkWithoutMoving(pos, expected))
-            data = pos->begin;
+        /// If VALUES is defined in query, everything except setting will be parsed as data
+        data = pos->begin;
         format_str = "Values";
     }
     else if (s_format.ignore(pos, expected))
@@ -189,21 +177,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    /// Read SETTINGS after FORMAT.
-    ///
-    /// Note, that part of SETTINGS can be interpreted as values,
-    /// hence it is done only under option.
-    ///
-    /// Refs: https://github.com/ClickHouse/ClickHouse/issues/35100
-    if (allow_settings_after_format_in_insert && s_settings.ignore(pos, expected))
+    /// Read SETTINGS if they are defined
+    if (s_settings.ignore(pos, expected))
     {
-        if (settings_ast)
-            throw Exception("You have SETTINGS before and after FORMAT, "
-                            "this is not allowed. "
-                            "Consider switching to SETTINGS before FORMAT "
-                            "and disable allow_settings_after_format_in_insert.",
-                            ErrorCodes::SYNTAX_ERROR);
-
         /// Settings are written like SET query, so parse them with ParserSetQuery
         ParserSetQuery parser_settings(true);
         if (!parser_settings.parse(pos, settings_ast, expected))

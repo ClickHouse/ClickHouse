@@ -1,7 +1,7 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/
-sidebar_label: "Агрегатные функции"
-sidebar_position: 33
+toc_folder_title: "Агрегатные функции"
+toc_priority: 33
+toc_title: "Введение"
 ---
 
 # Агрегатные функции {#aggregate-functions}

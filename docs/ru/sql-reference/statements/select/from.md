@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/statements/select/from
-sidebar_label: FROM
+toc_title: FROM
 ---
 
 # Секция FROM {#select-from}

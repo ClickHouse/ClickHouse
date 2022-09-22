@@ -91,7 +91,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3CellAreaM2)
+void registerFunctionH3CellAreaM2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3CellAreaM2>();
 }

@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/count
-sidebar_position: 1
+toc_priority: 1
 ---
 
-# count
+# count {#agg_function-count}
 
 Counts the number of rows or not-NULL values.
 

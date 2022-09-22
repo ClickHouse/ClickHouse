@@ -8,7 +8,7 @@
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
 #include <Common/LocalDateTime.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 
@@ -41,10 +41,10 @@ public:
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
-    QueryPipeline loadUpdatedAll() override;
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadAll() override;
+    Pipe loadUpdatedAll() override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;
@@ -56,7 +56,7 @@ public:
 private:
     String getUpdateFieldAndDate();
     String doInvalidateQuery(const std::string & request) const;
-    QueryPipeline loadBase(const String & query);
+    Pipe loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
     const Configuration configuration;

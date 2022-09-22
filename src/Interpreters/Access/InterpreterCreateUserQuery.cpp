@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+
 }
 namespace
 {

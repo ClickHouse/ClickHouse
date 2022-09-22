@@ -2,8 +2,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/RowPolicy.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -53,11 +51,8 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 
 void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
+    context->checkAccess(AccessType::SHOW_ROW_POLICIES);
     const auto & access_control = context->getAccessControl();
-    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
-        context->checkAccess(AccessType::SHOW_ROW_POLICIES);
-
     std::vector<UUID> ids = access_control.findAll<RowPolicy>();
 
     size_t column_index = 0;
@@ -141,19 +136,4 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->isRestrictive(), policy->to_roles);
     }
 }
-
-void StorageSystemRowPolicies::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
-    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::ROW_POLICY);
-}
-
-void StorageSystemRowPolicies::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
-{
-    auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
-}
-
 }

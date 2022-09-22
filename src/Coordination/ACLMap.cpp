@@ -45,7 +45,7 @@ uint64_t ACLMap::convertACLs(const Coordination::ACLs & acls)
     if (acls.empty())
         return 0;
 
-    if (acl_to_num.contains(acls))
+    if (acl_to_num.count(acls))
         return acl_to_num[acls];
 
     /// Start from one
@@ -62,7 +62,7 @@ Coordination::ACLs ACLMap::convertNumber(uint64_t acls_id) const
     if (acls_id == 0)
         return Coordination::ACLs{};
 
-    if (!num_to_acl.contains(acls_id))
+    if (!num_to_acl.count(acls_id))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown ACL id {}. It's a bug", acls_id);
 
     return num_to_acl.at(acls_id);
@@ -82,7 +82,7 @@ void ACLMap::addUsage(uint64_t acl_id)
 
 void ACLMap::removeUsage(uint64_t acl_id)
 {
-    if (!usage_counter.contains(acl_id))
+    if (usage_counter.count(acl_id) == 0)
         return;
 
     usage_counter[acl_id]--;

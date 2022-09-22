@@ -50,11 +50,6 @@ public:
         return nested_func->getReturnType();
     }
 
-    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
-    {
-        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
-    }
-
     bool isVersioned() const override
     {
         return nested_func->isVersioned();
@@ -78,11 +73,6 @@ public:
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_func->destroy(place);
-    }
-
-    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
-    {
-        nested_func->destroyUpToState(place);
     }
 
     bool hasTrivialDestructor() const override
@@ -131,11 +121,6 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
-
-    bool isState() const override
-    {
-        return nested_func->isState();
-    }
 };
 
 }

@@ -32,9 +32,9 @@ namespace ErrorCodes
 namespace OpenSSLDetails
 {
 [[noreturn]] void onError(std::string error_message);
-StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, StringRef key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
+StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, const StringRef & key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
 
-const EVP_CIPHER * getCipherByName(StringRef name);
+const EVP_CIPHER * getCipherByName(const StringRef & name);
 
 enum class CompatibilityMode
 {
@@ -53,7 +53,7 @@ enum class CipherMode
 template <CipherMode mode>
 struct KeyHolder
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key) const
+    inline StringRef setKey(size_t cipher_key_size, const StringRef & key) const
     {
         if (key.size != cipher_key_size)
             throw DB::Exception(fmt::format("Invalid key size: {} expected {}", key.size, cipher_key_size),
@@ -66,7 +66,7 @@ struct KeyHolder
 template <>
 struct KeyHolder<CipherMode::MySQLCompatibility>
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key)
+    inline StringRef setKey(size_t cipher_key_size, const StringRef & key)
     {
         if (key.size < cipher_key_size)
             throw DB::Exception(fmt::format("Invalid key size: {} expected {}", key.size, cipher_key_size),
@@ -120,7 +120,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
 }
 
 template <CipherMode mode>
-inline void validateIV(StringRef iv_value, const size_t cipher_iv_size)
+inline void validateIV(const StringRef & iv_value, const size_t cipher_iv_size)
 {
     // In MySQL mode we don't care if IV is longer than expected, only if shorter.
     if ((mode == CipherMode::MySQLCompatibility && iv_value.size != 0 && iv_value.size < cipher_iv_size)
@@ -182,7 +182,7 @@ private:
 
         const auto mode = arguments[0].column->getDataAt(0);
 
-        if (mode.size == 0 || !mode.toView().starts_with("aes-"))
+        if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         const auto * evp_cipher = getCipherByName(mode);
@@ -453,7 +453,7 @@ private:
         using namespace OpenSSLDetails;
 
         const auto mode = arguments[0].column->getDataAt(0);
-        if (mode.size == 0 || !mode.toView().starts_with("aes-"))
+        if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         const auto * evp_cipher = getCipherByName(mode);
