@@ -79,6 +79,7 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
         return std::make_shared<JSONObjectEachRowRowOutputFormat>(buf, sample, params, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
+    factory.markFormatHasNoAppendSupport("JSONObjectEachRow");
 }
 
 }
