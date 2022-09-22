@@ -683,7 +683,7 @@ public:
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
                 /// But it will be more convenient for user to perform conversion.
-                value = element.getDouble();
+                value = static_cast<NumberType>(element.getDouble());
             }
             else if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
@@ -816,6 +816,27 @@ struct JSONExtractTree
         }
     };
 
+    class LowCardinalityNode : public Node
+    {
+    public:
+        LowCardinalityNode(DataTypePtr dictionary_type_, std::unique_ptr<Node> impl_)
+            : dictionary_type(dictionary_type_), impl(std::move(impl_)) {}
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            auto from_col = dictionary_type->createColumn();
+            if (impl->insertResultToColumn(*from_col, element))
+            {
+                std::string_view value = from_col->getDataAt(0).toView();
+                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data(), value.size());
+                return true;
+            }
+            return false;
+        }
+    private:
+        DataTypePtr dictionary_type;
+        std::unique_ptr<Node> impl;
+    };
+
     class UUIDNode : public Node
     {
     public:
@@ -872,18 +893,11 @@ struct JSONExtractTree
             if (!element.isString())
                 return false;
             auto str = element.getString();
-
-            if (dest.getDataType() == TypeIndex::LowCardinality) {
-                ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
-                col_low.insertData(str.data(), str.size());
-            }
-            else {
-                auto & col_str = assert_cast<ColumnFixedString &>(dest);
-                if (str.size() > col_str.getN()) 
-                    return false;
-
-                col_str.insertData(str.data(), str.size());
-            }
+            auto & col_str = assert_cast<ColumnFixedString &>(dest);
+            if (str.size() > col_str.getN())
+                return false;
+            col_str.insertData(str.data(), str.size());
+            
             return true;
         }
     };
@@ -1107,7 +1121,11 @@ struct JSONExtractTree
             {
                 auto dictionary_type = typeid_cast<const DataTypeLowCardinality *>(type.get())->getDictionaryType();
                 auto impl = build(function_name, dictionary_type);
-                return impl;
+
+                if ((*dictionary_type).getTypeId() == TypeIndex::FixedString)
+                    return std::make_unique<LowCardinalityNode>(dictionary_type, std::move(impl)); 
+                else
+                    return impl; 
             }
             case TypeIndex::Decimal256: return std::make_unique<DecimalNode<Decimal256>>(type);
             case TypeIndex::Decimal128: return std::make_unique<DecimalNode<Decimal128>>(type);
