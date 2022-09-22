@@ -2797,7 +2797,7 @@ OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, 
 }
 
 
-time_t Context::getUptimeSeconds() const
+double Context::getUptimeSeconds() const
 {
     auto lock = getLock();
     return shared->uptime_watch.elapsedSeconds();
