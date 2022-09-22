@@ -2,6 +2,7 @@
 #include <Common/CacheBase.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Poco/Net/IPAddress.h>
@@ -165,6 +166,15 @@ std::unordered_set<String> reverseResolveWithCache(
     return *result;
 }
 
+Poco::Net::IPAddress pickAddress(const DNSResolver::IPAddresses & addresses)
+{
+    if (addresses.size() == 1)
+        return addresses.front();
+
+    std::uniform_int_distribution<size_t> distribution{0, addresses.size() - 1};
+    return addresses[distribution(thread_local_rng)];
+}
+
 }
 
 struct DNSResolver::Impl
@@ -198,7 +208,7 @@ DNSResolver::DNSResolver() : impl(std::make_unique<DNSResolver::Impl>()), log(&P
 
 Poco::Net::IPAddress DNSResolver::resolveHost(const std::string & host)
 {
-    return resolveHostAll(host).front();
+    return pickAddress(resolveHostAll(host));
 }
 
 DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
@@ -220,7 +230,7 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_an
     splitHostAndPort(host_and_port, host, port);
 
     addToNewHosts(host);
-    return Poco::Net::SocketAddress(resolveIPAddressWithCache(impl->cache_host, host).front(), port);
+    return Poco::Net::SocketAddress(pickAddress(resolveIPAddressWithCache(impl->cache_host, host)), port);
 }
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, UInt16 port)
@@ -229,7 +239,7 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
         return Poco::Net::SocketAddress(host, port);
 
     addToNewHosts(host);
-    return  Poco::Net::SocketAddress(resolveIPAddressWithCache(impl->cache_host, host).front(), port);
+    return Poco::Net::SocketAddress(pickAddress(resolveIPAddressWithCache(impl->cache_host, host)), port);
 }
 
 std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std::string & host, UInt16 port)
