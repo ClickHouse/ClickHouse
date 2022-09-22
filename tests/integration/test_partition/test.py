@@ -185,8 +185,7 @@ def attach_check_all_parts_table(started_cluster):
     q(
         "CREATE TABLE test.attach_partition (n UInt64) "
         "ENGINE = MergeTree() "
-        "PARTITION BY intDiv(n, 8) ORDER BY n "
-        "SETTINGS old_parts_lifetime = 1"
+        "PARTITION BY intDiv(n, 8) ORDER BY n"
     )
     q(
         "INSERT INTO test.attach_partition SELECT number FROM system.numbers WHERE number % 2 = 0 LIMIT 8"
@@ -234,7 +233,8 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     )
 
     parts = q(
-        "SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name"
+        "SElECT name FROM system.parts "
+        "WHERE table='attach_partition' AND database='test' AND active ORDER BY name"
     )
     assert TSV(parts) == TSV("1_2_2_0\n1_4_4_0")
     detached = q(
@@ -459,15 +459,13 @@ def test_system_detached_parts(drop_detached_parts_table):
 def test_detached_part_dir_exists(started_cluster):
     q(
         "create table detached_part_dir_exists (n int) "
-        "engine=MergeTree order by n "
-        "settings old_parts_lifetime = 1"
+        "engine=MergeTree order by n"
     )
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
     )  # will move all_1_1_0 to detached/all_1_1_0 and create all_1_1_1
 
-    wait_for_delete_inactive_parts(instance, "detached_part_dir_exists")
     wait_for_delete_empty_parts(instance, "detached_part_dir_exists")
 
     q("detach table detached_part_dir_exists")

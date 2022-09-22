@@ -918,6 +918,7 @@ public:
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
 
+    constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
     MergeTreeData::MutableDataPartPtr createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
@@ -1029,6 +1030,7 @@ public:
 
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name);
+    std::optional<scope_guard> tryGetTemporaryPartDirectoryHolder(const String & part_dir_name);
 
 protected:
     friend class IMergeTreeDataPart;

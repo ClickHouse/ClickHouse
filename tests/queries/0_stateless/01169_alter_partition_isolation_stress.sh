@@ -32,7 +32,7 @@ function thread_insert()
 
 # NOTE
 # ALTER PARTITION query stops merges,
-# but parts could be deleted (PART_IS_TEMPORARILY_LOCKED) if some merge was assigned (and committed) between BEGIN and ALTER.
+# but parts could be deleted (SERIALIZATION_ERROR) if some merge was assigned (and committed) between BEGIN and ALTER.
 function thread_partition_src_to_dst()
 {
     set -e
@@ -49,14 +49,14 @@ function thread_partition_src_to_dst()
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=3) != ($count + 1, $sum + $i)) FORMAT Null;
         COMMIT;" 2>&1) ||:
 
-        echo "$out" | grep -Fv "PART_IS_TEMPORARILY_LOCKED" | grep -F "Received from " && $CLICKHOUSE_CLIENT --multiquery --query "
+        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --multiquery --query "
                                                                                    begin transaction;
                                                                                    set transaction snapshot 3;
                                                                                    select $i, 'src', type, n, _part from src order by type, n;
                                                                                    select $i, 'dst', type, n, _part from dst order by type, n;
                                                                                    rollback" ||:
-        echo "$out" | grep -Fa "PART_IS_TEMPORARILY_LOCKED" >/dev/null || count=$((count+1))
-        echo "$out" | grep -Fa "PART_IS_TEMPORARILY_LOCKED" >/dev/null || sum=$((sum+i))
+        echo "$out" | grep -Fa "SERIALIZATION_ERROR" >/dev/null || count=$((count+1))
+        echo "$out" | grep -Fa "SERIALIZATION_ERROR" >/dev/null || sum=$((sum+i))
     done
 }
 

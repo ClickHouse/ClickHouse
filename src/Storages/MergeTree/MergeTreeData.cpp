@@ -1686,7 +1686,19 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
 scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_dir_name)
 {
-    temporary_parts.add(part_dir_name);
+    bool inserted = temporary_parts.add(part_dir_name);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary part {} already added", part_dir_name);
+
+    return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
+}
+
+std::optional<scope_guard> MergeTreeData::tryGetTemporaryPartDirectoryHolder(const String & part_dir_name)
+{
+    bool inserted = temporary_parts.add(part_dir_name);
+    if (!inserted)
+        return {};
+
     return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
 }
 
@@ -1827,6 +1839,8 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
             (*it)->assertState({DataPartState::Deleting});
 
+            LOG_DEBUG(log, "Finally removing part from memory {}", part->name);
+
             data_parts_indexes.erase(it);
         }
     }
@@ -1921,6 +1935,8 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
     catch (...)
     {
         get_failed_parts();
+
+        LOG_DEBUG(log, "Failed to remove all parts, all count {}, removed {}", parts.size(), part_names_succeed.size());
 
         if (throw_on_error)
             throw;
@@ -2111,6 +2127,7 @@ size_t MergeTreeData::clearEmptyParts()
     {
         if (part->rows_count != 0)
             continue;
+        LOG_TRACE(log, "Find empty part {}", part->name);
 
         /// Do not try to drop uncommitted parts.
         if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
@@ -2120,12 +2137,15 @@ size_t MergeTreeData::clearEmptyParts()
         /// Otherwise covered parts resurrect
         {
             auto lock = lockParts();
+            if (part->getState() != DataPartState::Active)
+                continue;
+
             DataPartsVector covered_parts = getCoveredOutdatedParts(part->info, lock);
             if (!covered_parts.empty())
                 continue;
         }
 
-        LOG_TRACE(log, "Will drop empty part {}", part->name);
+        LOG_INFO(log, "Will drop empty part {}", part->name);
 
         dropPartNoWaitNoThrow(part->name);
         ++cleared_count;
@@ -5258,12 +5278,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 part->getDataPartStorage().commitTransaction();
 
         bool commit_to_wal = has_in_memory_parts && settings->in_memory_parts_enable_wal;
+
+        MergeTreeData::WriteAheadLogPtr wal;
+        if (commit_to_wal)
+            wal = data.getWriteAheadLog();
+
         if (txn || commit_to_wal)
         {
-            MergeTreeData::WriteAheadLogPtr wal;
-            if (commit_to_wal)
-                wal = data.getWriteAheadLog();
-
             for (const auto & part : precommitted_parts)
             {
                 if (txn)
@@ -5321,6 +5342,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
                         data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
+
+                        if (auto part_in_memory = asInMemoryPart(covered_part))
+                            wal->dropPart(part_in_memory->name);
                     }
 
                     reduce_parts += covered_parts.size();
@@ -6576,6 +6600,7 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
         if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
+
     return true;
 }
 
@@ -7244,12 +7269,12 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
     }
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn)
+MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
+        MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
+        const MergeTreeTransactionPtr & txn)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto settings = getSettings();
-
-    constexpr static auto TMP_PREFIX = "tmp_empty_";
 
     auto block = metadata_snapshot->getSampleBlock();
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
@@ -7267,7 +7292,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(MergeTreePartIn
         choosePartType(0, block.rows()),
         new_part_info,
         createVolumeFromReservation(reservation, volume),
-        TMP_PREFIX + new_part_name);
+        EMPTY_PART_TMP_PREFIX + new_part_name);
 
     new_data_part->name = new_part_name;
 
@@ -7292,7 +7317,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(MergeTreePartIn
         if (new_data_part->volume->getDisk()->exists(full_path))
         {
             LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
-            new_data_part->volume->getDisk()->removeRecursive(full_path);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "New empty part is about to matirialize but the dirrectory already exist"
+                            ", new part {}"
+                            ", directory {}",
+                            new_part_name, full_path);
         }
 
         const auto disk = new_data_part->volume->getDisk();

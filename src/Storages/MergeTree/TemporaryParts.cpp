@@ -15,12 +15,11 @@ bool TemporaryParts::contains(const std::string & basename) const
     return parts.contains(basename);
 }
 
-void TemporaryParts::add(const std::string & basename)
+bool TemporaryParts::add(const std::string & basename)
 {
     std::lock_guard lock(mutex);
     bool inserted = parts.emplace(basename).second;
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary part {} already added", basename);
+    return inserted;
 }
 
 void TemporaryParts::remove(const std::string & basename)

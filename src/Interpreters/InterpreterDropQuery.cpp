@@ -213,7 +213,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             TableExclusiveLockHolder table_excl_lock;
             /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
             /// For the rest of tables types exclusive lock is needed
-            if (!table->supportsReplication() && !std::dynamic_pointer_cast<MergeTreeData>(table))
+            if (!std::dynamic_pointer_cast<MergeTreeData>(table))
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr();

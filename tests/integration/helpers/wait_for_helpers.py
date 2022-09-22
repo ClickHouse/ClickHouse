@@ -1,5 +1,5 @@
 import time
-import logging
+from helpers.test_tools import assert_eq_with_retry
 
 
 def _parse_table_database(table, database):
@@ -12,18 +12,13 @@ def _parse_table_database(table, database):
     return table, "default"
 
 
-def wait_for_delete_inactive_parts(node, table, database=None, timeout=60):
+def wait_for_delete_inactive_parts(node, table, database=None):
     table, database = _parse_table_database(table, database)
     inactive_parts_query = (
         f"SELECT count() FROM system.parts "
         f"WHERE not active AND table = '{table}' AND database = '{database}';"
     )
-    while timeout > 0:
-        if 0 == int(node.query(inactive_parts_query)):
-            break
-        timeout -= 1
-        time.sleep(1)
-    assert 0 == int(node.query(inactive_parts_query))
+    assert_eq_with_retry(node, inactive_parts_query, "0\n")
 
 
 def wait_for_delete_empty_parts(node, table, database=None, timeout=60):
@@ -32,9 +27,5 @@ def wait_for_delete_empty_parts(node, table, database=None, timeout=60):
         f"SELECT count() FROM system.parts "
         f"WHERE active AND rows = 0 AND table = '{table}' AND database = '{database}'"
     )
-    while timeout > 0:
-        if 0 == int(node.query(empty_parts_query)):
-            break
-        timeout -= 1
-        time.sleep(1)
-    assert 0 == int(node.query(empty_parts_query))
+    assert_eq_with_retry(node, empty_parts_query, "0\n")
+

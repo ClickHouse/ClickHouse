@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+function wait_for_delete_empty_parts()
+{
+    local table=$1
+    local database=${2:-$CLICKHOUSE_DATABASE}
+    local timeout=${3:-20}
+
+    while [[ timeout -gt 0 ]]
+    do
+        res=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.parts WHERE database='$database' AND table='$table' AND active AND rows=0")
+        [[ $res -eq 0 ]] && return 0
+
+        sleep 1
+        timeout=$((timeout - 1))
+    done
+
+    echo "Timed out while waiting for delete empty parts!" >&2
+    return 2
+}
