@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: distributed, no-replicated-database
 
 set -ue
 
