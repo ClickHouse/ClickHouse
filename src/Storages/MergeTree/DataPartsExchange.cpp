@@ -962,14 +962,32 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     }
 
     assertEOF(in);
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    try
+    {
+        data_part_storage_builder->commit();
 
-    data_part_storage_builder->commit();
+        new_data_part = data.createPart(part_name, data_part_storage);
+        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        new_data_part->is_temp = true;
+        new_data_part->modification_time = time(nullptr);
 
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, data_part_storage);
-    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-    new_data_part->is_temp = true;
-    new_data_part->modification_time = time(nullptr);
-    new_data_part->loadColumnsChecksumsIndexes(true, false);
+        new_data_part->loadColumnsChecksumsIndexes(true, false);
+    }
+#if USE_AWS_S3
+    catch (const S3Exception & ex)
+    {
+        if (ex.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        {
+            throw Exception(ErrorCodes::S3_ERROR, "Cannot fetch part {} because we lost lock and it was concurrently removed", part_name);
+        }
+        throw;
+    }
+#endif
+    catch (...) /// Redundant catch, just to be able to add first one with #if
+    {
+        throw;
+    }
 
     data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
 
