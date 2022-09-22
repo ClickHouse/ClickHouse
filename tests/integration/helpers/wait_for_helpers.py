@@ -28,4 +28,3 @@ def wait_for_delete_empty_parts(node, table, database=None, timeout=60):
         f"WHERE active AND rows = 0 AND table = '{table}' AND database = '{database}'"
     )
     assert_eq_with_retry(node, empty_parts_query, "0\n")
-
