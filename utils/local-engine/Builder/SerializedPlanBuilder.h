@@ -25,6 +25,7 @@ class SerializedPlanBuilder
 {
 public:
     SerializedPlanBuilder();
+
     SerializedPlanBuilder & registerSupportedFunctions()
     {
         this->registerFunction(IS_NOT_NULL, "is_not_null")
@@ -34,10 +35,11 @@ public:
             .registerFunction(LESS_THAN, "lt")
             .registerFunction(MULTIPLY, "multiply")
             .registerFunction(SUM, "sum")
-            .registerFunction(TO_DATE, "TO_DATE")
+            .registerFunction(TO_DATE, "to_date")
             .registerFunction(EQUAL_TO, "equal");
         return *this;
     }
+
     SerializedPlanBuilder & registerFunction(int id, std::string name);
     SerializedPlanBuilder & filter(substrait::Expression * condition);
     SerializedPlanBuilder & project(std::vector<substrait::Expression *> projections);
@@ -85,6 +87,7 @@ substrait::Expression * literal(double_t value);
 substrait::Expression * literal(int32_t value);
 substrait::Expression * literal(std::string value);
 substrait::Expression * literalDate(int32_t value);
+substrait::Expression * literalTimestamp(int64_t value);
 
 substrait::Expression * selection(int32_t field_id);
 

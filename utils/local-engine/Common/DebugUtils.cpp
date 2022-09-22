@@ -1,6 +1,7 @@
 #include "DebugUtils.h"
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -81,11 +82,16 @@ void headBlock(const DB::Block & block, size_t count)
                 date_type->getSerialization(DB::ISerialization::Kind::DEFAULT)->serializeText(*nested_col, row, wb, {});
                 std::cerr << date_string.substr(0, 10) << "\t";
             }
-            else
+            else if (which.isDateTime64())
             {
-                std::cerr << "N/A"
-                          << "\t";
+                const auto * datetime64_type = DB::checkAndGetDataType<DB::DataTypeDateTime64>(nested_type.get());
+                String datetime64_string;
+                DB::WriteBufferFromString wb(datetime64_string);
+                datetime64_type->getSerialization(DB::ISerialization::Kind::DEFAULT)->serializeText(*nested_col, row, wb, {});
+                std::cerr << datetime64_string << "\t";
             }
+            else
+                std::cerr << "N/A" << "\t";
         }
         std::cerr << std::endl;
     }

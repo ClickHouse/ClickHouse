@@ -1,6 +1,7 @@
 #include "CHColumnToSparkRow.h"
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Types.h>
@@ -156,6 +157,24 @@ void writeValue(
     else if (which.isDate32())
     {
         WRITE_VECTOR_COLUMN(UInt32, uint32_t, get64)
+    }
+    else if (which.isDateTime64())
+    {
+        using ColumnDateTime64 = ColumnDecimal<DateTime64>;
+        const auto * datetime64_col = checkAndGetColumn<ColumnDateTime64>(*nested_col);
+        for (auto i=0; i<num_rows; i++)
+        {
+            bool is_null = nullable_column && nullable_column->isNullAt(i);
+            if (is_null)
+            {
+                setNullAt(buffer_address, offsets[i], field_offset, col_index);
+            }
+            else
+            {
+                auto * pointer = reinterpret_cast<int64_t *>(buffer_address + offsets[i] + field_offset);
+                pointer[0] = datetime64_col->getInt(i);
+            }
+        }
     }
     else if (which.isString())
     {

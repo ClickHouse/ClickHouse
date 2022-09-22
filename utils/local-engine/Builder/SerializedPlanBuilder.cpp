@@ -12,55 +12,71 @@ SchemaPtr SerializedSchemaBuilder::build()
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_i8()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "I32")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_i32()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "I64")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_i64()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "Boolean")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_bool_()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "I16")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_i16()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "String")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_string()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "FP32")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_fp32()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "FP64")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_fp64()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else if (type == "Date")
         {
             auto * t = type_struct->mutable_types()->Add();
             t->mutable_date()->set_nullability(
-                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
+        }
+        else if (type == "Timestamp")
+        {
+            auto * t = type_struct->mutable_types()->Add();
+            t->mutable_timestamp()->set_nullability(
+                this->nullability_map[name] ? substrait::Type_Nullability_NULLABILITY_NULLABLE
+                                            : substrait::Type_Nullability_NULLABILITY_REQUIRED);
         }
         else
         {
@@ -69,6 +85,7 @@ SchemaPtr SerializedSchemaBuilder::build()
     }
     return std::move(this->schema);
 }
+
 SerializedSchemaBuilder & SerializedSchemaBuilder::column(std::string name, std::string type, bool nullable)
 {
     this->type_map.emplace(name, type);
@@ -232,4 +249,14 @@ substrait::Expression* literalDate(int32_t value)
     literal->set_date(value);
     return rel;
 }
+
+/// Timestamp in units of microseconds since the UNIX epoch.
+substrait::Expression * literalTimestamp(int64_t value)
+{
+    substrait::Expression * rel = new substrait::Expression();
+    auto * literal = rel->mutable_literal();
+    literal->set_timestamp(value);
+    return rel;
+}
+
 }

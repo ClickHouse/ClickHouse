@@ -482,9 +482,14 @@ jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv *
         const auto * nullable = checkAndGetDataType<DB::DataTypeNullable>(block->getByPosition(position).type.get());
         which = DB::WhichDataType(nullable->getNestedType());
     }
+
     if (which.isDate32())
     {
         type = "Date";
+    }
+    else if (which.isDateTime64())
+    {
+        type = "Timestamp";
     }
     else if (which.isFloat32())
     {
@@ -762,8 +767,8 @@ jlong Java_io_glutenproject_vectorized_BlockNativeConverter_convertSparkRowsToCH
     jboolean * p_booleans = env->GetBooleanArrayElements(is_nullables, nullptr);
     for (int i = 0; i < column_size; i++)
     {
-        jstring name = reinterpret_cast<jstring>(env->GetObjectArrayElement(names, i));
-        jstring type = reinterpret_cast<jstring>(env->GetObjectArrayElement(types, i));
+        auto * name = static_cast<jstring>(env->GetObjectArrayElement(names, i));
+        auto * type = static_cast<jstring>(env->GetObjectArrayElement(types, i));
         c_names.push_back(jstring2string(env, name));
         c_types.push_back(jstring2string(env, type));
         c_isnullables.push_back(p_booleans[i] == JNI_TRUE);
@@ -777,7 +782,7 @@ jlong Java_io_glutenproject_vectorized_BlockNativeConverter_convertSparkRowsToCH
     LOCAL_ENGINE_JNI_METHOD_END(env, -1)
 }
 
-void Java_io_glutenproject_vectorized_BlockNativeConverter_freeBlock(JNIEnv * env, jobject, jlong block_address)
+void Java_io_glutenproject_vectorized_BlockNativeConverter_freeBlock(JNIEnv *  env, jobject, jlong block_address)
 {
     LOCAL_ENGINE_JNI_METHOD_START
     local_engine::SparkRowToCHColumn converter;

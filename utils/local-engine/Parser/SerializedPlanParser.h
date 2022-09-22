@@ -35,7 +35,7 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"not", "not"},
     {"xor", "xor"},
 
-    {"TO_DATE", "toDate"},
+    {"to_date", "toDate"},
     {"extract", ""},
     {"cast", ""},
     {"alias", "alias"},

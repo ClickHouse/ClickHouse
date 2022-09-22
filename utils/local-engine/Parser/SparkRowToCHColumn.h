@@ -63,7 +63,7 @@ struct SparkRowToCHColumnHelper
     }
 
     //parse Spark type name to CH DataType
-    DataTypePtr parseType(const string& type, const bool isNullable)
+    DataTypePtr parseType(const string & type, const bool isNullable)
     {
         DataTypePtr internal_type = nullptr;
         auto & factory = DataTypeFactory::instance();
@@ -112,10 +112,14 @@ struct SparkRowToCHColumnHelper
             internal_type = factory.get("Date32");
             internal_type = wrapNullableType(isNullable, internal_type);
         }
-        else
+        else if ("timestamp" == type)
         {
-            throw Exception(0, "doesn't support spark type {}", type);
+            internal_type = factory.get("DateTime64(6)");
+            internal_type = wrapNullableType(isNullable, internal_type);
         }
+        else
+            throw Exception(0, "doesn't support spark type {}", type);
+
         return internal_type;
     }
 };
@@ -128,16 +132,17 @@ public:
     static jmethodID spark_row_interator_next;
 
     // case 1: rows are batched (this is often directly converted from Block)
-    std::unique_ptr<Block> convertSparkRowInfoToCHColumn(SparkRowInfo & spark_row_info, Block & header);
+    static std::unique_ptr<Block> convertSparkRowInfoToCHColumn(SparkRowInfo & spark_row_info, Block & header);
 
     // case 2: provided with a sequence of spark UnsafeRow, convert them to a Block
-    Block* convertSparkRowItrToCHColumn(jobject java_iter, vector<string>& names, vector<string>& types, vector<bool>& isNullables)
+    static Block* convertSparkRowItrToCHColumn(jobject java_iter, vector<string>& names, vector<string>& types, vector<bool>& isNullables)
     {
         SparkRowToCHColumnHelper helper(names, types, isNullables);
 
         int attached;
         JNIEnv * env = JNIUtils::getENV(&attached);
-        while(env->CallBooleanMethod(java_iter,spark_row_interator_hasNext)){
+        while (env->CallBooleanMethod(java_iter, spark_row_interator_hasNext))
+        {
             jbyteArray row_data = static_cast<jbyteArray>(env->CallObjectMethod(java_iter, spark_row_interator_next));
 
             jsize len = env->GetArrayLength(row_data);
@@ -149,19 +154,17 @@ public:
         return getWrittenBlock(helper);
     }
 
-    void freeBlock(Block* block) {
-        delete block;
-    }
+    static void freeBlock(Block * block) { delete block; }
 
 private:
-    void appendSparkRowToCHColumn(SparkRowToCHColumnHelper & helper, int64_t address, int32_t size);
-    Block* getWrittenBlock(SparkRowToCHColumnHelper & helper);
+    static void appendSparkRowToCHColumn(SparkRowToCHColumnHelper & helper, int64_t address, int32_t size);
+    static Block* getWrittenBlock(SparkRowToCHColumnHelper & helper);
 };
 
 class SparkRowReader
 {
 public:
-    bool isSet(int index)
+    bool isSet(int index) const
     {
         assert(index >= 0);
         int64_t mask = 1 << (index & 63);
@@ -170,13 +173,13 @@ public:
         return (word & mask) != 0;
     }
 
-    inline void assertIndexIsValid(int index) const
+    void assertIndexIsValid([[maybe_unused]] int index) const
     {
         assert(index >= 0);
         assert(index < num_fields);
     }
 
-    bool isNullAt(int ordinal)
+    bool isNullAt(int ordinal) const
     {
         assertIndexIsValid(ordinal);
         return isSet(ordinal);
@@ -273,7 +276,7 @@ private:
     int64_t getFieldOffset(int ordinal) const { return base_offset + bit_set_width_in_bytes + ordinal * 8L; }
 
     int64_t base_offset;
-    int32_t num_fields;
+    [[maybe_unused]] int32_t num_fields;
     int32_t size_in_bytes;
     int32_t bit_set_width_in_bytes;
 };

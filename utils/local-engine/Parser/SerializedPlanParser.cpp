@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/registerFunctions.h>
 #include <Interpreters/ActionsDAG.h>
@@ -109,13 +110,17 @@ std::string typeName(const substrait::Type & type)
     {
         return "Date";
     }
+    else if (type.has_timestamp())
+    {
+        return "Timestamp";
+    }
 
     throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", magic_enum::enum_name(type.kind_case()));
 }
 
 bool isTypeSame(const substrait::Type & type, DataTypePtr data_type)
 {
-    static std::map<std::string, std::string> type_mapping
+    static const std::map<std::string, std::string> type_mapping
         = {{"I8", "Int8"},
            {"I16", "Int16"},
            {"I32", "Int32"},
@@ -123,13 +128,14 @@ bool isTypeSame(const substrait::Type & type, DataTypePtr data_type)
            {"FP32", "Float32"},
            {"FP64", "Float64"},
            {"Date", "Date32"},
+           {"Timestamp", "DateTime64(6)"},
            {"String", "String"},
            {"Boolean", "UInt8"}};
+
     std::string type_name = typeName(type);
     if (!type_mapping.contains(type_name))
-    {
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", type_name);
-    }
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", type_name);
+
     return type_mapping.at(type_name) == data_type->getName();
 }
 
@@ -168,14 +174,18 @@ std::string getCastFunction(const substrait::Type & type)
     {
         ch_function_name = "toDate32";
     }
+    // TODO need complete param: scale 
+    else if (type.has_timestamp())
+    {
+        ch_function_name = "toDateTime64";
+    }
     else if (type.has_bool_())
     {
         ch_function_name = "toUInt8";
     }
     else
-    {
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support cast type {}", type.DebugString());
-    }
+
     return ch_function_name;
 }
 
@@ -383,6 +393,11 @@ DataTypePtr SerializedPlanParser::parseType(const substrait::Type & type)
     {
         internal_type = factory.get("Date32");
         internal_type = wrapNullableType(type.date().nullability(), internal_type);
+    }
+    else if (type.has_timestamp())
+    {
+        internal_type = factory.get("DateTime64(6)");
+        internal_type = wrapNullableType(type.timestamp().nullability(), internal_type);
     }
     else
     {
@@ -814,39 +829,26 @@ NamesAndTypesList SerializedPlanParser::blockToNameAndTypeList(const Block & hea
     return types;
 }
 
+/// TODO spark中cast会被转化为Expression_Cast，而不是Expression_ScalarFunction
 std::string SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Expression_ScalarFunction & function)
 {
     const auto & output_type = function.output_type();
     auto args = function.arguments();
     auto function_name_idx = function_signature.find(':');
-    //    assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
     auto function_name = function_signature.substr(0, function_name_idx);
     if (!SCALAR_FUNCTIONS.contains(function_name))
-    {
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "unsupported function {}", function_name);
-    }
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unsupported function {}", function_name);
+
     std::string ch_function_name;
     if (function_name == "cast")
     {
-        if (output_type.has_fp64())
-        {
-            ch_function_name = "toFloat64";
-        }
-        else if (output_type.has_string())
-        {
-            ch_function_name = "toString";
-        }
-        else
-        {
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "unsupported function {}", function_signature);
-        }
+        ch_function_name = getCastFunction(output_type);
     }
     else if (function_name == "extract")
     {
         if (args.size() != 2)
-        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "extract function requires two args.");
-        }
+
         // Get the first arg: field
         const auto & extract_field = args.at(0);
 
@@ -870,19 +872,14 @@ std::string SerializedPlanParser::getFunctionName(std::string function_signature
                 ch_function_name = "toDayOfYear";
             }
             else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "the first arg of extract function is wrong.");
-            }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first arg of extract function is wrong.");
         }
         else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "the first arg of extract function is wrong.");
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first arg of extract function is wrong.");
     }
     else
-    {
         ch_function_name = SCALAR_FUNCTIONS.at(function_name);
-    }
+
     return ch_function_name;
 }
 
@@ -916,6 +913,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
             args.emplace_back(parseArgument(actions_dag, arg.value()));
         }
     }
+
     const ActionsDAG::Node * result_node;
     if (function_name == "alias")
     {
@@ -1037,6 +1035,130 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                     return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.date()), type, getUniqueName(std::to_string(literal.date()))));
                 }
+                case substrait::Expression_Literal::kTimestamp: {
+                    auto type = std::make_shared<DataTypeDateTime64>(6);
+                    auto field = DecimalField<DateTime64>(literal.timestamp(), 6);
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, field), type, getUniqueName(std::to_string(literal.timestamp()))));
+                }
+                case substrait::Expression_Literal::kList: {
+                    SizeLimits limit;
+                    if (literal.has_empty_list())
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "empty list not support!");
+                    }
+                    MutableColumnPtr values;
+                    DataTypePtr type;
+                    auto first_value = literal.list().values(0);
+                    if (first_value.has_boolean())
+                    {
+                        type = std::make_shared<DataTypeUInt8>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).boolean() ? 1 : 0);
+                        }
+                    }
+                    else if (first_value.has_i8())
+                    {
+                        type = std::make_shared<DataTypeInt8>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i8());
+                        }
+                    }
+                    else if (first_value.has_i16())
+                    {
+                        type = std::make_shared<DataTypeInt16>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i16());
+                        }
+                    }
+                    else if (first_value.has_i32())
+                    {
+                        type = std::make_shared<DataTypeInt32>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i32());
+                        }
+                    }
+                    else if (first_value.has_i64())
+                    {
+                        type = std::make_shared<DataTypeInt64>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i64());
+                        }
+                    }
+                    else if (first_value.has_fp32())
+                    {
+                        type = std::make_shared<DataTypeFloat32>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).fp32());
+                        }
+                    }
+                    else if (first_value.has_fp64())
+                    {
+                        type = std::make_shared<DataTypeFloat64>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).fp64());
+                        }
+                    }
+                    else if (first_value.has_date())
+                    {
+                        type = std::make_shared<DataTypeDate32>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).date());
+                        }
+                    }
+                    else if (first_value.has_timestamp())
+                    {
+                        type = std::make_shared<DataTypeDateTime64>(6);
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            auto field = DecimalField<DateTime64>(literal.list().values(i).timestamp(), 6);
+                            values->insert(literal.list().values(i).timestamp());
+                        }
+                    }
+                    else if (first_value.has_string())
+                    {
+                        type = std::make_shared<DataTypeString>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).string());
+                        }
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::UNKNOWN_TYPE,
+                            "unsupported literal list type. {}",
+                            magic_enum::enum_name(first_value.literal_type_case()));
+                    }
+                    auto set = std::make_shared<Set>(limit, true, false);
+                    Block values_block;
+                    auto name = getUniqueName("__set");
+                    values_block.insert(ColumnWithTypeAndName(std::move(values), type, name));
+                    set->setHeader(values_block.getColumnsWithTypeAndName());
+                    set->insertFromBlock(values_block.getColumnsWithTypeAndName());
+                    set->finishInsert();
+
+                    auto arg = ColumnSet::create(set->getTotalRowCount(), set);
+                    return &action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name));
+                }
                 case substrait::Expression_Literal::kNull: {
                     DataTypePtr nested_type;
                     if (literal.null().has_i8())
@@ -1071,6 +1193,10 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                     {
                         nested_type = std::make_shared<DataTypeDate32>();
                     }
+                    else if (literal.null().has_timestamp())
+                    {
+                        nested_type = std::make_shared<DataTypeDateTime64>(6);
+                    }
                     else if (literal.null().has_string())
                     {
                         nested_type = std::make_shared<DataTypeString>();
@@ -1094,9 +1220,8 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
         }
         case substrait::Expression::RexTypeCase::kCast: {
             if (!rel.cast().has_type() || !rel.cast().has_input())
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Doesn't have type or input in cast node.");
-            }
+
             std::string ch_function_name = getCastFunction(rel.cast().type());
             DB::ActionsDAG::NodeRawConstPtrs args;
             auto cast_input = rel.cast().input();
