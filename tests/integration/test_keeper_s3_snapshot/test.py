@@ -77,6 +77,8 @@ def wait_node(node):
 def test_s3_upload(started_cluster):
     node1_zk = get_fake_zk(node1.name)
 
+    # we defined in configs snapshot_distance as 50
+    # so after 50 requests we should generate a snapshot
     for _ in range(210):
         node1_zk.create("/test", sequence=True)
 
@@ -99,6 +101,8 @@ def test_s3_upload(started_cluster):
     destroy_zk_client(node1_zk)
     node1.stop_clickhouse(kill=True)
 
+    # wait for new leader to be picked and that it continues
+    # uploading snapshots
     wait_node(node2)
     node2_zk = get_fake_zk(node2.name)
     for _ in range(200):
