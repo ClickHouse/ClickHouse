@@ -146,13 +146,8 @@ struct ToStartOfDayImpl
     }
     static inline Int64 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d));
+        return time_zone.fromDayNum(ExtendedDayNum(d)) * DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale);
     }
-    // static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<Date32> & t, const DateLUTImpl & )
-    // {
-    //     // return time_zone.fromDayNum(ExtendedDayNum(d));
-    //     return {t.whole, 0};
-    // }
 
     using FactorTransform = ZeroTransform;
 };
@@ -372,6 +367,14 @@ struct ToStartOfMinuteImpl
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
+    }
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toStartOfMinute(t.whole), 0};
+    }
+    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    {
+        return date32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
