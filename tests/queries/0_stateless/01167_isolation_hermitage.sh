@@ -8,16 +8,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 # shellcheck source=./transactions.lib
 . "$CURDIR"/transactions.lib
+# shellcheck source=./parts.lib
+. "$CURDIR"/parts.lib
 set -e
 
 # https://github.com/ept/hermitage
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test"
-$CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id"
+$CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id SETTINGS old_parts_lifetime=1"
 
 function reset_table()
 {
     $CLICKHOUSE_CLIENT -q "truncate table test;"
+    wait_for_delete_empty_parts "test"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (1, 10);"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (2, 20);"
 }
@@ -108,6 +111,7 @@ tx_async 12 "commit"
 tx_wait 12
 tx_wait 13
 $CLICKHOUSE_CLIENT -q "select 16, * from test order by id"
+
 
 # PMP write
 reset_table

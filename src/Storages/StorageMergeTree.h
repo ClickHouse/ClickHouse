@@ -170,7 +170,8 @@ private:
             bool optimize_skip_merged_partitions = false);
 
     MutableDataPartsVector makeCoveringEmptyTmpParts(const DataPartsVector & parts, const MergeTreeTransactionPtr & txn);
-    void coverPartsWithEmptyParts(const DataPartsVector & old_parts, const MutableDataPartsVector & new_parts, Transaction & transaction);
+
+    void coverPartsWithEmptyParts(const DataPartsVector & old_parts, MutableDataPartsVector & new_parts, Transaction & transaction);
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists

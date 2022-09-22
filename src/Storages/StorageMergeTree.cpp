@@ -53,7 +53,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int SERIALIZATION_ERROR;
 }
 
 namespace ActionLocks
@@ -1421,12 +1421,12 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
             deduplication_log->dropPart(part->info);
         }
 
-        LOG_INFO(log, "Removed 1 parts.");
-
         /// Need to destroy part objects before clearing them from filesystem.
         part.reset();
 
         clearOldPartsFromFilesystem();
+
+        LOG_INFO(log, "Removed 1 part {}.", part_name);
     }
 
     /// Else nothing to do, part was removed in some different way
@@ -1449,7 +1449,7 @@ RangesWithContinuousBlocks groupByRangesWithContinuousBlocks(DataPartsVector par
         }
 
         auto last_part_in_prev_range = result.back().back();
-        if (last_part_in_prev_range->info.max_block+1 == part->info.min_block)
+        if (last_part_in_prev_range->info.max_block + 1 == part->info.min_block)
             result.back().push_back(part);
         else
             result.push_back({part});
@@ -1458,80 +1458,122 @@ RangesWithContinuousBlocks groupByRangesWithContinuousBlocks(DataPartsVector par
     return result;
 }
 
-struct PartitionInfo
+struct FutureNewEmptyPart
 {
-    MergeTreePartition partition{};
-    Int64 min_block = std::numeric_limits<Int64>::max();
-    Int64 max_block = 0;
-    UInt32 max_level = 0;
-    Int64 max_mutation = 0;
+    MergeTreePartInfo part_info;
+    MergeTreePartition partition;
+    std::string part_name;
 
+    scope_guard tmp_dir_guard;
+
+    StorageMergeTree::MutableDataPartPtr data_part;
+
+    std::string getDirName() const { return StorageMergeTree::EMPTY_PART_TMP_PREFIX + part_name; }
 };
 
-using PartitionInfos = std::unordered_map<String, PartitionInfo>;
+using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
 
-PartitionInfos collectPartitionInfos(const DataPartsVector & parts)
+FutureNewEmptyParts initNewEmptyPartsForPartitions(const DataPartsVector & old_parts)
 {
-    PartitionInfos partition_infos;
-    for (const auto & part: parts)
+    using FutureNewEmptyPartsSet = std::unordered_map<String, FutureNewEmptyPart>;
+
+    FutureNewEmptyPartsSet new_parts;
+    for (const auto & old_part: old_parts)
     {
-        const MergeTreePartInfo & part_info = part->info;
+        const MergeTreePartInfo & part_info = old_part->info;
         auto partition_id = part_info.partition_id;
-        if (partition_infos.contains(partition_id))
+        if (new_parts.contains(partition_id))
         {
-            auto & partition_info = partition_infos[partition_id];
-            partition_info.min_block = std::min(partition_info.min_block, part_info.min_block);
-            partition_info.max_block = std::max(partition_info.max_block, part_info.max_block);
-            partition_info.max_level = std::max(partition_info.max_level, part_info.level);
-            partition_info.max_mutation = std::max(partition_info.max_mutation, part_info.mutation);
+            auto & new_part = new_parts[partition_id];
+            new_part.part_info.min_block = std::min(new_part.part_info.min_block, part_info.min_block);
+            new_part.part_info.max_block = std::max(new_part.part_info.max_block, part_info.max_block);
+            new_part.part_info.level = std::max(new_part.part_info.level, part_info.level + 1);
+            new_part.part_info.mutation = std::max(new_part.part_info.mutation, part_info.mutation);
         }
         else
-            partition_infos[partition_id] = {part->partition, part_info.min_block, part_info.max_block, part_info.level, part_info.mutation};
+        {
+            auto & new_part = new_parts[partition_id];
+            new_part.part_info = MergeTreePartInfo(partition_id, part_info.min_block, part_info.max_block, part_info.level + 1, part_info.mutation);
+            new_part.partition = old_part->partition;
+        }
     }
 
-    return partition_infos;
+    FutureNewEmptyParts result;
+    result.reserve(new_parts.size());
+    for (auto & item : new_parts)
+        result.push_back(std::move(item.second));
+
+    for (auto & new_part : result)
+        new_part.part_name = new_part.part_info.getPartName();
+
+    return result;
 }
 
-MergeTreeData::MutableDataPartsVector StorageMergeTree::makeCoveringEmptyTmpParts(const DataPartsVector & parts, const MergeTreeTransactionPtr & txn)
+Strings getPartsNames(const DataPartsVector & parts)
 {
-    MutableDataPartsVector new_parts;
+    Strings part_names;
+    for (const auto & p : parts)
+        part_names.push_back(p->getNameWithState());
+    return part_names;
+}
+
+Strings getPartsNames(const FutureNewEmptyParts & parts)
+{
+    Strings part_names;
+    for (const auto & p : parts)
+        part_names.push_back(p.part_name);
+    return part_names;
+}
+
+FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & parts)
+{
+    FutureNewEmptyParts new_parts;
 
     /// Parts could have gaps in continuous block numeration of parts due to concurrent insertions.
     /// This gaps must not be covered with empty parts otherwise parts from concurrent insertions miss.
     /// Here the parts are split on ranges without block gaps.
     RangesWithContinuousBlocks continuous_ranges = groupByRangesWithContinuousBlocks(parts);
 
-    for (auto& range: continuous_ranges)
+    for (const auto& range: continuous_ranges)
     {
         /// Inside each range new empty part could cover parts from min_block to max_block with respect of partitions
-        auto partitions = collectPartitionInfos(range);
-        for (const auto & it: partitions)
-        {
-            const auto & partition_id = it.first;
-            const auto & info = it.second;
-            auto part_info = MergeTreePartInfo(partition_id, info.min_block, info.max_block, info.max_level+1, info.max_mutation);
-
-            auto data_part = createEmptyPart(part_info, info.partition, part_info.getPartName(), txn);
-            new_parts.push_back(data_part);
-        }
+        auto grouped_new_parts = initNewEmptyPartsForPartitions(range);
+        std::move(grouped_new_parts.begin(), grouped_new_parts.end(), std::back_inserter(new_parts));
     }
-
-    auto get_part_names = [] (auto & parts_) -> Strings
-    {
-        Strings part_names;
-        for (const auto & p : parts_)
-            part_names.push_back(p->getNameWithState());
-        return part_names;
-    };
-
-    LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
-             new_parts.size(), parts.size(),
-             fmt::join(get_part_names(new_parts), ", "), fmt::join(get_part_names(parts), ", "));
 
     return new_parts;
 }
 
-void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_parts, const MutableDataPartsVector & new_parts, Transaction & transaction)
+StorageMergeTree::MutableDataPartsVector createNewEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & new_parts, const MergeTreeTransactionPtr & txn)
+{
+    StorageMergeTree::MutableDataPartsVector data_parts;
+    for (auto & new_part: new_parts)
+        data_parts.push_back(data.createEmptyPart(new_part.part_info, new_part.partition, new_part.part_name, txn));
+    return data_parts;
+}
+
+void captureTmpDirName(MergeTreeData & data, FutureNewEmptyParts & new_parts)
+{
+    for (auto & new_part : new_parts)
+    {
+        auto maybe_guard = data.tryGetTemporaryPartDirectoryHolder(new_part.getDirName());
+        if (!maybe_guard)
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Temporary part {} already added", new_part.getDirName());
+
+        new_part.tmp_dir_guard = std::move(*maybe_guard);
+    }
+}
+
+StorageMergeTree::MutableDataPartsVector getDataParts(FutureNewEmptyParts & new_parts)
+{
+    StorageMergeTree::MutableDataPartsVector result;
+    result.reserve(new_parts.size());
+    for (auto & part : new_parts)
+        result.push_back(part.data_part);
+    return result;
+}
+
+void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_parts, MutableDataPartsVector & new_parts, Transaction & transaction)
 {
     auto part_lock = lockParts();
 
@@ -1544,14 +1586,14 @@ void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_part
                 changed_parts.push_back(part);
 
         if (!changed_parts.empty())
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED,
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
                             "Race with concurrent query that modifies parts. {} parts have changed the status, first is {}. Try again later.",
                             changed_parts.size(), changed_parts.front()->getNameWithState());
     }
 
     DataPartsVector covered_parts;
 
-    for (auto part: new_parts)
+    for (auto & part: new_parts)
     {
         bool no_covering_parts = renameTempPartAndReplaceUnlocked(part, transaction, part_lock, &covered_parts);
         bool has_covering_parts = !no_covering_parts;
@@ -1569,8 +1611,12 @@ void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_part
 
     LOG_INFO(log, "Remove {} parts by covering them with empty {} parts.", covered_parts.size(), new_parts.size());
 
-    // Do commit at the same locked scope where new parts was checked
+    /// Do commit at the same locked scope where new parts was checked
     transaction.commit(&part_lock);
+
+    /// Remove covered parts without waiting for old_parts_lifetime seconds.
+    for (auto & covered_part: covered_parts)
+        covered_part->remove_time.store(0, std::memory_order_relaxed);
 
     if (deduplication_log)
         for (const auto & part: covered_parts)
@@ -1588,13 +1634,19 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     auto txn = query_context->getCurrentTransaction();
     MergeTreeData::Transaction transaction(*this, txn.get());
     {
-        DataPartsVector parts = getVisibleDataPartsVector(query_context);
+        auto parts = getVisibleDataPartsVector(query_context);
 
-        MutableDataPartsVector new_parts = makeCoveringEmptyTmpParts(parts, txn);
+        auto new_parts = initCoverageWithNewEmptyParts(parts);
 
-        coverPartsWithEmptyParts(parts, new_parts, transaction);
+        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
+                 new_parts.size(), parts.size(),
+                 fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames(parts), ", "));
 
-        PartLog::addNewParts(query_context, new_parts, watch.elapsed());
+        captureTmpDirName(*this, new_parts);
+        auto new_data_parts = createNewEmptyDataParts(*this, new_parts, txn);
+        coverPartsWithEmptyParts(parts, new_data_parts, transaction);
+
+        PartLog::addNewParts(query_context, new_data_parts, watch.elapsed());
 
         LOG_INFO(log, "Truncated table with {} parts by replacing them with new empty {} parts.",
                  parts.size(), new_parts.size());
@@ -1603,6 +1655,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     /// Old parts are needed to be destroyed before clearing them from filesystem.
     clearOldMutations(true);
     clearOldPartsFromFilesystem();
+    clearEmptyParts();
 }
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
@@ -1630,21 +1683,27 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
 
         {
-            MutableDataPartsVector new_parts = makeCoveringEmptyTmpParts({part}, txn);
+            auto new_parts = initCoverageWithNewEmptyParts({part});
 
-            coverPartsWithEmptyParts({part}, new_parts, transaction);
+            LOG_TEST(log, "Made {} empty parts in order to cover {} part.",
+                     fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames({part}), ", "));
 
-            PartLog::addNewParts(query_context, new_parts, watch.elapsed());
+            captureTmpDirName(*this, new_parts);
+            auto new_data_parts = createNewEmptyDataParts(*this, new_parts, txn);
+            coverPartsWithEmptyParts({part}, new_data_parts, transaction);
+
+            PartLog::addNewParts(query_context, new_data_parts, watch.elapsed());
 
             const auto * op = detach ? "Detached" : "Dropped";
             LOG_INFO(log, "{} {} part by replacing it with new empty {} part.",
-                 op, part->name, new_parts[0]->name);
+                 op, part->name, new_parts[0].part_name);
         }
     }
 
     /// Old part objects is needed to be destroyed before clearing them from filesystem.
     clearOldMutations(true);
     clearOldPartsFromFilesystem();
+    clearEmptyParts();
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
@@ -1681,11 +1740,17 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 part->makeCloneInDetached("", metadata_snapshot);
             }
 
-        MutableDataPartsVector new_parts = makeCoveringEmptyTmpParts(parts, txn);
+        auto new_parts = initCoverageWithNewEmptyParts(parts);
 
-        coverPartsWithEmptyParts(parts, new_parts, transaction);
+        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
+                 new_parts.size(), parts.size(),
+                 fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames(parts), ", "));
 
-        PartLog::addNewParts(query_context, new_parts, watch.elapsed());
+        captureTmpDirName(*this, new_parts);
+        auto new_data_parts = createNewEmptyDataParts(*this, new_parts, txn);
+        coverPartsWithEmptyParts(parts, new_data_parts, transaction);
+
+        PartLog::addNewParts(query_context, new_data_parts, watch.elapsed());
 
         const auto * op = detach ? "Detached" : "Dropped";
         LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts",
@@ -1695,6 +1760,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     /// Old parts are needed to be destroyed before clearing them from filesystem.
     clearOldMutations(true);
     clearOldPartsFromFilesystem();
+    clearEmptyParts();
 }
 
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(

@@ -53,7 +53,7 @@ function concurrent_drop_part_before()
     tx 11 "begin transaction"
     tx 22                         "begin transaction"
     tx 22                         "alter table tt drop part 'all_2_2_0'"
-    tx 11 "truncate table tt" | grep -Eo "PART_IS_TEMPORARILY_LOCKED" | uniq
+    tx 11 "truncate table tt" | grep -Eo "SERIALIZATION_ERROR" | uniq
     tx 11 "commit" | grep -Eo "INVALID_TRANSACTION" | uniq
     tx 22                         "commit"
 
@@ -82,6 +82,7 @@ function concurrent_drop_part_after()
     $CLICKHOUSE_CLIENT -q "select name, rows from system.parts
                               where table='drop_part_after_table' and database=currentDatabase() and active
                               order by name"
+    $CLICKHOUSE_CLIENT -q "system flush logs"
     $CLICKHOUSE_CLIENT -q "select event_type, part_name from system.part_log
                               where table='drop_part_after_table' and database=currentDatabase()
                               order by part_name"
@@ -100,7 +101,7 @@ function concurrent_delete()
     tx 42                                            "begin transaction"
     tx 42                                            "alter table tt delete where n%2=1"
     tx 41 "select 41, count() from tt"
-    tx 41 "truncate table tt" | grep -Eo "PART_IS_TEMPORARILY_LOCKED" | uniq
+    tx 41 "truncate table tt" | grep -Eo "SERIALIZATION_ERROR" | uniq
     tx 42                                            "select 42, count() from tt"
     tx 41 "rollback"
     tx 42                                            "insert into tt values (4)"

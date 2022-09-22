@@ -18,7 +18,7 @@ private:
     /// NOTE: It is pretty short, so use STL is fine.
     std::unordered_set<std::string> parts;
 
-    void add(const std::string & basename);
+    bool add(const std::string & basename);
     void remove(const std::string & basename);
 
     friend class MergeTreeData;

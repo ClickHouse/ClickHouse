@@ -32,8 +32,7 @@ def test_numbers_of_detached_parts(started_cluster):
     )
     Engine=MergeTree()
     PARTITION BY toYYYYMMDD(event_time)
-    ORDER BY id
-    SETTINGS old_parts_lifetime=1;
+    ORDER BY id;
     """
     node1.query(query_create)
 
@@ -71,7 +70,6 @@ def test_numbers_of_detached_parts(started_cluster):
 
     # detach some parts and wait until asynchronous metrics notice it
     node1.query("ALTER TABLE t DETACH PARTITION '20220901';")
-    wait_for_delete_inactive_parts(node1, "t")
     wait_for_delete_empty_parts(node1, "t")
 
     assert 2 == int(node1.query(query_count_detached_parts))
@@ -86,7 +84,6 @@ def test_numbers_of_detached_parts(started_cluster):
 
     # detach the rest parts and wait until asynchronous metrics notice it
     node1.query("ALTER TABLE t DETACH PARTITION ALL")
-    wait_for_delete_inactive_parts(node1, "t")
     wait_for_delete_empty_parts(node1, "t")
 
     assert 3 == int(node1.query(query_count_detached_parts))

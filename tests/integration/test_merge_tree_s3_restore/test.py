@@ -6,7 +6,6 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 
@@ -105,8 +104,8 @@ def create_table(
         ORDER BY (dt, id)
         SETTINGS
             storage_policy='s3',
-            old_parts_lifetime=1,
-            index_granularity=512
+            index_granularity=512,
+            old_parts_lifetime=1
         """.format(
         create="ATTACH" if attach else "CREATE",
         table_name=table_name,
@@ -595,7 +594,6 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
 
     # Detach some partition.
     node.query("ALTER TABLE s3.test DETACH PARTITION '2020-01-07'")
-    wait_for_delete_inactive_parts(node, "s3.test")
     wait_for_delete_empty_parts(node, "s3.test")
 
     node.query("ALTER TABLE s3.test FREEZE")
