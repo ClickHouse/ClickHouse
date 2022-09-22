@@ -67,7 +67,7 @@ bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) c
         return true;
 
     /// `object_storage.files` contains files + directories only inside `metadata_path / uuid_3_digit / uuid /`
-    /// (spicific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
+    /// (specific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
     auto it = std::lower_bound(
         object_storage.files.begin(),
         object_storage.files.end(),
