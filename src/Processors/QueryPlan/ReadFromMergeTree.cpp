@@ -1018,18 +1018,6 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
-void ReadFromMergeTree::setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> order_optimizer)
-{
-    if (query_info.projection)
-    {
-        query_info.projection->order_optimizer = order_optimizer;
-    }
-    else
-    {
-        query_info.order_optimizer = order_optimizer;
-    }
-}
-
 void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
 {
     if (query_info.projection)
