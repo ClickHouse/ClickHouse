@@ -54,7 +54,7 @@ public:
     void updateS3Configuration(const Poco::Util::AbstractConfiguration &) {}
     void uploadSnapshot(const std::string &) {}
 
-    void startup(const Poco::Util::AbstractConfiguration & config) {}
+    void startup(const Poco::Util::AbstractConfiguration &) {}
 
     void shutdown() {}
 };
