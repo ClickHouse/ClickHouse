@@ -79,11 +79,8 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         return 0;
 
     /// update input order info in read_from_merge_tree step
-    const int direction = output_sort_desc.front().direction; /// for DISTINCT direction doesn't matter, so use current direction
-                                                              /// example: SELECT DISTINCT a from t ORDER BY a DESC;
-    InputOrderInfoPtr order_info
-        = std::make_shared<const InputOrderInfo>(SortDescription{}, number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
-    read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
+    const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
+    read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();

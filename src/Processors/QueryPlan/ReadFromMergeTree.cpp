@@ -1018,16 +1018,17 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
-void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
+void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
 {
+    /// if dirction is not set, use current one
+    if (!direction)
+        direction = getSortDirection();
+
+    auto order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
     if (query_info.projection)
-    {
         query_info.projection->input_order_info = order_info;
-    }
     else
-    {
         query_info.input_order_info = order_info;
-    }
 
     /// update sort info for output stream
     SortDescription sort_description;
