@@ -24,7 +24,7 @@ public:
     void updateS3Configuration(const Poco::Util::AbstractConfiguration & config);
     void uploadSnapshot(const std::string & path);
 
-    void startup();
+    void startup(const Poco::Util::AbstractConfiguration & config);
     void shutdown();
 private:
     using SnapshotS3Queue = ConcurrentBoundedQueue<std::string>;
@@ -54,7 +54,7 @@ public:
     void updateS3Configuration(const Poco::Util::AbstractConfiguration &) {}
     void uploadSnapshot(const std::string &) {}
 
-    void startup() {}
+    void startup(const Poco::Util::AbstractConfiguration & config) {}
 
     void shutdown() {}
 };

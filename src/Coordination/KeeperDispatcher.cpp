@@ -296,7 +296,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    snapshot_s3.startup();
+    snapshot_s3.startup(config);
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
 
@@ -325,7 +325,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
     update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
-    updateConfiguration(config);
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
