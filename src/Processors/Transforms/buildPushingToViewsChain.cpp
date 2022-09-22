@@ -71,7 +71,7 @@ struct ViewsData
 using ViewsDataPtr = std::shared_ptr<ViewsData>;
 
 /// Copies data inserted into table for every dependent table.
-class CopyingDataToViewsTransform : public IProcessor
+class CopyingDataToViewsTransform final : public IProcessor
 {
 public:
     CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data);
@@ -744,7 +744,7 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(process(block, view, *views_data));
+    state.emplace(DB::process(block, view, *views_data));
 }
 
 
