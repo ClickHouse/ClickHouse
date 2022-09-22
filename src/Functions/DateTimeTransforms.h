@@ -113,7 +113,6 @@ struct ToStartOfDayImpl
 {
     static constexpr auto name = "toStartOfDay";
 
-    //TODO: right now it is hardcoded to produce DateTime only, needs fixing later. See date_and_time_type_details::ResultDataTypeMap for deduction of result type example.
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
@@ -141,6 +140,19 @@ struct ToStartOfDayImpl
         auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
         return date_time < 0xffffffff ? date_time : time_zone.toDate(0xffffffff);
     }
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toDate(t.whole), 0};
+    }
+    static inline Int64 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(ExtendedDayNum(d));
+    }
+    // static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<Date32> & t, const DateLUTImpl & )
+    // {
+    //     // return time_zone.fromDayNum(ExtendedDayNum(d));
+    //     return {t.whole, 0};
+    // }
 
     using FactorTransform = ZeroTransform;
 };
@@ -629,6 +641,16 @@ struct TimeSlotImpl
         return dateIsNotSupported(name);
     }
 
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
+    {
+        return {t.whole / 1800 * 1800, 0};
+    }
+
+    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    {
+        return date32IsNotSupported(name);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -661,7 +683,7 @@ struct ToStartOfHourImpl
 
     static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return {time_zone.toStartOfHour(Int64(t.whole)), 0};
+        return {time_zone.toStartOfHour(t.whole), 0};
     }
 
     static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
