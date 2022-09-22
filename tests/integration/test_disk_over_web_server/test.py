@@ -29,10 +29,14 @@ def cluster():
             )
 
             for _ in range(10):
-                node1.query(f"INSERT INTO data{i} SELECT number FROM numbers(500000 * {i+1})")
+                node1.query(
+                    f"INSERT INTO data{i} SELECT number FROM numbers(500000 * {i+1})"
+                )
             expected = node1.query(f"SELECT * FROM data{i} ORDER BY id")
 
-            metadata_path = node1.query(f"SELECT data_paths FROM system.tables WHERE name='data{i}'")
+            metadata_path = node1.query(
+                f"SELECT data_paths FROM system.tables WHERE name='data{i}'"
+            )
             metadata_path = metadata_path[
                 metadata_path.find("/") : metadata_path.rfind("/") + 1
             ]
