@@ -189,7 +189,9 @@ public:
     /// Optimization for prepare in case we know ports were updated.
     virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
 
-    /** You may call this method if 'prepare' returned Ready.
+    /** This method is a delegate to 'work' method.
+      *  
+      * You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
       * Method process can be executed in parallel for different processors.
@@ -354,6 +356,8 @@ public:
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
+    /// A hook around 'work' method.
+    /// It allows us to inject some code around 'work' method without any modification to existing IProcessor implementations.
     struct WorkHook
     {
         virtual ~WorkHook() = default;

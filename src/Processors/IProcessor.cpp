@@ -57,7 +57,7 @@ void IProcessor::process(bool trace_processors)
     {
         work();
 
-        /// Explicitly release the object to finish the span
+        /// Make sure the span is closed before the hook
         span.reset();
     }
     catch(...)

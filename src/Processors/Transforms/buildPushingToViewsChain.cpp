@@ -220,6 +220,8 @@ private:
     std::exception_ptr any_exception;
 };
 
+/// Finalize OpenTelemetry span for one Materialized View when the view finishes.
+/// It should only be used when the OpenTelemetry tracing is enabled for current MV.
 class FinalizeOneMaterializedViewTransform final : public IProcessor
 {
 protected:
@@ -742,7 +744,7 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(DB::process(block, view, *views_data));
+    state.emplace(process(block, view, *views_data));
 }
 
 
