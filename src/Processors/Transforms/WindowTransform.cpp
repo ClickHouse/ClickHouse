@@ -143,22 +143,14 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
     auto reference_value = unalignedLoad<typename ColumnType::ValueType>(
         reference_value_data.data);
 
-    // Floats overflow to Inf and the comparison will work normally, so we don't
-    // have to do anything.
+    /// Floats overflow to Inf and the comparison will work normally, so we don't have to do anything.
     if (offset_is_preceding)
-    {
-        reference_value -= offset;
-    }
+        reference_value -= static_cast<typename ColumnType::ValueType>(offset);
     else
-    {
-        reference_value += offset;
-    }
+        reference_value += static_cast<typename ColumnType::ValueType>(offset);
 
     const auto result =  compared_value < reference_value ? -1
-        : compared_value == reference_value ? 0 : 1;
-
-//    fmt::print(stderr, "compared {}, offset {}, reference {}, result {}\n",
-//        compared_value, offset, reference_value, result);
+        : (compared_value == reference_value ? 0 : 1);
 
     return result;
 }
