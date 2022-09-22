@@ -463,7 +463,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
             --arg_cnt;
         }
-
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
     {
