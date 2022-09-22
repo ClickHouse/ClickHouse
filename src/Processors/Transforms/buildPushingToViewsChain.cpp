@@ -503,7 +503,7 @@ Chain buildPushingToViewsChain(
             {
                 ViewRuntimeData & view = views_data->views.back();
 
-                // Attach hook to each processor of this Materialized View
+                /// Attach hook to all processors of this Materialized View
                 auto attacher = std::make_shared<ViewSpanAttacher>(view);
                 auto & processors = out.getProcessors();
                 for (auto & processor : processors)
@@ -511,7 +511,7 @@ Chain buildPushingToViewsChain(
                     processor->setWorkHook(attacher);
                 }
 
-                /// Add a sink to process OpenTelemetry related things when the processors of one MV complete
+                /// Add a sink at the end of processor chain to close OpenTelemetry span
                 out.addSink(std::make_shared<FinalizeOneMaterializedViewTransform>(out.getOutputHeader(), view));
             }
 
