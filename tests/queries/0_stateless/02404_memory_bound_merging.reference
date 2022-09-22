@@ -58,7 +58,7 @@ select a from remote(test_cluster_two_shards, currentDatabase(), dist_t) group b
 100504
 1
 -- { echoOn } --
-explain pipeline select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 100500;
+explain pipeline select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 500;
 (Expression)
 ExpressionTransform
   (Limit)
@@ -86,14 +86,20 @@ ExpressionTransform
                                   (ReadFromMergeTree)
                                   MergeTreeInOrder × 4 0 → 1
                       (ReadFromRemote)
-select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 100500;
-100500	2
-100501	2
-100502	2
-100503	2
-100504	2
+select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 500;
+500	2000
+501	2000
+502	2000
+503	2000
+504	2000
+select a, count() from dist_t_different_dbs group by a, b order by a limit 5 offset 500;
+500	2000
+501	2000
+502	2000
+503	2000
+504	2000
 -- { echoOn } --
-explain pipeline select * from dist_pr_t group by a order by a limit 5 offset 100500;
+explain pipeline select a from dist_pr_t group by a order by a limit 5 offset 500;
 (Expression)
 ExpressionTransform
   (Limit)
@@ -121,9 +127,15 @@ ExpressionTransform
                                   (ReadFromMergeTree)
                                   MergeTreeInOrder × 4 0 → 1
                       (ReadFromRemoteParallelReplicas)
-select * from dist_pr_t group by a order by a limit 5 offset 100500;
-100500
-100501
-100502
-100503
-100504
+select a, count() from dist_pr_t group by a order by a limit 5 offset 500;
+500	1000
+501	1000
+502	1000
+503	1000
+504	1000
+select a, count() from dist_pr_t group by a, b order by a limit 5 offset 500;
+500	1000
+501	1000
+502	1000
+503	1000
+504	1000
