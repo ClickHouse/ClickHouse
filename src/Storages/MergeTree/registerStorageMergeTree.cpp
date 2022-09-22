@@ -234,7 +234,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Replacing:
-            add_optional_param("sign column");
+            add_optional_param("is_deleted column");
             add_optional_param("version");
             break;
         case MergeTreeData::MergingParams::Collapsing:
@@ -463,12 +463,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
             --arg_cnt;
         }
-
-        if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
-            throw Exception(
-                "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::BAD_ARGUMENTS);
-        --arg_cnt;
 
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)

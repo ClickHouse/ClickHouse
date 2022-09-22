@@ -10,7 +10,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
     SortDescription description_,
-    const String & sign_column,
+    const String & is_deleted_column,
     const String & version_column,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
@@ -18,8 +18,8 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
 {
-    if (!sign_column.empty())
-        sign_column_number = header_.getPositionByName(sign_column);
+    if (!is_deleted_column.empty())
+        is_deleted_column_number = header_.getPositionByName(is_deleted_column);
     if (!version_column.empty())
         version_column_number = header_.getPositionByName(version_column);
 }
@@ -76,9 +76,9 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
-        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->getRow()];
-        if ((sign != 1) && (sign != -1))
-            throw Exception("Incorrect data: Sign = " + toString(sign) + " (must be 1 or -1).",
+        UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
+        if ((is_deleted != 1) && (is_deleted != 0))
+            throw Exception("Incorrect data: is_deleted = " + toString(is_deleted) + " (must be 1 or 0).",
                             ErrorCodes::INCORRECT_DATA);
 
         /// A non-strict comparison, since we select the last row for the same version values.
