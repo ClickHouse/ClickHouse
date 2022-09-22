@@ -40,7 +40,7 @@
 #include <Common/JoinHelper.h>
 #include <Common/MergeTreeTool.h>
 #include <Common/StringUtils.h>
-
+#include <google/protobuf/util/json_util.h>
 #include "SerializedPlanParser.h"
 
 namespace DB
@@ -323,7 +323,7 @@ Block SerializedPlanParser::parseNameStruct(const substrait::NamedStruct & struc
     return Block(*std::move(internal_cols));
 }
 
-DataTypePtr inline wrapNullableType(substrait::Type_Nullability nullable, DataTypePtr nested_type)
+static DataTypePtr wrapNullableType(substrait::Type_Nullability nullable, DataTypePtr nested_type)
 {
     if (nullable == substrait::Type_Nullability_NULLABILITY_NULLABLE)
     {
@@ -392,6 +392,14 @@ DataTypePtr SerializedPlanParser::parseType(const substrait::Type & type)
 }
 QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
 {
+    {
+        namespace pb_util = google::protobuf::util;
+        pb_util::JsonOptions options;
+        std::string json;
+        pb_util::MessageToJsonString(*plan, &json, options);
+        LOG_DEBUG(&Poco::Logger::get("SerializedPlanParser"), "substrait plan:{}", json);
+    }
+
     if (plan->extensions_size() > 0)
     {
         for (const auto & extension : plan->extensions())

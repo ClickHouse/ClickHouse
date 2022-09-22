@@ -20,46 +20,54 @@
 
 namespace local_engine
 {
-static const std::map<std::string, std::string> SCALAR_FUNCTIONS
-    = {{"is_not_null", "isNotNull"},
-       {"is_null", "isNull"},
-       {"gte", "greaterOrEquals"},
-       {"gt", "greater"},
-       {"lte", "lessOrEquals"},
-       {"lt", "less"},
-       {"equal", "equals"},
 
-       {"and", "and"},
-       {"or", "or"},
-       {"not", "not"},
-       {"xor", "xor"},
+static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
+    {"is_not_null","isNotNull"},
+    {"is_null","isNull"},
+    {"gte","greaterOrEquals"},
+    {"gt", "greater"},
+    {"lte", "lessOrEquals"},
+    {"lt", "less"},
+    {"equal", "equals"},
 
-       {"TO_DATE", "toDate"},
-       {"extract", ""},
-       {"cast", ""},
-       {"alias", "alias"},
+    {"and", "and"},
+    {"or", "or"},
+    {"not", "not"},
+    {"xor", "xor"},
 
-       {"subtract", "minus"},
-       {"multiply", "multiply"},
-       {"add", "plus"},
-       {"divide", "divide"},
-       {"modulus", "modulo"},
+    {"TO_DATE", "toDate"},
+    {"extract", ""},
+    {"cast", ""},
+    {"alias", "alias"},
 
-       {"like", "like"},
-       {"not_like", "notLike"},
-       {"starts_with", "startsWith"},
-       {"ends_with", "endsWith"},
-       {"contains", "countSubstrings"},
-       {"substring", "substring"},
+    {"subtract", "minus"},
+    {"multiply", "multiply"},
+    {"add", "plus"},
+    {"divide", "divide"},
+    {"modulus", "modulo"},
 
-       {"in", "in"},
+    /// string functions
+    {"like", "like"},
+    {"not_like", "notLike"},
+    {"starts_with", "startsWith"},
+    {"ends_with", "endsWith"},
+    {"contains", "countSubstrings"},
+    {"substring", "substring"},
+    {"lower", "lower"},
+    {"upper", "upper"},
+    {"ltrim", "trimLeft"},
+    {"rtrim", "trimRight"},
 
-       // aggregate functions
-       {"count", "count"},
-       {"avg", "avg"},
-       {"sum", "sum"},
-       {"min", "min"},
-       {"max", "max"}};
+    // in functions
+    {"in", "in"},
+
+    // aggregate functions
+    {"count", "count"},
+    {"avg", "avg"},
+    {"sum", "sum"},
+    {"min", "min"},
+    {"max", "max"}
+};
 
 static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
 
