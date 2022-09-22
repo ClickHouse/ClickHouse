@@ -145,10 +145,10 @@ private:
             accumulated += p->second;
 
             if (accumulated >= threshold)
-                return p->first;
+                return static_cast<T>(p->first);
         }
 
-        return array[size - 1].first;
+        return static_cast<T>(array[size - 1].first);
     }
 
     template <typename T>
@@ -188,7 +188,7 @@ private:
 
             while (accumulated >= threshold)
             {
-                result[indices[level_index]] = p->first;
+                result[indices[level_index]] = static_cast<T>(p->first);
                 ++level_index;
 
                 if (level_index == num_levels)
@@ -200,7 +200,7 @@ private:
 
         while (level_index < num_levels)
         {
-            result[indices[level_index]] = array[size - 1].first;
+            result[indices[level_index]] = static_cast<T>(array[size - 1].first);
             ++level_index;
         }
     }

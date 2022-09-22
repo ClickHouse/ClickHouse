@@ -14,12 +14,12 @@ void JSONEachRowWithProgressRowOutputFormat::writeRowStartDelimiter()
         writeProgress();
         writeRowBetweenDelimiter();
     }
-    writeCString("{\"row\":{", out);
+    writeCString("{\"row\":{", *ostr);
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}}", out);
+    writeCString("}}", *ostr);
     field_number = 0;
 }
 
@@ -27,11 +27,11 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
 {
     progress.incrementPiecewiseAtomically(value);
     String progress_line;
-    WriteBufferFromString ostr(progress_line);
-    writeCString("{\"progress\":", ostr);
-    progress.writeJSON(ostr);
-    writeCString("}", ostr);
-    ostr.finalize();
+    WriteBufferFromString buf(progress_line);
+    writeCString("{\"progress\":", buf);
+    progress.writeJSON(buf);
+    writeCString("}", buf);
+    buf.finalize();
     std::lock_guard lock(progress_lines_mutex);
     progress_lines.emplace_back(std::move(progress_line));
     has_progress = true;
@@ -45,7 +45,7 @@ void JSONEachRowWithProgressRowOutputFormat::flush()
             writeRowBetweenDelimiter();
         writeProgress();
     }
-    IOutputFormat::flush();
+    JSONEachRowRowOutputFormat::flush();
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeSuffix()
@@ -65,7 +65,7 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress()
     {
         if (i != 0)
             writeRowBetweenDelimiter();
-        writeString(progress_lines[i], out);
+        writeString(progress_lines[i], *ostr);
     }
     progress_lines.clear();
     has_progress = false;

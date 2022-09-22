@@ -480,6 +480,7 @@ CREATE TABLE system.parts
     `removal_tid` Tuple(UInt64, UInt64, UUID),
     `creation_csn` UInt64,
     `removal_csn` UInt64,
+    `has_lightweight_delete` UInt8,
     `bytes` UInt64,
     `marks_size` UInt64
 )

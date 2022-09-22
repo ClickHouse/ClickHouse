@@ -2797,7 +2797,7 @@ OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, 
 }
 
 
-time_t Context::getUptimeSeconds() const
+double Context::getUptimeSeconds() const
 {
     auto lock = getLock();
     return shared->uptime_watch.elapsedSeconds();
@@ -3443,6 +3443,7 @@ WriteSettings Context::getWriteSettings() const
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
 
