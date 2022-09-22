@@ -1755,8 +1755,11 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
       * It is also tricky, because there are aggregate functions with "-State" modifier.
       * When we call "insertResultInto" for them, they insert a pointer to the state to ColumnAggregateFunction
       *  and ColumnAggregateFunction will take ownership of this state.
-      * So, for aggregate functions with "-State" modifier, the state must not be destroyed
-      *  after it has been transferred to ColumnAggregateFunction.
+      * So, for aggregate functions with "-State" modifier, only states of all combinators that are used
+      *  after -State will be destroyed after result has been transferred to ColumnAggregateFunction.
+      *  For example, if we have function `uniqStateForEachMap` after aggregation we should destroy all states that
+      *  were created by combinators `-ForEach` and `-Map`, because resulting ColumnAggregateFunction will be
+      *  responsible only for destruction of the states created by `uniq` function.
       * But we should mark that the data no longer owns these states.
       */
 
@@ -1779,8 +1782,8 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
 
     /** Destroy states that are no longer needed. This loop does not throw.
         *
-        * Don't destroy states for "-State" aggregate functions,
-        *  because the ownership of this state is transferred to ColumnAggregateFunction
+        * For functions with -State combinator we destroy only states of all combinators that are used
+        *  after -State, because the ownership of the rest states is transferred to ColumnAggregateFunction
         *  and ColumnAggregateFunction will take care.
         *
         * But it's only for states that has been transferred to ColumnAggregateFunction
@@ -1788,10 +1791,10 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
         */
     for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
     {
-        /// If ownership was not transferred to ColumnAggregateFunction.
-        if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
-            aggregate_functions[destroy_i]->destroy(
-                mapped + offsets_of_aggregate_states[destroy_i]);
+        if (destroy_i < insert_i)
+            aggregate_functions[destroy_i]->destroyUpToState(mapped + offsets_of_aggregate_states[destroy_i]);
+        else
+            aggregate_functions[destroy_i]->destroy(mapped + offsets_of_aggregate_states[destroy_i]);
     }
 
     /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -1885,11 +1888,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             size_t destroy_index = aggregate_functions_destroy_index;
             ++aggregate_functions_destroy_index;
 
-            /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
-            bool is_state = aggregate_functions[destroy_index]->isState();
-            bool destroy_place_after_insert = !is_state;
-
-            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena);
         }
     }
     catch (...)
@@ -1995,18 +1994,15 @@ Block Aggregator::prepareBlockAndFill(
 
             if (aggregate_functions[i]->isState())
             {
-                /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(final_aggregate_columns[i].get()))
-                    for (auto & pool : data_variants.aggregates_pools)
-                        column_aggregate_func->addArena(pool);
-
-                /// Aggregate state can be wrapped into array if aggregate function ends with -Resample combinator.
-                final_aggregate_columns[i]->forEachSubcolumn([&data_variants](auto & subcolumn)
+                auto callback = [&](auto & subcolumn)
                 {
+                    /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
                     if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
                         for (auto & pool : data_variants.aggregates_pools)
                             column_aggregate_func->addArena(pool);
-                });
+                };
+                callback(final_aggregate_columns[i]);
+                final_aggregate_columns[i]->forEachSubcolumnRecursively(callback);
             }
         }
     }
