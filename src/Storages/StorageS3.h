@@ -201,7 +201,7 @@ public:
         S3Settings::ReadWriteSettings rw_settings;
 
         /// If s3 configuration was passed from ast, then it is static.
-        /// Of from config - it can be changed with config reload.
+        /// If from config - it can be changed with config reload.
         bool static_configuration = true;
 
         /// Headers from ast is a part of static configuration.
