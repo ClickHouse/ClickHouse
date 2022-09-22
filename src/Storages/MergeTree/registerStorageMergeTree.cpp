@@ -234,7 +234,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Replacing:
-            add_optional_param("sign column");
+            add_optional_param("is_deleted column");
             add_optional_param("version");
             break;
         case MergeTreeData::MergingParams::Collapsing:
@@ -446,6 +446,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
+        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        {
+            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
+                throw Exception(
+                    "is_deleted column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+            --arg_cnt;
+        }
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
@@ -455,12 +463,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
             --arg_cnt;
         }
-
-        if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
-            throw Exception(
-                "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::BAD_ARGUMENTS);
-        --arg_cnt;
 
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
