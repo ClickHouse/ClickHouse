@@ -46,6 +46,11 @@ namespace ErrorCodes
         throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
+    static inline Int64 date32IsNotSupported(const char * name)
+    {
+        throw Exception("Illegal type Date32 of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
 {
@@ -659,9 +664,9 @@ struct ToStartOfHourImpl
         return {time_zone.toStartOfHour(Int64(t.whole)), 0};
     }
 
-    static inline UInt32 execute_extended_result(Int32, const DateLUTImpl &)
+    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return date32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
