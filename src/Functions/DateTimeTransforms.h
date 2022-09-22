@@ -566,6 +566,14 @@ struct ToStartOfFiveMinutesImpl
     {
         return dateIsNotSupported(name);
     }
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toStartOfFiveMinutes(t.whole), 0};
+    }
+    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    {
+        return date32IsNotSupported(name);
+    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -590,6 +598,14 @@ struct ToStartOfTenMinutesImpl
     {
         return dateIsNotSupported(name);
     }
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toStartOfTenMinutes(t.whole), 0};
+    }
+    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    {
+        return date32IsNotSupported(name);
+    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -613,6 +629,14 @@ struct ToStartOfFifteenMinutesImpl
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
+    }
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toStartOfFifteenMinutes(t.whole), 0};
+    }
+    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    {
+        return date32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
