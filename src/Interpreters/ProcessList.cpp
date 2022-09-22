@@ -369,6 +369,12 @@ CancellationCode QueryStatus::cancelQuery(bool)
 
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
 {
+    /// In case of asynchronous distributed queries it is possible to call
+    /// addPipelineExecutor() from the cancelQuery() context, and this will
+    /// lead to deadlock.
+    if (is_killed.load())
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+
     std::lock_guard lock(executors_mutex);
     assert(std::find(executors.begin(), executors.end(), e) == executors.end());
     executors.push_back(e);
