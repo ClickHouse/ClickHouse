@@ -141,8 +141,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         }
         if (!sort_description.empty())
         {
-            auto const & settings = context->getSettingsRef();
-            if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
+            if (query_info.getInputOrderInfo())
             {
                 output_stream->sort_scope = DataStream::SortScope::Stream;
                 const size_t used_prefix_of_sorting_key_size = query_info.getInputOrderInfo()->used_prefix_of_sorting_key_size;
@@ -344,7 +343,7 @@ struct PartRangesReadInfo
             sum_marks_in_parts[i] = parts[i].getMarksCount();
             sum_marks += sum_marks_in_parts[i];
 
-            if (parts[i].data_part->index_granularity_info.is_adaptive)
+            if (parts[i].data_part->index_granularity_info.mark_type.adaptive)
                 ++adaptive_parts;
         }
 
@@ -1012,7 +1011,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.selected_rows = sum_rows;
 
     const auto & input_order_info = query_info.getInputOrderInfo();
-    if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
+    if (input_order_info)
         result.read_type = (input_order_info->direction > 0) ? ReadType::InOrder
                                                              : ReadType::InReverseOrder;
 
@@ -1122,7 +1121,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     Pipe pipe;
 
-    const auto & settings = context->getSettingsRef();
     const auto & input_order_info = query_info.getInputOrderInfo();
 
     if (select.final())
@@ -1144,7 +1142,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             column_names_to_read,
             result_projection);
     }
-    else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order || settings.optimize_read_in_window_order) && input_order_info)
+    else if (input_order_info)
     {
         pipe = spreadMarkRangesAmongStreamsWithOrder(
             std::move(result.parts_with_ranges),
