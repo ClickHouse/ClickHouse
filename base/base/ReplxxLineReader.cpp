@@ -1,6 +1,7 @@
 #include <base/ReplxxLineReader.h>
 #include <base/errnoToString.h>
 
+#include <stdexcept>
 #include <chrono>
 #include <cerrno>
 #include <cstring>
@@ -14,7 +15,6 @@
 #include <fcntl.h>
 #include <fstream>
 #include <fmt/format.h>
-
 
 namespace
 {
@@ -34,6 +34,132 @@ std::string getEditor()
 
     return editor;
 }
+
+/// See comments in ShellCommand::executeImpl()
+/// (for the vfork via dlsym())
+int executeCommand(char * const argv[])
+{
+    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+    if (!real_vfork)
+        throw std::runtime_error("Cannot find vfork symbol");
+
+    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+
+    if (-1 == pid)
+        throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
+
+    /// Child
+    if (0 == pid)
+    {
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
+
+        execvp(argv[0], argv);
+        _exit(-1);
+    }
+
+    int status = 0;
+    do
+    {
+        int exited_pid = waitpid(pid, &status, 0);
+        if (exited_pid != -1)
+            break;
+
+        if (errno == EINTR)
+            continue;
+
+        throw std::runtime_error(fmt::format("Cannot waitpid {}: {}", pid, errnoToString()));
+    } while (true);
+
+    return status;
+}
+
+void writeRetry(int fd, const std::string & data)
+{
+    size_t bytes_written = 0;
+    const char * begin = data.c_str();
+    size_t offset = data.size();
+
+    while (bytes_written != offset)
+    {
+        ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
+        if ((-1 == res || 0 == res) && errno != EINTR)
+            throw std::runtime_error(fmt::format("Cannot write to {}: {}", fd, errnoToString()));
+        bytes_written += res;
+    }
+}
+std::string readFile(const std::string & path)
+{
+    std::ifstream t(path);
+    std::string str;
+    t.seekg(0, std::ios::end);
+    str.reserve(t.tellg());
+    t.seekg(0, std::ios::beg);
+    str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+    return str;
+}
+
+/// Simple wrapper for temporary files.
+class TemporaryFile
+{
+private:
+    std::string path;
+    int fd = -1;
+
+public:
+    explicit TemporaryFile(const char * pattern)
+        : path(pattern)
+    {
+        size_t dot_pos = path.rfind('.');
+        if (dot_pos != std::string::npos)
+            fd = ::mkstemps(path.data(), path.size() - dot_pos);
+        else
+            fd = ::mkstemp(path.data());
+
+        if (-1 == fd)
+            throw std::runtime_error(fmt::format("Cannot create temporary file {}: {}", path, errnoToString()));
+    }
+    ~TemporaryFile()
+    {
+        try
+        {
+            close();
+            unlink();
+        }
+        catch (const std::runtime_error & e)
+        {
+            fmt::print(stderr, "{}", e.what());
+        }
+    }
+
+    void close()
+    {
+        if (fd == -1)
+            return;
+
+        if (0 != ::close(fd))
+            throw std::runtime_error(fmt::format("Cannot close temporary file {}: {}", path, errnoToString()));
+        fd = -1;
+    }
+
+    void write(const std::string & data)
+    {
+        if (fd == -1)
+            throw std::runtime_error(fmt::format("Cannot write to uninitialized file {}", path));
+
+        writeRetry(fd, data);
+    }
+
+    void unlink()
+    {
+        if (0 != ::unlink(path.c_str()))
+            throw std::runtime_error(fmt::format("Cannot remove temporary file {}: {}", path, errnoToString()));
+    }
+
+    std::string & getPath() { return path; }
+};
 
 /// Copied from replxx::src/util.cxx::now_ms_str() under the terms of 3-clause BSD license of Replxx.
 /// Copyright (c) 2017-2018, Marcin Konarski (amok at codestation.org)
@@ -293,116 +419,28 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 
-/// See comments in ShellCommand::executeImpl()
-/// (for the vfork via dlsym())
-int ReplxxLineReader::executeEditor(const std::string & path)
-{
-    std::vector<char> argv0(editor.data(), editor.data() + editor.size() + 1);
-    std::vector<char> argv1(path.data(), path.data() + path.size() + 1);
-    char * const argv[] = {argv0.data(), argv1.data(), nullptr};
-
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-    if (!real_vfork)
-    {
-        rx.print("Cannot find symbol vfork in myself: %s\n", errnoToString().c_str());
-        return -1;
-    }
-
-    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
-
-    if (-1 == pid)
-    {
-        rx.print("Cannot vfork: %s\n", errnoToString().c_str());
-        return -1;
-    }
-
-    /// Child
-    if (0 == pid)
-    {
-        sigset_t mask;
-        sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
-
-        execvp(editor.c_str(), argv);
-        rx.print("Cannot execute %s: %s\n", editor.c_str(), errnoToString().c_str());
-        _exit(-1);
-    }
-
-    int status = 0;
-    do
-    {
-        int exited_pid = waitpid(pid, &status, 0);
-        if (exited_pid == -1)
-        {
-            if (errno == EINTR)
-                continue;
-
-            rx.print("Cannot waitpid: %s\n", errnoToString().c_str());
-            return -1;
-        }
-        else
-            break;
-    } while (true);
-    return status;
-}
-
 void ReplxxLineReader::openEditor()
 {
-    char filename[] = "clickhouse_replxx_XXXXXX.sql";
-    int fd = ::mkstemps(filename, 4);
-    if (-1 == fd)
-    {
-        rx.print("Cannot create temporary file to edit query: %s\n", errnoToString().c_str());
-        return;
-    }
+    TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
+    editor_file.write(rx.get_state().text());
+    editor_file.close();
 
-    replxx::Replxx::State state(rx.get_state());
-
-    size_t bytes_written = 0;
-    const char * begin = state.text();
-    size_t offset = strlen(state.text());
-    while (bytes_written != offset)
+    char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
+    try
     {
-        ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
-        if ((-1 == res || 0 == res) && errno != EINTR)
+        if (executeCommand(argv) == 0)
         {
-            rx.print("Cannot write to temporary query file %s: %s\n", filename, errnoToString().c_str());
-            break;
+            const std::string & new_query = readFile(editor_file.getPath());
+            rx.set_state(replxx::Replxx::State(new_query.c_str(), new_query.size()));
         }
-        bytes_written += res;
     }
-
-    if (0 != ::close(fd))
+    catch (const std::runtime_error & e)
     {
-        rx.print("Cannot close temporary query file %s: %s\n", filename, errnoToString().c_str());
-        return;
-    }
-
-    if (0 == executeEditor(filename))
-    {
-        try
-        {
-            std::ifstream t(filename);
-            std::string str;
-            t.seekg(0, std::ios::end);
-            str.reserve(t.tellg());
-            t.seekg(0, std::ios::beg);
-            str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-            rx.set_state(replxx::Replxx::State(str.c_str(), str.size()));
-        }
-        catch (...)
-        {
-            rx.print("Cannot read from temporary query file %s: %s\n", filename, errnoToString().c_str());
-            return;
-        }
+        rx.print(e.what());
     }
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
-
-    if (0 != ::unlink(filename))
-        rx.print("Cannot remove temporary query file %s: %s\n", filename, errnoToString().c_str());
 }
 
 void ReplxxLineReader::enableBracketedPaste()
