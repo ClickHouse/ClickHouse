@@ -629,7 +629,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.sign_column, merging_params.version_column, max_block_size);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1109,6 +1109,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
+        if (!data.merging_params.is_deleted_column.empty())
+            column_names_to_read.push_back(data.merging_params.is_deleted_column);
         if (!data.merging_params.sign_column.empty())
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty())

@@ -21,7 +21,7 @@ public:
     ReplacingSortedAlgorithm(
         const Block & header, size_t num_inputs,
         SortDescription description_,
-        const String & sign_column, const String & version_column,
+        const String & is_deleted_column, const String & version_column,
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
@@ -31,7 +31,7 @@ public:
 private:
     MergedData merged_data;
 
-    ssize_t sign_column_number = 0;
+    ssize_t is_deleted_column_number = 0;
     ssize_t version_column_number = -1;
 
     using RowRef = detail::RowRefWithOwnedChunk;

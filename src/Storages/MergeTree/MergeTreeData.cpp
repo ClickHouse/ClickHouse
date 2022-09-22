@@ -698,7 +698,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 {
     const auto columns = metadata.getColumns().getAllPhysical();
 
-    if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing && mode != MergingParams::Replacing)
+    if (!is_deleted_column.empty() && mode != MergingParams::Replacing)
+        throw Exception("is_deleted column for MergeTree cannot be specified in modes except Replacing.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
         throw Exception("Sign column for MergeTree cannot be specified in modes except Collapsing or VersionedCollapsing.",
                         ErrorCodes::LOGICAL_ERROR);
 
@@ -710,7 +714,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
         throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.",
                         ErrorCodes::LOGICAL_ERROR);
 
-    /// Check that if the sign column is needed, it exists and is of type Int8.
+   /// Check that if the sign column is needed, it exists and is of type Int8.
     auto check_sign_column = [this, & columns](bool is_optional, const std::string & storage)
     {
         if (sign_column.empty())
@@ -766,30 +770,30 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             throw Exception("Version column " + version_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
 
-    /// Check that if the sign column is needed, it exists and is of type Int8.
-    auto check_sign_version_column = [this, & columns](bool is_optional, const std::string & storage)
+    /// Check that if the is_deleted column is needed, it exists and is of type UInt8.
+    auto check_is_deleted_version_column = [this, & columns](bool is_optional, const std::string & storage)
     {
-        if (sign_column.empty())
+        if (is_deleted_column.empty())
         {
             if (is_optional)
                 return;
 
-            throw Exception("Logical error: Sign column for storage " + storage + " is empty", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: is_deleted column for storage " + storage + " is empty", ErrorCodes::LOGICAL_ERROR);
         } else {
             if (version_column.empty())
-                 throw Exception("Logical error: Version column for storage " + storage + " is empty while sign is not", ErrorCodes::LOGICAL_ERROR);
+                 throw Exception("Logical error: Version column for storage " + storage + " is empty while is_deleted is not", ErrorCodes::LOGICAL_ERROR);
         }
 
-        bool miss_sign_column = true;
+        bool miss_is_deleted_column = true;
         bool miss_version_column = true;
         for (const auto & column : columns)
         {
-            if (column.name == sign_column)
+            if (column.name == is_deleted_column)
             {
-                if (!typeid_cast<const DataTypeInt8 *>(column.type.get()))
-                    throw Exception("Sign column (" + sign_column + ") for storage " + storage + " must have type Int8."
+                if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
+                    throw Exception("is_deleted column (" + is_deleted_column + ") for storage " + storage + " must have type Int8."
                             " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
-                miss_sign_column = false;
+                miss_is_deleted_column = false;
             }
             if (column.name == version_column)
             {
@@ -800,11 +804,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                         " (must be of an integer type or of type Date/DateTime/DateTime64)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_version_column = false;
             }
-            if (!miss_sign_column && !miss_version_column)
+            if (!miss_is_deleted_column && !miss_version_column)
                 break;
         }
-        if (miss_sign_column)
-            throw Exception("Sign column " + sign_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        if (miss_is_deleted_column)
+            throw Exception("is_deleted column " + is_deleted_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         if (miss_version_column)
             throw Exception("Version column " + version_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
@@ -844,7 +848,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     }
 
     if (mode == MergingParams::Replacing) {
-        check_sign_version_column(true, "ReplacingMergeTree");
+        check_is_deleted_version_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
 
