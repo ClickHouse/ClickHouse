@@ -1043,12 +1043,17 @@ void FileSegment::completePartAndResetDownloaderUnlocked(std::unique_lock<std::m
     assertNotDetachedUnlocked(segment_lock);
     assertIsDownloaderUnlocked("completePartAndResetDownloader", segment_lock);
 
-    bool can_change_mutual_state = !isInternal() || downloader_id.empty();
-    if (can_change_mutual_state)
+    if (isInternal())
+    {
+        size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
+        if (current_downloaded_size != 0 && current_downloaded_size == range().size())
+            setDownloadedUnlocked(segment_lock);
+    }
+    else
+    {
         resetDownloadingStateUnlocked(segment_lock);
-
-    if (!isInternal())
         resetDownloaderUnlocked(segment_lock);
+    }
 
     LOG_TEST(log, "Complete batch. (is_internal: {}, {})", isInternal(), getInfoForLogUnlocked(segment_lock));
 
@@ -1114,8 +1119,8 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
     {
         if (download_state == State::DOWNLOADING) /// != in case of completeWithState
             resetDownloadingStateUnlocked(segment_lock);
-        if (!isInternal())
-            resetDownloaderUnlocked(segment_lock);
+
+        resetDownloaderUnlocked(segment_lock);
     }
 
     switch (download_state)
@@ -1145,7 +1150,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         {
             if (is_last_holder)
             {
-                background_download.reset();
+                assert(background_downloader_id.empty());
 
                 if (current_downloaded_size == 0)
                 {
