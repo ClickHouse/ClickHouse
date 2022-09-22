@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/aggregatingmergetree
+---
 # AggregatingMergeTree {#aggregatingmergetree}
 
 该引擎继承自 [MergeTree](mergetree.md)，并改变了数据片段的合并逻辑。 ClickHouse 会将一个数据片段内所有具有相同主键（准确的说是 [排序键](../../../engines/table-engines/mergetree-family/mergetree.md)）的行替换成一行，这一行会存储一系列聚合函数的状态。

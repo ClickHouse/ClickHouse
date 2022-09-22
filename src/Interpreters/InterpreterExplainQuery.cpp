@@ -146,12 +146,14 @@ namespace
 struct QueryASTSettings
 {
     bool graph = false;
+    bool optimize = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
+        {"optimize", optimize}
     };
 };
 
@@ -172,7 +174,8 @@ struct QueryPlanSettings
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
             {"optimize", optimize},
-            {"json", json}
+            {"json", json},
+            {"sorting", query_plan_options.sorting},
     };
 };
 
@@ -278,6 +281,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
+            if (settings.optimize)
+            {
+                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+                ExplainAnalyzedSyntaxVisitor(data).visit(query);
+            }
+
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else

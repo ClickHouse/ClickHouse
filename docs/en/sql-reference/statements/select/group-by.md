@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 ---
 
@@ -212,9 +213,10 @@ If the `WITH TOTALS` modifier is specified, another row will be calculated. This
 
 This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separately from the other rows:
 
--   In `JSON*` formats, this row is output as a separate ‘totals’ field.
--   In `TabSeparated*` formats, the row comes after the main result, preceded by an empty row (after the other data).
+-   In `XML` and `JSON*` formats, this row is output as a separate ‘totals’ field.
+-   In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, preceded by an empty row (after the other data).
 -   In `Pretty*` formats, the row is output as a separate table after the main result.
+-   In `Template` format, the row is output according to specified template.
 -   In the other formats it is not available.
 
 :::note    
@@ -312,11 +314,11 @@ The aggregation can be performed more effectively, if a table is sorted by some 
 ### GROUP BY in External Memory
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
-The [max_bytes_before_external_group_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
+The [max_bytes_before_external_group_by](../../../operations/settings/query-complexity.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
 
 When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high. This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn’t dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
-For example, if [max_memory_usage](../../../operations/settings/settings.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
+For example, if [max_memory_usage](../../../operations/settings/query-complexity.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
 
 With distributed query processing, external aggregation is performed on remote servers. In order for the requester server to use only a small amount of RAM, set `distributed_aggregation_memory_efficient` to 1.
 

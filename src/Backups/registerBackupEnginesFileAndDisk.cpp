@@ -7,6 +7,7 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -45,7 +46,7 @@ namespace
     void checkPath(const String & disk_name, const DiskPtr & disk, fs::path & path)
     {
         path = path.lexically_normal();
-        if (!path.is_relative() && (disk->getType() == DiskType::Local))
+        if (!path.is_relative() && (disk->getDataSourceDescription().type == DataSourceType::Local))
             path = path.lexically_proximate(disk->getPath());
 
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
@@ -180,7 +181,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 writer = std::make_shared<BackupWriterFile>(path);
             else
                 writer = std::make_shared<BackupWriterDisk>(disk, path);
-            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, params.context, params.backup_uuid, params.is_internal_backup, params.backup_coordination);
+            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, params.context, params.is_internal_backup, params.backup_coordination, params.backup_uuid);
         }
     };
 

@@ -28,7 +28,7 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
 {
     LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
-    std::unique_lock lock(cache_mutex);
+    std::lock_guard lock(cache_mutex);
 
     std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 
@@ -54,9 +54,6 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
         const auto & host = endpoint.getHost();
         auto resolved_hosts = DNSResolver::instance().resolveHostAll(host);
 
-        if (resolved_hosts.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver cannot resolve host {}", host);
-
         HTTPSessionPtr session;
 
         for (size_t i = 0; i < resolved_hosts.size(); ++i)
@@ -68,6 +65,7 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
             try
             {
                 session->sendRequest(request);
+                break;
             }
             catch (...)
             {
@@ -110,7 +108,7 @@ void ProxyResolverConfiguration::errorReport(const ClientConfigurationPerRequest
     if (config.proxy_host.empty())
         return;
 
-    std::unique_lock lock(cache_mutex);
+    std::lock_guard lock(cache_mutex);
 
     if (!cache_ttl.count() || !cache_valid)
         return;

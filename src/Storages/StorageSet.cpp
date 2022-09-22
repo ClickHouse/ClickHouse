@@ -1,6 +1,5 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -11,7 +10,6 @@
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/Context.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
@@ -83,12 +81,11 @@ SetOrJoinSink::SetOrJoinSink(
 
 void SetOrJoinSink::consume(Chunk chunk)
 {
-    /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
-    Block sorted_block = getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
+    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-    table.insertBlock(sorted_block, getContext());
+    table.insertBlock(block, getContext());
     if (persistent)
-        backup_stream.write(sorted_block);
+        backup_stream.write(block);
 }
 
 void SetOrJoinSink::onFinish()
@@ -149,9 +146,7 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), false, true))
 {
-
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
-    header = header.sortColumns();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
@@ -172,7 +167,6 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     disk->createDirectories(fs::path(path) / "tmp/");
 
     Block header = metadata_snapshot->getSampleBlock();
-    header = header.sortColumns();
 
     increment = 0;
     set = std::make_shared<Set>(SizeLimits(), false, true);

@@ -74,7 +74,7 @@ namespace
             {
                 case RestoreTableCreationMode::kCreate: return Field{true};
                 case RestoreTableCreationMode::kMustExist: return Field{false};
-                case RestoreTableCreationMode::kCreateIfNotExists: return Field{"if not exists"};
+                case RestoreTableCreationMode::kCreateIfNotExists: return Field{"if-not-exists"};
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
         }
@@ -131,16 +131,19 @@ namespace
             switch (value)
             {
                 case RestoreAccessCreationMode::kCreate: return Field{true};
-                case RestoreAccessCreationMode::kCreateIfNotExists: return Field{"if not exists"};
+                case RestoreAccessCreationMode::kCreateIfNotExists: return Field{"if-not-exists"};
                 case RestoreAccessCreationMode::kReplace: return Field{"replace"};
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreAccessCreationMode: {}", static_cast<int>(value));
         }
     };
+
+    using SettingFieldRestoreUDFCreationMode = SettingFieldRestoreAccessCreationMode;
 }
 
 /// List of restore settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_RESTORE_SETTINGS(M) \
+    M(String, id) \
     M(String, password) \
     M(Bool, structure_only) \
     M(RestoreTableCreationMode, create_table) \
@@ -155,6 +158,7 @@ namespace
     M(Bool, allow_non_empty_tables) \
     M(RestoreAccessCreationMode, create_access) \
     M(Bool, allow_unresolved_access_dependencies) \
+    M(RestoreUDFCreationMode, create_function) \
     M(Bool, internal) \
     M(String, host_id) \
     M(String, coordination_zk_path)

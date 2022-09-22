@@ -93,6 +93,18 @@ set (CMAKE_CXX_STANDARD 17)
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm/llvm")
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
+set_directory_properties (PROPERTIES
+   # due to llvm crosscompile cmake does not know how to clean it, and on clean
+   # will lead to the following error:
+   #
+   #   ninja: error: remove(contrib/llvm/llvm/NATIVE): Directory not empty
+   #
+   ADDITIONAL_CLEAN_FILES "${LLVM_BINARY_DIR}"
+   # llvm's cmake configuring this file only when cmake runs,
+   # and after clean cmake will not know that it should re-run,
+   # add explicitly depends from llvm-config.h
+   CMAKE_CONFIGURE_DEPENDS "${LLVM_BINARY_DIR}/include/llvm/Config/llvm-config.h"
+)
 
 add_library (_llvm INTERFACE)
 target_link_libraries (_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})

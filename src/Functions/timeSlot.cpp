@@ -10,7 +10,7 @@ namespace DB
 
 using FunctionTimeSlot = FunctionDateOrDateTimeToSomething<DataTypeDateTime, TimeSlotImpl>;
 
-void registerFunctionTimeSlot(FunctionFactory & factory)
+REGISTER_FUNCTION(TimeSlot)
 {
     factory.registerFunction<FunctionTimeSlot>();
 }

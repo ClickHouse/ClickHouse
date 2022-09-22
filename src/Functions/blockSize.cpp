@@ -56,7 +56,7 @@ public:
 
 }
 
-void registerFunctionBlockSize(FunctionFactory & factory)
+REGISTER_FUNCTION(BlockSize)
 {
     factory.registerFunction<FunctionBlockSize>();
 }

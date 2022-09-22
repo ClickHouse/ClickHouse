@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToRelativeYearNumImpl>;
 
-void registerFunctionToRelativeYearNum(FunctionFactory & factory)
+REGISTER_FUNCTION(ToRelativeYearNum)
 {
     factory.registerFunction<FunctionToRelativeYearNum>();
 }

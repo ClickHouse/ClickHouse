@@ -109,7 +109,7 @@ namespace
 
 }
 
-void registerFunctionH3ToCenterChild(FunctionFactory & factory)
+REGISTER_FUNCTION(H3ToCenterChild)
 {
     factory.registerFunction<FunctionH3ToCenterChild>();
 }

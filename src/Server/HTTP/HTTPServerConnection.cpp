@@ -26,7 +26,7 @@ void HTTPServerConnection::run()
     {
         try
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             if (!stopped && tcp_server.isOpen() && session.connected())
             {
                 HTTPServerResponse response(session);

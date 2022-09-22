@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMinuteNumImpl>;
 
-void registerFunctionToRelativeMinuteNum(FunctionFactory & factory)
+REGISTER_FUNCTION(ToRelativeMinuteNum)
 {
     factory.registerFunction<FunctionToRelativeMinuteNum>();
 }

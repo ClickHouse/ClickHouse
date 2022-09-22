@@ -76,4 +76,3 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table MODIFY COLUMN 
 
 $CLICKHOUSE_CLIENT --query "SELECT distinct(value) FROM replicated_mutation_table ORDER BY value"
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE replicated_mutation_table"

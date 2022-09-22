@@ -117,7 +117,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     extractor,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -127,7 +127,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     extractor,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else
@@ -549,7 +549,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                 }
                 else
                 {
-                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     container.insert({key, value_to_insert});
                 }
 

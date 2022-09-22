@@ -47,7 +47,7 @@ public:
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override { return false; }
     bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
-    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
+    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr) const override;
     void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
 
     DataPartStoragePtr flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;

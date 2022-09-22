@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/zookeeper
+---
 # system.zookeeper {#system-zookeeper}
 
 Таблицы не существует, если ZooKeeper не сконфигурирован. Позволяет читать данные из ZooKeeper кластера, описанного в конфигурации.

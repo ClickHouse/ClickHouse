@@ -1,7 +1,7 @@
 # package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-client"
-arch: "all"
+arch: "${DEB_ARCH}" # amd64, arm64
 platform: "linux"
 version: "${CLICKHOUSE_VERSION_STRING}"
 vendor: "ClickHouse Inc."
@@ -29,6 +29,10 @@ overrides:
   rpm:
     depends:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
+
+deb:
+  fields:
+    Source: clickhouse
 
 contents:
 - src: root/etc/clickhouse-client/config.xml

@@ -37,6 +37,7 @@ ATTACH TABLE modify_sample_replicated;
 
 SELECT count(), min(y), max(y), sum(y), uniqExact(y) FROM modify_sample_replicated SAMPLE 0.1;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE modify_sample_old (d Date DEFAULT '2000-01-01', x UInt8, y UInt64) ENGINE = MergeTree(d, (x, y), 8192);
 
 ALTER TABLE modify_sample_old MODIFY SAMPLE BY x; -- { serverError 36 }

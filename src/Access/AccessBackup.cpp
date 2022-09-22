@@ -10,6 +10,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
+#include <Backups/RestoreSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -25,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_RESTORE_TABLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -139,7 +141,7 @@ namespace
             }
             catch (Exception & e)
             {
-                e.addMessage("While parsing " + file_path);
+                e.addMessage("While parsing " + file_path + " from backup");
                 throw;
             }
         }
@@ -225,7 +227,7 @@ namespace
         }
     }
 
-    AccessRightsElements getRequiredAccessToRestore(const std::unordered_map<UUID, AccessEntityPtr> & entities)
+    AccessRightsElements getRequiredAccessToRestore(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities)
     {
         AccessRightsElements res;
         for (const auto & entity : entities | boost::adaptors::map_values)
@@ -294,65 +296,78 @@ namespace
     }
 }
 
-void backupAccessEntities(
-    BackupEntriesCollector & backup_entries_collector,
+
+std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
+    const std::vector<std::pair<UUID, AccessEntityPtr>> access_entities,
     const String & data_path_in_backup,
-    const AccessControl & access_control,
-    AccessEntityType type)
+    size_t counter,
+    const AccessControl & access_control)
 {
-    auto entities = access_control.readAllForBackup(type, backup_entries_collector.getBackupSettings());
-    auto dependencies = readDependenciesNamesAndTypes(findDependencies(entities), access_control);
+    auto dependencies = readDependenciesNamesAndTypes(findDependencies(access_entities), access_control);
     AccessEntitiesInBackup ab;
-    boost::range::copy(entities, std::inserter(ab.entities, ab.entities.end()));
+    boost::range::copy(access_entities, std::inserter(ab.entities, ab.entities.end()));
     ab.dependencies = std::move(dependencies);
-    backup_entries_collector.addBackupEntry(fs::path{data_path_in_backup} / "access.txt", ab.toBackupEntry());
+    String filename = fmt::format("access{:02}.txt", counter + 1); /// access01.txt, access02.txt, ...
+    String file_path_in_backup = fs::path{data_path_in_backup} / filename;
+    return {file_path_in_backup, ab.toBackupEntry()};
 }
 
 
-AccessRestoreTask::AccessRestoreTask(
-    const BackupPtr & backup_, const RestoreSettings & restore_settings_, std::shared_ptr<IRestoreCoordination> restore_coordination_)
-    : backup(backup_), restore_settings(restore_settings_), restore_coordination(restore_coordination_)
+AccessRestorerFromBackup::AccessRestorerFromBackup(
+    const BackupPtr & backup_, const RestoreSettings & restore_settings_)
+    : backup(backup_), allow_unresolved_access_dependencies(restore_settings_.allow_unresolved_access_dependencies)
 {
 }
 
-AccessRestoreTask::~AccessRestoreTask() = default;
+AccessRestorerFromBackup::~AccessRestorerFromBackup() = default;
 
-void AccessRestoreTask::addDataPath(const String & data_path)
+void AccessRestorerFromBackup::addDataPath(const String & data_path)
 {
     if (!data_paths.emplace(data_path).second)
         return;
 
-    String file_path = fs::path{data_path} / "access.txt";
-    auto backup_entry = backup->readFile(file_path);
-    auto ab = AccessEntitiesInBackup::fromBackupEntry(*backup_entry, file_path);
+    fs::path data_path_in_backup_fs = data_path;
+    Strings filenames = backup->listFiles(data_path);
+    if (filenames.empty())
+        return;
 
-    boost::range::copy(ab.entities, std::inserter(entities, entities.end()));
-    boost::range::copy(ab.dependencies, std::inserter(dependencies, dependencies.end()));
+    for (const String & filename : filenames)
+    {
+        if (!filename.starts_with("access") || !filename.ends_with(".txt"))
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} doesn't match the wildcard \"access*.txt\"",
+                            String{data_path_in_backup_fs / filename});
+    }
+
+    ::sort(filenames.begin(), filenames.end());
+
+    for (const String & filename : filenames)
+    {
+        String filepath_in_backup = data_path_in_backup_fs / filename;
+        auto backup_entry = backup->readFile(filepath_in_backup);
+        auto ab = AccessEntitiesInBackup::fromBackupEntry(*backup_entry, filepath_in_backup);
+
+        boost::range::copy(ab.entities, std::back_inserter(entities));
+        boost::range::copy(ab.dependencies, std::inserter(dependencies, dependencies.end()));
+    }
+
     for (const auto & id : entities | boost::adaptors::map_keys)
         dependencies.erase(id);
 }
 
-bool AccessRestoreTask::hasDataPath(const String & data_path) const
-{
-    return data_paths.contains(data_path);
-}
-
-AccessRightsElements AccessRestoreTask::getRequiredAccess() const
+AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
 {
     return getRequiredAccessToRestore(entities);
 }
 
-void AccessRestoreTask::restore(AccessControl & access_control) const
+std::vector<std::pair<UUID, AccessEntityPtr>> AccessRestorerFromBackup::getAccessEntities(const AccessControl & access_control) const
 {
-    auto old_to_new_ids = resolveDependencies(dependencies, access_control, restore_settings.allow_unresolved_access_dependencies);
+    auto new_entities = entities;
 
-    std::vector<std::pair<UUID, AccessEntityPtr>> new_entities;
-    boost::range::copy(entities, std::back_inserter(new_entities));
+    auto old_to_new_ids = resolveDependencies(dependencies, access_control, allow_unresolved_access_dependencies);
     generateRandomIDs(new_entities, old_to_new_ids);
-
     replaceDependencies(new_entities, old_to_new_ids);
 
-    access_control.insertFromBackup(new_entities, restore_settings, restore_coordination);
+    return new_entities;
 }
 
 }

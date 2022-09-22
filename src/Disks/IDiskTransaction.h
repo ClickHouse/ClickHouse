@@ -10,7 +10,7 @@ namespace DB
 
 struct RemoveRequest
 {
-    std::string path;
+    std::string path; /// Relative path.
     bool if_exists = false;
 
     explicit RemoveRequest(std::string path_, bool if_exists_ = false)
@@ -103,12 +103,14 @@ public:
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;
 
+    /// Just chmod.
+    virtual void chmod(const String & path, mode_t mode) = 0;
+
     /// Set file at `path` as read-only.
     virtual void setReadOnly(const std::string & path) = 0;
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
-
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;

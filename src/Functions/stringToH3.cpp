@@ -84,7 +84,7 @@ private:
             auto h3index = h3index_source.getWhole();
 
             // convert to std::string and get the c_str to have the delimiting \0 at the end.
-            auto h3index_str = StringRef(h3index.data, h3index.size).toString();
+            auto h3index_str = std::string(reinterpret_cast<const char *>(h3index.data), h3index.size);
             res_data[row_num] = stringToH3(h3index_str.c_str());
 
             if (res_data[row_num] == 0)
@@ -100,7 +100,7 @@ private:
 
 }
 
-void registerFunctionStringToH3(FunctionFactory & factory)
+REGISTER_FUNCTION(StringToH3)
 {
     factory.registerFunction<FunctionStringToH3>();
 }

@@ -49,6 +49,12 @@ std::shared_ptr<KeeperDispatcher> TinyContext::getKeeperDispatcher() const
     return keeper_dispatcher;
 }
 
+std::shared_ptr<KeeperDispatcher> TinyContext::tryGetKeeperDispatcher() const
+{
+    std::lock_guard lock(keeper_dispatcher_mutex);
+    return keeper_dispatcher;
+}
+
 void TinyContext::shutdownKeeperDispatcher() const
 {
     std::lock_guard lock(keeper_dispatcher_mutex);

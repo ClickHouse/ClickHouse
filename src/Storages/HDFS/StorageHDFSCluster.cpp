@@ -99,7 +99,7 @@ Pipe StorageHDFSCluster::read(
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.cluster, node.cluster_secret,
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
                 "HDFSClusterInititiator",
                 node.compression,
                 node.secure

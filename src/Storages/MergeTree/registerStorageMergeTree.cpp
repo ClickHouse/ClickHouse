@@ -304,11 +304,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), getMergeTreeVerboseHelp(is_extended_storage_def));
         }
     }
+    else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
+                                                   "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause."
+                                                   "See also allow_deprecated_syntax_for_merge_tree setting.");
+    }
 
     /// For Replicated.
     String zookeeper_path;
     String replica_name;
     StorageReplicatedMergeTree::RenamingRestrictions renaming_restrictions = StorageReplicatedMergeTree::RenamingRestrictions::ALLOW_ANY;
+
+    bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+        DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
     if (replicated)
     {
@@ -323,7 +333,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// Get path and name from engine arguments
             ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
             if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
-                zookeeper_path = safeGet<String>(ast_zk_path->value);
+                zookeeper_path = ast_zk_path->value.safeGet<String>();
             else
                 throw Exception(
                     "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -332,7 +342,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
             ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
             if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
-                replica_name = safeGet<String>(ast_replica_name->value);
+                replica_name = ast_replica_name->value.safeGet<String>();
             else
                 throw Exception(
                     "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::BAD_ARGUMENTS);
@@ -372,17 +382,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-        bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-                                      DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
         bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
 
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         if (!args.attach)
         {
-            if (is_replicated_database && !is_extended_storage_def)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for ReplicatedMergeTree tables in Replicated databases");
-
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
@@ -650,7 +654,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
-            storage_settings->index_granularity = safeGet<UInt64>(ast->value);
+            storage_settings->index_granularity = ast->value.safeGet<UInt64>();
         else
             throw Exception(
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),

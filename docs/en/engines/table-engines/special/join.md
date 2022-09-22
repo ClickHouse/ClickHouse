@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/special/join
 sidebar_position: 70
 sidebar_label: Join
 ---
@@ -151,4 +152,3 @@ ALTER TABLE id_val_join DELETE WHERE id = 3;
 └────┴─────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/join/) <!--hide-->

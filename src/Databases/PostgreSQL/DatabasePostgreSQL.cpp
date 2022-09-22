@@ -264,7 +264,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 }
 
 
-void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* no_delay */)
+void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -290,7 +290,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
     {
         std::lock_guard<std::mutex> lock{mutex};
@@ -369,7 +369,11 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
 
 ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    auto storage = fetchTable(table_name, local_context, false);
+    StoragePtr storage;
+    {
+        std::lock_guard lock{mutex};
+        storage = fetchTable(table_name, local_context, false);
+    }
     if (!storage)
     {
         if (throw_on_error)

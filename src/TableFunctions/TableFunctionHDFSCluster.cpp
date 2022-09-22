@@ -5,18 +5,17 @@
 #include <Storages/HDFS/StorageHDFSCluster.h>
 
 #include <DataTypes/DataTypeString.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
 #include <TableFunctions/TableFunctionHDFSCluster.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 
 #include "registerTableFunctions.h"
@@ -61,7 +60,7 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     /// This argument is always the first
-    cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
 
     if (!context->tryGetCluster(cluster_name))
         throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
@@ -76,7 +75,10 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }

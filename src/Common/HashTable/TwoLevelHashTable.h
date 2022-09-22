@@ -15,13 +15,10 @@
   */
 
 template <size_t initial_size_degree = 8>
-struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
+struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
 {
     /// Increase the size of the hash table.
-    void increaseSize()
-    {
-        this->size_degree += this->size_degree >= 15 ? 1 : 2;
-    }
+    void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
 };
 
 template
@@ -230,6 +227,14 @@ public:
         return res;
     }
 
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
+    {
+        const auto & key = keyHolderGetKey(key_holder);
+        const auto key_hash = hash(key);
+        const auto bucket = getBucketFromHash(key_hash);
+        impls[bucket].prefetchByHash(key_hash);
+    }
 
     /** Insert the key,
       * return an iterator to a position that can be used for `placement new` of value,

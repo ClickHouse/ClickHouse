@@ -1,9 +1,9 @@
 ---
+slug: /en/interfaces/formats
 sidebar_position: 21
 sidebar_label: Input and Output Formats
+title: Formats for Input and Output Data
 ---
-
-# Formats for Input and Output Data
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read an external dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
@@ -11,68 +11,77 @@ results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 The supported formats are:
 
 | Format                                                                                    | Input | Output |
-|-------------------------------------------------------------------------------------------|-------|--------|
-| [TabSeparated](#tabseparated)                                                             | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔     | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔     | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔     | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔     | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔     | ✔      |
-| [Template](#format-template)                                                              | ✔     | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔     | ✗      |
-| [CSV](#csv)                                                                               | ✔     | ✔      |
-| [CSVWithNames](#csvwithnames)                                                             | ✔     | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                                                | ✔     | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔     | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔     | ✔      |
-| [Values](#data-format-values)                                                             | ✔     | ✔      |
-| [Vertical](#vertical)                                                                     | ✗     | ✔      |
-| [JSON](#json)                                                                             | ✗     | ✔      |
-| [JSONAsString](#jsonasstring)                                                             | ✔     | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
-| [JSONColumns](#jsoncolumns)                                                               | ✔     | ✔      |
-| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗     | ✔      |
-| [JSONCompact](#jsoncompact)                                                               | ✗     | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
-| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔     | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗     | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔     | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔     | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔     | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
-| [TSKV](#tskv)                                                                             | ✔     | ✔      |
-| [Pretty](#pretty)                                                                         | ✗     | ✔      |
-| [PrettyCompact](#prettycompact)                                                           | ✗     | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗     | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗     | ✔      |
-| [PrettySpace](#prettyspace)                                                               | ✗     | ✔      |
-| [Prometheus](#prometheus)                                                                 | ✗     | ✔      |
-| [Protobuf](#protobuf)                                                                     | ✔     | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                         | ✔     | ✔      |
-| [Avro](#data-format-avro)                                                                 | ✔     | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                              | ✔     | ✗      |
-| [Parquet](#data-format-parquet)                                                           | ✔     | ✔      |
-| [Arrow](#data-format-arrow)                                                               | ✔     | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                  | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                   | ✔     | ✔      |
-| [RowBinary](#rowbinary)                                                                   | ✔     | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔     | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔     | ✔      |
-| [Native](#native)                                                                         | ✔     | ✔      |
-| [Null](#null)                                                                             | ✗     | ✔      |
-| [XML](#xml)                                                                               | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                   | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                             | ✔     | ✗      |
-| [Regexp](#data-format-regexp)                                                             | ✔     | ✗      |
-| [RawBLOB](#rawblob)                                                                       | ✔     | ✔      |
-| [MsgPack](#msgpack)                                                                       | ✔     | ✔      |
-| [MySQLDump](#mysqldump)                                                                   | ✔     | ✗      |
+|-------------------------------------------------------------------------------------------|------|--------|
+| [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔      |
+| [Template](#format-template)                                                              | ✔    | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗      |
+| [CSV](#csv)                                                                               | ✔    | ✔      |
+| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔      |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔      |
+| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔      |
+| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔      |
+| [Values](#data-format-values)                                                             | ✔    | ✔      |
+| [Vertical](#vertical)                                                                     | ✗    | ✔      |
+| [JSON](#json)                                                                             | ✔    | ✔      |
+| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗      |
+| [JSONStrings](#jsonstrings)                                                               | ✔    | ✔      |
+| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔      |
+| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✔    | ✔      |
+| [JSONCompact](#jsoncompact)                                                               | ✔    | ✔      |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔      |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔      |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔      |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔      |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔      |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔      |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
+| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔    | ✔      |
+| [TSKV](#tskv)                                                                             | ✔    | ✔      |
+| [Pretty](#pretty)                                                                         | ✗    | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
+| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔      |
+| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔      |
+| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
+| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
+| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔      |
+| [PrettySpace](#prettyspace)                                                               | ✗    | ✔      |
+| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔      |
+| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔      |
+| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔      |
+| [Prometheus](#prometheus)                                                                 | ✗    | ✔      |
+| [Protobuf](#protobuf)                                                                     | ✔    | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔      |
+| [Avro](#data-format-avro)                                                                 | ✔    | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗      |
+| [Parquet](#data-format-parquet)                                                           | ✔    | ✔      |
+| [Arrow](#data-format-arrow)                                                               | ✔    | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔      |
+| [ORC](#data-format-orc)                                                                   | ✔    | ✔      |
+| [RowBinary](#rowbinary)                                                                   | ✔    | ✔      |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔      |
+| [Native](#native)                                                                         | ✔    | ✔      |
+| [Null](#null)                                                                             | ✗    | ✔      |
+| [XML](#xml)                                                                               | ✗    | ✔      |
+| [CapnProto](#capnproto)                                                                   | ✔    | ✔      |
+| [LineAsString](#lineasstring)                                                             | ✔    | ✗      |
+| [Regexp](#data-format-regexp)                                                             | ✔    | ✗      |
+| [RawBLOB](#rawblob)                                                                       | ✔    | ✔      |
+| [MsgPack](#msgpack)                                                                       | ✔    | ✔      |
+| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗      |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
@@ -193,18 +202,25 @@ Differs from the `TabSeparated` format in that the column names are written in t
 
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
+:::warning
 If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
+:::
 
 This format is also available under the name `TSVWithNames`.
 
 ## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
-The first row with names is processed the same way as in `TabSeparatedWithNames` format.
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
 If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
@@ -450,9 +466,23 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## CSVWithNamesAndTypes {#csvwithnamesandtypes}
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ## CustomSeparated {#format-customseparated}
 
@@ -464,9 +494,51 @@ There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [Templat
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
+
+## SQLInsert {#sqlinsert}
+
+Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
+
+Example:
+
+```sql
+SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
+```
+
+```sql
+INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
+INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
+INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
+INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
+INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
+```
+
+To read data output by this format ypu can use [MySQLDump](#mysqldump) input format.
+
+### SQLInsert format settings {#sqlinsert-format-settings}
+
+- [output_format_sql_insert_max_batch_size](../operations/settings/settings.md#output_format_sql_insert_max_batch_size) - The maximum number of rows in one INSERT statement. Default value - `65505`.
+- [output_format_sql_insert_table_name](../operations/settings/settings.md#output_format_sql_insert_table_name) - The name of table in the output INSERT query. Default value - `'table'`.
+- [output_format_sql_insert_include_column_names](../operations/settings/settings.md#output_format_sql_insert_include_column_names) - Include column names in INSERT query. Default value - `true`.
+- [output_format_sql_insert_use_replace](../operations/settings/settings.md#output_format_sql_insert_use_replace) - Use REPLACE statement instead of INSERT. Default value - `false`.
+- [output_format_sql_insert_quote_names](../operations/settings/settings.md#output_format_sql_insert_quote_names) - Quote column names with "\`" characters . Default value - `true`.
 
 ## JSON {#json}
 
@@ -537,14 +609,15 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 `extremes` – Extreme values (when extremes are set to 1).
 
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) to 1.
 
 **See Also**
 
 -   [JSONEachRow](#jsoneachrow) format
 -   [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) setting
+
+For JSON input format, if setting [input_format_json_validate_types_from_metadata](../operations/settings/settings.md#input_format_json_validate_types_from_metadata) is set to 1,
+the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
 ## JSONStrings {#jsonstrings}
 
@@ -622,8 +695,8 @@ Columns that are not present in the block will be filled with default values (yo
 
 ## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
 
-Differs from JSONColumns output format in that it also outputs some metadata and statistics (similar to JSON output format).
-This format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
+Differs from JSONColumns format in that it also contains some metadata and statistics (similar to JSON format).
+Output format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
 
 Example:
 ```json
@@ -664,6 +737,9 @@ Example:
         }
 }
 ```
+
+For JSONColumnsWithMetadata input format, if setting [input_format_json_validate_types_from_metadata](../operations/settings/settings.md#input_format_json_validate_types_from_metadata) is set to 1,
+the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
 ## JSONAsString {#jsonasstring}
 
@@ -882,17 +958,45 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 
 Differs from `JSONCompactEachRow` format in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 
 Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ## JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
 
 Differs from `JSONCompactStringsEachRow` in that in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
 Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ```json
 ["num", "str", "arr"]
@@ -901,6 +1005,21 @@ Differs from `JSONCompactStringsEachRow` in that it also prints two header rows 
 [43, "hello", [0,1,2]]
 [44, "hello", [0,1,2,3]]
 ```
+
+## JSONObjectEachRow {#jsonobjecteachrow}
+
+In this format, all data is represented as a single JSON Object, each row is represented as separate field of this object similar to JSONEachRow format.
+
+Example:
+
+```json
+{
+  "row_1": {"num": 42, "str": "hello", "arr":  [0,1]},
+  "row_2": {"num": 43, "str": "hello", "arr":  [0,1,2]},
+  "row_3": {"num": 44, "str": "hello", "arr":  [0,1,2,3]}
+}
+```
+
 
 ### Inserting Data {#json-inserting-data}
 
@@ -1025,11 +1144,15 @@ SELECT * FROM json_each_row_nested
 
 - [input_format_import_nested_json](../operations/settings/settings.md#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
 - [input_format_json_read_bools_as_numbers](../operations/settings/settings.md#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
+- [input_format_json_read_numbers_as_strings](../operations/settings/settings.md#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `false`.
 - [output_format_json_quote_64bit_integers](../operations/settings/settings.md#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
+- [output_format_json_quote_64bit_floats](../operations/settings/settings.md#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
+- [output_format_json_quote_decimals](../operations/settings/settings.md#output_format_json_quote_decimals) - controls quoting of decimals in JSON output format. Default value - `false`.
 - [output_format_json_escape_forward_slashes](../operations/settings/settings.md#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.
 - [output_format_json_named_tuples_as_objects](../operations/settings/settings.md#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `false`.
 - [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) - output a JSON array of all rows in JSONEachRow(Compact) format. Default value - `false`.
+- [output_format_json_validate_utf8](../operations/settings/settings.md#output_format_json_validate_utf8) - enables validation of UTF-8 sequences in JSON output formats (note that it doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8). Default value - `false`.
 
 ## Native {#native}
 
@@ -1106,18 +1229,9 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## PrettyCompact {#prettycompact}
-
-Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
-This format is used by default in the command-line client in interactive mode.
-
-## PrettyCompactMonoBlock {#prettycompactmonoblock}
-
-Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
-
 ## PrettyNoEscapes {#prettynoescapes}
 
-Differs from Pretty in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+Differs from [Pretty](#pretty) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
 
 Example:
 
@@ -1127,19 +1241,49 @@ $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events F
 
 You can use the HTTP interface for displaying in the browser.
 
-### PrettyCompactNoEscapes {#prettycompactnoescapes}
+## PrettyMonoBlock {#prettymonoblock}
 
-The same as the previous setting.
+Differs from [Pretty](#pretty) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
-### PrettySpaceNoEscapes {#prettyspacenoescapes}
+## PrettyNoEscapesMonoBlock {#prettynoescapesmonoblock}
 
-The same as the previous setting.
+Differs from [PrettyNoEscapes](#prettynoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+
+## PrettyCompact {#prettycompact}
+
+Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
+This format is used by default in the command-line client in interactive mode.
+
+## PrettyCompactNoEscapes {#prettynoescapes}
+
+Differs from [PrettyCompact](#prettycompact) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+
+## PrettyCompactMonoBlock {#prettycompactmonoblock}
+
+Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## PrettyCompactNoEscapesMonoBlock {#prettycompactnoescapesmonoblock}
+
+Differs from [PrettyCompactNoEscapes](#prettycompactnoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
 ## PrettySpace {#prettyspace}
 
 Differs from [PrettyCompact](#prettycompact) in that whitespace (space characters) is used instead of the grid.
 
-### Pretty formats settings {#pretty-formats-settings}
+## PrettySpaceNoEscapes {#prettyspacenoescapes}
+
+Differs from [PrettySpace](#prettyspace) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+
+## PrettySpaceMonoBlock {#prettyspacemonoblock}
+
+Differs from [PrettySpace](#prettyspace) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## PrettySpaceNoEscapesMonoBlock {#prettyspacenoescapesmonoblock}
+
+Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## Pretty formats settings {#pretty-formats-settings}
 
 - [output_format_pretty_max_rows](../operations/settings/settings.md#output_format_pretty_max_rows) - rows limit for Pretty formats. Default value - `10000`.
 - [output_format_pretty_max_column_pad_width](../operations/settings/settings.md#output_format_pretty_max_column_pad_width) - maximum width to pad all values in a column in Pretty formats. Default value - `250`.
@@ -1170,6 +1314,12 @@ Similar to [RowBinary](#rowbinary), but with added header:
 -   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
 -   N `String`s specifying column names
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 Similar to [RowBinary](#rowbinary), but with added header:
@@ -1177,6 +1327,14 @@ Similar to [RowBinary](#rowbinary), but with added header:
 -   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
 -   N `String`s specifying column names
 -   N `String`s specifying column types
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ## Values {#data-format-values}
 
@@ -1603,6 +1761,8 @@ kafka_topic_list = 'topic1',
 kafka_group_name = 'group1',
 kafka_format = 'AvroConfluent';
 
+-- for debug purposes you can set format_avro_schema_registry_url in a session.
+-- this way cannot be used in production
 SET format_avro_schema_registry_url = 'http://schema-registry';
 
 SELECT * FROM topic1_stream;

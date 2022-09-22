@@ -2,14 +2,18 @@
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/User.h>
+#include <Access/AccessBackup.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 
@@ -520,26 +524,33 @@ bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddr
 }
 
 
-bool IAccessStorage::isRestoreAllowed() const
-{
-    return isBackupAllowed() && !isReadOnly();
-}
-
-std::vector<std::pair<UUID, AccessEntityPtr>> IAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
+void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const
 {
     if (!isBackupAllowed())
         throwBackupNotAllowed();
 
-    auto res = readAllWithIDs(type);
-    boost::range::remove_erase_if(res, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
-    return res;
+    auto entities = readAllWithIDs(type);
+    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+
+    if (entities.empty())
+        return;
+
+    auto backup_entry = makeBackupEntryForAccess(
+        entities,
+        data_path_in_backup,
+        backup_entries_collector.getAccessCounter(type),
+        backup_entries_collector.getContext()->getAccessControl());
+
+    backup_entries_collector.addBackupEntry(backup_entry);
 }
 
-void IAccessStorage::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> &, const RestoreSettings &, std::shared_ptr<IRestoreCoordination>)
+
+void IAccessStorage::restoreFromBackup(RestorerFromBackup &)
 {
     if (!isRestoreAllowed())
         throwRestoreNotAllowed();
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertFromBackup() is not implemented in {}", getStorageType());
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "restoreFromBackup() is not implemented in {}", getStorageType());
 }
 
 
@@ -549,6 +560,62 @@ UUID IAccessStorage::generateRandomID()
     UUID id;
     generator.createRandom().copyTo(reinterpret_cast<char *>(&id));
     return id;
+}
+
+
+void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_)
+{
+    std::unordered_map<UUID, size_t> positions_by_id;
+    std::unordered_map<std::string_view, size_t> positions_by_type_and_name[static_cast<size_t>(AccessEntityType::MAX)];
+    std::vector<size_t> positions_to_remove;
+
+    for (size_t pos = 0; pos != entities.size(); ++pos)
+    {
+        const auto & [id, entity] = entities[pos];
+
+        if (auto it = positions_by_id.find(id); it == positions_by_id.end())
+        {
+            positions_by_id[id] = pos;
+        }
+        else if (it->second != pos)
+        {
+            /// Conflict: same ID is used for multiple entities. We will ignore them.
+            positions_to_remove.emplace_back(pos);
+            positions_to_remove.emplace_back(it->second);
+        }
+
+        std::string_view entity_name = entity->getName();
+        auto & positions_by_name = positions_by_type_and_name[static_cast<size_t>(entity->getType())];
+        if (auto it = positions_by_name.find(entity_name); it == positions_by_name.end())
+        {
+            positions_by_name[entity_name] = pos;
+        }
+        else if (it->second != pos)
+        {
+            /// Conflict: same name and type are used for multiple entities. We will ignore them.
+            positions_to_remove.emplace_back(pos);
+            positions_to_remove.emplace_back(it->second);
+        }
+    }
+
+    if (positions_to_remove.empty())
+        return;
+
+    std::sort(positions_to_remove.begin(), positions_to_remove.end());
+    positions_to_remove.erase(std::unique(positions_to_remove.begin(), positions_to_remove.end()), positions_to_remove.end());
+
+    for (size_t pos : positions_to_remove)
+    {
+        LOG_WARNING(
+            log_,
+            "Skipping {} (id={}) due to conflicts with other access entities",
+            entities[pos].second->formatTypeWithName(),
+            toString(entities[pos].first));
+    }
+
+    /// Remove conflicting entities.
+    for (size_t pos : positions_to_remove | boost::adaptors::reversed) /// Must remove in reversive order.
+        entities.erase(entities.begin() + pos);
 }
 
 

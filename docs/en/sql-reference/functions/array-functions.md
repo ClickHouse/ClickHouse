@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/array-functions
 sidebar_position: 35
 sidebar_label: Arrays
 ---
@@ -161,6 +162,10 @@ Result:
 Creates an array from the function arguments.
 The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn’t clear which type of array to create. That is, you can’t use this function to create an empty array (to do that, use the ‘emptyArray\*’ function described above).
 Returns an ‘Array(T)’ type result, where ‘T’ is the smallest common type out of the passed arguments.
+
+## arrayWithConstant(length, elem)
+
+Creates an array of length `length` filled with the constant `elem`.
 
 ## arrayConcat
 
@@ -1715,3 +1720,7 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Distance functions
+
+All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).

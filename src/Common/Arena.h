@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 #include <memory>
 #include <vector>
 #include <boost/noncopyable.hpp>

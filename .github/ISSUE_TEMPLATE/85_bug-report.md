@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Wrong behaviour (visible to users) in official ClickHouse release.
+about: Wrong behavior (visible to users) in the official ClickHouse release.
 title: ''
 labels: 'potential bug'
 assignees: ''

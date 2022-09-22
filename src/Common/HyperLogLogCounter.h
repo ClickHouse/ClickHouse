@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 
+#include <bit>
 #include <cmath>
 #include <cstring>
 
@@ -161,7 +162,7 @@ class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType
 public:
     Denominator(DenominatorType initial_value) /// NOLINT
     {
-        rank_count[0] = initial_value;
+        rank_count[0] = static_cast<UInt32>(initial_value);
     }
 
     inline void update(UInt8 cur_rank, UInt8 new_rank)
@@ -188,7 +189,7 @@ public:
             val /= 2.0;
             val += rank_count[i];
         }
-        return val;
+        return static_cast<DenominatorType>(val);
     }
 
 private:
@@ -205,7 +206,7 @@ struct TrailingZerosCounter<UInt32>
 {
     static int apply(UInt32 val)
     {
-        return __builtin_ctz(val);
+        return std::countr_zero(val);
     }
 };
 
@@ -214,7 +215,7 @@ struct TrailingZerosCounter<UInt64>
 {
     static int apply(UInt64 val)
     {
-        return __builtin_ctzll(val);
+        return std::countr_zero(val);
     }
 };
 

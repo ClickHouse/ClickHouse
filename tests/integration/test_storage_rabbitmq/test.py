@@ -30,6 +30,11 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
+instance2 = cluster.add_instance(
+    "instance2",
+    user_configs=["configs/users.xml"],
+    with_rabbitmq=True,
+)
 
 # Helpers
 
@@ -2585,9 +2590,17 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'mv',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'drop_mv';
+    """
+    )
+    instance.query(
+        """
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
+    """
+    )
+    instance.query(
+        """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.rabbitmq;
     """
@@ -2605,6 +2618,14 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
+
+    start = time.time()
+    while time.time() - start < 30:
+        res = instance.query("SELECT COUNT(*) FROM test.view")
+        if "20" == res:
+            break
+        else:
+            logging.debug(f"Number of rows in test.view: {res}")
 
     instance.query("DROP VIEW test.consumer")
     for i in range(20, 40):
@@ -2638,7 +2659,8 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     connection.close()
 
     count = 0
-    while True:
+    start = time.time()
+    while time.time() - start < 30:
         count = int(instance.query("SELECT count() FROM test.rabbitmq"))
         if count:
             break
@@ -2680,7 +2702,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
         channel = connection.channel()
 
         messages = []
-        for i in range(messages_num):
+        for j in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
             mes_id = str(i)
@@ -2745,7 +2767,84 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
             break
 
 
-if __name__ == "__main__":
-    cluster.start()
-    input("Cluster created, press any key to destroy...")
-    cluster.shutdown()
+def test_rabbitmq_msgpack(rabbitmq_cluster):
+
+    instance.query(
+        """
+        drop table if exists rabbit_in;
+        drop table if exists rabbit_out;
+        create table
+            rabbit_in (val String)
+            engine=RabbitMQ
+            settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'xhep',
+                     rabbitmq_format = 'MsgPack',
+                     rabbitmq_num_consumers = 1;
+        create table
+            rabbit_out (val String)
+            engine=RabbitMQ
+            settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'xhep',
+                     rabbitmq_format = 'MsgPack',
+                     rabbitmq_num_consumers = 1;
+        set stream_like_engine_allow_direct_select=1;
+        insert into rabbit_out select 'kek';
+        """
+    )
+
+    result = ""
+    try_no = 0
+    while True:
+        result = instance.query("select * from rabbit_in;")
+        if result.strip() == "kek":
+            break
+        else:
+            try_no = try_no + 1
+            if try_no == 20:
+                break
+        time.sleep(1)
+    assert result.strip() == "kek"
+
+    instance.query("drop table rabbit_in sync")
+    instance.query("drop table rabbit_out sync")
+
+
+def test_rabbitmq_address(rabbitmq_cluster):
+
+    instance2.query(
+        """
+        drop table if exists rabbit_in;
+        drop table if exists rabbit_out;
+        create table
+            rabbit_in (val String)
+            engine=RabbitMQ
+            SETTINGS rabbitmq_exchange_name = 'rxhep',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_num_consumers = 1,
+                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+        create table
+            rabbit_out (val String) engine=RabbitMQ
+            SETTINGS rabbitmq_exchange_name = 'rxhep',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_num_consumers = 1,
+                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+        set stream_like_engine_allow_direct_select=1;
+        insert into rabbit_out select 'kek';
+    """
+    )
+
+    result = ""
+    try_no = 0
+    while True:
+        result = instance2.query("select * from rabbit_in;")
+        if result.strip() == "kek":
+            break
+        else:
+            try_no = try_no + 1
+            if try_no == 20:
+                break
+        time.sleep(1)
+    assert result.strip() == "kek"
+
+    instance2.query("drop table rabbit_in sync")
+    instance2.query("drop table rabbit_out sync")

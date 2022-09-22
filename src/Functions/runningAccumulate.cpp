@@ -138,7 +138,7 @@ public:
 
 }
 
-void registerFunctionRunningAccumulate(FunctionFactory & factory)
+REGISTER_FUNCTION(RunningAccumulate)
 {
     factory.registerFunction<FunctionRunningAccumulate>();
 }

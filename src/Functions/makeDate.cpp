@@ -62,7 +62,7 @@ protected:
             DataTypePtr argument_type = arguments[i].type;
             if (!isNumber(argument_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument '{}' for function {} must be number", std::string(argument_names[i]), getName());
+                    "Argument '{}' for function {} must be a number", std::string(argument_names[i]), getName());
         }
     }
 
@@ -132,9 +132,9 @@ public:
                 year <= Traits::MAX_YEAR &&
                 month >= 1 && month <= 12 &&
                 day >= 1 && day <= 31 &&
-                YearMonthDayToSingleInt(year, month, day) <= Traits::MAX_DATE)
+                YearMonthDayToSingleInt(static_cast<Int64>(year), static_cast<Int64>(month), static_cast<Int64>(day)) <= Traits::MAX_DATE)
             {
-                day_num = date_lut.makeDayNum(year, month, day);
+                day_num = date_lut.makeDayNum(static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day));
             }
 
             result_data[i] = day_num;
@@ -164,9 +164,9 @@ struct MakeDate32Traits
     using ReturnDataType = DataTypeDate32;
     using ReturnColumnType = ColumnInt32;
 
-    static constexpr auto MIN_YEAR = 1925;
-    static constexpr auto MAX_YEAR = 2283;
-    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 11, 11);
+    static constexpr auto MIN_YEAR = 1900;
+    static constexpr auto MAX_YEAR = 2299;
+    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 12, 31);
 };
 
 /// Common implementation for makeDateTime, makeDateTime64
@@ -205,7 +205,9 @@ protected:
         if (unlikely(year > DATE_LUT_MAX_YEAR))
             return maxDateTime(lut);
 
-        return lut.makeDateTime(year, month, day_of_month, hour, minute, second);
+        return lut.makeDateTime(
+            static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day_of_month),
+            static_cast<UInt8>(hour), static_cast<UInt8>(minute), static_cast<UInt8>(second));
     }
 
     static Int64 minDateTime(const DateLUTImpl & lut)
@@ -322,7 +324,7 @@ public:
             const auto& fraction_argument = arguments[argument_names.size()];
             if (!isNumber(fraction_argument.type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument 'fraction' for function {} must be number", getName());
+                    "Argument 'fraction' for function {} must be a number", getName());
         }
 
         /// Optional precision argument
@@ -394,7 +396,7 @@ public:
             if (unlikely(date_time == min_date_time))
                 fraction = 0;
             else if (unlikely(date_time == max_date_time))
-                fraction = 999999999ll;
+                fraction = 999999999;
             else
             {
                 fraction = fraction_data ? (*fraction_data)[i] : 0;
@@ -409,7 +411,7 @@ public:
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, static_cast<Int64>(fraction), precision);
         }
 
         return res_column;
@@ -433,7 +435,7 @@ private:
 
 }
 
-void registerFunctionsMakeDate(FunctionFactory & factory)
+REGISTER_FUNCTION(MakeDate)
 {
     factory.registerFunction<FunctionMakeDate<MakeDateTraits>>();
     factory.registerFunction<FunctionMakeDate<MakeDate32Traits>>();

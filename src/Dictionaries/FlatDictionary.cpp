@@ -105,7 +105,7 @@ ColumnPtr FlatDictionary::getColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     ids,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -115,7 +115,7 @@ ColumnPtr FlatDictionary::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     ids,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else
@@ -617,7 +617,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
         }
         else
         {
-            container[key] = attribute_value;
+            container[key] = static_cast<ValueType>(attribute_value);
         }
     };
 

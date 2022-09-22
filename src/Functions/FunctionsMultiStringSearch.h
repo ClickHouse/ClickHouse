@@ -30,6 +30,11 @@ namespace DB
   * multiSearchFirstIndexUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchFirstIndexCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  *
+  * multiSearchFirstPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- returns the leftmost offset of the matched string or zero if nothing was found
+  * multiSearchFirstPositionUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstPositionCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstPositionCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   */
 
 namespace ErrorCodes
@@ -61,7 +66,6 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -77,15 +81,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column_haystack = arguments[0].column;
-        const ColumnPtr & arr_ptr = arguments[1].column;
+        const ColumnPtr & haystack_ptr = arguments[0].column;
+        const ColumnPtr & needles_ptr = arguments[1].column;
 
-        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
-        assert(col_haystack_vector); // getReturnTypeImpl() checks the data type
+        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
+        const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
+        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
-        const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
-        if (!col_const_arr)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The array is not const", arguments[1].column->getName());
+        const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
+        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
+        assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
+
+        if (col_haystack_const && col_needles_vector)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);
 
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
@@ -93,12 +101,24 @@ public:
 
         auto & vec_res = col_res->getData();
         auto & offsets_res = col_offsets->getData();
-        // the implementations are responsible for resizing the output column
+        /// the implementations are responsible for resizing the output column
 
-        Array needles_arr = col_const_arr->getValue<Array>();
-        Impl::vectorConstant(
-            col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needles_arr, vec_res, offsets_res,
-            allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+        if (col_needles_const)
+            Impl::vectorConstant(
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
+                col_needles_const->getValue<Array>(),
+                vec_res, offsets_res,
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+        else
+            Impl::vectorVector(
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
+                col_needles_vector->getData(), col_needles_vector->getOffsets(),
+                vec_res, offsets_res,
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+
+        // the combination of const haystack + const needle is not implemented because
+        // useDefaultImplementationForConstants() == true makes upper layers convert both to
+        // non-const columns
 
         if constexpr (Impl::is_column_array)
             return ColumnArray::create(std::move(col_res), std::move(col_offsets));

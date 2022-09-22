@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/PartLog.h>
 
 namespace ProfileEvents
@@ -23,6 +24,7 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
+    , storage_snapshot(storage.getStorageSnapshot(metadata_snapshot, context))
 {
 }
 
@@ -54,9 +56,8 @@ struct MergeTreeSink::DelayedChunk
 void MergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
-    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
 
-    storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
+    deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
@@ -139,6 +140,9 @@ void MergeTreeSink::finishDelayedChunk()
 
         bool added = false;
 
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
+        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
             auto lock = storage.lockParts();
             storage.fillNewPartName(part, lock);
@@ -152,22 +156,12 @@ void MergeTreeSink::finishDelayedChunk()
                 {
                     ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
                     LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
-                }
-                else
-                {
-                    MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                    added = storage.renameTempPartAndAdd(part, transaction, lock);
-                    transaction.commit(&lock);
-
+                    continue;
                 }
             }
-            else
-            {
-                MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                added = storage.renameTempPartAndAdd(part, transaction, lock);
-                transaction.commit(&lock);
-            }
 
+            added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
+            transaction.commit(&lock);
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added

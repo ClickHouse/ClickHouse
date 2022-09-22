@@ -152,8 +152,8 @@ template <typename Data>
 class AggregateFunctionDistinct : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
 {
 private:
-    static constexpr auto prefix_size = sizeof(Data);
     AggregateFunctionPtr nested_func;
+    size_t prefix_size;
     size_t arguments_num;
 
     AggregateDataPtr getNestedPlace(AggregateDataPtr __restrict place) const noexcept
@@ -170,7 +170,11 @@ public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
     : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_)
     , nested_func(nested_func_)
-    , arguments_num(arguments.size()) {}
+    , arguments_num(arguments.size())
+    {
+        size_t nested_size = nested_func->alignOfData();
+        prefix_size = (sizeof(Data) + nested_size - 1) / nested_size * nested_size;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -221,6 +225,12 @@ public:
         nested_func->destroy(getNestedPlace(place));
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        this->data(place).~Data();
+        nested_func->destroyUpToState(getNestedPlace(place));
+    }
+
     String getName() const override
     {
         return nested_func->getName() + "Distinct";
@@ -239,6 +249,21 @@ public:
     bool isState() const override
     {
         return nested_func->isState();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

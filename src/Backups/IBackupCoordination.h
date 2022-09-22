@@ -6,18 +6,23 @@
 
 namespace DB
 {
+class Exception;
+enum class AccessEntityType;
 
-/// Keeps information about files contained in a backup.
+/// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
+/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
+/// BackupCoordinationLocal is used while executing BACKUP without ON CLUSTER and performs coordination in memory.
+/// BackupCoordinationRemote is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
 class IBackupCoordination
 {
 public:
     virtual ~IBackupCoordination() = default;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) = 0;
-
-    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
-    virtual void syncStageError(const String & current_host, const String & error_message) = 0;
+    virtual void setStage(const String & current_host, const String & new_stage, const String & message) = 0;
+    virtual void setError(const String & current_host, const Exception & exception) = 0;
+    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) = 0;
+    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
 
     struct PartNameAndChecksum
     {
@@ -29,21 +34,37 @@ public:
     /// Multiple replicas of the replicated table call this function and then the added part names can be returned by call of the function
     /// getReplicatedPartNames().
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
-    virtual void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
+    virtual void addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name,
                                         const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
 
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addReplicatedPartNames() but without duplications and without
     /// parts covered by another parts.
-    virtual Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const = 0;
+    virtual Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const = 0;
+
+    struct MutationInfo
+    {
+        String id;
+        String entry;
+    };
+
+    /// Adds information about mutations of a replicated table.
+    virtual void addReplicatedMutations(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations) = 0;
+
+    /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
+    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const = 0;
 
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
     /// getReplicatedDataPaths().
-    virtual void addReplicatedDataPath(const String & table_zk_path, const String & data_path) = 0;
+    virtual void addReplicatedDataPath(const String & table_shared_id, const String & data_path) = 0;
 
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
-    virtual Strings getReplicatedDataPaths(const String & table_zk_path) const = 0;
+    virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
+
+    /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
+    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
 
     struct FileInfo
     {
@@ -94,9 +115,6 @@ public:
 
     /// Returns the list of all the archive suffixes which were generated.
     virtual Strings getAllArchiveSuffixes() const = 0;
-
-    /// Removes remotely stored information.
-    virtual void drop() {}
 };
 
 }

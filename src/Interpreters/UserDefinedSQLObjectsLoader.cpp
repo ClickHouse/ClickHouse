@@ -43,7 +43,7 @@ UserDefinedSQLObjectsLoader::UserDefinedSQLObjectsLoader()
     : log(&Poco::Logger::get("UserDefinedSQLObjectsLoader"))
 {}
 
-void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, const std::string_view & name, const String & path)
+void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, std::string_view name, const String & path)
 {
     auto name_ref = StringRef(name.data(), name.size());
     LOG_DEBUG(log, "Loading user defined object {} from file {}", backQuote(name_ref), path);

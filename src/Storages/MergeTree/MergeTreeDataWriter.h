@@ -34,15 +34,16 @@ using BlocksWithPartition = std::vector<BlockWithPartition>;
 class MergeTreeDataWriter
 {
 public:
-    explicit MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Writer)")) {}
+    explicit MergeTreeDataWriter(MergeTreeData & data_)
+        : data(data_)
+        , log(&Poco::Logger::get(data.getLogName() + " (Writer)"))
+    {}
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
     static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
-
-    static void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -51,6 +52,7 @@ public:
     struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
+        DataPartStorageBuilderPtr builder;
 
         struct Stream
         {
@@ -59,6 +61,8 @@ public:
         };
 
         std::vector<Stream> streams;
+
+        scope_guard temporary_directory_lock;
 
         void finalize();
     };

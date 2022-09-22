@@ -1,17 +1,15 @@
 #include <Functions/FunctionBase58Conversion.h>
-#if USE_BASEX
 #include <Functions/FunctionFactory.h>
 
 namespace DB
 {
-void registerFunctionBase58Encode(FunctionFactory & factory)
+REGISTER_FUNCTION(Base58Encode)
 {
     factory.registerFunction<FunctionBase58Conversion<Base58Encode>>();
 }
 
-void registerFunctionBase58Decode(FunctionFactory & factory)
+REGISTER_FUNCTION(Base58Decode)
 {
     factory.registerFunction<FunctionBase58Conversion<Base58Decode>>();
 }
 }
-#endif

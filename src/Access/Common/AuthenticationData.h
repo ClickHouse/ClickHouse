@@ -96,11 +96,11 @@ public:
 
     struct Util
     {
-        static Digest stringToDigest(const std::string_view & text) { return Digest(text.data(), text.data() + text.size()); }
-        static Digest encodeSHA256(const std::string_view & text);
-        static Digest encodeSHA1(const std::string_view & text);
+        static Digest stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
+        static Digest encodeSHA256(std::string_view text);
+        static Digest encodeSHA1(std::string_view text);
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
-        static Digest encodeDoubleSHA1(const std::string_view & text) { return encodeSHA1(encodeSHA1(text)); }
+        static Digest encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }
         static Digest encodeDoubleSHA1(const Digest & text) { return encodeSHA1(encodeSHA1(text)); }
     };
 

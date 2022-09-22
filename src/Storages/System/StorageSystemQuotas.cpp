@@ -53,8 +53,11 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
 
 void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_QUOTAS);
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_QUOTAS);
+
     std::vector<UUID> ids = access_control.findAll<Quota>();
 
     size_t column_index = 0;
@@ -122,23 +125,17 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 void StorageSystemQuotas::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        BackupEntriesCollector::throwPartitionsNotSupported(getStorageID(), getName());
-
     const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
-    access_control.backup(backup_entries_collector, AccessEntityType::QUOTA, data_path_in_backup);
+    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::QUOTA);
 }
 
 void StorageSystemQuotas::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
-
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restore(restorer, data_path_in_backup);
+    access_control.restoreFromBackup(restorer);
 }
 
 }
