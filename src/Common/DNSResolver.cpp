@@ -168,11 +168,7 @@ std::unordered_set<String> reverseResolveWithCache(
 
 Poco::Net::IPAddress pickAddress(const DNSResolver::IPAddresses & addresses)
 {
-    if (addresses.size() == 1)
-        return addresses.front();
-
-    std::uniform_int_distribution<size_t> distribution{0, addresses.size() - 1};
-    return addresses[distribution(thread_local_rng)];
+    return addresses.front();
 }
 
 }
