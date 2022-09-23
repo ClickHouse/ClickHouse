@@ -1473,42 +1473,6 @@ struct FutureNewEmptyPart
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
 
-FutureNewEmptyParts initNewEmptyPartsForPartitions(const DataPartsVector & old_parts)
-{
-    using FutureNewEmptyPartsSet = std::unordered_map<String, FutureNewEmptyPart>;
-
-    FutureNewEmptyPartsSet new_parts;
-    for (const auto & old_part: old_parts)
-    {
-        const MergeTreePartInfo & part_info = old_part->info;
-        auto partition_id = part_info.partition_id;
-        if (new_parts.contains(partition_id))
-        {
-            auto & new_part = new_parts[partition_id];
-            new_part.part_info.min_block = std::min(new_part.part_info.min_block, part_info.min_block);
-            new_part.part_info.max_block = std::max(new_part.part_info.max_block, part_info.max_block);
-            new_part.part_info.level = std::max(new_part.part_info.level, part_info.level + 1);
-            new_part.part_info.mutation = std::max(new_part.part_info.mutation, part_info.mutation);
-        }
-        else
-        {
-            auto & new_part = new_parts[partition_id];
-            new_part.part_info = MergeTreePartInfo(partition_id, part_info.min_block, part_info.max_block, part_info.level + 1, part_info.mutation);
-            new_part.partition = old_part->partition;
-        }
-    }
-
-    FutureNewEmptyParts result;
-    result.reserve(new_parts.size());
-    for (auto & item : new_parts)
-        result.push_back(std::move(item.second));
-
-    for (auto & new_part : result)
-        new_part.part_name = new_part.part_info.getPartName();
-
-    return result;
-}
-
 Strings getPartsNames(const DataPartsVector & parts)
 {
     Strings part_names;
@@ -1525,20 +1489,29 @@ Strings getPartsNames(const FutureNewEmptyParts & parts)
     return part_names;
 }
 
-FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & parts)
+FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts, MergeTreeDataFormatVersion format_version)
 {
     FutureNewEmptyParts new_parts;
 
-    /// Parts could have gaps in continuous block numeration of parts due to concurrent insertions.
-    /// This gaps must not be covered with empty parts otherwise parts from concurrent insertions miss.
-    /// Here the parts are split on ranges without block gaps.
-    RangesWithContinuousBlocks continuous_ranges = groupByRangesWithContinuousBlocks(parts);
-
-    for (const auto& range: continuous_ranges)
+    for (const auto & old_part: old_parts)
     {
-        /// Inside each range new empty part could cover parts from min_block to max_block with respect of partitions
-        auto grouped_new_parts = initNewEmptyPartsForPartitions(range);
-        std::move(grouped_new_parts.begin(), grouped_new_parts.end(), std::back_inserter(new_parts));
+        new_parts.emplace_back();
+        auto & new_part = new_parts.back();
+
+        new_part.part_info = old_part->info;
+        new_part.part_info.level += 1;
+
+        new_part.partition = old_part->partition;
+
+        if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        {
+            DayNum min_date;
+            DayNum max_date;
+            MergeTreePartInfo::parseMinMaxDatesFromPartName(old_part->name, min_date, max_date);
+            new_part.part_name = new_part.part_info.getPartNameV0(min_date, max_date);
+        }
+        else
+            new_part.part_name = new_part.part_info.getPartName();
     }
 
     return new_parts;
@@ -1562,15 +1535,6 @@ void captureTmpDirName(MergeTreeData & data, FutureNewEmptyParts & new_parts)
 
         new_part.tmp_dir_guard = std::move(*maybe_guard);
     }
-}
-
-StorageMergeTree::MutableDataPartsVector getDataParts(FutureNewEmptyParts & new_parts)
-{
-    StorageMergeTree::MutableDataPartsVector result;
-    result.reserve(new_parts.size());
-    for (auto & part : new_parts)
-        result.push_back(part.data_part);
-    return result;
 }
 
 void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_parts, MutableDataPartsVector & new_parts, Transaction & transaction)
@@ -1636,7 +1600,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     {
         auto parts = getVisibleDataPartsVector(query_context);
 
-        auto new_parts = initCoverageWithNewEmptyParts(parts);
+        auto new_parts = initCoverageWithNewEmptyParts(parts, format_version);
 
         LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
                  new_parts.size(), parts.size(),
@@ -1683,7 +1647,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
 
         {
-            auto new_parts = initCoverageWithNewEmptyParts({part});
+            auto new_parts = initCoverageWithNewEmptyParts({part}, format_version);
 
             LOG_TEST(log, "Made {} empty parts in order to cover {} part.",
                      fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames({part}), ", "));
@@ -1740,7 +1704,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 part->makeCloneInDetached("", metadata_snapshot);
             }
 
-        auto new_parts = initCoverageWithNewEmptyParts(parts);
+        auto new_parts = initCoverageWithNewEmptyParts(parts, format_version);
 
         LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
                  new_parts.size(), parts.size(),

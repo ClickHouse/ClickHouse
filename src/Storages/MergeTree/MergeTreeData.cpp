@@ -5216,8 +5216,6 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
 void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part)
 {
     precommitted_parts.insert(part);
-    if (asInMemoryPart(part))
-        has_in_memory_parts = true;
 }
 
 void MergeTreeData::Transaction::rollback()
@@ -5260,7 +5258,6 @@ void MergeTreeData::Transaction::rollback()
 void MergeTreeData::Transaction::clear()
 {
     precommitted_parts.clear();
-    has_in_memory_parts = false;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData::DataPartsLock * acquired_parts_lock)
@@ -5277,27 +5274,26 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             if (part->getDataPartStorage().hasActiveTransaction())
                 part->getDataPartStorage().commitTransaction();
 
-        bool commit_to_wal = has_in_memory_parts && settings->in_memory_parts_enable_wal;
-
-        MergeTreeData::WriteAheadLogPtr wal;
-        if (commit_to_wal)
-            wal = data.getWriteAheadLog();
-
-        if (txn || commit_to_wal)
-        {
+        if (txn)
             for (const auto & part : precommitted_parts)
             {
-                if (txn)
-                {
-                    DataPartPtr covering_part;
-                    DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
-                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-                }
-
-                if (auto part_in_memory = asInMemoryPart(part))
-                    wal->addPart(part_in_memory);
+                DataPartPtr covering_part;
+                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
+                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
             }
-        }
+
+        MergeTreeData::WriteAheadLogPtr wal;
+        auto get_inited_wal = [&] ()
+        {
+            if (!wal)
+                wal = data.getWriteAheadLog();
+            return wal;
+        };
+
+        if (settings->in_memory_parts_enable_wal)
+            for (const auto & part : precommitted_parts)
+                if (auto part_in_memory = asInMemoryPart(part))
+                    get_inited_wal()->addPart(part_in_memory);
 
         NOEXCEPT_SCOPE({
             auto current_time = time(nullptr);
@@ -5343,8 +5339,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                         data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
 
-                        if (auto part_in_memory = asInMemoryPart(covered_part))
-                            wal->dropPart(part_in_memory->name);
+                        if (settings->in_memory_parts_enable_wal)
+                            if (isInMemoryPart(covered_part))
+                                get_inited_wal()->dropPart(covered_part->name);
                     }
 
                     reduce_parts += covered_parts.size();
@@ -7280,19 +7277,25 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     setAllObjectsToDummyTupleType(columns);
 
-    DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
-    ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
-    VolumePtr volume = getStoragePolicy()->getVolume(0);
-
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+
+    DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
+    VolumePtr volume = getStoragePolicy()->getVolume(0);
+    ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
+    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
+
+    auto new_data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        data_part_volume,
+        getRelativeDataPath(),
+        EMPTY_PART_TMP_PREFIX + new_part_name);
 
     auto new_data_part = createPart(
         new_part_name,
         choosePartType(0, block.rows()),
         new_part_info,
-        createVolumeFromReservation(reservation, volume),
-        EMPTY_PART_TMP_PREFIX + new_part_name);
+        new_data_part_storage
+        );
 
     new_data_part->name = new_part_name;
 
@@ -7311,25 +7314,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.
-        String full_path = new_data_part->getFullRelativePath();
-
-        if (new_data_part->volume->getDisk()->exists(full_path))
+        if (new_data_part_storage->exists())
         {
-            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
             /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
             /// New part have to capture its name, therefore there is no concurrentcy in directory creation
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "New empty part is about to matirialize but the dirrectory already exist"
                             ", new part {}"
                             ", directory {}",
-                            new_part_name, full_path);
+                            new_part_name, new_data_part_storage->getFullPath());
         }
 
-        const auto disk = new_data_part->volume->getDisk();
-        disk->createDirectories(full_path);
+        new_data_part_storage->createDirectories();
 
         if (getSettings()->fsync_part_directory)
-            sync_guard = disk->getDirectorySyncGuard(full_path);
+            sync_guard = new_data_part_storage->getDirectorySyncGuard();
     }
 
     /// This effectively chooses minimal compression method:
