@@ -25,7 +25,7 @@ struct IntExp10Impl
         if constexpr (is_big_int_v<A> || std::is_same_v<A, Decimal256>)
             throw DB::Exception("IntExp10 is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
-            return intExp10(a);
+            return intExp10(static_cast<int>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
