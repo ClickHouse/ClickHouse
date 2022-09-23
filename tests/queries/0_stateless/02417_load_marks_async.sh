@@ -34,12 +34,6 @@ function test
     ${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID}" -q "SELECT * FROM test SETTINGS load_marks_asynchronously=$1 FORMAT Null"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
-    result=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['WaitMarksLoadMicroseconds'] FROM system.query_log WHERE query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND current_database = currentDatabase()")
-    if [[ $result -ne 0 ]]; then
-        echo 'Ok'
-    else
-        echo 'F'
-    fi
     result=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['BackgroundLoadingMarksTasks'] FROM system.query_log WHERE query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND current_database = currentDatabase()")
     if [[ $result -ne 0 ]]; then
         echo 'Ok'

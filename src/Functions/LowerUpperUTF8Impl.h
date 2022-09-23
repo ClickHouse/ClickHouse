@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Poco/UTF8Encoding.h>
 #include <Common/UTF8Helpers.h>
+#include <base/defines.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -89,9 +90,11 @@ struct LowerUpperUTF8Impl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
+        if (data.empty())
+            return;
         res_data.resize(data.size());
         res_offsets.assign(offsets);
-        array(data.data(), data.data() + data.size(), res_data.data());
+        array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
@@ -164,8 +167,11 @@ private:
     static constexpr auto ascii_upper_bound = '\x7f';
     static constexpr auto flip_case_mask = 'A' ^ 'a';
 
-    static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+    static void array(const UInt8 * src, const UInt8 * src_end, const ColumnString::Offsets & offsets, UInt8 * dst)
     {
+        auto offset_it = offsets.begin();
+        const UInt8 * begin = src;
+
 #ifdef __SSE2__
         static constexpr auto bytes_sse = sizeof(__m128i);
         const auto * src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
@@ -213,10 +219,17 @@ private:
             else
             {
                 /// UTF-8
-                const auto * expected_end = src + bytes_sse;
+
+                size_t offset_from_begin = src - begin;
+                while (offset_from_begin >= *offset_it)
+                    ++offset_it;
+                /// Do not allow one row influence another (since row may have invalid sequence, and break the next)
+                const UInt8 * row_end = begin + *offset_it;
+                chassert(row_end >= src);
+                const UInt8 * expected_end = std::min(src + bytes_sse, row_end);
 
                 while (src < expected_end)
-                    toCase(src, src_end, dst);
+                    toCase(src, expected_end, dst);
 
                 /// adjust src_end_sse by pushing it forward or backward
                 const auto diff = src - expected_end;
@@ -229,10 +242,22 @@ private:
                 }
             }
         }
+
+        /// Find which offset src has now
+        while (offset_it != offsets.end() && static_cast<size_t>(src - begin) >= *offset_it)
+            ++offset_it;
 #endif
-        /// handle remaining symbols
+
+        /// handle remaining symbols, row by row (to avoid influence of bad UTF8 symbols from one row, to another)
         while (src < src_end)
-            toCase(src, src_end, dst);
+        {
+            const UInt8 * row_end = begin + *offset_it;
+            chassert(row_end >= src);
+
+            while (src < row_end)
+                toCase(src, row_end, dst);
+            ++offset_it;
+        }
     }
 };
 
