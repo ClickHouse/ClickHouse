@@ -184,6 +184,7 @@ Customers | project indexof('abcdefg','cde',2) | take 1;
 Customers | project indexof('abcdefg','cde',6) | take 1;
 print '-- base64_encode_fromguid()';
 print base64_encode_fromguid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb');
+print base64_encode_fromguid("abcd1231");
 print '-- base64_decode_toarray()';
 print base64_decode_toarray('S3VzdG8=');
 print '-- base64_decode_toguid()';

@@ -262,6 +262,7 @@ PINEAPPLE
 -1
 -- base64_encode_fromguid()
 YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi
+\N
 -- base64_decode_toarray()
 [75,117,115,116,111]
 -- base64_decode_toguid()

@@ -65,7 +65,8 @@ print format_datetime(datetime(2015-12-14 02:03:04.12345), 'y-M-d h:m:s.fffffff'
 print v1=format_datetime(datetime(2017-01-29 09:00:05),'yy-MM-dd [HH:mm:ss]'), v2=format_datetime(datetime(2017-01-29 09:00:05), 'yyyy-M-dd [H:mm:ss]'), v3=format_datetime(datetime(2017-01-29 09:00:05), 'yy-MM-dd [hh:mm:ss tt]');
 print '-- format_timespan()';
 print format_timespan(time('14.02:03:04.12345'), 'h:m:s.fffffff');
--- print v1=format_timespan(time('29.09:00:05.12345'), 'dd.hh:mm:ss:FF'), v2=format_timespan(time('29.09:00:05.12345'), 'ddd.h:mm:ss [fffffff]');
+print v1=format_timespan(time('29.09:00:05.12345'), 'dd.hh:mm:ss:FF');
+print v2=format_timespan(time('29.09:00:05.12345'), 'ddd.h:mm:ss [fffffff]');
 print '-- ago()';
 -- print ago(1d) - now();
 print '-- datetime_diff()';
