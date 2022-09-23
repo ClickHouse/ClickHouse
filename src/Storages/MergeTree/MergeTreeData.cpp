@@ -6048,11 +6048,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
     auto src_part_storage = src_part->data_part_storage;
 
-    if (!is_on_same_disk)
-    {
-        auto disk = getStoragePolicy()->getVolume(0)->getDisk();
-        auto reservation = disk->reserve(src_part->getBytesOnDisk());
-    }
 
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
     if (auto src_part_in_memory = asInMemoryPart(src_part))
@@ -6071,7 +6066,27 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(relative_data_path) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_part_storage = is_on_same_disk? src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink) : src_part_storage->clone(relative_data_path, tmp_dst_part_name, getStoragePolicy()->getVolume(0)->getDisk(), true, log);
+    std::shared_ptr<IDataPartStorage> dst_part_storage;
+    if (is_on_same_disk)
+    {
+        dst_part_storage = src_part_storage->freeze(
+            relative_data_path,
+            tmp_dst_part_name,
+            /* make_source_readonly */ false,
+            {},
+            /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
+    }
+    else
+    {
+        auto reservation = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
+        if (!reservation)
+        {
+            throw Exception("Clone part is not possible. Not enough space on all disks in storage policy '" + getStoragePolicy()->getName() + "'", ErrorCodes::NOT_ENOUGH_SPACE);
+        }
+
+        dst_part_storage = src_part_storage->clone(relative_data_path, tmp_dst_part_name, reservation->getDisk(), true, log);
+    }
+
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 
