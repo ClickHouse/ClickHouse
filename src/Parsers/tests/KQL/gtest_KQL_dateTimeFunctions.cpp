@@ -2,7 +2,7 @@
 
 #include <Parsers/Kusto/ParserKQLQuery.h>
 
-INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
+INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<DB::ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
