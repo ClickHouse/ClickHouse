@@ -70,6 +70,11 @@ struct DDLLogEntry
     static constexpr const UInt64 OLDEST_VERSION = 1;
     static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
     static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
+    static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
+    /// Add new version here
+
+    /// Remember to update the value below once new version is added
+    static constexpr const UInt64 MAX_VERSION = 4;
 
     UInt64 version = 1;
     String query;
