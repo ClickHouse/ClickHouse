@@ -18,7 +18,7 @@ namespace DB
 class TLSHandlerFactory : public TCPServerConnectionFactory
 {
 private:
-    IServer & server [[maybe_unused]];
+    IServer & server;
     Poco::Logger * log;
     std::string conf_name;
 
