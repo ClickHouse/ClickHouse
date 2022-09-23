@@ -23,6 +23,8 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+
 namespace DB
 {
 
@@ -99,6 +101,7 @@ StorageView::StorageView(
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
+    is_parameterized_view = query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
 }
@@ -173,6 +176,15 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
+void StorageView::replaceQueryParameters(ASTPtr & outer_query, const NameToNameMap & parameter_values)
+{
+    if (is_parameterized_view)
+    {
+        ReplaceQueryParameterVisitor visitor(parameter_values);
+        visitor.visit(outer_query);
+    }
+}
+
 void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
@@ -185,8 +197,11 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
             if (table_function_name == "view" || table_function_name == "viewIfPermitted")
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
-            if (table_function_name == "merge")
+            else if (table_function_name == "merge")
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__merge");
+            else
+                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_function_name);
+
         }
         if (!table_expression->database_and_table_name)
             throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
@@ -203,6 +218,8 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     for (auto & child : table_expression->children)
         if (child.get() == view_name.get())
+            child = view_query;
+        else if (child.get() && child->as<ASTFunction>() && child->as<ASTFunction>()->name == table_expression->table_function->as<ASTFunction>()->name)
             child = view_query;
 }
 
