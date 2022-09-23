@@ -483,7 +483,7 @@ std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_p
         return cache[key];
 
     auto result = toStringImpl(frame_pointers, offset, size);
-    cache.insert({key, result});
+    cache[key] = result;
     return result;
 }
 
