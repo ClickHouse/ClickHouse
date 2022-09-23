@@ -147,7 +147,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
      
     if (is_string)
         out = "NULL";
-    else if (std::regex_match(res , expr))
+    else if (std::regex_match(res, expr))
     {
         auto exponential_pos = res.find("e");
         if (res[exponential_pos +1] == '+' || res[exponential_pos + 1] == '-' )

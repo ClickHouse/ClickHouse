@@ -99,7 +99,7 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
     }
     String format;
     
-    if(part == "YEAR" )
+    if (part == "YEAR" )
         format = "%G";
     else if (part == "QUARTER" ) 
         format = "%Q";
@@ -325,7 +325,7 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
             i = i + arg.size();
         } 
     }
-    if(decimal > 0 && formatspecifier.find('.')!=String::npos)
+    if (decimal > 0 && formatspecifier.find('.')!=String::npos)
     {   
     
     out = std::format("concat("
@@ -416,13 +416,12 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         if (decimal > 0)
         {
             if (format.substr(format.length()- decimal -1, 1) == last_delim)
-                out = std::format("concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}')+1),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'{4}'),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))))", datetime,formatspecifier,decimal,last_delim);
+                out = std::format("concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{3}')+1),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}))", datetime,formatspecifier,decimal,last_delim);
             else
-                out = std::format("concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{4}')),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}),substring(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}')),position( toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')),'{4}'),length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}')))))", datetime,formatspecifier,decimal,last_delim);
+                out = std::format("concat(substring(toString(formatDateTime( toDateTime64({0},9,'UTC') ,'{1}')),1, length(toString(formatDateTime( toDateTime64({0},9,'UTC'),'{1}'))) - position( reverse(toString(formatDateTime(toDateTime64({0},9,'UTC'),'{1}'))),'{3}')),substring(SUBSTRING(toString(toDateTime64({0},9,'UTC')),position(toString(toDateTime64({0},9,'UTC')),'.')+1),1,{2}))", datetime,formatspecifier,decimal,last_delim);
         }
         else 
             out = std::format("formatDateTime(toDateTime64({0},9,'UTC'),'{1}')", datetime,formatspecifier);
-
     }
     else
     {
@@ -473,7 +472,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     {
         String arg = getConvertedArgument(fn_name, pos);
         args.insert(args.begin(),arg);
-        if(pos->type == TokenType::Comma)
+        if (pos->type == TokenType::Comma)
             ++pos;
         ++arg_count;
     }
@@ -540,7 +539,7 @@ bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
     while (!pos->isEnd() && pos->type != TokenType::ClosingRoundBracket)
     {
         String arg = getConvertedArgument(fn_name, pos);
-        if(pos->type == TokenType::Comma)
+        if (pos->type == TokenType::Comma)
             ++pos;
         arguments = arguments  + arg + ",";
         ++arg_count;
@@ -705,15 +704,11 @@ bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception("String Literal is not accepted." + fn_name + " accepts only long, int and double " , ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(fn_name + " accepts only long, int and double type of arguments " , ErrorCodes::BAD_ARGUMENTS);
         
     String expression = getConvertedArgument(fn_name, pos);
 
-    if (std::any_of(expression.begin(), expression.end(), ::isalpha))
-        throw Exception("String Literal is not accepted." + fn_name + " accepts only long, int and double " , ErrorCodes::BAD_ARGUMENTS);
-
-    std::remove(expression.begin(), expression.end(), ' ');
-    out = std::format("multiIf(toTypeName({0}) == 'String' or  toTypeName({0}) == 'UUID' or  toTypeName({0}) == 'DateTime64(3)' or  toTypeName({0}) == 'DateTime64(6), or toTypeName({0}) == 'DateTime64(9) , 'Only Accepted arguments are float , int and double', toString(toDateTime64(abs({0}) , 9,'UTC')))", expression);
+    out = std::format("toDateTime64({0} , 9,'UTC')", expression);
 
     return true;
 }

@@ -34,6 +34,8 @@ print time('14.02:03:04.12345');
 print time('12:30:55.123');
 print time(1d);
 print time(-1d);
+print time(6nanoseconds);
+print time(6tick);
 print '-- guid'
 print guid(74be27de-1e4e-49d9-b579-fe0b331d3642)
 -- print guid(null)

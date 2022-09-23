@@ -52,7 +52,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print unixtime_seconds_todatetime(1546300899)",
-            "SELECT toDateTime64(1546300899, 9, 'UTC')"
+            "SELECT multiIf((toTypeName(1546300899) = 'String') OR (toTypeName(1546300899) = 'UUID') OR (toTypeName(1546300899) = 'DateTime64(3)'), 'Only Accepted arguments are float , int and double', toString(toDateTime64(1546300899, 9, 'UTC')))"
         },
         {
             "print dayofweek(datetime(2015-12-20))",
