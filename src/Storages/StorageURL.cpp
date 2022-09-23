@@ -1018,7 +1018,7 @@ ASTs::iterator StorageURL::collectHeaders(
                 if (arg_value.getType() != Field::Types::Which::String)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header value");
 
-                configuration.headers.emplace_back(arg_name, arg_value);
+                configuration.headers.emplace_back(arg_name, arg_value.safeGet<String>());
             }
 
             headers_it = arg_it;
@@ -1096,10 +1096,9 @@ void registerStorageURL(StorageFactory & factory)
             ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
             for (const auto & [header, value] : configuration.headers)
             {
-                auto value_literal = value.safeGet<String>();
                 if (header == "Range")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-                headers.emplace_back(std::make_pair(header, value_literal));
+                headers.emplace_back(header, value);
             }
 
             ASTPtr partition_by;

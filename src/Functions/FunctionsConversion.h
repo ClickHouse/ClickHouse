@@ -398,12 +398,12 @@ struct ToDateTransform32Or64Signed
         if (from < 0)
             return 0;
 
-        auto day_num = time_zone.toDayNum(ExtendedDayNum(from));
+        auto day_num = time_zone.toDayNum(ExtendedDayNum(static_cast<Int32>(from)));
         return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
 
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
-            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(0xFFFFFFFF));
+            : std::min<Int32>(Int32(time_zone.toDayNum(static_cast<UInt16>(from))), Int32(0xFFFFFFFF));
 
     }
 };
@@ -450,7 +450,7 @@ struct ToDate32Transform32Or64Signed
         if (from < daynum_min_offset)
             return daynum_min_offset;
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            ? from
+            ? static_cast<ToType>(from)
             : time_zone.toDayNum(std::min<Int64>(Int64(from), Int64(0xFFFFFFFF)));
     }
 };

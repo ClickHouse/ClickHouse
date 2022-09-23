@@ -745,7 +745,7 @@ private:
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
-            boundary_values[i] = boundaries[i].get<ValueType>();
+            boundary_values[i] = static_cast<ValueType>(boundaries[i].get<ValueType>());
 
         ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
