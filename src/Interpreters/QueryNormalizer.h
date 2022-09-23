@@ -13,6 +13,7 @@ class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTablesInSelectQueryElement;
 class Context;
+class ASTQueryParameter;
 
 
 class QueryNormalizer
@@ -52,6 +53,7 @@ public:
 
         /// It's Ok to have "c + 1 AS c" in queries, but not in table definition
         const bool allow_self_aliases; /// for constructs like "SELECT column + 1 AS column"
+        bool allow_query_parameters;
 
         Data(Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_, bool allow_self_aliases_)
             : aliases(aliases_)
@@ -80,6 +82,7 @@ private:
     static void visit(ASTIdentifier &, ASTPtr &, Data &);
     static void visit(ASTTablesInSelectQueryElement &, const ASTPtr &, Data &);
     static void visit(ASTSelectQuery &, const ASTPtr &, Data &);
+    static void visit(ASTQueryParameter &, const ASTPtr &, Data &);
 
     static void visitChildren(IAST * node, Data & data);
 };
