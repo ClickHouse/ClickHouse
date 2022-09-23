@@ -347,7 +347,7 @@ public:
         if (tries_count > 0)
         {
             sleepForMilliseconds(curr_backoff_ms);
-            curr_backoff_ms = std::max(curr_backoff_ms * 2, max_backoff_ms);
+            curr_backoff_ms = std::min(curr_backoff_ms * 2, max_backoff_ms);
         }
 
         ++tries_count;
@@ -363,12 +363,17 @@ public:
             throw zkutil::KeeperException(zk_error.code, zk_error.message);
     }
 
+    void setUserError(int code, std::string message)
+    {
+        user_error.code = code;
+        user_error.message = std::move(message);
+        zk_error = ZkError{};
+    }
+
     template <typename... Args>
     void setUserError(int code, fmt::format_string<Args...> fmt, Args &&... args)
     {
-        user_error.code = code;
-        user_error.message = fmt::format(fmt, std::forward<Args>(args)...);
-        zk_error = ZkError{};
+        setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
     }
 
     void setZkError(ZkError::Code code, std::string message)
@@ -382,6 +387,24 @@ public:
     {
         user_error = UserError{};
         zk_error = ZkError{};
+    }
+
+    bool call(auto && f)
+    {
+        try
+        {
+            f();
+            return true;
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            setZkError(e.code, e.message());
+        }
+        catch (const Exception & e)
+        {
+            setUserError(e.code(), e.what());
+        }
+        return false;
     }
 
 private:
@@ -422,7 +445,7 @@ void ReplicatedMergeTreeSink::commitPart(
         try
         {
             /// create new zookeeper session if zookeeper session is expired
-            zookeeper = context->getZooKeeper();
+            zookeeper = storage.getZooKeeper();
 
             /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
             /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
@@ -550,7 +573,12 @@ void ReplicatedMergeTreeSink::commitPart(
                         else
                             quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                        waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value, replicas_num);
+                        if (!tries_ctl.call(
+                                [&]() {
+                                    waitForQuorum(
+                                        zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value, replicas_num);
+                                }))
+                            continue;
                     }
                     else
                     {
@@ -727,17 +755,35 @@ void ReplicatedMergeTreeSink::commitPart(
 
     if (isQuorumEnabled())
     {
-        if (is_already_existing_part)
+        while (tries_ctl.canTry())
         {
-            /// We get duplicate part without fetch
-            /// Check if this quorum insert is parallel or not
-            if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
-                storage.updateQuorum(part->name, true);
-            else if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
-                storage.updateQuorum(part->name, false);
-        }
+            try
+            {
+                zookeeper = storage.getZooKeeper();
 
-        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num);
+                if (is_already_existing_part)
+                {
+                    /// We get duplicate part without fetch
+                    /// Check if this quorum insert is parallel or not
+                    if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
+                        storage.updateQuorum(part->name, true);
+                    else if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
+                        storage.updateQuorum(part->name, false);
+                }
+
+                if (!tries_ctl.call(
+                        [&]()
+                        { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num); }))
+                    continue;
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                if (!Coordination::isHardwareError(e.code))
+                    throw;
+
+                tries_ctl.setZkError(e.code, e.message());
+            }
+        }
     }
 }
 
