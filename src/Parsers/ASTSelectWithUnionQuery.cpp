@@ -86,4 +86,26 @@ bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
         || set_of_modes.contains(SelectUnionMode::EXCEPT_DISTINCT);
 }
 
+bool ASTSelectWithUnionQuery::hasQueryParameters() const
+{
+    std::queue<ASTPtr> queue;
+    queue.push(this->clone());
+
+    while (!queue.empty())
+    {
+        auto current = queue.front();
+        queue.pop();
+
+        if (auto * select = current->as<ASTSelectQuery>())
+        {
+            if (select->hasQueryParameters())
+                return true;
+        }
+
+        for (auto child : current->children)
+            queue.push(child);
+    }
+    return false;
+}
+
 }

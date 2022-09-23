@@ -121,7 +121,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserUnionQueryElement elem_parser;
+    ParserUnionQueryElement elem_parser(allow_query_parameters);
     ParserKeyword s_union_parser("UNION");
     ParserKeyword s_all_parser("ALL");
     ParserKeyword s_distinct_parser("DISTINCT");
