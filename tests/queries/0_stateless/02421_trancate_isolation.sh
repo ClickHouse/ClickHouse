@@ -16,6 +16,9 @@ function reset_table()
     $CLICKHOUSE_CLIENT -q "drop table if exists $table"
     $CLICKHOUSE_CLIENT -q "create table $table (n int) engine=MergeTree order by tuple()"
 
+    # In order to preserve parts names merges have to be disabled
+    $CLICKHOUSE_CLIENT -q "system stop merges $table"
+
     $CLICKHOUSE_CLIENT -q "insert into $table values (1)" # inserts all_1_1_0
     $CLICKHOUSE_CLIENT -q "insert into $table values (2)" # inserts all_2_2_0
     $CLICKHOUSE_CLIENT -q "insert into $table values (3)" # inserts all_3_3_0
@@ -90,11 +93,38 @@ function concurrent_drop_part_after()
 
 concurrent_drop_part_after
 
+function read_from_snapshot()
+{
+    echo "read_from_snapshot"
+
+    reset_table
+
+    tx 61 "begin transaction"
+    tx 61 "select count() from tt"
+    tx 62                                            "begin transaction"
+    tx 62                                            "truncate table tt"
+    tx 61 "select count() from tt"
+    tx 62                                            "select count() from tt"
+    tx 62                                            "commit"
+    tx 61 "select count() from tt"
+    tx 61 "commit"
+
+    $CLICKHOUSE_CLIENT -q "select count() from tt"
+}
+
+read_from_snapshot
+
 function concurrent_delete()
 {
     echo "concurrent_delete"
 
     reset_table
+
+    # test runs mutation, merges have to be enabled
+    $CLICKHOUSE_CLIENT -q "system start merges $table"
+
+    # make parts name predictable
+    $CLICKHOUSE_CLIENT -q "optimize table $table final"
 
     tx 41 "begin transaction"
     tx 41 "select 41, count() from tt"
@@ -118,6 +148,12 @@ function concurrent_delete_rollback()
 
     reset_table
 
+    # test runs mutation, merges have to be enabled
+    $CLICKHOUSE_CLIENT -q "system start merges $table"
+
+    # make parts name predictable
+    $CLICKHOUSE_CLIENT -q "optimize table $table final"
+
     tx 51 "begin transaction"
     tx 51 "select count() from tt"
     tx 52                                            "begin transaction"
@@ -133,24 +169,3 @@ function concurrent_delete_rollback()
 }
 
 concurrent_delete_rollback
-
-function read_from_snapshot()
-{
-    echo "read_from_snapshot"
-
-    reset_table
-
-    tx 61 "begin transaction"
-    tx 61 "select count() from tt"
-    tx 62                                            "begin transaction"
-    tx 62                                            "truncate table tt"
-    tx 61 "select count() from tt"
-    tx 62                                            "select count() from tt"
-    tx 62                                            "commit"
-    tx 61 "select count() from tt"
-    tx 61 "commit"
-
-    $CLICKHOUSE_CLIENT -q "select count() from tt"
-}
-
-read_from_snapshot

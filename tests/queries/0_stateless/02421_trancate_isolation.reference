@@ -1,6 +1,9 @@
 concurrent_insert
 2
-all_1_4_1	0
+all_1_1_1	0
+all_2_2_1	0
+all_3_3_1	0
+all_4_4_1	0
 all_5_5_0	1
 all_6_6_1	0
 concurrent_drop_part_before
@@ -14,11 +17,21 @@ all_3_3_0	1
 concurrent_drop_part_after
 NO_SUCH_DATA_PART
 INVALID_TRANSACTION
-all_1_3_1	0
+all_1_1_1	0
+all_2_2_1	0
+all_3_3_1	0
 NewPart	all_1_1_0
-NewPart	all_1_3_1
+NewPart	all_1_1_1
 NewPart	all_2_2_0
+NewPart	all_2_2_1
 NewPart	all_3_3_0
+NewPart	all_3_3_1
+read_from_snapshot
+tx61	3
+tx61	3
+tx62	0
+tx61	3
+0
 concurrent_delete
 tx41	41	3
 tx41	41	3
@@ -31,10 +44,4 @@ tx51	3
 tx51	3
 tx52	1
 tx51	3
-0
-read_from_snapshot
-tx61	3
-tx61	3
-tx62	0
-tx61	3
 0

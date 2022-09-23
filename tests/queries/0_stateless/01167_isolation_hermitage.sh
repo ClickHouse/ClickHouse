@@ -15,12 +15,11 @@ set -e
 # https://github.com/ept/hermitage
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test"
-$CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id SETTINGS old_parts_lifetime=1"
+$CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id"
 
 function reset_table()
 {
     $CLICKHOUSE_CLIENT -q "truncate table test;"
-    wait_for_delete_empty_parts "test"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (1, 10);"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (2, 20);"
 }
@@ -84,6 +83,7 @@ $CLICKHOUSE_CLIENT -q "select 10, * from test order by id"
 
 # OTV
 reset_table
+wait_for_delete_empty_parts "test" $CLICKHOUSE_DATABASE 60
 tx 9 "begin transaction"
 tx 10                     "begin transaction"
 tx 11                                         "begin transaction"
