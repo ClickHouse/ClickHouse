@@ -699,22 +699,20 @@ void ReplicatedMergeTreeSink::commitPart(
                 {
                     storage.unlockSharedData(*part);
                     transaction.rollback();
-                    tries_ctl.setUserError(ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE, "Another quorum insert has been already started");
-                    continue;
+                    throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
                 }
                 else
                 {
                     storage.unlockSharedData(*part);
                     /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
                     transaction.rollback();
-                    tries_ctl.setUserError(
+                    throw Exception(
                         ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                         "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
                         block_number,
                         block_id,
                         Coordination::errorMessage(multi_code),
                         failed_op_path);
-                    continue;
                 }
             }
             else if (Coordination::isHardwareError(multi_code))
@@ -733,13 +731,12 @@ void ReplicatedMergeTreeSink::commitPart(
             {
                 storage.unlockSharedData(*part);
                 transaction.rollback();
-                tries_ctl.setUserError(
+                throw Exception(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
                     block_number,
                     block_id,
                     Coordination::errorMessage(multi_code));
-                continue;
             }
 
             break;
