@@ -37,4 +37,5 @@ private:
     bool bracketed_paste_enabled = false;
 
     std::string editor;
+    std::string fuzzy_finder;
 };
