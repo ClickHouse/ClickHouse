@@ -52,7 +52,7 @@ void IProcessor::process(bool trace_processors)
         span = std::make_unique<OpenTelemetry::SpanHolder>(demangle(typeid(*this).name()) + "::work()");
         span->addAttribute("clickhouse.thread_id", CurrentThread::get().thread_id);
     }
-    
+
     try
     {
         work();
@@ -60,7 +60,7 @@ void IProcessor::process(bool trace_processors)
         /// Make sure the span is closed before the hook
         span.reset();
     }
-    catch(...)
+    catch (...)
     {
         if (this->workHook)
             this->workHook->onLeave();

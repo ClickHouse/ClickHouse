@@ -130,7 +130,7 @@ public:
                 view.span->attach();
             }
         }
-        
+
         ExceptionKeepingTransform::process(trace_processors);
     }
 
@@ -317,7 +317,7 @@ public:
 class ViewSpanAttacher : public IProcessor::WorkHook
 {
 public:
-    ViewSpanAttacher(ViewRuntimeData & view_ ) : view(view_)
+    ViewSpanAttacher(ViewRuntimeData & view_) : view(view_)
     {
     }
 

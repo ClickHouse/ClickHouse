@@ -190,7 +190,7 @@ public:
     virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
 
     /** This method is a delegate to 'work' method.
-      *  
+      *
       * You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
