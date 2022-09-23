@@ -579,7 +579,7 @@ public:
                 if (num_rows)
                 {
                     auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
-                    size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
+                    size_t total_rows_approx = static_cast<size_t>(std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row));
                     total_rows_approx_accumulated += total_rows_approx;
                     ++total_rows_count_times;
                     total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
