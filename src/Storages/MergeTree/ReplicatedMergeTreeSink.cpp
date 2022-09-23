@@ -716,7 +716,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
             break;
         }
-        catch(zkutil::KeeperException const & e)
+        catch (const zkutil::KeeperException & e)
         {
             if (!Coordination::isHardwareError(e.code))
                 throw;
