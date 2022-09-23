@@ -570,8 +570,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
     , keys_positions(calculateKeysPositions(header, params_))
     , params(params_)
-    , min_bytes_for_prefetch(getMinBytesForPrefetch())
     , tmp_data(params.tmp_data_scope ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data_scope) : nullptr)
+    , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -1617,14 +1617,14 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         " ({:.3f} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
         elapsed_seconds,
         rows,
-        ReadableSize(stat.uncompressed_bytes),
-        ReadableSize(stat.compressed_bytes),
-        static_cast<double>(stat.uncompressed_bytes) / rows,
-        static_cast<double>(stat.compressed_bytes) / rows,
-        static_cast<double>(stat.uncompressed_bytes) / stat.compressed_bytes,
+        ReadableSize(uncompressed_size),
+        ReadableSize(compressed_size),
+        static_cast<double>(uncompressed_size) / rows,
+        static_cast<double>(compressed_size) / rows,
+        static_cast<double>(uncompressed_size) / compressed_size,
         static_cast<double>(rows) / elapsed_seconds,
-        ReadableSize(static_cast<double>(stat.uncompressed_bytes) / elapsed_seconds),
-        ReadableSize(static_cast<double>(stat.compressed_bytes) / elapsed_seconds));
+        ReadableSize(static_cast<double>(uncompressed_size) / elapsed_seconds),
+        ReadableSize(static_cast<double>(compressed_size) / elapsed_seconds));
 }
 
 template <typename Method>
