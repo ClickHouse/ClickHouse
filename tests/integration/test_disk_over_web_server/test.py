@@ -25,19 +25,17 @@ def cluster():
         global uuids
         for i in range(3):
             node1.query(
-                """ CREATE TABLE data{} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def';""".format(
-                    i
-                )
+                f"CREATE TABLE data{i} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1;"
             )
-            node1.query(
-                "INSERT INTO data{} SELECT number FROM numbers(500000 * {})".format(
-                    i, i + 1
+
+            for _ in range(10):
+                node1.query(
+                    f"INSERT INTO data{i} SELECT number FROM numbers(500000 * {i+1})"
                 )
-            )
-            expected = node1.query("SELECT * FROM data{} ORDER BY id".format(i))
+            expected = node1.query(f"SELECT * FROM data{i} ORDER BY id")
 
             metadata_path = node1.query(
-                "SELECT data_paths FROM system.tables WHERE name='data{}'".format(i)
+                f"SELECT data_paths FROM system.tables WHERE name='data{i}'"
             )
             metadata_path = metadata_path[
                 metadata_path.find("/") : metadata_path.rfind("/") + 1
@@ -84,7 +82,7 @@ def test_usage(cluster, node_name):
         result = node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
 
         result = node2.query("SELECT count() FROM test{}".format(i))
-        assert int(result) == 500000 * (i + 1)
+        assert int(result) == 5000000 * (i + 1)
 
         result = node2.query(
             "SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i)
@@ -123,7 +121,7 @@ def test_incorrect_usage(cluster):
     )
 
     result = node2.query("SELECT count() FROM test0")
-    assert int(result) == 500000
+    assert int(result) == 5000000
 
     result = node2.query_and_get_error("ALTER TABLE test0 ADD COLUMN col1 Int32 first")
     assert "Table is read-only" in result
@@ -169,7 +167,7 @@ def test_cache(cluster, node_name):
         assert int(result) > 0
 
         result = node2.query("SELECT count() FROM test{}".format(i))
-        assert int(result) == 500000 * (i + 1)
+        assert int(result) == 5000000 * (i + 1)
 
         result = node2.query(
             "SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i)
