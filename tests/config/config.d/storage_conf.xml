@@ -48,8 +48,8 @@
             <s3_cache>
                 <type>cache</type>
                 <disk>s3_disk</disk>
-                <path>s3_disk_cache/</path>
-                <max_size>22548578304</max_size>
+                <path>s3_cache/</path>
+                <max_size>2147483648</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
             </s3_cache>
@@ -57,8 +57,9 @@
                 <type>cache</type>
                 <disk>s3_disk_2</disk>
                 <path>s3_cache_2/</path>
-                <max_size>22548578304</max_size>
+                <max_size>2Gi</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <max_file_segment_size>100Mi</max_file_segment_size>
             </s3_cache_2>
             <s3_cache_3>
                 <type>cache</type>
