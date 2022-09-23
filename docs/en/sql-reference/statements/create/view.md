@@ -36,6 +36,18 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
+## Parameterized View
+This is similar to normal view but can be created with parameter instead of literals and can be used as table functions by substituting the values of the parametes.
+
+``` sql
+CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
+```
+The above creates a view for table which can be used as table function by substituting value1 & value2 as show below.
+
+``` sql
+SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
 ## Materialized View
 
 ``` sql
@@ -74,9 +86,7 @@ To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of live views and `WATCH` query using [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view) setting. Input the command `set allow_experimental_live_view = 1`.
 :::
 
-```sql
-CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
-```
+
 
 Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
 

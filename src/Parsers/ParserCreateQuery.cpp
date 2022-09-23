@@ -1285,7 +1285,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         is_materialized_view = true;
     }
     else
+    {
         is_ordinary_view = true;
+        select_p.allow_query_parameters = true;
+    }
 
     if (!s_view.ignore(pos, expected))
         return false;
