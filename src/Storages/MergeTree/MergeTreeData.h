@@ -278,7 +278,6 @@ public:
         MergeTreeTransaction * txn;
         MutableDataParts precommitted_parts;
         MutableDataParts locked_parts;
-        bool has_in_memory_parts = false;
 
         void clear();
     };
