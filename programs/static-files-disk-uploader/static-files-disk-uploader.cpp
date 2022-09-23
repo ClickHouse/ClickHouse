@@ -146,7 +146,7 @@ try
     po::options_description description("Allowed options", getTerminalWidth());
     description.add_options()
         ("help,h", "produce help message")
-        ("metadata-path", po::value<std::string>(), "Metadata path (select data_paths from system.tables where name='table_name'")
+        ("metadata-path", po::value<std::string>(), "Metadata path (SELECT data_paths FROM system.tables WHERE name = 'table_name' AND database = 'database_name')")
         ("test-mode", "Use test mode, which will put data on given url via PUT")
         ("link", "Create symlinks instead of copying")
         ("url", po::value<std::string>(), "Web server url for test mode")

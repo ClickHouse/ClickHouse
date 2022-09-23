@@ -86,7 +86,7 @@ private:
         const String & format_name,
         const ContextPtr & ctx);
 
-    std::vector<const String> uris;
+    std::vector<String> uris;
     String format_name;
     String compression_method;
     const bool distributed_processing;
@@ -116,7 +116,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<const String> & uris_, ContextPtr context);
+            URISIterator(const std::vector<String> & uris_, ContextPtr context);
             String next();
         private:
             class Impl;
