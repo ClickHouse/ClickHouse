@@ -81,6 +81,7 @@ public:
         bool compress_marks;
 
         bool is_prefinalized = false;
+        bool finalized = false;
 
         void preFinalize();
 

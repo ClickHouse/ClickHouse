@@ -302,6 +302,8 @@ private:
 
     bool is_persistent;
 
+    bool is_writer_finalized = false;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 

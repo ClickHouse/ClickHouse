@@ -47,20 +47,6 @@ public:
     void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
     void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
 
-    void finalizeBuffers() override
-    {
-        if (validating_ostr)
-            validating_ostr->finalize();
-    }
-
-    void flush() override
-    {
-        ostr->next();
-
-        if (validating_ostr)
-            out.next();
-    }
-
 protected:
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;

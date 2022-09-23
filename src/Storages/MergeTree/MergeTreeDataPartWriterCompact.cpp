@@ -65,7 +65,12 @@ MergeTreeDataPartWriterCompact::~MergeTreeDataPartWriterCompact()
 
     tryFinalizeAndLogException(plain_hashing, log);
     tryFinalizeAndLogException(*plain_file, log);
-    tryFinalizeAndLogException(marks, log);
+    if (marks_source_hashing)
+        tryFinalizeAndLogException(*marks_source_hashing, log);
+    if (marks_compressor)
+        tryFinalizeAndLogException(*marks_compressor, log);
+    if (marks_file_hashing)
+        tryFinalizeAndLogException(*marks_file_hashing, log);
     tryFinalizeAndLogException(*marks_file, log);
 }
 
@@ -308,7 +313,12 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 
     plain_hashing.finalize();
     plain_file->finalize();
-    marks.finalize();
+    if (marks_source_hashing)
+        marks_source_hashing->finalize();
+    if (marks_compressor)
+        marks_compressor->finalize();
+    if (marks_file_hashing)
+        marks_file_hashing->finalize();
     marks_file->finalize();
     finalized = true;
 

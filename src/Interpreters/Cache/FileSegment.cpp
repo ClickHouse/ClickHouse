@@ -440,6 +440,7 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::m
     if (cache_writer)
     {
         cache_writer->finalize();
+        is_writer_finalized = true;
         cache_writer.reset();
         remote_file_reader.reset();
     }
@@ -461,6 +462,7 @@ void FileSegment::setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segme
     if (cache_writer)
     {
         cache_writer->finalize();
+        is_writer_finalized = true;
         cache_writer.reset();
         remote_file_reader.reset();
     }
@@ -764,6 +766,8 @@ void FileSegment::detachAssumeStateFinalized(std::unique_lock<std::mutex> & segm
 FileSegment::~FileSegment()
 {
     std::unique_lock segment_lock(mutex);
+    if (!is_writer_finalized && cache_writer)
+        tryFinalizeAndLogException(*cache_writer, log);
     if (is_detached)
         CurrentMetrics::sub(CurrentMetrics::CacheDetachedFileSegments);
 }

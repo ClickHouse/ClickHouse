@@ -40,6 +40,12 @@ public:
             this->out.next();
     }
 
+    void finalizeBuffers() override
+    {
+        if (validating_ostr)
+            validating_ostr->finalize();
+    }
+
 protected:
     /// Point to validating_ostr or out from IOutputFormat, should be used in derived classes instead of out.
     WriteBuffer * ostr;

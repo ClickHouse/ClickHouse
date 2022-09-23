@@ -471,6 +471,8 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 {
     have_error = true;
     server_exception = std::move(e);
+    if (output_format)
+        output_format->finalize();
     resetOutput();
 }
 
@@ -1029,6 +1031,8 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    if (output_format)
+        output_format->finalize();
     output_format.reset();
     logs_out_stream.reset();
 

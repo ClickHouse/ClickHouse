@@ -36,12 +36,20 @@ void MergeTreeDataPartWriterOnDisk::Stream::finalize()
     if (!is_prefinalized)
         preFinalize();
 
-    compressed.finalize();
-    compressed_buf.finalize();
+    compressed_hashing.finalize();
+    compressor.finalize();
     plain_hashing.finalize();
     plain_file->finalize();
-    marks.finalize();
+
+    if (compress_marks)
+    {
+        marks_compressed_hashing.finalize();
+        marks_compressor.finalize();
+    }
+
+    marks_hashing.finalize();
     marks_file->finalize();
+    finalized = true;
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::sync() const
@@ -79,12 +87,19 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
 
 MergeTreeDataPartWriterOnDisk::Stream::~Stream()
 {
+    if (finalized)
+        return;
     auto * log = &Poco::Logger::get("MergeTreeDataPartWriterOnDisk::Stream");
-    tryFinalizeAndLogException(compressed, log);
-    tryFinalizeAndLogException(compressed_buf, log);
+    tryFinalizeAndLogException(compressed_hashing, log);
+    tryFinalizeAndLogException(compressor, log);
     tryFinalizeAndLogException(plain_hashing, log);
     tryFinalizeAndLogException(*plain_file, log);
-    tryFinalizeAndLogException(marks, log);
+    if (compress_marks)
+    {
+        tryFinalizeAndLogException(marks_compressed_hashing, log);
+        tryFinalizeAndLogException(marks_compressor, log);
+    }
+    tryFinalizeAndLogException(marks_hashing, log);
     tryFinalizeAndLogException(*marks_file, log);
 }
 
@@ -141,30 +156,18 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
 
 MergeTreeDataPartWriterOnDisk::~MergeTreeDataPartWriterOnDisk()
 {
-    try
-    {
-        if (index_stream)
-        {
-            index_stream->finalize();
-            index_file_stream->finalize();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(&Poco::Logger::get("MergeTreeDataPartWriterOnDisk"));
-    }
+    auto * log = &Poco::Logger::get("MergeTreeDataPartWriterOnDisk");
+    if (index_source_hashing_stream)
+        tryFinalizeAndLogException(*index_source_hashing_stream, log);
+    if (index_compressor_stream)
+        tryFinalizeAndLogException(*index_compressor_stream, log);
+    if (index_file_hashing_stream)
+        tryFinalizeAndLogException(*index_file_hashing_stream, log);
+    if (index_file_stream)
+        tryFinalizeAndLogException(*index_file_stream, log);
 
     for (auto & stream : skip_indices_streams)
-    {
-        try
-        {
-            stream->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(&Poco::Logger::get("MergeTreeDataPartWriterOnDisk"));
-        }
-    }
+        tryFinalizeAndLogException(*stream, log);
 }
 
 // Implementation is split into static functions for ability
@@ -384,17 +387,19 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
 {
     if (index_file_hashing_stream)
     {
-        index_stream->finalize();
+        if (compress_primary_key)
+        {
+            index_source_hashing_stream->finalize();
+            index_source_hashing_stream = nullptr;
+            index_compressor_stream->finalize();
+            index_compressor_stream = nullptr;
+        }
+        index_file_hashing_stream->finalize();
+        index_file_hashing_stream = nullptr;
+
         index_file_stream->finalize();
         if (sync)
             index_file_stream->sync();
-
-        if (compress_primary_key)
-        {
-            index_source_hashing_stream = nullptr;
-            index_compressor_stream = nullptr;
-        }
-        index_file_hashing_stream = nullptr;
     }
 }
 
