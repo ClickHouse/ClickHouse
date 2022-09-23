@@ -695,12 +695,14 @@ public:
         }
         else
             return false;
- 
-        if (dest.getDataType() == TypeIndex::LowCardinality) {
+
+        if (dest.getDataType() == TypeIndex::LowCardinality)
+        {
             ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
             col_low.insertData(reinterpret_cast<const char * >(&value), sizeof(value));
         }
-        else {
+        else
+        {
             auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
             col_vec.insertValue(value);
         }
@@ -781,11 +783,13 @@ public:
 
         auto str = element.getString();
 
-        if (dest.getDataType() == TypeIndex::LowCardinality) {
+        if (dest.getDataType() == TypeIndex::LowCardinality)
+        {
             ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
             col_low.insertData(str.data(), str.size());
         }
-        else {
+        else
+        {
             ColumnString & col_str = assert_cast<ColumnString &>(dest);
             col_str.insertData(str.data(), str.size());
         }
@@ -825,7 +829,7 @@ struct JSONExtractTree
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
             auto str = element.getString();
-            
+
             if (str.size() > fixed_length)
                 return false;
 
@@ -848,11 +852,13 @@ struct JSONExtractTree
                 return false;
 
             auto uuid = parseFromString<UUID>(element.getString());
-            if (dest.getDataType() == TypeIndex::LowCardinality) {
+            if (dest.getDataType() == TypeIndex::LowCardinality)
+            {
                 ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
                 col_low.insertData(reinterpret_cast<const char * >(&uuid), sizeof(uuid));
             }
-            else {
+            else
+            {
                 assert_cast<ColumnUUID &>(dest).insert(uuid);
             }
             return true;
@@ -894,12 +900,13 @@ struct JSONExtractTree
         {
             if (!element.isString())
                 return false;
+
             auto str = element.getString();
             auto & col_str = assert_cast<ColumnFixedString &>(dest);
             if (str.size() > col_str.getN())
                 return false;
             col_str.insertData(str.data(), str.size());
-            
+
             return true;
         }
     };
@@ -1122,14 +1129,13 @@ struct JSONExtractTree
             case TypeIndex::LowCardinality:
             {
                 auto dictionary_type = typeid_cast<const DataTypeLowCardinality *>(type.get())->getDictionaryType();
-                auto impl = build(function_name, dictionary_type);
-
-                if ((*dictionary_type).getTypeId() == TypeIndex::FixedString) {
+                if ((*dictionary_type).getTypeId() == TypeIndex::FixedString)
+                {
                     auto fixed_length = typeid_cast<const DataTypeFixedString *>(dictionary_type.get())->getN();
-                    return std::make_unique<LowCardinalityFixedStringNode>(fixed_length); 
+                    return std::make_unique<LowCardinalityFixedStringNode>(fixed_length);
                 }
-                else
-                    return impl; 
+                auto impl = build(function_name, dictionary_type);
+                return impl;
             }
             case TypeIndex::Decimal256: return std::make_unique<DecimalNode<Decimal256>>(type);
             case TypeIndex::Decimal128: return std::make_unique<DecimalNode<Decimal128>>(type);
