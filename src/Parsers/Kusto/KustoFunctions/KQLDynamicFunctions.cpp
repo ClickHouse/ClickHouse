@@ -11,14 +11,6 @@
 
 #include <format>
 
-namespace
-{
-String wrapInDynamic(const String & parameter)
-{
-    return "dynamic(" + parameter + ")";
-}
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -104,9 +96,9 @@ bool ArrayRotateRight::convertImpl(String & out, IParser::Pos & pos)
     if (function_name.empty())
         return false;
 
-    const auto array = getArgument(function_name, pos);
-    const auto count = getArgument(function_name, pos);
-    out = kqlCallToExpression("array_rotate_left", {wrapInDynamic(array), "-1 * " + count}, pos.max_depth);
+    const auto array = getArgument(function_name, pos, ArgumentState::Raw);
+    const auto count = getArgument(function_name, pos, ArgumentState::Raw);
+    out = kqlCallToExpression("array_rotate_left", {array, "-1 * " + count}, pos.max_depth);
 
     return true;
 }
@@ -138,15 +130,15 @@ bool ArrayShiftRight::convertImpl(String & out, IParser::Pos & pos)
     if (function_name.empty())
         return false;
 
-    const auto array = getArgument(function_name, pos);
-    const auto count = getArgument(function_name, pos);
-    const auto fill = getOptionalArgument(function_name, pos);
+    const auto array = getArgument(function_name, pos, ArgumentState::Raw);
+    const auto count = getArgument(function_name, pos, ArgumentState::Raw);
+    const auto fill = getOptionalArgument(function_name, pos, ArgumentState::Raw);
 
-    const auto arg1 = wrapInDynamic(array);
-    const auto arg2 = "-1 * " + count;
+    const auto negated_count = "-1 * " + count;
     out = kqlCallToExpression(
         "array_shift_left",
-        fill ? std::initializer_list<std::string_view>{arg1, arg2, *fill} : std::initializer_list<std::string_view>{arg1, arg2},
+        fill ? std::initializer_list<std::string_view>{array, negated_count, *fill}
+             : std::initializer_list<std::string_view>{array, negated_count},
         pos.max_depth);
 
     return true;
@@ -242,8 +234,8 @@ bool JaccardIndex::convertImpl(String & out, IParser::Pos & pos)
     if (function_name.empty())
         return false;
 
-    const auto lhs = wrapInDynamic(getArgument(function_name, pos));
-    const auto rhs = wrapInDynamic(getArgument(function_name, pos));
+    const auto lhs = getArgument(function_name, pos, ArgumentState::Raw);
+    const auto rhs = getArgument(function_name, pos, ArgumentState::Raw);
     out = std::format(
         "divide(length({0}), length({1}))",
         kqlCallToExpression("set_intersect", {lhs, rhs}, pos.max_depth),
@@ -294,9 +286,9 @@ bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
     const auto rhs = std::invoke(
         [&function_name, &pos]
         {
-            std::vector<String> arrays{wrapInDynamic(getArgument(function_name, pos))};
-            while (auto next_array = getOptionalArgument(function_name, pos))
-                arrays.push_back(wrapInDynamic(*next_array));
+            std::vector<String> arrays{getArgument(function_name, pos, ArgumentState::Raw)};
+            while (auto next_array = getOptionalArgument(function_name, pos, ArgumentState::Raw))
+                arrays.push_back(*next_array);
 
             return kqlCallToExpression("set_union", std::vector<std::string_view>(arrays.cbegin(), arrays.cend()), pos.max_depth);
         });

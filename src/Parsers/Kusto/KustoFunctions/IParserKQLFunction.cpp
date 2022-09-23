@@ -202,7 +202,8 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
     std::stack<DB::TokenType> scopes;
     while (!pos->isEnd() && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
     {
-        if (const auto token_type = pos->type; isOpeningBracket(token_type))
+        const auto token_type = pos->type;
+        if (isOpeningBracket(token_type))
             scopes.push(token_type);
         else if (isClosingBracket(token_type))
         {
@@ -213,7 +214,15 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
             scopes.pop();
         }
 
-        expression.append(pos->begin, pos->end);
+        if (token_type == DB::TokenType::QuotedIdentifier)
+        {
+            expression.push_back('\'');
+            expression.append(pos->begin + 1, pos->end - 1);
+            expression.push_back('\'');
+        }
+        else
+            expression.append(pos->begin, pos->end);
+
         ++pos;
     }
 

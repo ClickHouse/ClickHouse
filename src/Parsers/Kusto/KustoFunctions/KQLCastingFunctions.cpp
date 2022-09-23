@@ -94,7 +94,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     if(pos->type == TokenType::StringLiteral || pos->type == TokenType::QuotedIdentifier)
     {
         --pos;
-        auto arg = getArgument(function_name,pos);
+        auto arg = getArgument(function_name,pos, ArgumentState::Raw);
         auto out1 =  kqlCallToExpression("time", {arg}, pos.max_depth);
         out = std::format("{}" , out1);
     }
