@@ -4955,7 +4955,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
             {
-                LOG_TRACE(log, "Reservation sucessful");
+                LOG_TRACE(log, "Reservation successful");
                 return reservation;
             }
             else
