@@ -50,7 +50,7 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 
 void DDLLogEntry::assertVersion() const
 {
-    if (version == 0 
+    if (version == 0
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
     || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
     || version > DDL_ENTRY_FORMAT_MAX_VERSION)
