@@ -333,7 +333,14 @@ public:
 
     bool canTry()
     {
-        /// do not count previous try if it has no error (first try as well)
+        /// zero try is ordinary execution, not a retry
+        if (0 == tries_count)
+        {
+            ++tries_count;
+            return true;
+        }
+
+        /// do not count previous try if it has no errors
         if (zk_error.code == ZkError::Code::ZOK && user_error.code == ErrorCodes::OK)
             return true;
 
@@ -344,11 +351,9 @@ public:
         }
 
         /// zero try is normal execution, others are retries
-        if (tries_count > 0)
-        {
-            sleepForMilliseconds(curr_backoff_ms);
-            curr_backoff_ms = std::min(curr_backoff_ms * 2, max_backoff_ms);
-        }
+        assert(tries_count > 0);
+        sleepForMilliseconds(curr_backoff_ms);
+        curr_backoff_ms = std::min(curr_backoff_ms * 2, max_backoff_ms);
 
         ++tries_count;
         return true;
@@ -574,7 +579,8 @@ void ReplicatedMergeTreeSink::commitPart(
                             quorum_path = storage.zookeeper_path + "/quorum/status";
 
                         if (!tries_ctl.call(
-                                [&]() {
+                                [&]()
+                                {
                                     waitForQuorum(
                                         zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value, replicas_num);
                                 }))
