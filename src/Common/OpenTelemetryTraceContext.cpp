@@ -228,18 +228,15 @@ String TracingContext::composeTraceparentHeader() const
 
 void TracingContext::deserialize(ReadBuffer & buf)
 {
-    if (!buf.eof() && *buf.position() == 't')
-    {
-        buf >> "tracing: "
-            >> this->trace_id
-            >> "\n"
-            >> this->span_id
-            >> "\n"
-            >> this->tracestate
-            >> "\n"
-            >> this->trace_flags
-            >> "\n";
-    }
+    buf >> "tracing: "
+        >> this->trace_id
+        >> "\n"
+        >> this->span_id
+        >> "\n"
+        >> this->tracestate
+        >> "\n"
+        >> this->trace_flags
+        >> "\n";
 }
 
 void TracingContext::serialize(WriteBuffer & buf) const

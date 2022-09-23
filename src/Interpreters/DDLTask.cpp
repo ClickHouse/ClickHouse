@@ -136,7 +136,8 @@ void DDLLogEntry::parse(const String & data)
         }
     }
 
-    rb >> this->tracing_context;
+    if (!rb.eof() && *rb.position() == 't')
+        rb >> this->tracing_context;
 
     if (!host_id_strings.empty())
     {
