@@ -209,17 +209,19 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
     /// If the part is in ZooKeeper, remove it from there and add the task to download it to the queue.
     if (exists_in_zookeeper)
     {
-        /// If part found on some other replica
         if (missing_part_search_result == MissingPartSearchResult::FoundAndNeedFetch)
         {
             LOG_WARNING(log, "Part {} exists in ZooKeeper but not locally and found on other replica. Removing from ZooKeeper and queueing a fetch.", part_name);
-            storage.removePartAndEnqueueFetch(part_name);
         }
-        else /// If we have covering part on other replica or part is lost forever we don't need to fetch anything
+        else
         {
             LOG_WARNING(log, "Part {} exists in ZooKeeper but not locally and not found on other replica. Removing it from ZooKeeper.", part_name);
-            storage.removePartFromZooKeeper(part_name);
         }
+
+        /// We cannot simply remove part from ZooKeeper, because it may be removed from virtual_part,
+        /// so we have to create some entry in the queue. Maybe we will execute it (by fetching part or covering part from somewhere),
+        /// maybe will simply replace with empty part.
+        storage.removePartAndEnqueueFetch(part_name);
     }
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
