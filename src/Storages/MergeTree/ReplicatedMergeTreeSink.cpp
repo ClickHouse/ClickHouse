@@ -312,39 +312,40 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
 struct TriesControl
 {
-    TriesControl(UInt64 max_tries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
-        : max_tries(max_tries_), curr_backoff_ms(initial_backoff_ms_), max_backoff_ms(max_backoff_ms_)
+    TriesControl(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+        : max_tries(1 + max_retries_), curr_backoff_ms(initial_backoff_ms_), max_backoff_ms(max_backoff_ms_)
     {
     }
 
-    const UInt64 max_tries;
+    const UInt64 max_tries = 1;
     UInt64 curr_backoff_ms;
     const UInt64 max_backoff_ms;
     UInt64 tries_count = 0;
 
-    struct Error
-    {
-        Error() = default;
-        Error(int code_, std::string message_) : code(code_), message(std::move(message_)) { }
+    struct ZkError {
+        using Code = Coordination::Error;
+        Code code = Code::ZOK;
+        std::string message;
+    };
+    ZkError zk_error;
 
+    struct UserError
+    {
         int code = ErrorCodes::OK;
         std::string message;
     };
-    Error last_error;
+    UserError user_error;
 
-    bool shouldTry()
+    bool canTry()
     {
         if (tries_count >= max_tries)
         {
-            if (tries_count == max_tries)
-            { /// if count reach max, throw only once
-                ++tries_count;
-                throwIfError();
-            }
+            throwIfError();
             return false;
         }
 
-        if (tries_count > 0 && tries_count < max_tries)
+        /// zero try is normal execution, others are retries
+        if (tries_count > 0)
         {
             sleepForMilliseconds(curr_backoff_ms);
             curr_backoff_ms = std::max(curr_backoff_ms * 2, max_backoff_ms);
@@ -356,14 +357,26 @@ struct TriesControl
 
     void throwIfError() const
     {
-        if (last_error.code != ErrorCodes::OK)
-            throw Exception(last_error.code, last_error.message);
+        if (user_error.code != ErrorCodes::OK)
+            throw Exception(user_error.code, user_error.message);
+
+        if (zk_error.code != ZkError::Code::ZOK)
+            throw zkutil::KeeperException(zk_error.code, zk_error.message);
     }
 
     template <typename... Args>
-    void setLastError(Args&&... args)
+    void setUserError(int code, fmt::format_string<Args...> fmt, Args &&... args)
     {
-        last_error = Error(std::forward<Args>(args)...);
+        user_error.code = code;
+        user_error.message = fmt::format(fmt, std::forward<Args>(args)...);
+        zk_error = ZkError{};
+    }
+
+    void setZkError(ZkError::Code code, std::string message)
+    {
+        zk_error.code = code;
+        zk_error.message = std::move(message);
+        user_error = UserError{};
     }
 };
 
@@ -375,7 +388,6 @@ void ReplicatedMergeTreeSink::commitPart(
     size_t replicas_num)
 {
     metadata_snapshot->check(part->getColumns());
-    assertSessionIsNotExpired(zookeeper);
 
     String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
 
@@ -388,11 +400,17 @@ void ReplicatedMergeTreeSink::commitPart(
 
     const auto& settings = context->getSettingsRef();
     TriesControl tries_ctl(
-        settings.insert_part_commit_max_tries,
+        settings.insert_part_commit_max_retries,
         settings.insert_part_commit_retry_initial_backoff_ms,
         settings.insert_part_commit_retry_max_backoff_ms);
-    while (tries_ctl.shouldTry())
+
+    while (tries_ctl.canTry())
     {
+    try
+    {
+        /// create new zookeeper session if zookeeper session is expired
+        zookeeper = context->getZooKeeper();
+
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
@@ -601,7 +619,10 @@ void ReplicatedMergeTreeSink::commitPart(
             storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
             /// We do not know whether or not data has been inserted.
-            tries_ctl.setLastError(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Unknown status, client must retry. Reason: " + String(Coordination::errorMessage(multi_code)));
+            tries_ctl.setUserError(
+                ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                "Unknown status, client must retry. Reason: {}",
+                Coordination::errorMessage(multi_code));
             continue;
         }
         else if (Coordination::isUserError(multi_code))
@@ -636,34 +657,58 @@ void ReplicatedMergeTreeSink::commitPart(
             {
                 storage.unlockSharedData(*part);
                 transaction.rollback();
-                throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+                tries_ctl.setUserError(ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE, "Another quorum insert has been already started");
+                continue;
             }
             else
             {
                 storage.unlockSharedData(*part);
                 /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
                 transaction.rollback();
-                throw Exception("Unexpected logical error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                                + Coordination::errorMessage(multi_code) + ", path " + failed_op_path,
-                                ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+                tries_ctl.setUserError(
+                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                    "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
+                    block_number,
+                    block_id,
+                    Coordination::errorMessage(multi_code),
+                    failed_op_path);
+                continue;
             }
         }
         else if (Coordination::isHardwareError(multi_code))
         {
             storage.unlockSharedData(*part);
             transaction.rollback();
-            throw Exception("Unrecoverable network error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                            + Coordination::errorMessage(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+            tries_ctl.setUserError(
+                ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                "Unrecoverable network error while adding block {} with ID '{}': {}",
+                block_number,
+                block_id,
+                Coordination::errorMessage(multi_code));
+            continue;
         }
         else
         {
             storage.unlockSharedData(*part);
             transaction.rollback();
-            throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                            + Coordination::errorMessage(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+            tries_ctl.setUserError(
+                ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                "Unexpected ZooKeeper error while adding block {} with ID '{}': ",
+                block_number,
+                block_id,
+                Coordination::errorMessage(multi_code));
+            continue;
         }
 
         break;
+    }
+    catch(zkutil::KeeperException const & e)
+    {
+        if (!Coordination::isHardwareError(e.code))
+            throw;
+
+        tries_ctl.setZkError(e.code, e.message());
+    }
     }
 
     if (isQuorumEnabled())

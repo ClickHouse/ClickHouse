@@ -654,7 +654,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, multiple_joins_try_to_keep_original_names, false, "Do not add aliases to top level expression list on multiple joins rewrite", 0) \
     M(Bool, optimize_distinct_in_order, true, "Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
-    M(UInt64, insert_part_commit_max_tries, 10, "Max attempts to write part into zk during insert", 0) \
+    M(UInt64, insert_part_commit_max_retries, 9, "Max retries to write part into zk during insert", 0) \
     M(UInt64, insert_part_commit_retry_initial_backoff_ms, 100, "Min milliseconds for backoff, when retrying write part into zk", 0) \
     M(UInt64, insert_part_commit_retry_max_backoff_ms, 10000, "Max milliseconds for backoff, when retrying write part into zk", 0) \
     // End of COMMON_SETTINGS
