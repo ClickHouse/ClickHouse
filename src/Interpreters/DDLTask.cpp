@@ -51,19 +51,19 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 void DDLLogEntry::assertVersion() const
 {
     if (version == 0 
-    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be version 3
+    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
     || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
-    || version > MAX_VERSION)
+    || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
-                                                            "Maximum supported version is {}", version, MAX_VERSION);
+                                                            "Maximum supported version is {}", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 }
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
-    version = context->getSettingsRef().    ;
-    if (version <= 0 || version > MAX_VERSION)
+    version = context->getSettingsRef().distributed_ddl_entry_format_version;
+    if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
-                                                            "Maximum supported version is {}.", version, MAX_VERSION);
+                                                            "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
     if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
