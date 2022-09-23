@@ -219,7 +219,7 @@ ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) con
         auto reservation = volume->reserve(bytes);
         if (reservation)
         {
-            LOG_TRACE(log, "Successfuly reserved {} bytes on volume index {}", bytes, i);
+            LOG_TRACE(log, "Successfully reserved {} bytes on volume index {}", bytes, i);
             return reservation;
         }
     }
