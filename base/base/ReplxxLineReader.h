@@ -27,6 +27,7 @@ private:
     void addToHistory(const String & line) override;
     int executeEditor(const std::string & path);
     void openEditor();
+    void openInteractiveHistorySearch();
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_t highlighter;

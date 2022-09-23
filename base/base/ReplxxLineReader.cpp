@@ -375,6 +375,14 @@ ReplxxLineReader::ReplxxLineReader(
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
+
+    /// interactive search in history (ctrlp/fzf/skim)
+    auto interactive_history_search = [this](char32_t code)
+    {
+        openInteractiveHistorySearch();
+        return rx.invoke(Replxx::ACTION::REPAINT, code);
+    };
+    rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
 }
 
 ReplxxLineReader::~ReplxxLineReader()
@@ -431,6 +439,42 @@ void ReplxxLineReader::openEditor()
         if (executeCommand(argv) == 0)
         {
             const std::string & new_query = readFile(editor_file.getPath());
+            rx.set_state(replxx::Replxx::State(new_query.c_str(), new_query.size()));
+        }
+    }
+    catch (const std::runtime_error & e)
+    {
+        rx.print(e.what());
+    }
+
+    if (bracketed_paste_enabled)
+        enableBracketedPaste();
+}
+
+void ReplxxLineReader::openInteractiveHistorySearch()
+{
+    TemporaryFile history_file("clickhouse_client_history_in_XXXXXX.bin");
+    auto hs(rx.history_scan());
+    while (hs.next())
+    {
+        history_file.write(hs.get().text());
+        history_file.write(std::string(1, '\0'));
+    }
+    history_file.close();
+
+    TemporaryFile output_file("clickhouse_client_history_out_XXXXXX.sql");
+    output_file.close();
+
+    char sh[] = "sh";
+    char sh_c[] = "-c";
+    std::string fzf = fmt::format("fzf --read0 --height=30% < {} > {}", history_file.getPath(), output_file.getPath());
+    char * const argv[] = {sh, sh_c, fzf.data(), nullptr};
+
+    try
+    {
+        if (executeCommand(argv) == 0)
+        {
+            const std::string & new_query = readFile(output_file.getPath());
             rx.set_state(replxx::Replxx::State(new_query.c_str(), new_query.size()));
         }
     }
