@@ -20,7 +20,7 @@ IAsynchronousReader & IObjectStorage::getThreadPoolReader()
     if (!context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 
-    return context->getThreadPoolReader();
+    return context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
