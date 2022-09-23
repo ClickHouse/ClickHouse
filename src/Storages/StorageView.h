@@ -19,6 +19,7 @@ public:
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
+    bool isParameterizedView() const { return is_parameterized_view; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -34,6 +35,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    void replaceQueryParameters(ASTPtr & outer_query, const NameToNameMap & parameter_values);
+
     static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot)
     {
         replaceWithSubquery(select_query, metadata_snapshot->getSelectQuery().inner_query->clone(), view_name);
@@ -41,6 +44,9 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+
+protected:
+    bool is_parameterized_view;
 };
 
 }

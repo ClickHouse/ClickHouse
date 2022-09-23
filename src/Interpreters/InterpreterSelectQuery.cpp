@@ -500,7 +500,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
         if (view)
+        {
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
+            view->replaceQueryParameters(query_ptr, getSelectQuery().getQueryParameterValues());
+        }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,

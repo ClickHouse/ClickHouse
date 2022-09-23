@@ -7,6 +7,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -472,6 +473,56 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
 
     tables_element.table_expression->as<ASTTableExpression &>().final = true;
+}
+
+bool ASTSelectQuery::hasQueryParameters() const
+{
+    std::queue<ASTPtr> queue;
+    queue.push(this->clone());
+
+    while (!queue.empty())
+    {
+        auto ast = queue.front();
+        queue.pop();
+
+        if (ast->as<ASTQueryParameter>())
+            return true;
+
+        for (auto child : ast->children)
+            queue.push(child);
+    }
+    return false;
+}
+
+NameToNameMap ASTSelectQuery::getQueryParameterValues() const
+{
+    NameToNameMap parameter_values;
+    std::queue<ASTPtr> queue;
+    queue.push(this->clone());
+
+    while (!queue.empty())
+    {
+        auto ast = queue.front();
+        queue.pop();
+        if (auto expression_list = ast->as<ASTExpressionList>())
+        {
+            if (expression_list->children.size() == 2)
+            {
+                if (auto identifier = expression_list->children[0]->as<ASTIdentifier>())
+                {
+                    if (auto literal = expression_list->children[1]->as<ASTLiteral>())
+                    {
+
+                        parameter_values[identifier->name()] = toString(literal->value);
+                    }
+                }
+            }
+        }
+        for (auto child : ast->children)
+            queue.push(child);
+    }
+
+    return parameter_values;
 }
 
 }
