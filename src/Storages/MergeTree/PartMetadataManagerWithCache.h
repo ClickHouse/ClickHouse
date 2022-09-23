@@ -19,7 +19,7 @@ public:
     ~PartMetadataManagerWithCache() override = default;
 
     /// First read the metadata from RocksDB cache, then from disk.
-    std::unique_ptr<SeekableReadBuffer> read(const String & file_name) const override;
+    std::unique_ptr<ReadBuffer> read(const String & file_name) const override;
 
     /// First judge existence of the metadata in RocksDB cache, then in disk.
     bool exists(const String & file_name) const override;
@@ -47,7 +47,6 @@ private:
 
     /// Get cache keys and checksums of corresponding metadata in a part(including projection parts)
     void getKeysAndCheckSums(Strings & keys, std::vector<uint128> & checksums) const;
-
 
     MergeTreeMetadataCachePtr cache;
 };
