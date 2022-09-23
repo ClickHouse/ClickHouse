@@ -1045,9 +1045,12 @@ void FileSegment::completePartAndResetDownloaderUnlocked(std::unique_lock<std::m
 
     if (isInternal())
     {
-        size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
-        if (current_downloaded_size != 0 && current_downloaded_size == range().size())
-            setDownloadedUnlocked(segment_lock);
+        if (downloader_id.empty())
+        {
+            size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
+            if (current_downloaded_size != 0 && current_downloaded_size == range().size())
+                setDownloadedUnlocked(segment_lock);
+        }
     }
     else
     {
