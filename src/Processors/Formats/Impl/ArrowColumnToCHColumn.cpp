@@ -230,6 +230,40 @@ static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
+template <typename TimeType, typename TimeArray>
+static ColumnWithTypeAndName readColumnWithTimeData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    const auto & arrow_type = static_cast<const TimeType &>(*(arrow_column->type()));
+    const UInt8 scale = arrow_type.unit() * 3;
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
+    auto internal_column = internal_type->createColumn();
+    internal_column->reserve(arrow_column->length());
+
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = dynamic_cast<TimeArray &>(*(arrow_column->chunk(chunk_i)));
+        if (chunk.length() == 0)
+            continue;
+
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+        {
+            assert_cast<DataTypeDateTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
+        }
+    }
+
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+static ColumnWithTypeAndName readColumnWithTime32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    return readColumnWithTimeData<arrow::Time32Type, arrow::Time32Array>(arrow_column, column_name);
+}
+
+static ColumnWithTypeAndName readColumnWithTime64Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    return readColumnWithTimeData<arrow::Time64Type, arrow::Time64Array>(arrow_column, column_name);
+}
+
 template <typename DecimalType, typename DecimalArray>
 static ColumnWithTypeAndName readColumnWithDecimalDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, DataTypePtr internal_type)
 {
@@ -639,6 +673,14 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return readColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, column_name);
         FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
+        case arrow::Type::TIME32:
+        {
+            return readColumnWithTime32Data(arrow_column, column_name);
+        }
+        case arrow::Type::TIME64:
+        {
+            return readColumnWithTime64Data(arrow_column, column_name);
+        }
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
         case arrow::Type::NA:
