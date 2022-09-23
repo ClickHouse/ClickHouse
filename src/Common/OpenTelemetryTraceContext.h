@@ -160,7 +160,7 @@ struct SpanHolder : public Span
     void finish() noexcept;
 };
 
-} // End of namespace OpenTelemetry
+}
 
 inline WriteBuffer & operator<<(WriteBuffer & buf, const OpenTelemetry::TracingContext & context)
 {
@@ -174,4 +174,4 @@ inline ReadBuffer & operator>> (ReadBuffer & buf, OpenTelemetry::TracingContext 
     return buf;
 }
 
-} // End of namespace DB
+}
