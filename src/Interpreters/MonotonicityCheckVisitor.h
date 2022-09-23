@@ -70,6 +70,9 @@ public:
             if (!pos)
                 return false;
 
+            if (*pos >= tables.size())
+                return false;
+
             if (auto data_type_and_name = tables[*pos].columns.tryGetByName(identifier->shortName()))
             {
                 arg_data_type = data_type_and_name->type;
