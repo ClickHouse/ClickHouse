@@ -1,14 +1,19 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteHelpers.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int DATABASE_ACCESS_DENIED;
+}
 
 namespace
 {
@@ -26,8 +31,19 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
         database = context->getInsertionTable().getDatabaseName();
 
     String path_in_setting = context->getSettingsRef().input_format_record_errors_file_path;
-    errors_file_path = context->getApplicationType() == Context::ApplicationType::SERVER ? context->getUserFilesPath() + path_in_setting
-                                                                                         : path_in_setting;
+
+    if (context->getApplicationType() == Context::ApplicationType::SERVER)
+    {
+        auto user_files_path = context->getUserFilesPath();
+        errors_file_path = fs::path(user_files_path) / path_in_setting;
+        if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_path))
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot log errors in path `{}`, because it is not inside `{}`", errors_file_path, user_files_path);
+    }
+    else
+    {
+        errors_file_path = path_in_setting;
+    }
+
     while (fs::exists(errors_file_path))
     {
         errors_file_path += "_new";

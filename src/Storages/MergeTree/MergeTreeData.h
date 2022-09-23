@@ -151,6 +151,7 @@ public:
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
+    constexpr static auto MOVING_DIR_NAME = "moving";
 
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
