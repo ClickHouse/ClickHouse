@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
 #include <map>
@@ -471,11 +472,14 @@ static StackTraceCache & cacheInstance()
     return cache;
 }
 
+static std::mutex stacktrace_cache_mutex;
+
 std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
     /// Note that this cache can grow unconditionally, but practically it should be small.
+    std::lock_guard lock{stacktrace_cache_mutex};
 
     StackTraceRepresentation key{frame_pointers, offset, size};
     auto & cache = cacheInstance();
@@ -489,5 +493,6 @@ std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_p
 
 void StackTrace::dropCache()
 {
+    std::lock_guard lock{stacktrace_cache_mutex};
     cacheInstance().clear();
 }
