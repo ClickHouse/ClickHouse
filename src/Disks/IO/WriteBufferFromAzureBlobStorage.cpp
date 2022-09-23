@@ -94,7 +94,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     }
 
     execWithRetry([&block_blob_client, &block_ids](){ block_blob_client.CommitBlockList(block_ids); }, 3);
-    LOG_TRACE(log, "Commited {} blocks for blob `{}`", block_ids.size(), blob_path);
+    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
 
     if (write_settings.remote_throttler)
         write_settings.remote_throttler->add(total_size);
