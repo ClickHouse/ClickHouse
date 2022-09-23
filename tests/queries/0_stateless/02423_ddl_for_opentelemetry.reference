@@ -1,21 +1,26 @@
-===case 1====
-1
-1
-test_shard_localhost
-2
-===case 2====
-1
-1
-test_shard_localhost
-2
-===case 3====
-1
-1
-test_shard_localhost
-2
-===case 4====
-1
-1
-test_shard_localhost
-exception_code=60
-exception_code=60
+===ddl_format_version 1====
+httpHandler=1
+executeDDLQueryOnCluster=1
+processTask=0
+query=1
+===ddl_format_version 2====
+httpHandler=1
+executeDDLQueryOnCluster=1
+processTask=0
+query=1
+===ddl_format_version 3====
+httpHandler=1
+executeDDLQueryOnCluster=1
+processTask=0
+query=1
+===ddl_format_version 4====
+httpHandler=1
+executeDDLQueryOnCluster=1
+processTask=1
+query=2
+===exception====
+httpHandler=1
+executeDDLQueryOnCluster=1
+processTask=1
+exceptionCode=60
+exceptionCode=60
