@@ -228,8 +228,7 @@ String TracingContext::composeTraceparentHeader() const
 
 void TracingContext::deserialize(ReadBuffer & buf)
 {
-    buf >> "tracing: "
-        >> this->trace_id
+    buf >> this->trace_id
         >> "\n"
         >> this->span_id
         >> "\n"
@@ -241,8 +240,7 @@ void TracingContext::deserialize(ReadBuffer & buf)
 
 void TracingContext::serialize(WriteBuffer & buf) const
 {
-    buf << "tracing: "
-        << this->trace_id
+    buf << this->trace_id
         << "\n"
         << this->span_id
         << "\n"
