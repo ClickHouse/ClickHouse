@@ -24,7 +24,7 @@ public:
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
-
+    bool allow_query_parameters = false;
 
     String getID(char) const override { return "Storage definition"; }
 
@@ -119,6 +119,8 @@ public:
     }
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
+
+    bool isParameterizedView() const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

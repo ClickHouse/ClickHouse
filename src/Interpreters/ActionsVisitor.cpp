@@ -38,6 +38,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTQueryParameter.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -742,9 +743,29 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
         return NameAndTypePair(child_column_name, node->result_type);
 
     if (!data.only_consts)
-        throw Exception("Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
-                        ErrorCodes::UNKNOWN_IDENTIFIER);
+    {
+        bool has_query_parameter = false;
 
+        std::queue<ASTPtr> astQueue;
+        astQueue.push(ast);
+
+        while (!astQueue.empty())
+        {
+            auto current = astQueue.front();
+            astQueue.pop();
+
+            if (auto * ast_query_parameter = current->as<ASTQueryParameter>())
+                has_query_parameter = true;
+
+            for (auto astChild : current->children)
+                astQueue.push(astChild);
+        }
+
+        if (!has_query_parameter)
+            throw Exception(
+                "Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
+                ErrorCodes::UNKNOWN_IDENTIFIER);
+    }
     return {};
 }
 

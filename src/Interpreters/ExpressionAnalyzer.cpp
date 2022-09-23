@@ -1286,6 +1286,9 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     getRootActions(select_query->where(), only_types, step.actions());
 
+    if (select_query->allow_query_parameters && select_query->hasQueryParameters())
+        return true;
+
     auto where_column_name = select_query->where()->getColumnName();
     step.addRequiredOutput(where_column_name);
 
@@ -1902,10 +1905,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     ExpressionActions(
                         before_where,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
-                    auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
-                    /// If the filter column is a constant, record it.
-                    if (column_elem.column)
-                        where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+
+                    if (!(query.allow_query_parameters && query.hasQueryParameters()))
+                    {
+                        auto & column_elem
+                            = before_where_sample.getByName(query.where()->getColumnName());
+                        /// If the filter column is a constant, record it.
+                        if (column_elem.column)
+                            where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+                    }
                 }
             }
             chain.addStep();
@@ -2066,6 +2074,9 @@ void ExpressionAnalysisResult::finalize(
     ssize_t & having_step_num,
     const ASTSelectQuery & query)
 {
+    if (query.allow_query_parameters && query.hasQueryParameters())
+        return;
+
     if (prewhere_step_num >= 0)
     {
         const ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);

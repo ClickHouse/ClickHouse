@@ -2,7 +2,9 @@
 
 #include <Parsers/IAST.h>
 #include <Core/Names.h>
-
+#include <queue>
+#include <Parsers/ASTQueryParameter.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -88,6 +90,7 @@ public:
     bool group_by_with_constant_keys = false;
     bool group_by_with_grouping_sets = false;
     bool limit_with_ties = false;
+    bool allow_query_parameters = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
@@ -142,6 +145,8 @@ public:
     void setFinal();
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
+    bool hasQueryParameters() const;
+    NameToNameMap getQueryParameterValues() const;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
