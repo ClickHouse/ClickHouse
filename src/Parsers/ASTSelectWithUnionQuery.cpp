@@ -3,7 +3,9 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSelectQuery.h>
 
+#include <queue>
 #include <iostream>
 
 namespace DB

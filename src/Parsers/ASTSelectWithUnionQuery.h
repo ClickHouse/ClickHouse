@@ -2,8 +2,6 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/SelectUnionMode.h>
-#include <queue>
-#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
