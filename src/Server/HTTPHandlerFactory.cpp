@@ -78,7 +78,7 @@ static inline auto createHandlersFactoryFromConfig(
             const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
 
             if (handler_type.empty())
-                throw Exception("Handler type in config There is no handleis not specified here: " + prefix + "." + key + ".handler.type",
+                throw Exception("Handler type in config is not specified here: " + prefix + "." + key + ".handler.type",
                     ErrorCodes::INVALID_CONFIG_PARAMETER);
 
             if (handler_type == "static")
