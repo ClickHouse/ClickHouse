@@ -20,7 +20,7 @@ function execute_query()
                 -X POST \
                 -H "traceparent: 00-$1-5150000000000515-01" \
                 -H "tracestate: a\nb cd" \
-                "${CLICKHOUSE_URL}?${3}" \
+                "${CLICKHOUSE_URL}&${3}" \
                 --data @-
 }
 
