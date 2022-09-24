@@ -109,7 +109,6 @@ void FileCache::assertInitialized(std::lock_guard<std::mutex> & /* cache_lock */
 void FileCache::initialize()
 {
     std::lock_guard cache_lock(mutex);
-    LOG_TRACE(log, "Initializing cache... ({})", StackTrace().toString());
     if (!is_initialized)
     {
         if (fs::exists(cache_base_path))
@@ -131,7 +130,6 @@ void FileCache::initialize()
 
         is_initialized = true;
     }
-    LOG_TRACE(log, "Initialization finished");
 }
 
 void FileCache::useCell(

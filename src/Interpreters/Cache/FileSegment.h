@@ -239,7 +239,6 @@ private:
     void setDownloadState(State state);
 
     void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
-    void setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock);
 
     bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 

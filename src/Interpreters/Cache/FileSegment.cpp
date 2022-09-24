@@ -838,8 +838,6 @@ void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset
 
         wrapWithCacheInfo(e, "while writing into cache", segment_lock);
 
-        setDownloadFailedUnlocked(segment_lock);
-
         cv.notify_all();
 
         throw;
@@ -1017,21 +1015,6 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::m
     assert(std::filesystem::file_size(getPathInLocalCache()) > 0);
 }
 
-void FileSegment::setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock)
-{
-    LOG_INFO(log, "Settings download as failed: {}", getInfoForLogUnlocked(segment_lock));
-
-    setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-    resetDownloaderUnlocked(segment_lock);
-
-    if (cache_writer)
-    {
-        cache_writer->finalize();
-        cache_writer.reset();
-        remote_file_reader.reset();
-    }
-}
-
 void FileSegment::completePartAndResetDownloader()
 {
     std::unique_lock segment_lock(mutex);
@@ -1081,6 +1064,14 @@ void FileSegment::completeWithState(State state)
             "Cannot complete file segment with state: {}", stateToString(state));
     }
 
+    if (cache_writer
+        && (state == State::DOWNLOADED || state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
+    {
+        cache_writer->finalize();
+        cache_writer.reset();
+        remote_file_reader.reset();
+    }
+
     setDownloadState(state);
     completeBasedOnCurrentState(cache_lock, segment_lock);
 }
@@ -1118,7 +1109,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         "Complete based on current state (is_last_holder: {}, {})",
         is_last_holder, getInfoForLogUnlocked(segment_lock));
 
-    if (is_downloader)
+    if (is_downloader && !isInternal())
     {
         if (download_state == State::DOWNLOADING) /// != in case of completeWithState
             resetDownloadingStateUnlocked(segment_lock);
