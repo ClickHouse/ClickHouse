@@ -1,3 +1,5 @@
+-- Tags: no-backward-compatibility-check
+
 drop table if exists test_02381;
 create table test_02381(a UInt64, b UInt64) ENGINE = MergeTree order by (a, b);
 insert into test_02381 select number, number * 10 from system.numbers limit 1000000;
