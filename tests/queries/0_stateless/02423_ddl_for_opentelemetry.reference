@@ -1,26 +1,25 @@
 ===ddl_format_version 1====
-httpHandler=1
-executeDDLQueryOnCluster=1
-processTask=0
-query=1
+1
+1
+1
+1
 ===ddl_format_version 2====
-httpHandler=1
-executeDDLQueryOnCluster=1
-processTask=0
-query=1
+1
+1
+1
+1
 ===ddl_format_version 3====
-httpHandler=1
-executeDDLQueryOnCluster=1
-processTask=0
-query=1
+1
+1
+1
+1
 ===ddl_format_version 4====
-httpHandler=1
-executeDDLQueryOnCluster=1
-processTask=1
-query=2
+1
+1
+1
+1
 ===exception====
-httpHandler=1
-executeDDLQueryOnCluster=1
-processTask=1
-exceptionCode=60
-exceptionCode=60
+1
+1
+1
+1
