@@ -2,9 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Core/Names.h>
-#include <queue>
-#include <Parsers/ASTQueryParameter.h>
-#include <Core/Field.h>
 
 namespace DB
 {
