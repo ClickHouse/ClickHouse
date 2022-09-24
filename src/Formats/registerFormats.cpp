@@ -42,6 +42,8 @@ void registerInputFormatJSONColumns(FormatFactory & factory);
 void registerOutputFormatJSONColumns(FormatFactory & factory);
 void registerInputFormatJSONCompactColumns(FormatFactory & factory);
 void registerOutputFormatJSONCompactColumns(FormatFactory & factory);
+void registerInputFormatBSONEachRow(FormatFactory & factory);
+void registerOutputFormatBSONEachRow(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
 void registerInputFormatProtobufList(FormatFactory & factory);
@@ -168,6 +170,8 @@ void registerFormats()
     registerOutputFormatJSONColumns(factory);
     registerInputFormatJSONCompactColumns(factory);
     registerOutputFormatJSONCompactColumns(factory);
+    registerInputFormatBSONEachRow(factory);
+    registerOutputFormatBSONEachRow(factory);
     registerInputFormatProtobuf(factory);
     registerOutputFormatProtobufList(factory);
     registerInputFormatProtobufList(factory);
