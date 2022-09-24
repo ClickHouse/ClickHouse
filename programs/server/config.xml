@@ -1011,10 +1011,6 @@
     <!--
         endpoint - mertics path (relative to root, statring with "/")
         port - port to setup server. If not defined or 0 than http_port used
-        metrics - send data from table system.metrics
-        events - send data from table system.events
-        asynchronous_metrics - send data from table system.asynchronous_metrics
-        status_info - send data from different component from CH, ex: Dictionaries status
     -->
     
     <graphite_carbon>
