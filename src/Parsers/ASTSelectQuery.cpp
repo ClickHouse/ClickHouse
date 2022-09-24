@@ -8,7 +8,10 @@
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryParameter.h>
+#include <Common/FieldVisitorToString.h>
 
+#include <queue>
 
 namespace DB
 {
@@ -513,7 +516,7 @@ NameToNameMap ASTSelectQuery::getQueryParameterValues() const
                     if (auto literal = expression_list->children[1]->as<ASTLiteral>())
                     {
 
-                        parameter_values[identifier->name()] = toString(literal->value);
+                        parameter_values[identifier->name()] = convertFieldToString(literal->value);
                     }
                 }
             }
