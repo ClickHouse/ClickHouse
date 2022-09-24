@@ -1016,6 +1016,7 @@
     <graphite_carbon>
         <endpoint>/graphite</endpoint>
         <port>9365</port>
+        <table_name>graphite_index</table_name>
 
     </graphite_carbon>
 
