@@ -4,7 +4,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
-#include <Interpreters/UserDefinedExecutableFunction.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunction.h>
 
 namespace DB
 {
