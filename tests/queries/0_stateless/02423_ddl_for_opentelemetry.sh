@@ -5,31 +5,28 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The test cases in this file cover DDLs running on both Replicated database engine and non-Replicated database engine.
+# Since the processing flow is a little bit different from each other, in order to share same reference file,
+# we compare the expected result and actual result by ourselves. See check_span method below for more detail.
+
 # This function takes following arguments:
 # $1 - OpenTelemetry Trace Id
 # $2 - Query
 # $3 - Query Settings
-# $4 - Output device, default is stdout
 function execute_query()
 {
-    if [ -n "${4}" ]; then
-        output=$4
-    else
-        output="/dev/stdout"
-    fi
-
-    echo $2 | ${CLICKHOUSE_CURL} \
+    # Some queries are supposed to fail, use -f to suppress error messages
+    echo $2 | ${CLICKHOUSE_CURL} -f \
                 -X POST \
                 -H "traceparent: 00-$1-5150000000000515-01" \
                 -H "tracestate: a\nb cd" \
                 "${CLICKHOUSE_URL}?${3}" \
-                --data @- \
-                > $output
+                --data @-
 }
 
-# This function takes 3 argument:
-# $1 - OpenTelemetry Trace Id
-# $2 - Fields
+# This function takes following argument:
+# $1 - expected
+# $2 - OpenTelemetry Trace Id
 # $3 - operation_name pattern
 # $4 - extra condition
 function check_span()
@@ -40,24 +37,38 @@ function check_span()
         extra_condition=""
     fi
 
-${CLICKHOUSE_CLIENT} -nq "
-    SYSTEM FLUSH LOGS;
+    ret=$(${CLICKHOUSE_CLIENT} -nq "
+        SYSTEM FLUSH LOGS;
 
-    SELECT ${2}
-    FROM system.opentelemetry_span_log
-    WHERE finish_date >= yesterday()
-    AND   lower(hex(trace_id)) =    '${1}'
-    AND   operation_name       like '${3}'
-    ${extra_condition}
-    Format TSKV
-    ;"
+        SELECT count()
+        FROM system.opentelemetry_span_log
+        WHERE finish_date >= yesterday()
+        AND   lower(hex(trace_id)) =    '${2}'
+        AND   operation_name       like '${3}'
+        ${extra_condition};")
+
+    if [ $ret = $1 ]; then
+        echo 1
+    else
+        echo "[operation_name like '${3}' ${extra_condition}]=$ret, expected: ${1}"
+        
+        # echo the span logs to help analyze        
+        ${CLICKHOUSE_CLIENT} -q "
+            SELECT operation_name, attribute
+            FROM system.opentelemetry_span_log
+            WHERE finish_date >= yesterday()
+            AND   lower(hex(trace_id)) ='${2}'
+            ORDER BY start_time_us
+            Format PrettyCompact
+        "
+    fi
 }
 
 #
 # Set up
 #
 ${CLICKHOUSE_CLIENT} -q "
-DROP TABLE IF EXISTS ddl_test_for_opentelemetry;
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry;
 "
 
 # Support Replicated database engine
@@ -72,22 +83,50 @@ for ddl_version in 1 2 3 4; do
     echo "===ddl_format_version ${ddl_version}===="
 
     trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-    execute_query $trace_id "CREATE TABLE ddl_test_for_opentelemetry ON CLUSTER ${cluster_name} (id UInt64) Engine=MergeTree ORDER BY id" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=${ddl_version}" "/dev/null"
+    execute_query $trace_id "CREATE TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry ON CLUSTER ${cluster_name} (id UInt64) Engine=MergeTree ORDER BY id" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=${ddl_version}"
 
-    check_span $trace_id "count() AS httpHandler" "HTTPHandler"
-    check_span $trace_id "count() AS executeDDLQueryOnCluster" "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
-    check_span $trace_id "count() AS processTask" "%DDLWorker::processTask%"
+    check_span 1 $trace_id "HTTPHandler"
 
-    # For format_version 4, there should be two 'query' spans,
+    # For Replcated database engine, it does not call 'executeDDLQueryOnCluster' method, we don't need to check it
+    if [ $cluster_name = "test_shard_localhost" ]; then
+        check_span 1 $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
+    else
+        # Only echo a value so that comparison of reference is correct
+        echo 1
+    fi
+    
+    if [ $cluster_name = "test_shard_localhost" ]; then
+        # The tracing is only enabled when entry format version is 4
+        if [ $ddl_version = "4" ]; then
+            expected=1
+        else
+            expected=0
+        fi
+    else
+        # For Replicated database engine, the tracing is always enabled because it calls DDLWorker::processTask directly
+        expected=1
+    fi
+    check_span $expected $trace_id "%DDLWorker::processTask%"
+    
+    # For queries that tracing are enabled(format version is 4 or Replicated database engine), there should be two 'query' spans,
     # one is for the HTTPHandler, the other is for the DDL executing in DDLWorker.
     #
     # For other format, there should be only one 'query' span
-    #
-    check_span $trace_id "count() AS query" "query"
+    if [ $cluster_name = "test_shard_localhost" ]; then
+        if [ $ddl_version = "4" ]; then
+            expected=2
+        else
+            expected=1
+        fi
+    else
+        expected=2
+    fi
+    check_span $expected $trace_id "query"
 
     # Remove table
-    ${CLICKHOUSE_CLIENT} -q "
-        DROP TABLE IF EXISTS ddl_test_for_opentelemetry;
+    # Under Replicated database engine, the DDL is executed as ON CLUSTER DDL, so distributed_ddl_output_mode is needed to supress output
+    ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "
+        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry;
     "
 done
 
@@ -97,23 +136,27 @@ done
 # Echo a separator so that the reference file is more clear for reading
 echo "===exception===="
 
-# Since this query is supposed to fail, we redirect the error message to /dev/null to discard the error message so that it won't pollute the reference file.
-# The exception will be checked in the span log
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-execute_query $trace_id "DROP TABLE ddl_test_for_opentelemetry_non_exist ON CLUSTER ${cluster_name}" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=4" "/dev/null"
+execute_query $trace_id "DROP TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry_non_exist ON CLUSTER ${cluster_name}" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=4"
 
-check_span $trace_id "count() AS httpHandler" "HTTPHandler"
-check_span $trace_id "count() AS executeDDLQueryOnCluster" "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
-check_span $trace_id "count() AS processTask" "%DDLWorker::processTask%"
+check_span 1 $trace_id "HTTPHandler"
 
-# There should be two 'query' spans,
-# one is for the HTTPHandler, the other is for the DDL executing in DDLWorker.
-# Both of these two spans contain exception
-check_span $trace_id "attribute['clickhouse.exception_code'] AS exceptionCode" "query"
+if [ $cluster_name = "test_shard_localhost" ]; then
+    expected=1
+else
+    # For Replicated database, executeDDLQueryOnCluster is not called
+    expected=0
+fi
+check_span $expected $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
+check_span $expected $trace_id "%DDLWorker::processTask%"
 
-#
-# Tear down
-#
-${CLICKHOUSE_CLIENT} -q "
-DROP TABLE IF EXISTS ddl_test_for_opentelemetry;
-"
+if [ $cluster_name = "test_shard_localhost" ]; then
+    # There should be two 'query' spans, one is for the HTTPHandler, the other is for the DDL executing in DDLWorker.
+    # Both of these two spans contain exception
+    expected=2
+else
+    # For Replicated database, there should only one query span
+    expected=1
+fi
+# We don't case about the exact value of exception_code, just check it's there.
+check_span $expected $trace_id "query" "attribute['clickhouse.exception_code']<>''"
