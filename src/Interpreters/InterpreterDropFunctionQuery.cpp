@@ -30,7 +30,7 @@ BlockIO InterpreterDropFunctionQuery::execute()
     auto current_context = getContext();
     current_context->checkAccess(access_rights_elements);
 
-    UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, drop_function_query.if_exists);
+    UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, drop_function_query.if_exists, true);
 
     return {};
 }

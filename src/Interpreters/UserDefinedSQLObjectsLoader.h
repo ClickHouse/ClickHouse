@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/IUserDefinedSQLObjectsSource.h>
 #include <Parsers/IAST.h>
 
 #include <boost/noncopyable.hpp>
@@ -9,29 +10,23 @@
 namespace DB
 {
 
-enum class UserDefinedSQLObjectType
-{
-    Function
-};
-
-class UserDefinedSQLObjectsLoader : private boost::noncopyable
+/// Loader of user-defined SQL objects (i.e. SQL functions created with command CREATE FUNCTION).
+class UserDefinedSQLObjectsLoader
 {
 public:
     static UserDefinedSQLObjectsLoader & instance();
-    UserDefinedSQLObjectsLoader();
 
-    void loadObjects(ContextPtr context);
-    void storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast, bool replace);
-    void removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name);
+    /// Reads all SQL objects from a source. Should be called before storeObject() and removeObject().
+    void loadObjects(const ContextPtr & global_context);
 
-    /// For ClickHouse local if path is not set we can disable loader.
-    void enable(bool enable_persistence);
+    /// Writes a SQL object to the source. This function is invoked by CREATE FUNCTION.
+    void storeObject(UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast, bool replace, const Settings & settings);
+
+    /// Removes a SQL object from the source. This function is invoked by DROP FUNCTION.
+    void removeObject(UserDefinedSQLObjectType object_type, const String & object_name);
 
 private:
-
-    void loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, std::string_view object_name, const String & file_path);
-    Poco::Logger * log;
-    bool enable_persistence = true;
+    std::unique_ptr<IUserDefinedSQLObjectsSource> source;
 };
 
 }

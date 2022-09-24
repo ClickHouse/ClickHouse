@@ -29,7 +29,7 @@ public:
       * If if_exists = true then do not throw exception if function is not registered.
       * If if_exists = false then throw exception if function is not registered.
       */
-    void unregisterFunction(ContextPtr context, const String & function_name, bool if_exists);
+    void unregisterFunction(ContextPtr context, const String & function_name, bool if_exists, bool persist);
 
     /// Get function create query for function_name. If no function registered with function_name throws exception.
     ASTPtr get(const String & function_name) const;

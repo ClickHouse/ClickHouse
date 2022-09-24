@@ -53,26 +53,23 @@ void UserDefinedSQLFunctionFactory::registerFunction(ContextPtr context, const S
 
     std::lock_guard lock(mutex);
 
-    auto [it, inserted] = function_name_to_create_query.emplace(function_name, create_function_query);
-
-    if (!inserted)
+    auto it = function_name_to_create_query.find(function_name);
+    if (it != function_name_to_create_query.end())
     {
         if (if_not_exists)
             return;
 
-        if (replace)
-            it->second = create_function_query;
-        else
+        if (!replace)
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS,
                 "The function name '{}' is not unique",
-                function_name);
+                function_name);       
     }
 
     if (persist)
     {
         try
         {
-            UserDefinedSQLObjectsLoader::instance().storeObject(context, UserDefinedSQLObjectType::Function, function_name, *create_function_query, replace);
+            UserDefinedSQLObjectsLoader::instance().storeObject(UserDefinedSQLObjectType::Function, function_name, *create_function_query, replace, context->getSettingsRef());
         }
         catch (Exception & exception)
         {
@@ -81,9 +78,11 @@ void UserDefinedSQLFunctionFactory::registerFunction(ContextPtr context, const S
             throw;
         }
     }
+
+    function_name_to_create_query[function_name] = create_function_query;
 }
 
-void UserDefinedSQLFunctionFactory::unregisterFunction(ContextPtr context, const String & function_name, bool if_exists)
+void UserDefinedSQLFunctionFactory::unregisterFunction(ContextPtr context, const String & function_name, bool if_exists, bool persist)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
@@ -105,14 +104,17 @@ void UserDefinedSQLFunctionFactory::unregisterFunction(ContextPtr context, const
             function_name);
     }
 
-    try
+    if (persist)
     {
-        UserDefinedSQLObjectsLoader::instance().removeObject(context, UserDefinedSQLObjectType::Function, function_name);
-    }
-    catch (Exception & exception)
-    {
-        exception.addMessage(fmt::format("while removing user defined function {} from disk", backQuote(function_name)));
-        throw;
+        try
+        {
+            UserDefinedSQLObjectsLoader::instance().removeObject(UserDefinedSQLObjectType::Function, function_name);
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage(fmt::format("while removing user defined function {} from disk", backQuote(function_name)));
+            throw;
+        }
     }
 
     function_name_to_create_query.erase(it);

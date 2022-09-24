@@ -602,20 +602,12 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
-    bool enable_objects_loader = false;
-
     if (config().has("path"))
     {
         String path = global_context->getPath();
 
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
-
-        LOG_DEBUG(log, "Loading user defined objects from {}", path);
-        Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-        enable_objects_loader = true;
-        LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         loadMetadataSystem(global_context);
@@ -630,6 +622,9 @@ void LocalServer::processConfig()
             DatabaseCatalog::instance().loadDatabases();
         }
 
+        /// For ClickHouse local if path is not set the loader will be disabled.
+        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
+
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
@@ -638,9 +633,6 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
-
-    /// Persist SQL user defined objects only if user_defined folder was created
-    UserDefinedSQLObjectsLoader::instance().enable(enable_objects_loader);
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
