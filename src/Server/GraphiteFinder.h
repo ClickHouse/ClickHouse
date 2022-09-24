@@ -56,7 +56,7 @@ class GraphiteFinder {
 
 class BaseFinder : virtual public GraphiteFinder {
  public:
-  BaseFinder(std::string &table_) : table(table_) {}
+  BaseFinder(const std::string &table_) : table(table_) {}
   std::string generate_query(const std::string &query_,
                              int from_,
                              int until_,
@@ -83,7 +83,7 @@ class BlackListFinder : public GraphiteFinder {
 
 class DateFinder : public GraphiteFinder {
  public:
-  DateFinder(std::string &table_) : finder(table_) {}
+  DateFinder(const std::string &table_) : finder(table_) {}
   std::string generate_query(const std::string &query_,
                              int from_,
                              int until_,
@@ -93,7 +93,7 @@ class DateFinder : public GraphiteFinder {
 
 class DateFinderV3 : public GraphiteFinder {
  public:
-  DateFinderV3(std::string &table_) : finder(table_) {}
+  DateFinderV3(const std::string &table_) : finder(table_) {}
   std::string generate_query(const std::string &query_,
                              int from_,
                              int until_,

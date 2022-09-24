@@ -34,7 +34,6 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
         Poco::URI uri{request.getURI()};
         if (uri.toString().find("/metrics/find?") != std::string::npos)
         {
-            // METRICS
             LOG_DEBUG(log, "METRICS: {}", uri.toString());
             std::string q = "";
             std::string format = "TabSeparatedRaw";
@@ -47,13 +46,9 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
                 } else if (el.first == "format"){
                     format = el.second;
                 } else if (el.first == "from"){
-                    // CUSTOMIZE
-                    from = stoi(el.second);
+                    from = IntervalStrings(el.second);
                 } else if (el.first == "until") {
-                    // CUSTIMIZE
-                    until = stoi(el.second);
-                } else {
-                    // NO PARAM
+                    until = IntervalStrings(el.second);
                 }
             }
         for (const auto & it : params)
@@ -70,7 +65,6 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
 
         } else if (uri.toString().find("/render?") != std::string::npos)
         {
-            // RENDER
             LOG_DEBUG(log, "RENDER: {}", uri.toString());
             std::string target = "";
             std::string format = "RowBinary";
@@ -81,16 +75,14 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
                 if (el.first == "target") {
                     target = el.second;
                 } else if (el.first == "from"){
-                    // CUSTOMIZE
-                    from = stoi(el.second);
+                    from = IntervalStrings(el.second);
+                    LOG_DEBUG(log, "from: {}", from);
                 } else if (el.first == "format"){
                     format = el.second;
                 } else if (el.first == "until") {
-                    // CUSTIMIZE
-                    until = stoi(el.second);
-                } else {
-                    // NO PARAM
-                }
+                    until = IntervalStrings(el.second);
+                    LOG_DEBUG(log, "until: {}", until);
+                } 
             }
             return RenderQuery(table_name, target, from, until, format);
 
@@ -101,13 +93,16 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
 
     bool GraphiteRequestHandler::customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) 
     {
-            if (context){
+            if (!context){
+                return false;
+            }
+            if (key == "until" || key == "from" || key == "target" || key == "format" || key == "query"){
                 return true;
             }
-                if (key == "until" || key == "from" || value == ""){
-                    return true;
-                }
-        return true;
+            if (value == ""){
+                return false;
+            }
+        return false;
     }
 
 
