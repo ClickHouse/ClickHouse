@@ -15,13 +15,16 @@ set -e
 # https://github.com/ept/hermitage
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test"
-$CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id"
+# Merges aren;t blocked, when they runs they left parts which are removed after old_parts_lifetime
+# Test have to set old_parts_lifetime in low value in order to be able to wait deleting empty parts
+$CLICKHOUSE_CLIENT -q "create table test (id int, value int) engine=MergeTree order by id SETTINGS old_parts_lifetime = 10"
 
 function reset_table()
 {
     $CLICKHOUSE_CLIENT -q "truncate table test;"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (1, 10);"
     $CLICKHOUSE_CLIENT -q "insert into test (id, value) values (2, 20);"
+    wait_for_delete_empty_parts "test" $CLICKHOUSE_DATABASE 60
 }
 
 # TODO update test after implementing Read Committed
@@ -83,7 +86,6 @@ $CLICKHOUSE_CLIENT -q "select 10, * from test order by id"
 
 # OTV
 reset_table
-wait_for_delete_empty_parts "test" $CLICKHOUSE_DATABASE 60
 tx 9 "begin transaction"
 tx 10                     "begin transaction"
 tx 11                                         "begin transaction"
