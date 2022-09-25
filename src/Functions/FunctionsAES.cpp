@@ -17,11 +17,6 @@ namespace ErrorCodes
 }
 }
 
-bool AESHelpers::getParamsFromContext(DB::ContextPtr context)
-{
-    return context->getSettingsRef().aes_decryption_use_null_when_fail;
-}
-
 namespace OpenSSLDetails
 {
 void onError(std::string error_message)
