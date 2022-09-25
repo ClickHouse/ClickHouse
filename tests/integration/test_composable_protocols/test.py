@@ -9,7 +9,11 @@ import urllib.request, urllib.parse
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-server = cluster.add_instance("server", base_config_dir="configs", main_configs=["configs/server.crt", "configs/server.key"])
+server = cluster.add_instance(
+    "server",
+    base_config_dir="configs",
+    main_configs=["configs/server.crt", "configs/server.key"],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -22,9 +26,7 @@ def setup_nodes():
 
 
 def execute_query_https(host, port, query):
-    url = (
-        f"https://{host}:{port}/?query={urllib.parse.quote(query)}"
-    )
+    url = f"https://{host}:{port}/?query={urllib.parse.quote(query)}"
 
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -36,9 +38,7 @@ def execute_query_https(host, port, query):
 
 
 def execute_query_http(host, port, query):
-    url = (
-        f"http://{host}:{port}/?query={urllib.parse.quote(query)}"
-    )
+    url = f"http://{host}:{port}/?query={urllib.parse.quote(query)}"
 
     request = urllib.request.Request(url)
     response = urllib.request.urlopen(request).read()
@@ -50,7 +50,13 @@ def test_connections():
     client = Client(server.ip_address, 9000, command=cluster.client_bin_path)
     assert client.query("SELECT 1") == "1\n"
 
-    client = Client(server.ip_address, 9440, command=cluster.client_bin_path, secure=True, config=f"{SCRIPT_DIR}/configs/client.xml")
+    client = Client(
+        server.ip_address,
+        9440,
+        command=cluster.client_bin_path,
+        secure=True,
+        config=f"{SCRIPT_DIR}/configs/client.xml",
+    )
     assert client.query("SELECT 1") == "1\n"
 
     client = Client(server.ip_address, 9001, command=cluster.client_bin_path)
