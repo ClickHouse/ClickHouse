@@ -36,6 +36,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -425,6 +426,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_CONFIG:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
+            break;
+        case Type::RELOAD_USERS:
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
+            system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
         case Type::RELOAD_SYMBOLS:
         {
@@ -903,6 +908,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_CONFIG:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_CONFIG);
+            break;
+        }
+        case Type::RELOAD_USERS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
         case Type::RELOAD_SYMBOLS:

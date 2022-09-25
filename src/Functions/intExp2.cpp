@@ -26,7 +26,7 @@ struct IntExp2Impl
         if constexpr (is_big_int_v<A>)
             throw DB::Exception("intExp2 not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
-            return intExp2(a);
+            return intExp2(static_cast<int>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
