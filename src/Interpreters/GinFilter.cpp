@@ -13,8 +13,6 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Interpreters/GinFilter.h>
 
-using namespace std;
-
 namespace DB
 {
 namespace ErrorCodes
@@ -38,8 +36,8 @@ void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr
     if (len > FST::MAX_TERM_LENGTH)
         return;
 
-    string token(data, len);
-    auto it(store->getPostings().find(token));
+    std::string token(data, len);
+    auto it = store->getPostings().find(token);
 
     if (it != store->getPostings().end())
     {
@@ -55,6 +53,8 @@ void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr
     }
 }
 
+/// This method assumes segmentIDs are in increasing order, which is true since rows are
+/// digested sequentially and segments are created sequentially too.
 void GinFilter::addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd)
 {
     if (!rowid_range_container.empty())
@@ -72,51 +72,9 @@ void GinFilter::addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt
 
 void GinFilter::clear()
 {
+    terms.clear();
     rowid_range_container.clear();
 }
-
-#ifndef NDEBUG
-void GinFilter::dump() const
-{
-    printf("filter : '%s', row ID range:\n", getMatchString().c_str());
-    for (const auto & rowid_range: rowid_range_container)
-    {
-        printf("\t\t%d, %d, %d; ", rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end);
-    }
-    printf("\n");
-}
-
-void dumpPostingsCache(const PostingsCache& postings_cache)
-{
-    for (const auto& term_postings : postings_cache)
-    {
-        printf("--term '%s'---------\n", term_postings.first.c_str());
-
-        const SegmentedPostingsListContainer& container = term_postings.second;
-
-        for (const auto& [segment_id, postings_list] : container)
-        {
-            printf("-----segment id = %d ---------\n", segment_id);
-            printf("-----postings-list: ");
-            for (unsigned int it : *postings_list)
-            {
-                printf("%d ", it);
-            }
-            printf("\n");
-        }
-    }
-}
-
-void dumpPostingsCacheForStore(const PostingsCacheForStore& cache_store)
-{
-    printf("----cache---store---: %s\n", cache_store.store->getName().c_str());
-    for (const auto & query_string_postings_cache: cache_store.cache)
-    {
-        printf("----cache_store----filter string:%s---\n", query_string_postings_cache.first.c_str());
-        dumpPostingsCache(*query_string_postings_cache.second);
-    }
-}
-#endif
 
 bool GinFilter::hasEmptyPostingsList(const PostingsCachePtr& postings_cache)
 {
@@ -175,14 +133,15 @@ bool GinFilter::match(const PostingsCachePtr& postings_cache) const
         return false;
     }
 
-    bool match_result = false;
     /// Check for each row ID ranges
     for (const auto &rowid_range: rowid_range_container)
     {
-        match_result |= matchInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end);
+        if (matchInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
+        {
+            return true;
+        }
     }
-
-    return match_result;
+    return false;
 }
 
 bool GinFilter::needsFilter() const
@@ -199,26 +158,25 @@ bool GinFilter::needsFilter() const
     return true;
 }
 
-bool GinFilter::contains(const GinFilter & af, PostingsCacheForStore &cache_store) const
+bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore &cache_store) const
 {
-    if (!af.needsFilter())
+    if (!filter.needsFilter())
         return true;
 
-    PostingsCachePtr postings_cache = cache_store.getPostings(af.getMatchString());
+    PostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
     if (postings_cache == nullptr)
     {
-        GinIndexStoreReader reader(cache_store.store);
-        postings_cache = reader.loadPostingsIntoCache(af.getTerms());
-        cache_store.cache[af.getMatchString()] = postings_cache;
+        GinIndexStoreDeserializer reader(cache_store.store);
+        postings_cache = reader.loadPostingsIntoCache(filter.getTerms());
+        cache_store.cache[filter.getQueryString()] = postings_cache;
     }
 
     return match(postings_cache);
 }
 
-const String& GinFilter::getName()
+String GinFilter::getName()
 {
-    static String name("gin");
-    return name;
+    return "gin";
 }
 
 }

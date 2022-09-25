@@ -27,7 +27,7 @@ namespace ErrorCodes
 bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 {
     if (useRoaring())
-        return bmp.contains(row_id);
+        return rowid_bitmap.contains(row_id);
 
     const auto *const it(std::find(lst.begin(), lst.begin()+lst_length, row_id));
     return it != lst.begin()+lst_length;
@@ -37,7 +37,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
 {
     if (useRoaring())
     {
-        bmp.add(row_id);
+        rowid_bitmap.add(row_id);
         return;
     }
     assert(lst_length < MIN_SIZE_FOR_ROARING_ENCODING);
@@ -46,56 +46,52 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
     if (lst_length == MIN_SIZE_FOR_ROARING_ENCODING)
     {
         for (size_t i = 0; i < lst_length; i++)
-            bmp.add(lst[i]);
+            rowid_bitmap.add(lst[i]);
 
-        lst_length = 0xFF;
+        lst_length = UsesBitMap;
     }
 }
 
 bool GinIndexPostingsBuilder::useRoaring() const
 {
-    return lst_length == 0xFF;
+    return lst_length == UsesBitMap;
 }
 
 UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer &buffer) const
 {
-    UInt64 encoding_length = 0;
+    UInt64 written_bytes = 0;
+    buffer.write(lst_length);
+    written_bytes += 1;
+
     if (!useRoaring())
     {
-        /// First byte is number of Row IDS to be encoded
-        buffer.write(lst_length);
-        encoding_length += 1;
         for (size_t i = 0; i <  lst_length; ++i)
         {
             writeVarUInt(lst[i], buffer);
-            encoding_length += getLengthOfVarUInt(lst[i]);
+            written_bytes += getLengthOfVarUInt(lst[i]);
         }
     }
     else
     {
-        /// First byte is 0 (for Roaring Bitmap encoding)
-        buffer.write(0);
-        encoding_length += 1;
-
-        auto size = bmp.getSizeInBytes();
+        auto size = rowid_bitmap.getSizeInBytes();
 
         writeVarUInt(size, buffer);
-        encoding_length += getLengthOfVarUInt(size);
+        written_bytes += getLengthOfVarUInt(size);
 
-        std::unique_ptr<char[]> buf(new char[size]);
-        bmp.write(buf.get());
+        auto buf = std::make_unique<char[]>(size);
+        rowid_bitmap.write(buf.get());
         buffer.write(buf.get(), size);
-        encoding_length += size;
+        written_bytes += size;
     }
-    return encoding_length;
+    return written_bytes;
 }
 
 GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
 {
-    char postings_list_size{0};
-    buffer.read(postings_list_size);
+    UInt8 postings_list_size{0};
+    buffer.read(reinterpret_cast<char&>(postings_list_size));
 
-    if (postings_list_size != 0)
+    if (postings_list_size != UsesBitMap)
     {
         assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
         GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
@@ -112,8 +108,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
     {
         size_t size{0};
         readVarUInt(size, buffer);
-        std::unique_ptr<char[]> buf(new char[size]);
-
+        auto buf = std::make_unique<char[]>(size);
         buffer.readStrict(reinterpret_cast<char*>(buf.get()), size);
 
         GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.get()));
@@ -124,7 +119,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
 
 bool GinIndexStore::exists() const
 {
-    String id_file_name = getName() + ".gin_sid";
+    String id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
     return storage->exists(id_file_name);
 }
 
@@ -175,13 +170,13 @@ UInt32 GinIndexStore::getNextRowIDRange(size_t n)
 
 UInt32 GinIndexStore::getNextSegmentID()
 {
-    String sid_file_name = getName() + ".gin_sid";
+    String sid_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
     return getNextIDRange(sid_file_name, 1);
 }
 
 UInt32 GinIndexStore::getSegmentNum()
 {
-    String sid_file_name = getName() + ".gin_sid";
+    String sid_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
     if (!storage->exists(sid_file_name))
         return 0;
     Int32 result = 0;
@@ -212,11 +207,11 @@ void GinIndexStore::finalize()
     }
 }
 
-void GinIndexStore::init_file_streams()
+void GinIndexStore::initFileStreams()
 {
-    String segment_file_name = getName() + ".gin_seg";
-    String item_dict_file_name = getName() + ".gin_dict";
-    String postings_file_name = getName() + ".gin_post";
+    String segment_file_name = getName() + GIN_SEGMENT_FILE_TYPE;
+    String item_dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
+    String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
 
     segment_file_stream = data_part_storage_builder->writeFile(segment_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     term_dict_file_stream = data_part_storage_builder->writeFile(item_dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
@@ -227,7 +222,7 @@ void GinIndexStore::writeSegment()
 {
     if (segment_file_stream == nullptr)
     {
-        init_file_streams();
+        initFileStreams();
     }
 
     ///write segment
@@ -290,29 +285,32 @@ void GinIndexStore::writeSegment()
     postings_file_stream->sync();
 }
 
-void GinIndexStoreReader::init_file_streams()
+GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & store_)
+    : store(store_)
 {
-    String segment_file_name = store->getName() + ".gin_seg";
-    String item_dict_file_name = store->getName() + ".gin_dict";
-    String postings_file_name = store->getName() + ".gin_post";
+    initFileStreams();
+}
+
+void GinIndexStoreDeserializer::initFileStreams()
+{
+    String segment_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_FILE_TYPE;
+    String item_dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
+    String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
 
     segment_file_stream = store->storage->readFile(segment_file_name, {}, std::nullopt, std::nullopt);
     term_dict_file_stream = store->storage->readFile(item_dict_file_name, {}, std::nullopt, std::nullopt);
     postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
 }
-void GinIndexStoreReader::readSegments()
+void GinIndexStoreDeserializer::readSegments()
 {
-    GinIndexSegments segments;
-
     auto segment_num = store->getSegmentNum();
     if (segment_num == 0)
         return;
 
-    segments.assign(segment_num, {});
-
+    GinIndexSegments segments (segment_num);
     if (segment_file_stream == nullptr)
     {
-        init_file_streams();
+        initFileStreams();
     }
     segment_file_stream->read(reinterpret_cast<char*>(segments.data()), segment_num * sizeof(GinIndexSegment));
     for (size_t i = 0; i < segment_num; ++i)
@@ -325,7 +323,7 @@ void GinIndexStoreReader::readSegments()
     }
 }
 
-void GinIndexStoreReader::readTermDictionary(UInt32 segment_id)
+void GinIndexStoreDeserializer::readTermDictionary(UInt32 segment_id)
 {
     /// Check validity of segment_id
     auto it{ store->term_dicts.find(segment_id) };
@@ -348,14 +346,14 @@ void GinIndexStoreReader::readTermDictionary(UInt32 segment_id)
     term_dict_file_stream->readStrict(reinterpret_cast<char*>(it->second->offsets.getData().data()), fst_size);
 }
 
-SegmentedPostingsListContainer GinIndexStoreReader::readSegmentedPostingsLists(const String& token)
+SegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String& token)
 {
     SegmentedPostingsListContainer container;
     for (auto const& seg_term_dict : store->term_dicts)
     {
         auto segment_id = seg_term_dict.first;
 
-        auto [found, offset] = seg_term_dict.second->offsets.getOutput(token);
+        auto [offset, found] = seg_term_dict.second->offsets.getOutput(token);
         if (!found)
             continue;
 
@@ -369,7 +367,7 @@ SegmentedPostingsListContainer GinIndexStoreReader::readSegmentedPostingsLists(c
     return container;
 }
 
-PostingsCachePtr GinIndexStoreReader::loadPostingsIntoCache(const std::vector<String>& terms)
+PostingsCachePtr GinIndexStoreDeserializer::loadPostingsIntoCache(const std::vector<String>& terms)
 {
     auto postings_cache = std::make_shared<PostingsCache>();
     for (const auto& term : terms)
@@ -393,19 +391,18 @@ GinIndexStoreFactory& GinIndexStoreFactory::instance()
 GinIndexStorePtr GinIndexStoreFactory::get(const String& name, DataPartStoragePtr storage_)
 {
     const String& part_path = storage_->getRelativePath();
-    std::lock_guard lock(stores_mutex);
     String key = name + String(":")+part_path;
 
+    std::lock_guard lock(stores_mutex);
     GinIndexStores::const_iterator it = stores.find(key);
 
     if (it == stores.cend())
     {
-        GinIndexStorePtr store = std::make_shared<GinIndexStore>(name);
-        store->SetStorage(storage_);
+        GinIndexStorePtr store = std::make_shared<GinIndexStore>(name, storage_);
         if (!store->exists())
-            return nullptr; //gin index was not generated for the part due to no data or the length of column data is less than ngramsize
+            return nullptr;
 
-        GinIndexStoreReader reader(store);
+        GinIndexStoreDeserializer reader(store);
         reader.readSegments();
 
         for (size_t seg_index = 0; seg_index < store->getSegmentNum(); ++seg_index)
@@ -431,17 +428,4 @@ void GinIndexStoreFactory::remove(const String& part_path)
             ++it;
     }
 }
-
-#ifndef NDEBUG
-void GinIndexStoreFactory::dump()
-{
-    printf("GinIndexStoreFactory----------dump start-------->>\n");
-    for (const auto & [key, store]: stores)
-    {
-        printf("%s\n", key.c_str());
-    }
-    printf("GinIndexStoreFactory----------dump end---------<<\n");
-}
-#endif
-
 }

@@ -40,13 +40,14 @@ using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<roaring::Roaring>;
 
 /// Gin Index Postings List Builder.
-struct GinIndexPostingsBuilder
+class GinIndexPostingsBuilder
 {
+public:
     /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'lst' is used
     std::array<UInt32, MIN_SIZE_FOR_ROARING_ENCODING> lst;
 
-    /// When the list length is greater than MIN_SIZE_FOR_ROARING_ENCODING, Roaring bitmap 'bmp' is used
-    roaring::Roaring bmp;
+    /// When the list length is greater than MIN_SIZE_FOR_ROARING_ENCODING, Roaring bitmap 'rowid_bitmap' is used
+    roaring::Roaring rowid_bitmap;
 
     /// lst_length stores the number of row IDs in 'lst' array, can also be a flag(0xFF) indicating that roaring bitmap is used
     UInt8 lst_length{0};
@@ -65,6 +66,8 @@ struct GinIndexPostingsBuilder
 
     /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
     static GinIndexPostingsListPtr deserialize(ReadBuffer &buffer);
+private:
+    static constexpr UInt8 UsesBitMap = 0xFF;
 };
 
 using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
@@ -99,8 +102,9 @@ using TermDictionaries = std::unordered_map<UInt32, TermDictionaryPtr>;
 class GinIndexStore
 {
 public:
-    GinIndexStore(const String& name_)
-        : name(name_)
+    explicit GinIndexStore(const String& name_, DataPartStoragePtr storage_)
+        : name(name_),
+        storage(storage_)
     {
     }
     GinIndexStore(const String& name_, DataPartStoragePtr storage_, DataPartStorageBuilderPtr data_part_storage_builder_, UInt64 max_digestion_size_)
@@ -126,11 +130,6 @@ public:
 
     using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 
-    void SetStorage(DataPartStoragePtr storage_)
-    {
-        storage = storage_;
-    }
-
     GinIndexPostingsBuilderContainer& getPostings() { return current_postings; }
 
     /// Check if we need to write segment to Gin index files
@@ -147,12 +146,12 @@ public:
     /// method for writing segment data to Gin index files
     void writeSegment();
 
-    String getName() const {return name;}
+    const String & getName() const {return name;}
 
 private:
-    void init_file_streams();
-private:
-    friend class GinIndexStoreReader;
+    friend class GinIndexStoreDeserializer;
+
+    void initFileStreams();
 
     String name;
     DataPartStoragePtr storage;
@@ -175,6 +174,11 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> segment_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> term_dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
+
+    static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
+    static constexpr auto GIN_SEGMENT_FILE_TYPE = ".gin_seg";
+    static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
+    static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -214,9 +218,6 @@ public:
 
     /// Remove all GinIndexStores which are under the same part_path
     void remove(const String& part_path);
-#ifndef NDEBUG
-    void dump();
-#endif
 
 private:
     GinIndexStores stores;
@@ -224,14 +225,10 @@ private:
 };
 
 /// Gin Index Store Reader which helps to read segments, term dictionaries and postings list
-class GinIndexStoreReader : private boost::noncopyable
+class GinIndexStoreDeserializer : private boost::noncopyable
 {
 public:
-    GinIndexStoreReader(const GinIndexStorePtr & store_)
-        : store(store_)
-    {
-        init_file_streams();
-    }
+    GinIndexStoreDeserializer(const GinIndexStorePtr & store_);
 
     /// Read all segment information from .gin_seg files
     void readSegments();
@@ -247,7 +244,7 @@ public:
 
 private:
     /// Initialize Gin index files
-    void init_file_streams();
+    void initFileStreams();
 
 private:
 
@@ -262,6 +259,6 @@ private:
     /// Current segment, used in building index
     GinIndexSegment current_segment;
 };
-using GinIndexStoreReaderPtr = std::unique_ptr<GinIndexStoreReader>;
+using GinIndexStoreReaderPtr = std::unique_ptr<GinIndexStoreDeserializer>;
 
 }

@@ -7,13 +7,12 @@ namespace DB
 {
 struct GinFilterParameters
 {
-    GinFilterParameters(size_t ngrams_);
+    explicit GinFilterParameters(size_t ngrams_);
 
     size_t ngrams;
 };
-class DiskLocal;
 
-using RowIDRange = struct
+struct RowIDRange
 {
     /// Segment ID of the row ID range
     UInt32 segment_id;
@@ -51,7 +50,7 @@ public:
         query_string = String(data, len);
     }
 
-    const String &getMatchString() const { return query_string; }
+    const String &getQueryString() const { return query_string; }
 
 #ifndef NDEBUG
     void dump() const;
@@ -65,7 +64,7 @@ public:
 
     bool match(const PostingsCachePtr& postings_cache) const;
 
-    static const String& getName();
+    static String getName();
 private:
     [[maybe_unused]] size_t ngrams;
 
@@ -74,7 +73,7 @@ private:
     std::vector<String> terms;
 
     RowIDRangeContainer rowid_range_container;
-private:
+
     static bool hasEmptyPostingsList(const PostingsCachePtr& postings_cache);
 
     static bool matchInRange(const PostingsCachePtr& postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end);

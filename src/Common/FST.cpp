@@ -4,9 +4,6 @@
 #include <iostream>
 #include <memory>
 #include <vector>
-#include <../contrib/consistent-hashing/popcount.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 
@@ -20,12 +17,13 @@ namespace ErrorCodes
 namespace FST
 {
 
-UInt16 Arc::serialize(WriteBuffer& write_buffer) const
+UInt64 Arc::serialize(WriteBuffer& write_buffer) const
 {
-    UInt16 written_bytes = 0;
+    UInt64 written_bytes = 0;
     bool has_output = output != 0;
 
     /// First UInt64 is target_index << 1 + has_output
+    assert(target != nullptr);
     UInt64 first = ((target->state_index) << 1) + has_output;
     writeVarUInt(first, write_buffer);
     written_bytes += getLengthOfVarUInt(first);
@@ -39,52 +37,46 @@ UInt16 Arc::serialize(WriteBuffer& write_buffer) const
     return written_bytes;
 }
 
-void ArcsBitmap::addArc(char label)
+bool operator==(const Arc & arc1, const Arc & arc2)
 {
-    uint8_t index = label;
+    return (arc1.output == arc2.output && arc1.target->id == arc2.target->id);
+}
+
+void ArcsAsBitmap::addArc(char label)
+{
+    UInt8 index = label;
     UInt256 bit_label = 1;
     bit_label <<= index;
 
     data |= bit_label;
 }
 
-int ArcsBitmap::getIndex(char label) const
+int ArcsAsBitmap::getIndex(char label) const
 {
     int bit_count = 0;
 
-    uint8_t index = label;
+    UInt8 index = label;
     int which_int64 = 0;
     while (true)
     {
         if (index < 64)
         {
-            UInt64 mask = index == 63 ? (-1) : (1ULL << (index+1)) - 1;
+            UInt64 mask = index == 63 ? (-1) : (1ULL << (index + 1)) - 1;
 
-            bit_count += PopCountImpl(mask & data.items[which_int64]);
+            bit_count += std::popcount(mask & data.items[which_int64]);
             break;
         }
         index -= 64;
-        bit_count += PopCountImpl(data.items[which_int64]);
+        bit_count += std::popcount(data.items[which_int64]);
 
         which_int64++;
     }
     return bit_count;
 }
 
-int ArcsBitmap::getArcNum() const
+bool ArcsAsBitmap::hasArc(char label) const
 {
-    int bit_count = 0;
-    for (uint64_t item : data.items)
-    {
-        if (item)
-            bit_count += PopCountImpl(item);
-    }
-    return bit_count;
-}
-
-bool ArcsBitmap::hasArc(char label) const
-{
-    uint8_t index = label;
+    UInt8 index = label;
     UInt256 bit_label = 1;
     bit_label <<= index;
 
@@ -93,7 +85,7 @@ bool ArcsBitmap::hasArc(char label) const
 
 Arc* State::getArc(char label)
 {
-    auto it(arcs.find(label));
+    auto it = arcs.find(label);
     if (it == arcs.cend())
         return nullptr;
 
@@ -108,18 +100,14 @@ void State::addArc(char label, Output output, StatePtr target)
 UInt64 State::hash() const
 {
     std::vector<char> values;
-
-    // put 2 magic chars, in case there are no arcs
-    values.push_back('C');
-    values.push_back('H');
-
-    for (const auto& label_arc : arcs)
+    values.reserve(arcs.size() * (sizeof(Output) + sizeof(UInt64) + 1));
+    for (const auto & [label, arc] : arcs)
     {
-        values.push_back(label_arc.first);
-        const auto * ptr = reinterpret_cast<const char*>(&label_arc.second.output);
+        values.push_back(label);
+        const auto * ptr = reinterpret_cast<const char*>(&arc.output);
         std::copy(ptr, ptr + sizeof(Output), std::back_inserter(values));
 
-        ptr = reinterpret_cast<const char*>(&label_arc.second.target->id);
+        ptr = reinterpret_cast<const char*>(&arc.target->id);
         std::copy(ptr, ptr + sizeof(UInt64), std::back_inserter(values));
     }
 
@@ -128,14 +116,16 @@ UInt64 State::hash() const
 
 bool operator== (const State& state1, const State& state2)
 {
-    for (const auto& label_arc : state1.arcs)
+    if (state1.arcs.size() != state2.arcs.size())
+        return false;
+
+    for (const auto & [label, arc] : state1.arcs)
     {
-        auto it(state2.arcs.find(label_arc.first));
+        const auto it = state2.arcs.find(label);
         if (it == state2.arcs.cend())
             return false;
-        if (it->second.output != label_arc.second.output)
-            return false;
-        if (it->second.target->id != label_arc.second.target->id)
+
+        if (it->second != arc)
             return false;
     }
     return true;
@@ -149,15 +139,15 @@ UInt64 State::serialize(WriteBuffer& write_buffer)
     write_buffer.write(flag);
     written_bytes += 1;
 
-    if (flag_values.encoding_method == ENCODING_METHOD_SEQUENTIAL)
+    if (flag_values.encoding_method == EncodingMethod::ENCODING_METHOD_SEQUENTIAL)
     {
         /// Serialize all labels
         std::vector<char> labels;
         labels.reserve(MAX_ARCS_IN_SEQUENTIAL_METHOD);
 
-        for (auto& label_state : arcs)
+        for (auto& [label, state] : arcs)
         {
-            labels.push_back(label_state.first);
+            labels.push_back(label);
         }
 
         UInt8 label_size = labels.size();
@@ -178,10 +168,10 @@ UInt64 State::serialize(WriteBuffer& write_buffer)
     else
     {
         /// Serialize bitmap
-        ArcsBitmap bmp;
-        for (auto& label_state : arcs)
+        ArcsAsBitmap bmp;
+        for (auto & [label, state] : arcs)
         {
-            bmp.addArc(label_state.first);
+            bmp.addArc(label);
         }
 
         UInt64 bmp_encoded_size = getLengthOfVarUInt(bmp.data.items[0])
@@ -196,12 +186,12 @@ UInt64 State::serialize(WriteBuffer& write_buffer)
 
         written_bytes += bmp_encoded_size;
         /// Serialize all arcs
-        for (auto& label_state : arcs)
+        for (auto & [label, state] : arcs)
         {
-            Arc* arc = getArc(label_state.first);
+            Arc* arc = getArc(label);
             assert(arc != nullptr);
             written_bytes += arc->serialize(write_buffer);
-            }
+        }
     }
 
     return written_bytes;
@@ -215,18 +205,18 @@ FSTBuilder::FSTBuilder(WriteBuffer& write_buffer_) : write_buffer(write_buffer_)
     }
 }
 
-StatePtr FSTBuilder::findMinimized(const State& state, bool& found)
+StatePtr FSTBuilder::getMinimized(const State& state, bool& found)
 {
     found = false;
     auto hash = state.hash();
-    auto it(minimized_states.find(hash));
+    auto it = minimized_states.find(hash);
 
     if (it != minimized_states.cend() && *it->second == state)
     {
         found = true;
         return it->second;
     }
-    StatePtr p(new State(state));
+    StatePtr p = std::make_shared<State>(state);
     minimized_states[hash] = p;
     return p;
 }
@@ -239,12 +229,12 @@ size_t FSTBuilder::getCommonPrefix(const std::string& word1, const std::string& 
     return i;
 }
 
-void FSTBuilder::minimizePreviousWordSuffix(int down_to)
+void FSTBuilder::minimizePreviousWordSuffix(Int64 down_to)
 {
-    for (int i = static_cast<int>(previous_word.size()); i >= down_to; --i)
+    for (Int64 i = static_cast<Int64>(previous_word.size()); i >= down_to; --i)
     {
         bool found{ false };
-        auto minimized_state = findMinimized(*temp_states[i], found);
+        auto minimized_state = getMinimized(*temp_states[i], found);
 
         if (i != 0)
         {
@@ -274,7 +264,12 @@ void FSTBuilder::minimizePreviousWordSuffix(int down_to)
 
 void FSTBuilder::add(const std::string& current_word, Output current_output)
 {
-    /// We assume word size is no greater than MAX_TERM_LENGTH
+    /// We assume word size is no greater than MAX_TERM_LENGTH(256).
+    /// FSTs without word size limitation would be inefficient and easy to cause memory bloat
+    /// Note that when using "split" tokenizer, if a granule has tokens which are longer than
+    /// MAX_TERM_LENGTH, the granule cannot be dropped and will be fully-scanned. It doesn't affect "ngram" tokenizers.
+    /// Another limitation is that if the query string has tokens which exceed this length
+    /// it will fallback to default searching when using "split" tokenizers.
     auto current_word_len = current_word.size();
 
     if (current_word_len > MAX_TERM_LENGTH)
@@ -288,27 +283,26 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
     for (size_t  i = prefix_length_plus1; i <= current_word.size(); ++i)
     {
         temp_states[i]->clear();
-        temp_states[i - 1]->addArc(current_word[i-1], 0, temp_states[i]);
+        temp_states[i - 1]->addArc(current_word[i - 1], 0, temp_states[i]);
     }
 
     /// We assume the current word is different with previous word
-    temp_states[current_word_len]->flag_values.is_final = true;
+    temp_states[current_word_len]->setFinal(true);
     /// Adjust outputs on the arcs
     for (size_t j = 1; j <= prefix_length_plus1 - 1; ++j)
     {
-        auto * arc_ptr = temp_states[j - 1]->getArc(current_word[j-1]);
+        Arc * arc_ptr = temp_states[j - 1]->getArc(current_word[j - 1]);
         assert(arc_ptr != nullptr);
 
-        auto common_prefix = std::min(arc_ptr->output, current_output);
-        auto word_suffix = arc_ptr->output - common_prefix;
+        Output common_prefix = std::min(arc_ptr->output, current_output);
+        Output word_suffix = arc_ptr->output - common_prefix;
         arc_ptr->output = common_prefix;
 
         /// For each arc, adjust its output
         if (word_suffix != 0)
         {
-            for (auto& label_arc : temp_states[j]->arcs)
+            for (auto & [label, arc] : temp_states[j]->arcs)
             {
-                auto& arc = label_arc.second;
                 arc.output += word_suffix;
             }
         }
@@ -317,7 +311,7 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
     }
 
     /// Set last temp state's output
-    auto * arc = temp_states[prefix_length_plus1 - 1]->getArc(current_word[prefix_length_plus1-1]);
+    Arc * arc = temp_states[prefix_length_plus1 - 1]->getArc(current_word[prefix_length_plus1 - 1]);
     assert(arc != nullptr);
     arc->output = current_output;
 
@@ -338,7 +332,7 @@ UInt64 FSTBuilder::build()
     return previous_state_index + previous_written_bytes + length + 1;
 }
 
-FiniteStateTransducer::FiniteStateTransducer(std::vector<UInt8>&& data_) : data(data_)
+FiniteStateTransducer::FiniteStateTransducer(std::vector<UInt8> data_) : data(std::move(data_))
 {
 }
 
@@ -347,15 +341,17 @@ void FiniteStateTransducer::clear()
     data.clear();
 }
 
-std::pair<bool, UInt64> FiniteStateTransducer::getOutput(const String& term)
+std::pair<UInt64, bool> FiniteStateTransducer::getOutput(const String& term)
 {
-    std::pair<bool, UInt64> result_output{ false, 0 };
+    std::pair<UInt64, bool> result_output{ 0, false };
     /// Read index of initial state
     ReadBufferFromMemory read_buffer(data.data(), data.size());
     read_buffer.seek(data.size()-1, SEEK_SET);
 
-    UInt8 length{0};
+    UInt8 length{ 0 };
     read_buffer.read(reinterpret_cast<char&>(length));
+    if (length == 0)
+        return { 0, false };
 
     read_buffer.seek(data.size() - 1 - length, SEEK_SET);
     UInt64 state_index{ 0 };
@@ -369,22 +365,22 @@ std::pair<bool, UInt64> FiniteStateTransducer::getOutput(const String& term)
         State temp_state;
 
         read_buffer.seek(state_index, SEEK_SET);
-        read_buffer.read(reinterpret_cast<char&>(temp_state.flag));
+        temp_state.readFlag(read_buffer);
         if (i == term.size())
         {
-            result_output.first = temp_state.flag_values.is_final;
+            result_output.second = temp_state.isFinal();
             break;
         }
 
         UInt8 label = term[i];
-        if (temp_state.flag_values.encoding_method == State::ENCODING_METHOD_SEQUENTIAL)
+        if (temp_state.getEncodingMethod() == State::EncodingMethod::ENCODING_METHOD_SEQUENTIAL)
         {
             /// Read number of labels
-            UInt8 label_num{0};
+            UInt8 label_num{ 0 };
             read_buffer.read(reinterpret_cast<char&>(label_num));
 
             if (label_num == 0)
-                return { false, 0 };
+                return { 0, false };
 
             auto labels_position = read_buffer.getPosition();
 
@@ -395,7 +391,7 @@ std::pair<bool, UInt64> FiniteStateTransducer::getOutput(const String& term)
             auto pos = std::find(begin_it, end_it, label);
 
             if (pos == end_it)
-                return { false, 0 };
+                return { 0, false };
 
             /// Read the arc for the label
             UInt64 arc_index = (pos - begin_it);
@@ -416,7 +412,7 @@ std::pair<bool, UInt64> FiniteStateTransducer::getOutput(const String& term)
         }
         else
         {
-            ArcsBitmap bmp;
+            ArcsAsBitmap bmp;
 
             readVarUInt(bmp.data.items[0], read_buffer);
             readVarUInt(bmp.data.items[1], read_buffer);
@@ -424,7 +420,7 @@ std::pair<bool, UInt64> FiniteStateTransducer::getOutput(const String& term)
             readVarUInt(bmp.data.items[3], read_buffer);
 
             if (!bmp.hasArc(label))
-                return { false, 0 };
+                return { 0, false };
 
             /// Read the arc for the label
             size_t arc_index = bmp.getIndex(label);
@@ -441,7 +437,7 @@ std::pair<bool, UInt64> FiniteStateTransducer::getOutput(const String& term)
             }
         }
         /// Accumulate the output value
-        result_output.second += arc_output;
+        result_output.first += arc_output;
     }
     return result_output;
 }

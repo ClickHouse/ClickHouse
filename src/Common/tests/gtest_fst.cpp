@@ -5,11 +5,9 @@
 #include <Common/FST.h>
 #include <gtest/gtest.h>
 
-using namespace std;
-
 TEST(FST, SimpleTest)
 {
-    vector<pair<string, uint64_t>> data
+    std::vector<std::pair<std::string, DB::FST::Output>> indexed_data
     {
         {"mop", 100},
         {"moth", 91},
@@ -19,7 +17,7 @@ TEST(FST, SimpleTest)
         {"top", 55},
     };
 
-    vector<pair<string, uint64_t>> bad_data
+    std::vector<std::pair<std::string, DB::FST::Output>> not_indexed_dta
     {
         {"mo", 100},
         {"moth1", 91},
@@ -33,24 +31,24 @@ TEST(FST, SimpleTest)
     DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
     DB::FST::FSTBuilder builder(wbuf);
 
-    for (auto& term_output : data)
+    for (auto& [term, output] : indexed_data)
     {
-        builder.add(term_output.first, term_output.second);
+        builder.add(term, output);
     }
     builder.build();
     wbuf.finalize();
 
-    DB::FST::FiniteStateTransducer fst(std::move(buffer));
-    for (auto& item : data)
+    DB::FST::FiniteStateTransducer fst(buffer);
+    for (auto& [term, output] : indexed_data)
     {
-        auto output = fst.getOutput(item.first);
-        ASSERT_EQ(output.first, true);
-        ASSERT_EQ(output.second, item.second);
+        auto [result, found] = fst.getOutput(term);
+        ASSERT_EQ(found, true);
+        ASSERT_EQ(result, output);
     }
 
-    for (auto& item : bad_data)
+    for (auto& [term, output] : not_indexed_dta)
     {
-        auto output = fst.getOutput(item.first);
-        ASSERT_EQ(output.first, false);
+        auto [result, found] = fst.getOutput(term);
+        ASSERT_EQ(found, false);
     }
 }
