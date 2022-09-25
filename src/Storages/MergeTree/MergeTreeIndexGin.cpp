@@ -51,14 +51,14 @@ void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
 
-    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt32>());
+    const auto & size_type = std::make_shared<DataTypeUInt32>();
     auto size_serialization = size_type->getDefaultSerialization();
 
     for (const auto & gin_filter : gin_filters)
     {
         size_t filter_size = gin_filter.getFilter().size();
         size_serialization->serializeBinary(filter_size, ostr);
-        ostr.write(reinterpret_cast<const char*>(gin_filter.getFilter().data()), filter_size * sizeof(RowIDRange));
+        ostr.write(reinterpret_cast<const char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::RowIDRangeContainer::value_type));
     }
 }
 
@@ -68,18 +68,19 @@ void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeT
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
     Field field_rows;
-    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt32>());
+    const auto & size_type = std::make_shared<DataTypeUInt32>();
 
+    auto size_serialization = size_type->getDefaultSerialization();
     for (auto & gin_filter : gin_filters)
     {
-        size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr);
+        size_serialization->deserializeBinary(field_rows, istr);
         size_t filter_size = field_rows.get<size_t>();
 
         if (filter_size == 0)
             continue;
 
         gin_filter.getFilter().assign(filter_size, {});
-        istr.read(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(RowIDRange));
+        istr.read(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::RowIDRangeContainer::value_type));
     }
     has_elems = true;
 }
@@ -675,6 +676,7 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
     for (const auto & elem : key_tuple_mapping)
     {
         gin_filters.emplace_back();
+        gin_filters.back().reserve(prepared_set->getTotalRowCount());
         key_position.push_back(elem.key_index);
 
         size_t tuple_idx = elem.tuple_index;
@@ -774,7 +776,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.arguments.size() > 1)
         throw Exception("Gin index must have zero or one argument.", ErrorCodes::INCORRECT_QUERY);
 
-    if (index.arguments.size() == 1 and index.arguments[0].getType() != Field::Types::UInt64)
+    if (index.arguments.size() == 1 && index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception("Gin index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
 
     size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();

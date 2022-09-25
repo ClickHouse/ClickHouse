@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/WriteHelpers.h>

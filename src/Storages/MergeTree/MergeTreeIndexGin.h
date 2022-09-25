@@ -54,8 +54,8 @@ struct MergeTreeIndexAggregatorGinFilter final : IMergeTreeIndexAggregator
 
     GinIndexStorePtr store;
     Names index_columns;
-    String index_name;
-    GinFilterParameters params;
+    const String index_name;
+    const GinFilterParameters params;
     TokenExtractorPtr token_extractor;
 
     MergeTreeIndexGranuleGinFilterPtr granule;
