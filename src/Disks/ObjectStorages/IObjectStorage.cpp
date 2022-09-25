@@ -61,6 +61,7 @@ ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) c
     std::unique_lock lock{throttlers_mutex};
     ReadSettings settings{read_settings};
     settings.remote_throttler = remote_read_throttler;
+    settings.for_object_storage = true;
     return settings;
 }
 
@@ -69,6 +70,7 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     std::unique_lock lock{throttlers_mutex};
     WriteSettings settings{write_settings};
     settings.remote_throttler = remote_write_throttler;
+    settings.for_object_storage = true;
     return settings;
 }
 

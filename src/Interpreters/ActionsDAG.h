@@ -181,19 +181,19 @@ public:
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
     /// (expressions). Consider the following example:
     /// CREATE TABLE tbl (dt DateTime, val UInt64,
-    ///                   PROJECTION p_hour (SELECT SUM(val) GROUP BY toStartOfHour(dt)));
+    ///                   PROJECTION p_hour (SELECT sum(val) GROUP BY toStartOfHour(dt)));
     ///
-    /// Query: SELECT toStartOfHour(dt), SUM(val) FROM tbl GROUP BY toStartOfHour(dt);
+    /// Query: SELECT toStartOfHour(dt), sum(val) FROM tbl GROUP BY toStartOfHour(dt);
     ///
     /// We will have an ActionsDAG like this:
-    /// FUNCTION: toStartOfHour(dt)       SUM(val)
+    /// FUNCTION: toStartOfHour(dt)       sum(val)
     ///                 ^                   ^
     ///                 |                   |
     /// INPUT:          dt                  val
     ///
     /// Now we traverse the DAG and see if any FUNCTION node can be replaced by projection's INPUT node.
     /// The result DAG will be:
-    /// INPUT:  toStartOfHour(dt)       SUM(val)
+    /// INPUT:  toStartOfHour(dt)       sum(val)
     ///
     /// We don't need aggregate columns from projection because they are matched after DAG.
     /// Currently we use canonical names of each node to find matches. It can be improved after we
