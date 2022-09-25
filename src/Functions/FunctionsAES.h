@@ -677,7 +677,6 @@ private:
                 }
                 else
                 {
-
                     decrypted += output_len;
                     // 3: optionally get tag from the ciphertext (RFC5116) and feed it to the context
                     if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
