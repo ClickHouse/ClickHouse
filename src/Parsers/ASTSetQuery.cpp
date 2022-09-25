@@ -24,13 +24,28 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
     if (is_standalone)
         format.ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
 
+    bool first = true;
+
     for (auto it = changes.begin(); it != changes.end(); ++it)
     {
-        if (it != changes.begin())
+        if (!first)
             format.ostr << ", ";
+        else
+            first = false;
 
         formatSettingName(it->name, format.ostr);
         format.ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
+    }
+
+    for (auto it = query_parameters.begin(); it != query_parameters.end(); ++it)
+    {
+        if (!first)
+            format.ostr << ", ";
+        else
+            first = false;
+
+        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + it->first, format.ostr);
+        format.ostr << " = " << it->second;
     }
 }
 
