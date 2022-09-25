@@ -758,6 +758,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     if (isQuorumEnabled())
     {
+        tries_ctl.resetErrors();
         while (tries_ctl.canTry())
         {
             try
@@ -778,6 +779,8 @@ void ReplicatedMergeTreeSink::commitPart(
                         [&]()
                         { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num); }))
                     continue;
+
+                break;
             }
             catch (const zkutil::KeeperException & e)
             {
