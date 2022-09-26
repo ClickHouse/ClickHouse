@@ -30,6 +30,7 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskDecorator.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
@@ -758,9 +759,20 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
 
     for (const auto & disk : volume->getDisks())
     {
-        if (std::dynamic_pointer_cast<DiskLocal>(disk) == nullptr)
+        if (!disk)
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Temporary disk is null");
+
+        /// Check that underlying disk is local (can be wrapped in decorator)
+        const IDisk * disk_ptr = disk.get();
+        if (auto disk_decorator = dynamic_cast<const DiskDecorator *>(disk_ptr))
+            disk_ptr = &disk_decorator->getNestedDisk();
+
+        if (dynamic_cast<const DiskLocal *>(disk_ptr) == nullptr)
+        {
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Disk '{}' is not local and can't be used for temporary files", disk->getName());
+                "Disk '{}' ({}) is not local and can't be used for temporary files",
+                disk_ptr->getName(), typeid(*disk_ptr).name());
+        }
     }
 
     shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
