@@ -24,6 +24,36 @@ function reset_table()
     $CLICKHOUSE_CLIENT -q "insert into $table values (3)" # inserts all_3_3_0
 }
 
+function concurrent_drop_after()
+{
+    echo "concurrent_drop_after"
+
+    reset_table
+
+    tx 71 "begin transaction"
+    tx 71 "select count() from tt"
+    tx 71 "truncate table tt"
+$CLICKHOUSE_CLIENT -q                                 "drop table tt"
+    tx 71 "commit"
+}
+
+concurrent_drop_after
+
+function concurrent_drop_before()
+{
+    echo "concurrent_drop_before"
+
+    reset_table
+
+    tx 71 "begin transaction"
+    tx 71 "select count() from tt"
+    $CLICKHOUSE_CLIENT -q                                 "drop table tt"
+    tx 71 "truncate table tt" | grep -Eo "UNKNOWN_TABLE" | uniq
+    tx 71 "rollback"
+}
+
+concurrent_drop_before
+
 function concurrent_insert()
 {
     echo "concurrent_insert"
@@ -64,34 +94,11 @@ function concurrent_drop_part_before()
     $CLICKHOUSE_CLIENT -q "select name, rows from system.parts
                               where table='tt' and database=currentDatabase() and active
                               order by name"
+
+    reset_table
 }
 
 concurrent_drop_part_before
-
-function concurrent_drop_part_after()
-{
-    echo "concurrent_drop_part_after"
-
-    reset_table drop_part_after_table
-
-    tx 31 "begin transaction"
-    tx 32             "begin transaction"
-    tx 31 "truncate table drop_part_after_table"
-    tx 32             "alter table drop_part_after_table drop part 'all_2_2_0'" | grep -Eo "NO_SUCH_DATA_PART" | uniq
-    tx 31 "commit"
-    tx 32             "commit" | grep -Eo "INVALID_TRANSACTION" | uniq
-
-    $CLICKHOUSE_CLIENT -q "select n from drop_part_after_table order by n"
-    $CLICKHOUSE_CLIENT -q "select name, rows from system.parts
-                              where table='drop_part_after_table' and database=currentDatabase() and active
-                              order by name"
-    $CLICKHOUSE_CLIENT -q "system flush logs"
-    $CLICKHOUSE_CLIENT -q "select event_type, part_name from system.part_log
-                              where table='drop_part_after_table' and database=currentDatabase()
-                              order by part_name"
-}
-
-concurrent_drop_part_after
 
 function read_from_snapshot()
 {
@@ -169,3 +176,28 @@ function concurrent_delete_rollback()
 }
 
 concurrent_delete_rollback
+
+function concurrent_drop_part_after()
+{
+    echo "concurrent_drop_part_after"
+
+    reset_table drop_part_after_table
+
+    tx 31 "begin transaction"
+    tx 32             "begin transaction"
+    tx 31 "truncate table drop_part_after_table"
+    tx 32             "alter table drop_part_after_table drop part 'all_2_2_0'" | grep -Eo "NO_SUCH_DATA_PART" | uniq
+    tx 31 "commit"
+    tx 32             "commit" | grep -Eo "INVALID_TRANSACTION" | uniq
+
+    $CLICKHOUSE_CLIENT -q "select n from drop_part_after_table order by n"
+    $CLICKHOUSE_CLIENT -q "select name, rows from system.parts
+                              where table='drop_part_after_table' and database=currentDatabase() and active
+                              order by name"
+    $CLICKHOUSE_CLIENT -q "system flush logs"
+    $CLICKHOUSE_CLIENT -q "select event_type, part_name from system.part_log
+                              where table='drop_part_after_table' and database=currentDatabase()
+                              order by part_name"
+}
+
+concurrent_drop_part_after

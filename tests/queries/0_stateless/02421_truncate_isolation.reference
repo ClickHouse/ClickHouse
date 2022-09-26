@@ -1,3 +1,8 @@
+concurrent_drop_after
+tx71	3
+concurrent_drop_before
+tx71	3
+UNKNOWN_TABLE
 concurrent_insert
 2
 all_1_1_1	0
@@ -14,18 +19,6 @@ INVALID_TRANSACTION
 all_1_1_0	1
 all_2_2_1	0
 all_3_3_0	1
-concurrent_drop_part_after
-NO_SUCH_DATA_PART
-INVALID_TRANSACTION
-all_1_1_1	0
-all_2_2_1	0
-all_3_3_1	0
-NewPart	all_1_1_0
-NewPart	all_1_1_1
-NewPart	all_2_2_0
-NewPart	all_2_2_1
-NewPart	all_3_3_0
-NewPart	all_3_3_1
 read_from_snapshot
 tx61	3
 tx61	3
@@ -45,3 +38,15 @@ tx51	3
 tx52	1
 tx51	3
 0
+concurrent_drop_part_after
+NO_SUCH_DATA_PART
+INVALID_TRANSACTION
+all_1_1_1	0
+all_2_2_1	0
+all_3_3_1	0
+NewPart	all_1_1_0
+NewPart	all_1_1_1
+NewPart	all_2_2_0
+NewPart	all_2_2_1
+NewPart	all_3_3_0
+NewPart	all_3_3_1
