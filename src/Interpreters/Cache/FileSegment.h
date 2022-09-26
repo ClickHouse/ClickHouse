@@ -431,8 +431,6 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
 
-    FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
-
     ~FileSegmentsHolder();
 
     String toString();

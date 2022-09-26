@@ -114,7 +114,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
 
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
-        file_segments_holder.emplace(cache->get(cache_key, offset, size));
+        file_segments_holder = cache->get(cache_key, offset, size);
     }
     else
     {
@@ -123,7 +123,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
             .is_async_download = settings.enable_filesystem_cache_asynchronous_write
         };
 
-        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
+        file_segments_holder = cache->getOrSet(cache_key, offset, size, create_settings);
     }
 
     /**
@@ -640,7 +640,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
 
                 chassert(file_segment->getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
 
-                bool success = writeCache(implementation_buffer->buffer().begin(), current_predownload_size, current_offset, *file_segment);
+                bool success = writeCache(implementation_buffer->buffer().begin(), current_predownload_size, current_offset, file_segment);
                 if (success)
                 {
                     current_offset += current_predownload_size;
@@ -724,21 +724,6 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 
         if (cached_part_is_finished)
         {
-#ifndef NDEBUG
-            size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
-            size_t cache_file_read_offset = implementation_buffer->getFileOffsetOfBufferEnd();
-
-            if (cache_file_size != cache_file_read_offset)
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Incorrect state of buffers. Current write offset: {}, file offset of buffer end: {}, "
-                    "cache file size: {}, cache file offset: {}, file segment info: {}",
-                    current_write_offset, file_offset_of_buffer_end, cache_file_size, cache_file_read_offset,
-                    file_segment->getInfoForLog());
-            }
-#endif
-
             /// TODO: makes sense to reuse local file reader if we return here with CACHED read type again?
             implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
@@ -792,13 +777,13 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
     return true;
 }
 
-bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment)
+bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t offset, FileSegmentPtr & file_segment)
 {
     Stopwatch watch(CLOCK_MONOTONIC);
 
     try
     {
-        file_segment.write(data, size, offset);
+        file_segment->write(data, size, offset);
     }
     catch (ErrnoException & e)
     {
@@ -997,7 +982,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             {
                 chassert(file_segment->getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
 
-                success = writeCache(implementation_buffer->position(), size, file_offset_of_buffer_end, *file_segment);
+                success = writeCache(implementation_buffer->position(), size, file_offset_of_buffer_end, file_segment);
                 if (success)
                 {
                     chassert(file_segment->getCurrentWriteOffset() <= file_segment->range().right + 1);
@@ -1048,7 +1033,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
-    if (download_current_segment)
+    if (download_current_segment && file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
         file_segment->completePartAndResetDownloader();
 
     chassert(!file_segment->isDownloader());

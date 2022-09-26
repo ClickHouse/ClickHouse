@@ -387,7 +387,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     }
 }
 
-FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
+FileCache::FileSegmentsHolderPtr FileCache::getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
 {
     std::lock_guard cache_lock(mutex);
 
@@ -412,10 +412,10 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     }
 
     assert(!file_segments.empty());
-    return FileSegmentsHolder(std::move(file_segments));
+    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
-FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
+FileCache::FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size)
 {
     std::lock_guard cache_lock(mutex);
 
@@ -445,7 +445,7 @@ FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
         fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */true, {}, cache_lock);
     }
 
-    return FileSegmentsHolder(std::move(file_segments));
+    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
 FileCache::FileSegmentCell * FileCache::addCell(

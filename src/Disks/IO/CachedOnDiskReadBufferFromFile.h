@@ -88,8 +88,7 @@ private:
 
     void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
 
-    bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
-
+    bool writeCache(char * data, size_t size, size_t offset, FileSegmentPtr & file_segment);
 
     void prepareForSkipCache(FileSegment & file_segment);
 
@@ -111,7 +110,7 @@ private:
     /// Remote read buffer, which can only be owned by current buffer.
     FileSegment::RemoteFileReaderPtr remote_file_reader;
 
-    std::optional<FileSegmentsHolder> file_segments_holder;
+    std::unique_ptr<FileSegmentsHolder> file_segments_holder;
     FileSegments::iterator current_file_segment_it;
 
     ImplementationBufferPtr implementation_buffer;
