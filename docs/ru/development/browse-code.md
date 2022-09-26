@@ -1,5 +1,4 @@
 ---
-slug: /ru/development/browse-code
 sidebar_position: 72
 sidebar_label: "Навигация по коду ClickHouse"
 ---

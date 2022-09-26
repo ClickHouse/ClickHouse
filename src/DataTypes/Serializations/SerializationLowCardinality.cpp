@@ -41,26 +41,30 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 }
 
 void SerializationLowCardinality::enumerateStreams(
-    EnumerateStreamsSettings & settings,
+    SubstreamPath & path,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
-    settings.path.push_back(Substream::DictionaryKeys);
-    auto dict_data = SubstreamData(dict_inner_serialization)
-        .withType(data.type ? dictionary_type : nullptr)
-        .withColumn(column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+    SubstreamData dict_data =
+    {
+        dict_inner_serialization,
+        data.type ? dictionary_type : nullptr,
+        column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr,
+        data.serialization_info,
+    };
 
-    settings.path.back().data = dict_data;
-    dict_inner_serialization->enumerateStreams(settings, callback, dict_data);
+    path.push_back(Substream::DictionaryKeys);
+    path.back().data = dict_data;
 
-    settings.path.back() = Substream::DictionaryIndexes;
-    settings.path.back().data = data;
+    dict_inner_serialization->enumerateStreams(path, callback, dict_data);
 
-    callback(settings.path);
-    settings.path.pop_back();
+    path.back() = Substream::DictionaryIndexes;
+    path.back().data = data;
+
+    callback(path);
+    path.pop_back();
 }
 
 struct KeysSerializationVersion

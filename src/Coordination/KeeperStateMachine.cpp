@@ -1,5 +1,4 @@
 #include <cerrno>
-#include <base/errnoToString.h>
 #include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -11,7 +10,6 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ProfileEvents.h>
 #include "Coordination/KeeperStorage.h"
-
 
 namespace ProfileEvents
 {
@@ -44,9 +42,7 @@ KeeperStateMachine::KeeperStateMachine(
     const std::string & snapshots_path_,
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
-    const std::string & superdigest_,
-    CommitCallback commit_callback_,
-    ApplySnapshotCallback apply_snapshot_callback_)
+    const std::string & superdigest_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
@@ -60,8 +56,6 @@ KeeperStateMachine::KeeperStateMachine(
     , last_committed_idx(0)
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
-    , commit_callback(std::move(commit_callback_))
-    , apply_snapshot_callback(std::move(apply_snapshot_callback_))
     , keeper_context(keeper_context_)
 {
 }
@@ -195,16 +189,12 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     return request_for_session;
 }
 
-bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
+void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return true;
+        return;
 
     std::lock_guard lock(storage_and_responses_lock);
-
-    if (storage->isFinalized())
-        return false;
-
     try
     {
         storage->preprocessRequest(
@@ -223,15 +213,13 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
 
     if (keeper_context->digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
-
-    return true;
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const ext_op_params & params)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    auto request_for_session = parseRequest(*params.data);
+    auto request_for_session = parseRequest(data);
     if (!request_for_session.zxid)
-        request_for_session.zxid = params.log_idx;
+        request_for_session.zxid = log_idx;
 
     /// Special processing of session_id request
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
@@ -276,9 +264,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const ext_op_params &
             assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
     }
 
-    last_committed_idx = params.log_idx;
-    commit_callback(request_for_session, params.log_term, params.log_idx);
     ProfileEvents::increment(ProfileEvents::KeeperCommits);
+    last_committed_idx = log_idx;
     return nullptr;
 }
 
@@ -311,7 +298,6 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
     last_committed_idx = s.get_last_log_idx();
-    apply_snapshot_callback(s.get_last_log_term(), s.get_last_log_idx());
     return true;
 }
 
@@ -326,10 +312,6 @@ void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data);
-
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return;
-
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
     // (log_idx is increased for all logs, while zxid is only increased for requests)
@@ -464,7 +446,7 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     LOG_INFO(log, "Opening file {} for read_logical_snp_obj", path);
     if (fd < 0)
     {
-        LOG_WARNING(log, "Error opening {}, error: {}, errno: {}", path, errnoToString(), errno);
+        LOG_WARNING(log, "Error opening {}, error: {}, errno: {}", path, std::strerror(errno), errno);
         return errno;
     }
     auto file_size = ::lseek(fd, 0, SEEK_END);
@@ -472,7 +454,7 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     auto * chunk = reinterpret_cast<nuraft::byte *>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
     if (chunk == MAP_FAILED)
     {
-        LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
+        LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, std::strerror(errno), errno);
         ::close(fd);
         return errno;
     }

@@ -66,7 +66,8 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    data_part->getSerialization(column.name)->enumerateStreams(callback, column.type);
+    ISerialization::SubstreamPath path;
+    data_part->getSerialization(column.name)->enumerateStreams(path, callback, column.type);
 }
 
 namespace

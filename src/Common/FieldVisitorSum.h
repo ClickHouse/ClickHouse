@@ -33,7 +33,7 @@ public:
     template <typename T>
     bool operator() (DecimalField<T> & x) const
     {
-        x += rhs.get<DecimalField<T>>();
+        x += get<DecimalField<T>>(rhs);
         return x.getValue() != T(0);
     }
 
@@ -47,3 +47,4 @@ public:
 };
 
 }
+

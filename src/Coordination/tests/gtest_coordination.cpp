@@ -137,7 +137,7 @@ struct SimpliestRaftServer
         if (!raft_instance)
         {
             std::cerr << "Failed to initialize launcher" << std::endl;
-            _exit(1);
+            exit(-1);
         }
 
         std::cout << "init Raft instance " << server_id;
@@ -1330,9 +1330,8 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
 
-        auto entry_buf = changelog.entry_at(i)->get_buf_ptr();
-        state_machine->pre_commit(i, *entry_buf);
-        state_machine->commit_ext(nuraft::state_machine::ext_op_params{i, entry_buf});
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
         bool snapshot_created = false;
         if (i % settings->snapshot_distance == 0)
         {
@@ -1340,7 +1339,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
             nuraft::async_result<bool>::handler_type when_done = [&snapshot_created] (bool & ret, nuraft::ptr<std::exception> &/*exception*/)
             {
                 snapshot_created = ret;
-                std::cerr << "Snapshot finished\n";
+                std::cerr << "Snapshot finised\n";
             };
 
             state_machine->create_snapshot(s, when_done);
@@ -1376,9 +1375,8 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
     for (size_t i = restore_machine->last_commit_index() + 1; i < restore_changelog.next_slot(); ++i)
     {
-        auto entry = changelog.entry_at(i)->get_buf_ptr();
-        restore_machine->pre_commit(i, *entry);
-        restore_machine->commit_ext(nuraft::state_machine::ext_op_params{i, entry});
+        restore_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        restore_machine->commit(i, changelog.entry_at(i)->get_buf());
     }
 
     auto & source_storage = state_machine->getStorage();
@@ -1479,18 +1477,18 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
     request_c->path = "/hello";
     request_c->is_ephemeral = true;
-    auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c)->get_buf_ptr();
-    state_machine->pre_commit(1, *entry_c);
-    state_machine->commit_ext(nuraft::state_machine::ext_op_params{1, entry_c});
+    auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c);
+    state_machine->pre_commit(1, entry_c->get_buf());
+    state_machine->commit(1, entry_c->get_buf());
     const auto & storage = state_machine->getStorage();
 
     EXPECT_EQ(storage.ephemerals.size(), 1);
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
     request_d->path = "/hello";
     /// Delete from other session
-    auto entry_d = getLogEntryFromZKRequest(0, 2, state_machine->getNextZxid(), request_d)->get_buf_ptr();
-    state_machine->pre_commit(2, *entry_d);
-    state_machine->commit_ext(nuraft::state_machine::ext_op_params{2, entry_d});
+    auto entry_d = getLogEntryFromZKRequest(0, 2, state_machine->getNextZxid(), request_d);
+    state_machine->pre_commit(2, entry_d->get_buf());
+    state_machine->commit(2, entry_d->get_buf());
 
     EXPECT_EQ(storage.ephemerals.size(), 0);
 }
@@ -2141,38 +2139,6 @@ TEST_P(CoordinationTest, TestCurrentApiVersion)
     DB::ReadBufferFromOwnString buf(get_response.data);
     DB::readIntText(keeper_version, buf);
     EXPECT_EQ(keeper_version, static_cast<uint8_t>(current_keeper_api_version));
-}
-
-TEST_P(CoordinationTest, TestSystemNodeModify)
-{
-    using namespace Coordination;
-    int64_t zxid{0};
-
-    // On INIT we abort when a system path is modified
-    keeper_context->server_state = KeeperContext::Phase::RUNNING;
-    KeeperStorage storage{500, "", keeper_context};
-    const auto assert_create = [&](const std::string_view path, const auto expected_code)
-    {
-        auto request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = path;
-        storage.preprocessRequest(request, 0, 0, zxid);
-        auto responses = storage.processRequest(request, 0, zxid);
-        ASSERT_FALSE(responses.empty());
-
-        const auto & response = responses[0];
-        ASSERT_EQ(response.response->error, expected_code) << "Unexpected error for path " << path;
-
-        ++zxid;
-    };
-
-    assert_create("/keeper", Error::ZBADARGUMENTS);
-    assert_create("/keeper/with_child", Error::ZBADARGUMENTS);
-    assert_create(DB::keeper_api_version_path, Error::ZBADARGUMENTS);
-
-    assert_create("/keeper_map", Error::ZOK);
-    assert_create("/keeper1", Error::ZOK);
-    assert_create("/keepe", Error::ZOK);
-    assert_create("/keeper1/test", Error::ZOK);
 }
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
