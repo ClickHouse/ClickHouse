@@ -9,15 +9,17 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSource.h>
+#include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -37,7 +39,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_METADATA_ALREADY_EXISTS;
-    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
 }
@@ -73,25 +74,6 @@ StorageFileLog::StorageFileLog(
 
     try
     {
-        if (!attach)
-        {
-            std::error_code ec;
-            std::filesystem::create_directories(metadata_base_path, ec);
-
-            if (ec)
-            {
-                if (ec == std::make_error_code(std::errc::file_exists))
-                {
-                    throw Exception(ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
-                        "Metadata files already exist by path: {}, remove them manually if it is intended",
-                        metadata_base_path);
-                }
-                else
-                    throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
-                        "Could not create directory {}, reason: {}", metadata_base_path, ec.message());
-            }
-        }
-
         loadMetaFiles(attach);
         loadFiles();
 
@@ -136,6 +118,19 @@ void StorageFileLog::loadMetaFiles(bool attach)
         }
         /// Load all meta info to file_infos;
         deserialize();
+    }
+    /// Create table, just create meta data directory
+    else
+    {
+        if (std::filesystem::exists(metadata_base_path))
+        {
+            throw Exception(
+                ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
+                "Metadata files already exist by path: {}, remove them manually if it is intended",
+                metadata_base_path);
+        }
+        /// We do not create the metadata_base_path directory at creation time, create it at the moment of serializing
+        /// meta files, such that can avoid unnecessarily create this directory if create table failed.
     }
 }
 
@@ -225,6 +220,10 @@ void StorageFileLog::loadFiles()
 
 void StorageFileLog::serialize() const
 {
+    if (!std::filesystem::exists(metadata_base_path))
+    {
+        std::filesystem::create_directories(metadata_base_path);
+    }
     for (const auto & [inode, meta] : file_infos.meta_by_inode)
     {
         auto full_name = getFullMetaPath(meta.file_name);
@@ -245,6 +244,10 @@ void StorageFileLog::serialize() const
 
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
+    if (!std::filesystem::exists(metadata_base_path))
+    {
+        std::filesystem::create_directories(metadata_base_path);
+    }
     auto full_name = getFullMetaPath(file_meta.file_name);
     if (!std::filesystem::exists(full_name))
     {
@@ -378,7 +381,8 @@ void StorageFileLog::drop()
 {
     try
     {
-        std::filesystem::remove_all(metadata_base_path);
+        if (std::filesystem::exists(metadata_base_path))
+            std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -675,7 +679,7 @@ bool StorageFileLog::streamToViews()
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot);
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads.value, file_infos.file_names.size());
     /// No files to parse
@@ -716,10 +720,9 @@ bool StorageFileLog::streamToViews()
 
     assertBlocksHaveEqualStructure(input.getHeader(), block_io.pipeline.getHeader(), "StorageFileLog streamToViews");
 
-    std::atomic<size_t> rows = 0;
+    size_t rows = 0;
     {
         block_io.pipeline.complete(std::move(input));
-        block_io.pipeline.setNumThreads(max_streams_number);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -759,7 +762,7 @@ void registerStorageFileLog(StorageFactory & factory)
 
         if (!num_threads) /// Default
         {
-            num_threads = std::max(1U, physical_cpu_cores / 4);
+            num_threads = std::max(unsigned(1), physical_cpu_cores / 4);
             filelog_settings->set("max_threads", num_threads);
         }
         else if (num_threads > physical_cpu_cores)
@@ -801,10 +804,10 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
         auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());
 
-        auto path = checkAndGetLiteralArgument<String>(path_ast, "path");
-        auto format = checkAndGetLiteralArgument<String>(format_ast, "format");
+        auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+        auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
 
-        return std::make_shared<StorageFileLog>(
+        return StorageFileLog::create(
             args.table_id,
             args.getContext(),
             args.columns,

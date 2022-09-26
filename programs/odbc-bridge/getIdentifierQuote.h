@@ -8,7 +8,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Parsers/IdentifierQuotingStyle.h>
-#include "ODBCPooledConnectionFactory.h"
+#include "ODBCConnectionFactory.h"
 
 
 namespace DB

@@ -56,7 +56,7 @@ private:
     std::shared_ptr<WriteBuffer> out;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::optional<Poco::Net::SocketAddress> address;
-    MySQLProtocol::PacketEndpointPtr packet_endpoint;
+    std::shared_ptr<PacketEndpoint> packet_endpoint;
 
     void handshake();
     void registerSlaveOnMaster(UInt32 slave_id);

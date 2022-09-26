@@ -13,7 +13,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(Atanh)
+void registerFunctionAtanh(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAtanh>();
 }

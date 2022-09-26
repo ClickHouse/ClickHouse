@@ -45,7 +45,7 @@ using namespace GatherUtils;
   */
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
-inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
+static inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
@@ -77,7 +77,7 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
 }
 
 template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult, typename ResultType>
-inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
+static inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
@@ -95,7 +95,7 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
 }
 
 template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult, typename ResultType>
-inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
+static inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool b_is_short = b.size() < size;
@@ -1120,9 +1120,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(If)
+void registerFunctionIf(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIf>(FunctionFactory::CaseInsensitive);
 }
 
 }

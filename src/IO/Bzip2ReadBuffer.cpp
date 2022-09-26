@@ -39,9 +39,10 @@ public:
 };
 
 Bzip2ReadBuffer::Bzip2ReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char *existing_memory, size_t alignment)
-    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
-    , bz(std::make_unique<Bzip2StateWrapper>())
-    , eof_flag(false)
+        : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
+        , in(std::move(in_))
+        , bz(std::make_unique<Bzip2StateWrapper>())
+        , eof_flag(false)
 {
 }
 

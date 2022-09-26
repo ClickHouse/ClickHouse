@@ -448,7 +448,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(MapOp)
+void registerFunctionMapOp(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMapOp<OpTypes::ADD>>();
     factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>();

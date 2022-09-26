@@ -15,10 +15,13 @@
   */
 
 template <size_t initial_size_degree = 8>
-struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
+struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
 {
     /// Increase the size of the hash table.
-    void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
+    void increaseSize()
+    {
+        this->size_degree += this->size_degree >= 15 ? 1 : 2;
+    }
 };
 
 template
@@ -90,12 +93,6 @@ public:
 
 
     TwoLevelHashTable() = default;
-
-    explicit TwoLevelHashTable(size_t size_hint)
-    {
-        for (auto & impl : impls)
-            impl.reserve(size_hint / NUM_BUCKETS);
-    }
 
     /// Copy the data from another (normal) hash table. It should have the same hash function.
     template <typename Source>
