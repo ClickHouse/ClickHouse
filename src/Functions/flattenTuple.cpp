@@ -60,7 +60,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(FlattenTuple)
+void registerFunctionFlattenTuple(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFlattenTuple>();
 }

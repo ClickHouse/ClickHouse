@@ -6,19 +6,19 @@ namespace DB
 {
 
 using FunctionSubtractNanoseconds = FunctionDateOrDateTimeAddInterval<SubtractNanosecondsImpl>;
-REGISTER_FUNCTION(SubtractNanoseconds)
+void registerFunctionSubtractNanoseconds(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSubtractNanoseconds>();
 }
 
 using FunctionSubtractMicroseconds = FunctionDateOrDateTimeAddInterval<SubtractMicrosecondsImpl>;
-REGISTER_FUNCTION(SubtractMicroseconds)
+void registerFunctionSubtractMicroseconds(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSubtractMicroseconds>();
 }
 
 using FunctionSubtractMilliseconds = FunctionDateOrDateTimeAddInterval<SubtractMillisecondsImpl>;
-REGISTER_FUNCTION(SubtractMilliseconds)
+void registerFunctionSubtractMilliseconds(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSubtractMilliseconds>();
 }

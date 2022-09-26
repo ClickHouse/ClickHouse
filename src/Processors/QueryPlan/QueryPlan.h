@@ -71,8 +71,6 @@ public:
         bool actions = false;
         /// Add information about indexes actions.
         bool indexes = false;
-        /// Add information about sorting
-        bool sorting = false;
     };
 
     struct ExplainPipelineOptions
@@ -104,8 +102,6 @@ public:
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
     };
-
-    const Node * getRootNode() const { return root; }
 
     using Nodes = std::list<Node>;
 

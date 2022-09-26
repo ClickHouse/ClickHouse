@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/ext-dict-functions
 sidebar_position: 58
 sidebar_label: External Dictionaries
 ---

@@ -7,11 +7,12 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/IFileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -35,7 +36,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -45,10 +45,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
-#include <Storages/StorageURL.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -180,38 +176,27 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     {
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
+            for (auto iterator = elem.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            {
+                StoragePtr table = iterator->table();
+                if (!table)
+                    continue;
+
+                if (!access->isGranted(required_access_type, elem.first, iterator->name()))
+                {
+                    LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), elem.first, iterator->name());
+                    continue;
+                }
+
+                if (start)
+                {
+                    manager->remove(table, action_type);
+                    table->onActionLockRemove(action_type);
+                }
+                else
+                    manager->add(table, action_type);
+            }
         }
-    }
-}
-
-void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType action_type, bool start,
-                                                       const String & database_name, const DatabasePtr & database,
-                                                       const ContextPtr & local_context, Poco::Logger * log)
-{
-    auto manager = local_context->getActionLocksManager();
-    auto access = local_context->getAccess();
-    auto required_access_type = getRequiredAccessType(action_type);
-
-    for (auto iterator = database->getTablesIterator(local_context); iterator->isValid(); iterator->next())
-    {
-        StoragePtr table = iterator->table();
-        if (!table)
-            continue;
-
-        if (!access->isGranted(required_access_type, database_name, iterator->name()))
-        {
-            LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), database_name, iterator->name());
-            continue;
-        }
-
-        if (start)
-        {
-            manager->remove(table, action_type);
-            table->onActionLockRemove(action_type);
-        }
-        else
-            manager->add(table, action_type);
     }
 }
 
@@ -332,36 +317,13 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeIfReleasable();
+                    cache_data->cache->removeIfReleasable(/* remove_persistent_files */false);
             }
             else
             {
                 auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->removeIfReleasable();
+                cache->removeIfReleasable(/* remove_persistent_files */false);
             }
-            break;
-        }
-        case Type::DROP_SCHEMA_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
-            std::unordered_set<String> caches_to_drop;
-            if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
-            else
-                caches_to_drop = {query.schema_cache_storage};
-
-            if (caches_to_drop.contains("FILE"))
-                StorageFile::getSchemaCache(getContext()).clear();
-#if USE_AWS_S3
-            if (caches_to_drop.contains("S3"))
-                StorageS3::getSchemaCache(getContext()).clear();
-#endif
-#if USE_HDFS
-            if (caches_to_drop.contains("HDFS"))
-                StorageHDFS::getSchemaCache(getContext()).clear();
-#endif
-            if (caches_to_drop.contains("URL"))
-                StorageURL::getSchemaCache(getContext()).clear();
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -387,15 +349,17 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_MODEL:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
-            bridge_helper->removeModel();
+
+            auto & external_models_loader = system_context->getExternalModelsLoader();
+            external_models_loader.reloadModel(query.target_model);
             break;
         }
         case Type::RELOAD_MODELS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
-            bridge_helper->removeAllModels();
+
+            auto & external_models_loader = system_context->getExternalModelsLoader();
+            external_models_loader.reloadAllTriedToLoad();
             break;
         }
         case Type::RELOAD_FUNCTION:
@@ -537,7 +501,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
             /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
-            result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
+            result = Unfreezer().unfreeze(query.backup_name, getContext());
             break;
         }
         default:
@@ -582,9 +546,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
-    UUID uuid = table->getStorageID().uuid;
     table.reset();
-    database->waitDetachedTableNotInUse(uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -762,7 +724,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "if you want to clean the data and drop this replica", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
-    /// However, the main use case is to drop dead replica, which cannot become active.
+    /// However, the main usecase is to drop dead replica, which cannot become active.
     /// This check prevents only from accidental drop of some other replica.
     if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
         throw Exception("Can't drop replica: " + query.replica + ", because it's active",
@@ -798,7 +760,6 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -806,7 +767,8 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
         if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
+            LOG_ERROR(log, "SYNC DATABASE REPLICA {}: Timed out!", database_name);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
         }
         LOG_TRACE(log, "SYNC DATABASE REPLICA {}: OK", database_name);
@@ -871,7 +833,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_SCHEMA_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;

@@ -424,30 +424,14 @@ public:
 
         alloc(new_size_degree);
 
-        if (m_size <= 1)
+        for (size_t i = 0; i < m_size; ++i)
         {
-            for (size_t i = 0; i < m_size; ++i)
-            {
-                HashValue x = 0;
-                DB::readIntBinary(x, rb);
-                if (x == 0)
-                    has_zero = true;
-                else
-                    reinsertImpl(x);
-            }
-        }
-        else
-        {
-            auto hs = std::make_unique<HashValue[]>(m_size);
-            rb.readStrict(reinterpret_cast<char *>(hs.get()), m_size * sizeof(HashValue));
-
-            for (size_t i = 0; i < m_size; ++i)
-            {
-                if (hs[i] == 0)
-                    has_zero = true;
-                else
-                    reinsertImpl(hs[i]);
-            }
+            HashValue x = 0;
+            DB::readIntBinary(x, rb);
+            if (x == 0)
+                has_zero = true;
+            else
+                reinsertImpl(x);
         }
     }
 
@@ -474,24 +458,11 @@ public:
             resize(new_size_degree);
         }
 
-        if (rhs_size <= 1)
+        for (size_t i = 0; i < rhs_size; ++i)
         {
-            for (size_t i = 0; i < rhs_size; ++i)
-            {
-                HashValue x = 0;
-                DB::readIntBinary(x, rb);
-                insertHash(x);
-            }
-        }
-        else
-        {
-            auto hs = std::make_unique<HashValue[]>(rhs_size);
-            rb.readStrict(reinterpret_cast<char *>(hs.get()), rhs_size * sizeof(HashValue));
-
-            for (size_t i = 0; i < rhs_size; ++i)
-            {
-                insertHash(hs[i]);
-            }
+            HashValue x = 0;
+            DB::readIntBinary(x, rb);
+            insertHash(x);
         }
     }
 

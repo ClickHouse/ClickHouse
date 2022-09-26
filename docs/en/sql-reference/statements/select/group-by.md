@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 ---
 
@@ -213,10 +212,9 @@ If the `WITH TOTALS` modifier is specified, another row will be calculated. This
 
 This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separately from the other rows:
 
--   In `XML` and `JSON*` formats, this row is output as a separate ‘totals’ field.
--   In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, preceded by an empty row (after the other data).
+-   In `JSON*` formats, this row is output as a separate ‘totals’ field.
+-   In `TabSeparated*` formats, the row comes after the main result, preceded by an empty row (after the other data).
 -   In `Pretty*` formats, the row is output as a separate table after the main result.
--   In `Template` format, the row is output according to specified template.
 -   In the other formats it is not available.
 
 :::note    

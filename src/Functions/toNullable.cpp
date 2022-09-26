@@ -45,7 +45,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(ToNullable)
+void registerFunctionToNullable(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToNullable>();
 }

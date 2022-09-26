@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/quantiletdigest
 sidebar_position: 207
 ---
 

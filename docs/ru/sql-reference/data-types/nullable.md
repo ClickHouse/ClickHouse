@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/nullable
 sidebar_position: 55
 sidebar_label: Nullable
 ---
@@ -27,7 +26,6 @@ sidebar_label: Nullable
 
 :::info "Info"
     Почти всегда использование `Nullable` снижает производительность, учитывайте это при проектировании своих баз.
-:::
 
 ## Поиск NULL {#finding-null}
 

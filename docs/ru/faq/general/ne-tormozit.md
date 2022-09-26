@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/general/ne-tormozit
 title: "What does “не тормозит” mean?"
 sidebar_position: 11
 ---
