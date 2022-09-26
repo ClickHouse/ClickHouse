@@ -256,6 +256,10 @@ start
 
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
+for table in query_log trace_log
+do
+    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.stress.tsv.gz ||:
+done
 
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
@@ -338,6 +342,12 @@ echo $previous_release_tag | download_release_packets && echo -e 'Download scrip
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
+for table in query_log trace_log
+do
+    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.clean.tsv.gz ||:
+done
+
+tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
@@ -398,6 +408,10 @@ else
 
     stop
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
+    for table in query_log trace_log
+    do
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.stress.tsv.gz ||:
+    done
 
     # Start new server
     mv package_folder/clickhouse /usr/bin/
@@ -496,6 +510,12 @@ else
 
     # Remove file bc_check_fatal_messages.txt if it's empty
     [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
+
+    tar -chf /test_output/coordination.backward.tar /var/lib/clickhouse/coordination ||:
+    for table in query_log trace_log
+    do
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.clean.tsv.gz ||:
+    done
 fi
 
 dmesg -T > /test_output/dmesg.log
@@ -505,13 +525,7 @@ grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e
     && echo -e 'OOM in dmesg\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No OOM in dmesg\tOK' >> /test_output/test_results.tsv
 
-tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-for table in query_log trace_log
-do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
-done
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%'), rowNumberInAllBlocks() LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
