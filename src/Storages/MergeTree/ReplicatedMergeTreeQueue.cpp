@@ -1951,6 +1951,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 
 namespace
 {
+
 struct BlockInfoInZooKeeper
 {
     String partition;
@@ -1959,7 +1960,7 @@ struct BlockInfoInZooKeeper
     std::future<Coordination::GetResponse> contents_future;
 };
 
-template<bool with_multiread>
+template <bool with_multiread>
 std::vector<BlockInfoInZooKeeper> getBlockInfos(const auto & partitions, const auto & zookeeper, const auto & zookeeper_path)
 {
     using FutureListResponses = std::vector<std::future<Coordination::ListResponse>>;
@@ -2000,8 +2001,7 @@ std::vector<BlockInfoInZooKeeper> getBlockInfos(const auto & partitions, const a
             {
                 Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
                 String zk_path = fs::path(zookeeper_path) / "block_numbers" / partitions[i] / entry;
-                block_infos.emplace_back(
-                    BlockInfoInZooKeeper{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
+                block_infos.emplace_back(BlockInfoInZooKeeper{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
             }
         }
     }
@@ -2017,10 +2017,8 @@ ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
     return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
 }
 
-ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
-    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper)
-    : queue(queue_)
-    , prev_virtual_parts(queue.format_version)
+ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper)
+    : queue(queue_), prev_virtual_parts(queue.format_version)
 {
     {
         std::lock_guard lock(queue.state_mutex);
@@ -2042,11 +2040,9 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     {
         Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
 
-        std::vector<BlockInfoInZooKeeper> block_infos;
-        if (zookeeper->getApiVersion() >= KeeperApiVersion::WITH_MULTI_READ)
-            block_infos = getBlockInfos<true>(partitions, zookeeper, queue.zookeeper_path);
-        else
-            block_infos = getBlockInfos<false>(partitions, zookeeper, queue.zookeeper_path);
+        std::vector<BlockInfoInZooKeeper> block_infos = zookeeper->getApiVersion() >= KeeperApiVersion::WITH_MULTI_READ
+            ? getBlockInfos<true>(partitions, zookeeper, queue.zookeeper_path)
+            : getBlockInfos<false>(partitions, zookeeper, queue.zookeeper_path);
 
         for (auto & block : block_infos)
         {
