@@ -45,12 +45,13 @@ public:
     void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
     void remove(
-        CanRemoveCallback && can_remove_callback,
+        bool can_remove_shared_data,
+        const NameSet & names_not_to_remove,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
         MergeTreeDataPartState state,
-        Poco::Logger * log) override;
+        Poco::Logger * log) const override;
 
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
 
@@ -88,12 +89,11 @@ public:
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
 
     void backup(
+        TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries,
-        bool make_temporary_hard_links,
-        TemporaryFilesOnDisks * temp_dirs) const override;
+        BackupEntries & backup_entries) const override;
 
     DataPartStoragePtr freeze(
         const std::string & to,

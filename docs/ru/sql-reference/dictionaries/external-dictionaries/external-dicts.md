@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts
 sidebar_position: 39
 sidebar_label: "Внешние словари"
 ---

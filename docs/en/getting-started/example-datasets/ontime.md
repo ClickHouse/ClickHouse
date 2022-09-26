@@ -1,5 +1,4 @@
 ---
-slug: /en/getting-started/example-datasets/ontime
 sidebar_label: OnTime Airline Flight Data
 description: Dataset containing the on-time performance of airline flights
 ---

@@ -1,9 +1,8 @@
 #pragma once
 
-#include <functional>
-#include <memory>
 #include <mutex>
-#include <type_traits>
+#include <memory>
+#include <functional>
 
 #include <Common/logger_useful.h>
 
@@ -24,7 +23,6 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
@@ -873,7 +871,6 @@ using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants
 
 class CompiledAggregateFunctionsHolder;
 class NativeWriter;
-struct OutputBlockColumns;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -935,11 +932,7 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
-        size_t max_block_size;
-
         bool only_merge;
-
-        bool enable_prefetch;
 
         struct StatsCollectingParams
         {
@@ -975,9 +968,7 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
-            size_t max_block_size_,
-            bool enable_prefetch_,
-            bool only_merge_, // true for projections
+            bool only_merge_ = false, // true for projections
             const StatsCollectingParams & stats_collecting_params_ = {})
             : keys(keys_)
             , aggregates(aggregates_)
@@ -995,17 +986,15 @@ public:
             , min_free_disk_space(min_free_disk_space_)
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
-            , max_block_size(max_block_size_)
             , only_merge(only_merge_)
-            , enable_prefetch(enable_prefetch_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
 
         /// Only parameters that matter during merge.
-        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_)
+        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
             : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, {})
+                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, true, {})
         {
         }
 
@@ -1069,15 +1058,14 @@ public:
     std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
-
-    TemporaryFileOnDiskHolder createTempFile(size_t max_temp_file_size) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
     struct TemporaryFiles
     {
-        std::vector<TemporaryFileOnDiskHolder> files;
+        std::vector<std::unique_ptr<Poco::TemporaryFile>> files;
         size_t sum_size_uncompressed = 0;
         size_t sum_size_compressed = 0;
         mutable std::mutex mutex;
@@ -1150,8 +1138,6 @@ private:
     /// For external aggregation.
     mutable TemporaryFiles temporary_files;
 
-    size_t min_bytes_for_prefetch = 0;
-
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
 #endif
@@ -1217,7 +1203,7 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
+    template <bool no_more_keys, bool use_compiled_functions, typename Method>
     void executeImplBatch(
         Method & method,
         typename Method::State & state,
@@ -1261,8 +1247,11 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
-    template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const;
+    template <typename Method, bool use_compiled_functions, typename Table>
+    void mergeDataImpl(
+        Table & table_dst,
+        Table & table_src,
+        Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -1286,12 +1275,15 @@ private:
     void mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data) const;
 
-    template <bool return_single_block>
-    using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
-
-    template <bool return_single_block, typename Method, typename Table>
-    ConvertToBlockRes<return_single_block>
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows) const;
+    template <typename Method, typename Table>
+    void convertToBlockImpl(
+        Method & method,
+        Table & data,
+        MutableColumns & key_columns,
+        AggregateColumnsData & aggregate_columns,
+        MutableColumns & final_aggregate_columns,
+        Arena * arena,
+        bool final) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1299,16 +1291,27 @@ private:
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
-    template <bool use_compiled_functions>
-    Block insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & places, OutputBlockColumns && out_cols, Arena * arena) const;
+    template <typename Method, bool use_compiled_functions, typename Table>
+    void convertToBlockImplFinal(
+        Method & method,
+        Table & data,
+        std::vector<IColumn *> key_columns,
+        MutableColumns & final_aggregate_columns,
+        Arena * arena) const;
 
-    template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
-    ConvertToBlockRes<return_single_block>
-    convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t rows) const;
+    template <typename Method, typename Table>
+    void convertToBlockImplNotFinal(
+        Method & method,
+        Table & data,
+        std::vector<IColumn *>  key_columns,
+        AggregateColumnsData & aggregate_columns) const;
 
-    template <bool return_single_block, typename Method, typename Table>
-    ConvertToBlockRes<return_single_block>
-    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const;
+    template <typename Filler>
+    Block prepareBlockAndFill(
+        AggregatedDataVariants & data_variants,
+        bool final,
+        size_t rows,
+        Filler && filler) const;
 
     template <typename Method>
     Block convertOneBucketToBlock(
@@ -1326,10 +1329,8 @@ private:
         std::atomic<bool> * is_cancelled = nullptr) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
+    Block prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
-
-    template <bool return_single_block>
-    ConvertToBlockRes<return_single_block> prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <typename Method>
     BlocksList prepareBlocksAndFillTwoLevelImpl(

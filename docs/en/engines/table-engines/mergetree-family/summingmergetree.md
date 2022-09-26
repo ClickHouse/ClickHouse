@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/summingmergetree
 sidebar_position: 50
 sidebar_label:  SummingMergeTree
 ---

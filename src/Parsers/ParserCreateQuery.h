@@ -53,8 +53,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     NameParser name_parser;
     ParserDataType type_parser;
 
-    ASTPtr name;
-    ASTPtr type;
+    ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {

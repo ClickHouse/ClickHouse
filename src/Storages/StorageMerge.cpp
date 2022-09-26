@@ -2,7 +2,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageView.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -357,7 +356,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
         = std::min(static_cast<unsigned>(tables_count), std::max(1U, static_cast<unsigned>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
-    size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
+    size_t num_streams = requested_num_streams * num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
     InputOrderInfoPtr input_sorting_info;
@@ -529,33 +528,15 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
         QueryPlan plan;
-        if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
-        {
-            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
-            /// The most intuitive way is to use InterpreterSelectQuery.
-
-            /// Intercept the settings
-            modified_context->setSetting("max_threads", streams_num);
-            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
-            modified_context->setSetting("max_block_size", max_block_size);
-
-            InterpreterSelectQuery(
-                modified_query_info.query, modified_context, storage, view->getInMemoryMetadataPtr(), SelectQueryOptions(processed_stage))
-                .buildQueryPlan(plan);
-        }
-        else
-        {
-            storage->read(
-                plan,
-                real_column_names,
-                storage_snapshot,
-                modified_query_info,
-                modified_context,
-                processed_stage,
-                max_block_size,
-                UInt32(streams_num));
-
-        }
+        storage->read(
+            plan,
+            real_column_names,
+            storage_snapshot,
+            modified_query_info,
+            modified_context,
+            processed_stage,
+            max_block_size,
+            UInt32(streams_num));
 
         if (!plan.isInitialized())
             return {};

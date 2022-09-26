@@ -1302,7 +1302,7 @@ private:
                     *ctx->source_part->data_part_storage, it->name(), destination);
                 hardlinked_files.insert(it->name());
             }
-            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
+            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->data_part_storage_builder->createProjection(destination);
@@ -1467,8 +1467,6 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
-            MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
-
             if (task->executeStep())
                 return true;
 
@@ -1572,7 +1570,8 @@ bool MutateTask::prepare()
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     /// Don't change granularity type while mutating subset of columns
-    ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
+    ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())
+                                                                         : getNonAdaptiveMrkExtension();
 
     const auto data_settings = ctx->data->getSettings();
     ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
