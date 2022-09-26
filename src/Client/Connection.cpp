@@ -179,18 +179,12 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
-
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
         throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
-
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.

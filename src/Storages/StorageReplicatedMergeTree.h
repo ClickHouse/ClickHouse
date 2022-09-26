@@ -29,7 +29,6 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
-#include <Common/EventNotifier.h>
 #include <base/defines.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/Pipe.h>
@@ -454,7 +453,6 @@ private:
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
-    EventNotifier::HandlerPtr session_expired_callback_handler;
 
     /// A thread that attaches the table using ZooKeeper
     std::optional<ReplicatedMergeTreeAttachThread> attach_thread;

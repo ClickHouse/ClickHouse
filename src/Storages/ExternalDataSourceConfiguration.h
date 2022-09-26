@@ -3,7 +3,6 @@
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/HeaderCollection.h>
 
 
 namespace DB
@@ -109,7 +108,7 @@ struct URLBasedDataSourceConfiguration
     String user;
     String password;
 
-    HeaderCollection headers;
+    std::vector<std::pair<String, Field>> headers;
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);

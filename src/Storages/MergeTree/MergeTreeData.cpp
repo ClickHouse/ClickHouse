@@ -2490,11 +2490,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 ErrorCodes::BAD_ARGUMENTS);
         }
         if (command.type == AlterCommand::ADD_PROJECTION)
+
         {
             if (!is_custom_partitioned)
                 throw Exception(
                     "ALTER ADD PROJECTION is not supported for tables with the old syntax",
                     ErrorCodes::BAD_ARGUMENTS);
+
+            /// TODO: implement it the main issue in DataPartsExchange (not able to send directories metadata)
+            if (supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication)
+            {
+                auto storage_policy = getStoragePolicy();
+                auto disks = storage_policy->getDisks();
+                for (const auto & disk : disks)
+                {
+                    if (disk->supportZeroCopyReplication())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER ADD PROJECTION is not supported when zero-copy replication is enabled for table. "
+                                        "Currently disk '{}' supports zero copy replication", disk->getName());
+                }
+            }
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
@@ -4909,14 +4923,12 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    LOG_TRACE(log, "Trying reserve {} bytes preffering TTL rules", expected_size);
     ReservationPtr reservation;
 
     auto move_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
 
     if (move_ttl_entry)
     {
-        LOG_TRACE(log, "Got move TTL entry, will try to reserver destination for move");
         SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry, is_insert);
         if (!destination_ptr)
         {
@@ -4937,15 +4949,10 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
         }
         else
         {
-            LOG_TRACE(log, "Reserving bytes on selected destination");
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
-            {
-                LOG_TRACE(log, "Reservation successful");
                 return reservation;
-            }
             else
-            {
                 if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
                     LOG_WARNING(
                         log,
@@ -4958,22 +4965,15 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
                         "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
                         move_ttl_entry->destination_name,
                         *std::atomic_load(&log_name));
-            }
         }
     }
 
     // Prefer selected_disk
     if (selected_disk)
-    {
-        LOG_DEBUG(log, "Disk for reservation provided: {} (with type {})", selected_disk->getName(), toString(selected_disk->getDataSourceDescription().type));
         reservation = selected_disk->reserve(expected_size);
-    }
 
     if (!reservation)
-    {
-        LOG_DEBUG(log, "No reservation, reserving using storage policy from min volume index {}", min_volume_index);
         reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
-    }
 
     return reservation;
 }
