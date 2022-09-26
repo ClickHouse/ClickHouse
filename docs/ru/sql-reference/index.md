@@ -1,7 +1,8 @@
 ---
-slug: /ru/sql-reference/
-sidebar_label: "Справка по SQL"
-sidebar_position: 28
+toc_folder_title: "Справка по SQL"
+toc_hidden: true
+toc_priority: 28
+toc_title: hidden
 ---
 
 # Справка по SQL {#spravka-po-sql}

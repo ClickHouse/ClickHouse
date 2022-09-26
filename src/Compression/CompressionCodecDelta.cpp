@@ -143,7 +143,7 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (UInt32(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
@@ -186,7 +186,7 @@ UInt8 getDeltaBytesSize(const IDataType * column_type)
 
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Delta);
+    UInt8 method_code = UInt8(CompressionMethodByte::Delta);
     factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         UInt8 delta_bytes_size = 0;

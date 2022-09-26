@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantiledeterministic
-sidebar_position: 206
+toc_priority: 206
 ---
 
 # quantileDeterministic {#quantiledeterministic}

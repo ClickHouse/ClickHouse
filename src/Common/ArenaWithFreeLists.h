@@ -113,35 +113,5 @@ public:
     }
 };
 
-class SynchronizedArenaWithFreeLists : private ArenaWithFreeLists
-{
-public:
-    explicit SynchronizedArenaWithFreeLists(
-        const size_t initial_size = 4096, const size_t growth_factor = 2,
-        const size_t linear_growth_threshold = 128 * 1024 * 1024)
-        : ArenaWithFreeLists{initial_size, growth_factor, linear_growth_threshold}
-    {}
-
-    char * alloc(const size_t size)
-    {
-        std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::alloc(size);
-    }
-
-    void free(char * ptr, const size_t size)
-    {
-        std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::free(ptr, size);
-    }
-
-    /// Size of the allocated pool in bytes
-    size_t size() const
-    {
-        std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::size();
-    }
-private:
-    mutable std::mutex mutex;
-};
 
 }

@@ -10,7 +10,7 @@ class SquashingChunksTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingChunksTransform(
-        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, bool reserve_memory = false);
 
     String getName() const override { return "SquashingTransform"; }
 

@@ -10,6 +10,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+
 namespace DB
 {
 struct Settings;
@@ -52,14 +53,7 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 se = getStandardError();
         Float64 t_stat = (mean_x - mean_y) / se;
 
-        auto students_t_distribution = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
-        Float64 pvalue = 0;
-        if (t_stat > 0)
-            pvalue = 2 * boost::math::cdf<Float64>(students_t_distribution, -t_stat);
-        else
-            pvalue = 2 * boost::math::cdf<Float64>(students_t_distribution, t_stat);
-
-        return {t_stat, pvalue};
+        return {t_stat, getPValue(getDegreesOfFreedom(), t_stat * t_stat)};
     }
 };
 

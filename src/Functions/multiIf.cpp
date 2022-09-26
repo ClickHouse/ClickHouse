@@ -332,7 +332,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(MultiIf)
+void registerFunctionMultiIf(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiIf>();
 

@@ -80,7 +80,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3IsResClassIII)
+void registerFunctionH3IsResClassIII(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3IsResClassIII>();
 }

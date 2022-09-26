@@ -22,16 +22,10 @@ public:
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});
 
-    InterpreterSelectWithUnionQuery(
-        const ASTPtr & query_ptr_,
-        ContextMutablePtr context_,
-        const SelectQueryOptions &,
-        const Names & required_result_column_names = {});
-
     ~InterpreterSelectWithUnionQuery() override;
 
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan) override;
+    virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
     BlockIO execute() override;
 
@@ -43,9 +37,7 @@ public:
         ContextPtr context_,
         bool is_subquery = false);
 
-    void ignoreWithTotals() override;
-
-    bool supportsTransactions() const override { return true; }
+    virtual void ignoreWithTotals() override;
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
