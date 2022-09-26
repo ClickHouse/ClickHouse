@@ -647,7 +647,6 @@ struct TimeSlotImpl
 {
     static constexpr auto name = "timeSlot";
 
-    //static inline DecimalUtils::DecimalComponents<DateTime64> execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
         return t.whole / 1800 * 1800;
