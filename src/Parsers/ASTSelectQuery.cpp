@@ -507,13 +507,13 @@ NameToNameMap ASTSelectQuery::getQueryParameterValues() const
     {
         auto ast = queue.front();
         queue.pop();
-        if (auto expression_list = ast->as<ASTExpressionList>())
+        if (auto * expression_list = ast->as<ASTExpressionList>())
         {
             if (expression_list->children.size() == 2)
             {
-                if (auto identifier = expression_list->children[0]->as<ASTIdentifier>())
+                if (auto * identifier = expression_list->children[0]->as<ASTIdentifier>())
                 {
-                    if (auto literal = expression_list->children[1]->as<ASTLiteral>())
+                    if (auto * literal = expression_list->children[1]->as<ASTLiteral>())
                     {
 
                         parameter_values[identifier->name()] = convertFieldToString(literal->value);
@@ -521,7 +521,7 @@ NameToNameMap ASTSelectQuery::getQueryParameterValues() const
                 }
             }
         }
-        for (auto child : ast->children)
+        for (const auto & child : ast->children)
             queue.push(child);
     }
 
