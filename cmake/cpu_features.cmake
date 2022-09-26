@@ -57,7 +57,7 @@ elseif (ARCH_AARCH64)
         # [7] https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html
         # [8] https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
         # [9] https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs -Xclang=-target-feature -Xclang=+ldapr")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs -Xclang=-target-feature -Xclang=+ldapr -Wno-unused-command-line-argument")
     endif ()
 
 elseif (ARCH_PPC64LE)
