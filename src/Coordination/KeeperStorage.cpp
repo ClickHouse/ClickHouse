@@ -1655,6 +1655,10 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     check_operation_type(OperationType::Read);
                     concrete_requests.push_back(std::make_shared<KeeperStorageListRequestProcessor>(sub_zk_request));
                     break;
+                case Coordination::OpNum::SimpleList:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageListRequestProcessor>(sub_zk_request));
+                    break;
                 default:
                     throw DB::Exception(
                         ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());

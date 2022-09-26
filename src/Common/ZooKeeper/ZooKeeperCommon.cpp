@@ -485,6 +485,11 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
             checkOperationType(Read);
             requests.push_back(std::make_shared<ZooKeeperGetRequest>(*concrete_request_get));
         }
+        else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(generic_request.get()))
+        {
+            checkOperationType(Read);
+            requests.push_back(std::make_shared<ZooKeeperSimpleListRequest>(*concrete_request_simple_list));
+        }
         else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
         {
             checkOperationType(Read);
