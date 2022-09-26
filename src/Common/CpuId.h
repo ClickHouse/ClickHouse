@@ -82,7 +82,6 @@ inline bool cpuid(UInt32 op, UInt32 * res) noexcept /// NOLINT
     OP(AVX512BW)             \
     OP(AVX512VL)             \
     OP(AVX512VBMI)           \
-    OP(AVX512VBMI2)          \
     OP(PREFETCHWT1)          \
     OP(SHA)                  \
     OP(ADX)                  \
@@ -301,11 +300,6 @@ bool havePREFETCHWT1() noexcept
 bool haveAVX512VBMI() noexcept
 {
     return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ecx >> 1) & 1u);
-}
-
-bool haveAVX512VBMI2() noexcept
-{
-    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ecx >> 6) & 1u);
 }
 
 bool haveRDRAND() noexcept
