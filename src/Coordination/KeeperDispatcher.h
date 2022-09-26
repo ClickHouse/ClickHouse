@@ -201,6 +201,12 @@ public:
     {
         keeper_stats.reset();
     }
+
+    /// Create snapshot manually
+    bool createSnapshot()
+    {
+        return server->createSnapshot();
+    }
 };
 
 }

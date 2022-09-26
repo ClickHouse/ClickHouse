@@ -327,4 +327,17 @@ struct ApiVersionCommand : public IFourLetterCommand
     String run() override;
     ~ApiVersionCommand() override = default;
 };
+
+/// Create snapshot manually
+struct CreateSnapshotCommand : public IFourLetterCommand
+{
+    explicit CreateSnapshotCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "csnp"; }
+    String run() override;
+    ~CreateSnapshotCommand() override = default;
+};
 }

@@ -136,6 +136,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr api_version_command = std::make_shared<ApiVersionCommand>(keeper_dispatcher);
         factory.registerCommand(api_version_command);
 
+        FourLetterCommandPtr create_snapshot_command = std::make_shared<CreateSnapshotCommand>(keeper_dispatcher);
+        factory.registerCommand(create_snapshot_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -470,6 +473,11 @@ String RecoveryCommand::run()
 String ApiVersionCommand::run()
 {
     return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+}
+
+String CreateSnapshotCommand::run()
+{
+    return keeper_dispatcher.createSnapshot() ? "Snapshot creation scheduled." : "Fail to scheduled snapshot creation.";
 }
 
 }
