@@ -12,7 +12,16 @@ then
         DIR="amd64"
     elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
     then
-        DIR="aarch64v80compat" # ARMv8.0 for maximum compatibility
+        # If the system is >=ARMv8.2 (https://en.wikipedia.org/wiki/AArch64), choose the corresponding build, else fall back to a v8.0
+        # compat build. Unfortunately, 1. the ARM ISA level cannot be read directly, we need to guess from the "features" in /proc/cpuinfo,
+        # and 2. the flags in /proc/cpuinfo are named differently than the flags passed to the compiler (cmake/cpu_features.cmake).
+        ARMV82=$(grep -m 1 'Features' /proc/cpuinfo | awk '/asimd/ && /sha1/ && /aes/ && /atomics/')
+        if [ "${ARMV82}" ]
+        then
+            DIR="aarch64"
+        else
+            DIR="aarch64v80compat"
+        fi
     elif [ "${ARCH}" = "powerpc64le" -o "${ARCH}" = "ppc64le" ]
     then
         DIR="powerpc64le"
