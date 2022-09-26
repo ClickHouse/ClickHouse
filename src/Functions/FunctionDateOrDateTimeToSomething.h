@@ -17,9 +17,7 @@ class FunctionDateOrDateTimeToSomething : public IFunctionDateOrDateTime<Transfo
 public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(context->getSettingsRef().force_timezone); }
 
-    explicit FunctionDateOrDateTimeToSomething(const std::string & force_timezone_) : force_timezone{force_timezone_}
-    {
-    }
+    explicit FunctionDateOrDateTimeToSomething(const std::string & force_timezone_) : force_timezone{force_timezone_} {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -63,7 +61,7 @@ public:
 
             if (arguments.size() == 3 && time_zone.empty())
                 throw Exception(
-                    "Function " + getName() + " supports a 3rd argument (optional) that must be non-empty and be a valid time zone",
+                    "Function " + this->getName() + " supports a 3rd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             return std::make_shared<ToDataType>(scale, time_zone);

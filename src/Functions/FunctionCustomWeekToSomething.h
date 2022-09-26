@@ -20,7 +20,6 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCustomWeekToSomething>(context->getSettingsRef().force_timezone); }
 
     explicit FunctionCustomWeekToSomething(const std::string & force_timezone_) : force_timezone(force_timezone_) {}
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
