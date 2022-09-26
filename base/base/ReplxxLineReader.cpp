@@ -513,7 +513,7 @@ void ReplxxLineReader::openInteractiveHistorySearch()
     /// - SKIM_DEFAULT_OPTIONS
     /// - FZF_DEFAULT_OPTS
     std::string fuzzy_finder_command = fmt::format(
-        "{} --read0 --height=30% < {} > {}",
+        "{} --read0 --tac --no-sort --tiebreak=index --bind=ctrl-r:toggle-sort --height=30% < {} > {}",
         fuzzy_finder, history_file.getPath(), output_file.getPath());
     char * const argv[] = {sh, sh_c, fuzzy_finder_command.data(), nullptr};
 
