@@ -202,7 +202,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     const ContextPtr & context,
     UInt64 limit) const
 {
-    auto sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+    const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     int read_direction = description.at(0).direction;
 
     auto fixed_sorting_columns = getFixedSortingColumns(query, sorting_key_columns, context);
