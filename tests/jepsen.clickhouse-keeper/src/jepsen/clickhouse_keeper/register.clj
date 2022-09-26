@@ -20,8 +20,7 @@
     (assoc this :conn (zk-connect node 9181 30000)))
 
   (setup! [this test]
-    (exec-with-retries 30 (fn []
-                            (zk-create-range conn 300))))
+    (zk-create-range conn 300)) ; 300 nodes to be sure
 
   (invoke! [_ test op]
     (let [[k v] (:value op)
@@ -56,7 +55,6 @@
                (checker/compose
                 {:linear   (checker/linearizable {:model     (model/cas-register)
                                                   :algorithm :linear})
-                 :perf     (checker/perf)
                  :timeline (timeline/html)}))
    :generator (independent/concurrent-generator
                10

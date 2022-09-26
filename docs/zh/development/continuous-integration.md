@@ -1,8 +1,4 @@
----
-slug: /zh/development/continuous-integration
----
 # 持续集成检查 {#continuous-integration-checks}
-
 当你提交一个pull请求时, ClickHouse[持续集成(CI)系统](https://clickhouse.com/docs/en/development/tests/#test-automation)会对您的代码运行一些自动检查.
 
 这在存储库维护者(来自ClickHouse团队的人)筛选了您的代码并将可测试标签添加到您的pull请求之后发生.
@@ -45,8 +41,6 @@ git push
 # 格式检查 {#style-check}
 使用`utils/check-style/check-style`二进制文件执行一些简单的基于正则表达式的代码样式检查(注意, 它可以在本地运行).
 如果失败, 按照[代码样式指南](./style.md)修复样式错误.
-
-使用 [black](https://github.com/psf/black/) 檢查 python 代碼.
 
 ### 报告详情 {#report-details}
 -  [状态页示例](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)

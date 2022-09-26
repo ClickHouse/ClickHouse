@@ -61,7 +61,6 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
-    bool is_all_data_sent;
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
@@ -101,10 +100,6 @@ protected:
     QueryPriorities::Handle priority_handle = nullptr;
 
     std::atomic<bool> is_killed { false };
-
-    /// All data to the client already had been sent.
-    /// Including EndOfStream or Exception.
-    std::atomic<bool> is_all_data_sent { false };
 
     void setUserProcessList(ProcessListForUser * user_process_list_);
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
@@ -169,11 +164,6 @@ public:
         return &thread_group->memory_tracker;
     }
 
-    IAST::QueryKind getQueryKind() const
-    {
-        return query_kind;
-    }
-
     bool updateProgressIn(const Progress & value)
     {
         CurrentThread::updateProgressIn(value);
@@ -198,9 +188,6 @@ public:
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
-
-    bool isAllDataSent() const { return is_all_data_sent; }
-    void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
     void addPipelineExecutor(PipelineExecutor * e);
@@ -285,26 +272,7 @@ public:
 };
 
 
-class ProcessListBase
-{
-    mutable std::mutex mutex;
-
-protected:
-    using Lock = std::unique_lock<std::mutex>;
-    struct LockAndBlocker
-    {
-        Lock lock;
-        OvercommitTrackerBlockerInThread blocker;
-    };
-
-    // It is forbidden to do allocations/deallocations with acquired mutex and
-    // enabled OvercommitTracker. This leads to deadlock in the case of OOM.
-    LockAndBlocker safeLock() const noexcept { return { std::unique_lock{mutex}, {} }; }
-    Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
-};
-
-
-class ProcessList : public ProcessListBase
+class ProcessList
 {
 public:
     using Element = QueryStatus;
@@ -323,10 +291,10 @@ public:
 
 protected:
     friend class ProcessListEntry;
-    friend struct ::OvercommitTracker;
     friend struct ::UserOvercommitTracker;
     friend struct ::GlobalOvercommitTracker;
 
+    mutable std::mutex mutex;
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
     /// List of queries
@@ -379,19 +347,28 @@ public:
 
     void setMaxSize(size_t max_size_)
     {
-        auto lock = unsafeLock();
+        std::lock_guard lock(mutex);
         max_size = max_size_;
+    }
+
+    // Before calling this method you should be sure
+    // that lock is acquired.
+    template <typename F>
+    void processEachQueryStatus(F && func) const
+    {
+        for (auto && query : processes)
+            func(query);
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
-        auto lock = unsafeLock();
+        std::lock_guard lock(mutex);
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
-        auto lock = unsafeLock();
+        std::lock_guard lock(mutex);
         max_select_queries_amount = max_select_queries_amount_;
     }
 

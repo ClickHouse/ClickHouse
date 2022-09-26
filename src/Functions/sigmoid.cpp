@@ -30,7 +30,7 @@ using FunctionSigmoid = FunctionMathUnary<Impl>;
 
 #else
 
-double sigmoid(double x)
+static double sigmoid(double x)
 {
     return 1.0 / (1.0 + exp(-x));
 }
@@ -41,7 +41,7 @@ using FunctionSigmoid = FunctionMathUnary<UnaryFunctionVectorized<SigmoidName, s
 
 }
 
-REGISTER_FUNCTION(Sigmoid)
+void registerFunctionSigmoid(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSigmoid>();
 }

@@ -177,11 +177,19 @@ public:
 };
 
 
-REGISTER_FUNCTION(Trap)
+void registerFunctionTrap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTrap>();
 }
 
+}
+
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionTrap(FunctionFactory &) {}
 }
 
 #endif

@@ -1,7 +1,6 @@
 ---
-sidebar_label: 设置
-sidebar_position: 52
-slug: /zh/operations/settings/settings
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # 设置 {#settings}
@@ -1242,6 +1241,16 @@ ClickHouse生成异常
 类型：网址
 
 默认值：空
+
+## background_pool_size {#background_pool_size}
+
+设置在表引擎中执行后台操作的线程数（例如，合并 [MergeTree引擎](../../engines/table-engines/mergetree-family/index.md) 表）。 此设置在ClickHouse服务器启动时应用，不能在用户会话中更改。 通过调整此设置，您可以管理CPU和磁盘负载。 较小的池大小使用较少的CPU和磁盘资源，但后台进程推进速度较慢，最终可能会影响查询性能。
+
+可能的值:
+
+-   任何正整数。
+
+默认值：16。
 
 [原始文章](https://clickhouse.com/docs/en/operations/settings/settings/) <!-- hide -->
 

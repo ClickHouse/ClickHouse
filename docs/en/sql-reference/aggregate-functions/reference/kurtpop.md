@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/kurtpop
-sidebar_position: 153
+toc_priority: 153
 ---
 
-# kurtPop
+# kurtPop {#kurtpop}
 
 Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 

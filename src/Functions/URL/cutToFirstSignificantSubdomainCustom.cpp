@@ -34,7 +34,7 @@ using FunctionCutToFirstSignificantSubdomainCustom = FunctionCutToFirstSignifica
 struct NameCutToFirstSignificantSubdomainCustomWithWWW { static constexpr auto name = "cutToFirstSignificantSubdomainCustomWithWWW"; };
 using FunctionCutToFirstSignificantSubdomainCustomWithWWW = FunctionCutToFirstSignificantSubdomainCustomImpl<CutToFirstSignificantSubdomainCustom<false>, NameCutToFirstSignificantSubdomainCustomWithWWW>;
 
-REGISTER_FUNCTION(CutToFirstSignificantSubdomainCustom)
+void registerFunctionCutToFirstSignificantSubdomainCustom(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustom>();
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWW>();

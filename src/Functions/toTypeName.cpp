@@ -30,9 +30,6 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForNothing() const override { return false; }
-
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -62,7 +59,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(ToTypeName)
+void registerFunctionToTypeName(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToTypeName>();
 }

@@ -2,7 +2,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -10,25 +10,19 @@ namespace DB
 MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
-    const SortDescription & description_,
+    SortDescription  description_,
     size_t max_block_size,
-    SortingQueueStrategy sorting_queue_strategy,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
     bool quiet_,
     bool use_average_block_sizes,
     bool have_all_inputs_)
     : IMergingTransform(
-        num_inputs,
-        header,
-        header,
-        have_all_inputs_,
-        limit_,
+        num_inputs, header, header, have_all_inputs_, limit_,
         header,
         num_inputs,
-        description_,
+        std::move(description_),
         max_block_size,
-        sorting_queue_strategy,
         limit_,
         out_row_sources_buf_,
         use_average_block_sizes)

@@ -24,6 +24,7 @@ INSERT INTO h3_indexes VALUES (635544851677385791);
 INSERT INTO h3_indexes VALUES (639763125756281263);
 INSERT INTO h3_indexes VALUES (644178757620501158);
 
-SELECT substring(h3CellAreaRads2(h3_index)::String, 1, 10) FROM h3_indexes ORDER BY h3_index;
+
+SELECT h3CellAreaRads2(h3_index) FROM h3_indexes ORDER BY h3_index;
 
 DROP TABLE h3_indexes;

@@ -3,18 +3,8 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Interpreters/Context.h>
-
-#include <Common/ProfileEvents.h>
-
-namespace ProfileEvents
-{
-    extern const Event KafkaMessagesRead;
-    extern const Event KafkaMessagesFailed;
-    extern const Event KafkaRowsRead;
-    extern const Event KafkaRowsRejected;
-}
 
 namespace DB
 {
@@ -35,7 +25,7 @@ KafkaSource::KafkaSource(
     Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
+    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -58,19 +48,6 @@ KafkaSource::~KafkaSource()
         buffer->unsubscribe();
 
     storage.pushReadBuffer(buffer);
-}
-
-bool KafkaSource::checkTimeLimit() const
-{
-    if (max_execution_time != 0)
-    {
-        auto elapsed_ns = total_stopwatch.elapsed();
-
-        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
-            return false;
-    }
-
-    return true;
 }
 
 Chunk KafkaSource::generateImpl()
@@ -108,8 +85,6 @@ Chunk KafkaSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, Exception & e)
     {
-        ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
-
         if (put_error_to_stream)
         {
             exception_message = e.message();
@@ -142,11 +117,7 @@ Chunk KafkaSource::generateImpl()
         size_t new_rows = 0;
         exception_message.reset();
         if (buffer->poll())
-        {
-            // poll provide one message at a time to the input_format
-            ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute();
-        }
 
         if (new_rows)
         {
@@ -156,8 +127,6 @@ Chunk KafkaSource::generateImpl()
             // ReadBufferFromKafkaConsumer::currentTopic() (and other helpers).
             if (buffer->isStalled())
                 throw Exception("Polled messages became unusable", ErrorCodes::LOGICAL_ERROR);
-
-            ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 
             buffer->storeLastReadMessageOffset();
 
@@ -243,18 +212,8 @@ Chunk KafkaSource::generateImpl()
         }
     }
 
-    if (total_rows == 0)
-    {
+    if (buffer->polledDataUnusable() || total_rows == 0)
         return {};
-    }
-    else if (buffer->polledDataUnusable())
-    {
-        // the rows were counted already before by KafkaRowsRead,
-        // so let's count the rows we ignore separately
-        // (they will be retried after the rebalance)
-        ProfileEvents::increment(ProfileEvents::KafkaRowsRejected, total_rows);
-        return {};
-    }
 
     /// MATERIALIZED columns can be added here, but I think
     // they are not needed here:

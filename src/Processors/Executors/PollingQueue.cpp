@@ -38,7 +38,7 @@ PollingQueue::~PollingQueue()
 void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
-    if (tasks.contains(key))
+    if (tasks.count(key))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};

@@ -52,7 +52,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, file_size.value_or(-1));
+            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }
@@ -96,7 +96,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (flags == -1)
         flags = O_RDONLY | O_CLOEXEC;
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
         /** O_DIRECT
