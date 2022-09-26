@@ -7,12 +7,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-}
-
 namespace
 {
 
@@ -51,9 +45,6 @@ public:
     {
         const ColumnPtr & col = arguments[0].column;
 
-        if (arguments[0].type->onlyNull() && !col->empty())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
-
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
             return nullable_col->getNestedColumnPtr();
         else
@@ -63,7 +54,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(AssumeNotNull)
+void registerFunctionAssumeNotNull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAssumeNotNull>();
 }

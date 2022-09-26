@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <s3_check_objects_after_upload>1</s3_check_objects_after_upload>
-        </default>
-    </profiles>
-</clickhouse>

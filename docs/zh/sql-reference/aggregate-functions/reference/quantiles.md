@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantiles
-sidebar_position: 201
+toc_priority: 201
 ---
 
 # quantiles {#quantiles}

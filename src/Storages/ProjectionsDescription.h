@@ -106,7 +106,7 @@ struct ProjectionDescription
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
-struct ProjectionsDescription : public IHints<1, ProjectionsDescription>
+struct ProjectionsDescription
 {
     ProjectionsDescription() = default;
     ProjectionsDescription(ProjectionsDescription && other) = default;
@@ -137,8 +137,6 @@ struct ProjectionsDescription : public IHints<1, ProjectionsDescription>
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
-
-    std::vector<String> getAllRegisteredNames() const override;
 
 private:
     /// Keep the sequence of columns and allow to lookup by name.

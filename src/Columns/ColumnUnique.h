@@ -72,6 +72,10 @@ public:
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
+    StringRef getDataAtWithTerminatingZero(size_t n) const override
+    {
+        return getNestedColumn()->getDataAtWithTerminatingZero(n);
+    }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -543,7 +547,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     if (secondary_index)
         next_position += secondary_index->size();
 
-    auto insert_key = [&](StringRef ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
+    auto insert_key = [&](const StringRef & ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
     {
         auto inserted_pos = cur_index.insert(ref);
         positions[num_added_rows] = inserted_pos;
@@ -582,6 +586,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         }
     }
 
+    // checkIndexes(*positions_column, column->size() + (overflowed_keys ? overflowed_keys->size() : 0));
     return std::move(positions_column);
 }
 

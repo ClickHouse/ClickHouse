@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/varpop
-sidebar_position: 32
+toc_priority: 32
 ---
 
 # varPop(x) {#varpopx}

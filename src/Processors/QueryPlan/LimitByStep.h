@@ -20,11 +20,6 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override
-    {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-    }
-
     size_t group_length;
     size_t group_offset;
     Names columns;

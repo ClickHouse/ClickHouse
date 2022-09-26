@@ -61,7 +61,6 @@ std::pair<const char *, bool> splitMultipartQuery(
     const std::string & queries,
     std::vector<std::string> & queries_list,
     size_t max_query_size,
-    size_t max_parser_depth,
-    bool allow_settings_after_format_in_insert);
+    size_t max_parser_depth);
 
 }

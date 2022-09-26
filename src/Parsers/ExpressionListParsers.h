@@ -9,11 +9,6 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wc99-extensions"
-#endif
-
 namespace DB
 {
 
@@ -127,7 +122,7 @@ private:
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
     /// =, !=, <, > ALL (subquery) / ANY (subquery)
-    bool comparison_expression = false;
+    bool allow_any_all_operators = false;
 
 public:
     /** `operators_` - allowed operators and their corresponding functions
@@ -138,9 +133,9 @@ public:
     }
 
     ParserLeftAssociativeBinaryOperatorList(Operators_t operators_,
-            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool comparison_expression_ = false)
+            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool allow_any_all_operators_ = false)
         : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_),
-          first_elem_parser(std::move(first_elem_parser_)), comparison_expression(comparison_expression_)
+          first_elem_parser(std::move(first_elem_parser_)), allow_any_all_operators(allow_any_all_operators_)
     {
     }
 
@@ -522,26 +517,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserGroupingSetsExpressionList : public IParserBase
-{
-protected:
-    const char * getName() const override { return "grouping sets expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserGroupingSetsExpressionListElements : public IParserBase
-{
-protected:
-    const char * getName() const override { return "grouping sets expression elements"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserInterpolateExpressionList : public IParserBase
-{
-protected:
-    const char * getName() const override { return "interpolate expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 /// Parser for key-value pair, where value can be list of pairs.
 class ParserKeyValuePair : public IParserBase
@@ -569,7 +544,3 @@ protected:
 };
 
 }
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif

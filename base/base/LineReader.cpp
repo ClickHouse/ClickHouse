@@ -5,7 +5,7 @@
 #include <algorithm>
 
 #include <cassert>
-#include <cstring>
+#include <string.h>
 #include <unistd.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -73,7 +73,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
     if (std::string::npos == last_word_pos)
         last_word = prefix;
     else
-        last_word = std::string_view{prefix}.substr(last_word_pos + 1, std::string::npos);
+        last_word = std::string_view(prefix).substr(last_word_pos + 1, std::string::npos);
     /// last_word can be empty.
 
     std::pair<Words::const_iterator, Words::const_iterator> range;

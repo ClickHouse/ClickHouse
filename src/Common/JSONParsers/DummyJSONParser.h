@@ -84,7 +84,7 @@ struct DummyJSONParser
         static Iterator begin() { return {}; }
         static Iterator end() { return {}; }
         static size_t size() { return 0; }
-        bool find(std::string_view, Element &) const { return false; } /// NOLINT
+        bool find(const std::string_view &, Element &) const { return false; } /// NOLINT
 
 #if 0
         /// Optional: Provides access to an object's element by index.
@@ -93,7 +93,7 @@ struct DummyJSONParser
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(std::string_view, Element &) { throw Exception{"Functions JSON* are not supported", ErrorCodes::NOT_IMPLEMENTED}; } /// NOLINT
+    bool parse(const std::string_view &, Element &) { throw Exception{"Functions JSON* are not supported", ErrorCodes::NOT_IMPLEMENTED}; } /// NOLINT
 
 #if 0
     /// Optional: Allocates memory to parse JSON documents faster.
