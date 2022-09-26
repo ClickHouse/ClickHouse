@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +16,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function execute_query()
 {
     # Some queries are supposed to fail, use -f to suppress error messages
-    echo $2 | ${CLICKHOUSE_CURL} -f \
+    echo $2 | ${CLICKHOUSE_CURL_COMMAND} -q -s --max-time 180 \
                 -X POST \
                 -H "traceparent: 00-$1-5150000000000515-01" \
                 -H "tracestate: a\nb cd" \
@@ -75,10 +75,9 @@ DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry;
 cluster_name=$($CLICKHOUSE_CLIENT -q "select if(engine = 'Replicated', name, 'test_shard_localhost')  from system.databases where name='$CLICKHOUSE_DATABASE'")
 
 #
-# Normal cases for ALL distributed_ddl_entry_format_version.
 # Only format_version 4 enables the tracing
 #
-for ddl_version in 1 2 3 4; do
+for ddl_version in 3 4; do
     # Echo a separator so that the reference file is more clear for reading
     echo "===ddl_format_version ${ddl_version}===="
 
@@ -87,12 +86,10 @@ for ddl_version in 1 2 3 4; do
 
     check_span 1 $trace_id "HTTPHandler"
 
-    # For Replcated database engine, it does not call 'executeDDLQueryOnCluster' method, we don't need to check it
     if [ $cluster_name = "test_shard_localhost" ]; then
         check_span 1 $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
     else
-        # Only echo a value so that comparison of reference is correct
-        echo 1
+        check_span 1 $trace_id "%tryEnqueueAndExecuteEntry%" "attribute['clickhouse.cluster']='${cluster_name}'"
     fi
     
     if [ $cluster_name = "test_shard_localhost" ]; then
@@ -137,14 +134,14 @@ done
 echo "===exception===="
 
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-execute_query $trace_id "DROP TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry_non_exist ON CLUSTER ${cluster_name}" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=4"
+execute_query $trace_id "DROP TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry_non_exist ON CLUSTER ${cluster_name}" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=4" 2>&1| grep -Fv "UNKNOWN_TABLE"
 
 check_span 1 $trace_id "HTTPHandler"
 
 if [ $cluster_name = "test_shard_localhost" ]; then
     expected=1
 else
-    # For Replicated database, executeDDLQueryOnCluster is not called
+    # For Replicated database it will fail on initiator before enqueueing distributed DDL
     expected=0
 fi
 check_span $expected $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
