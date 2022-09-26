@@ -456,9 +456,9 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
 bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
 {
-    zookeeper->removeChildrenRecursive(data_path);
+    zookeeper->tryRemoveChildrenRecursive(data_path, true);
 
-    bool completely_removed = false;
+    bool drop_done = false;
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(dropped_path, -1));
@@ -473,20 +473,33 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
         case ZOK:
         {
             metadata_drop_lock->setAlreadyRemoved();
-            completely_removed = true;
+            drop_done = true;
             LOG_INFO(log, "Metadata ({}) and data ({}) was successfully removed from ZooKeeper", metadata_path, data_path);
             break;
         }
         case ZNONODE:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of metadata. It's a bug");
         case ZNOTEMPTY:
-            LOG_ERROR(log, "Metadata was not completely removed from ZooKeeper");
+        {
+            // valid case when this can happen is if a table checked "dropped" path just before it was created.
+            // new table will create data/metadata paths again while drop is in progress
+            // only bad thing that can happen is if we start inserting data into new table while
+            // we remove data here (some data can be lost)
+            LOG_WARNING(log, "Metadata was not completely removed from ZooKeeper. Maybe some other table is using the same path");
+
+            // we need to remove at least "dropped" nodes
+            Coordination::Requests requests;
+            ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
+            ops.emplace_back(zkutil::makeRemoveRequest(dropped_path, -1));
+            zookeeper->multi(requests);
+            drop_done = true;
             break;
+        }
         default:
             zkutil::KeeperMultiException::check(code, ops, responses);
             break;
     }
-    return completely_removed;
+    return drop_done;
 }
 
 void StorageKeeperMap::drop()
