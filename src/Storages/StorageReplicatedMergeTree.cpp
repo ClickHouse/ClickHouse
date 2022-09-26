@@ -7487,6 +7487,10 @@ void StorageReplicatedMergeTree::createTableSharedID() const
             id = zookeeper->get(zookeeper_table_id_path);
             LOG_DEBUG(log, "Shared ID on path {} concurrently created, will set ID {}", zookeeper_table_id_path, id);
         }
+        else if (code == Coordination::Error::ZNONODE)
+        {
+            LOG_WARNING(log, "Shared ID on path {} is impossible to create because table was completely dropped, parts can be dropped without checks (using id {})", zookeeper_table_id_path, id);
+        }
         else if (code != Coordination::Error::ZOK)
         {
             throw zkutil::KeeperException(code, zookeeper_table_id_path);
