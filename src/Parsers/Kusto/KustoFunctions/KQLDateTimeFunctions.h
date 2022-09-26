@@ -223,34 +223,27 @@ protected:
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 
-void inline getTokens(String format , std::vector<String> & res )
+void inline getTokens(String format, std::vector<String> & res )
 {
     String str = format;
     String token;
     auto pos = str.find_first_not_of("abcdefghijklmnopqrstuvwxyzQWERTYUIOPASDFGHJKLZXCVBNM");
-    while (pos != String::npos )
+    while (pos != String::npos)
     {
-        if ( pos != 0 )
+        if (pos != 0)
         {
             // Found a token
             token = str.substr(0, pos);
-            res.insert(res.begin(),token);
+            res.insert(res.begin(), token);
         }
-       /* else
-        {
-            // Found another delimiter
-            // Just move on to next one
-           
-        }
-*/
         str.erase(0, pos+1);  // Always remove pos+1 to get rid of delimiter
         pos = str.find_first_not_of("abcdefghijklmnopqrstuvwxyzQWERTYUIOPASDFGHJKLZXCVBNM");
     }
     // Cover the last (or only) token
-    if ( str.length() > 0 )
+    if (str.length() > 0)
     {
         token = str;
-        res.insert(res.begin(),token);
+        res.insert(res.begin(), token);
     }
 }
 

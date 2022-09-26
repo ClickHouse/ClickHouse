@@ -21,7 +21,6 @@ bool ParserKQLDateTypeTimespan :: parseImpl(Pos & pos,  [[maybe_unused]] ASTPtr 
         token = String(pos->begin + 1, pos->end -1);
     else
         token = String(pos->begin, pos->end);
-    
     if (!parseConstKQLTimespan(token))
         return false;
 
@@ -47,7 +46,7 @@ double ParserKQLDateTypeTimespan :: toSeconds()
         case KQLTimespanUint::nanosec:
             return time_span / 1000000000.0;
         case KQLTimespanUint::tick:
-            return time_span / 10000000000.0;
+            return time_span / 10000000.0;
     }
 }
 
