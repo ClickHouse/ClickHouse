@@ -318,7 +318,7 @@ public:
     {
     }
 
-    struct ZkError
+    struct KeeperError
     {
         using Code = Coordination::Error;
         Code code = Code::ZOK;
@@ -331,7 +331,7 @@ public:
         std::string message;
     };
 
-    bool canTry()
+    bool shouldTry()
     {
         /// zero try is ordinary execution, not a retry
         if (0 == tries_count)
@@ -340,9 +340,16 @@ public:
             return true;
         }
 
-        /// do not count previous try if it has no errors
-        if (zk_error.code == ZkError::Code::ZOK && user_error.code == ErrorCodes::OK)
+        if (allow_unconditional_try_once)
+        {
+            allow_unconditional_try_once = false;
             return true;
+        }
+
+        if (is_try_successful)
+            return false;
+
+        is_try_successful = true;
 
         if (tries_count >= max_tries)
         {
@@ -350,7 +357,7 @@ public:
             return false;
         }
 
-        /// zero try is normal execution, others are retries
+        /// retries
         assert(tries_count > 0);
         sleepForMilliseconds(curr_backoff_ms);
         curr_backoff_ms = std::min(curr_backoff_ms * 2, max_backoff_ms);
@@ -364,15 +371,16 @@ public:
         if (user_error.code != ErrorCodes::OK)
             throw Exception(user_error.code, user_error.message);
 
-        if (zk_error.code != ZkError::Code::ZOK)
-            throw zkutil::KeeperException(zk_error.code, zk_error.message);
+        if (keeper_error.code != KeeperError::Code::ZOK)
+            throw zkutil::KeeperException(keeper_error.code, keeper_error.message);
     }
 
     void setUserError(int code, std::string message)
     {
+        is_try_successful = false;
         user_error.code = code;
         user_error.message = std::move(message);
-        zk_error = ZkError{};
+        keeper_error = KeeperError{};
     }
 
     template <typename... Args>
@@ -381,17 +389,12 @@ public:
         setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
     }
 
-    void setZkError(ZkError::Code code, std::string message)
+    void setKeeperError(KeeperError::Code code, std::string message)
     {
-        zk_error.code = code;
-        zk_error.message = std::move(message);
+        is_try_successful = false;
+        keeper_error.code = code;
+        keeper_error.message = std::move(message);
         user_error = UserError{};
-    }
-
-    void resetErrors()
-    {
-        user_error = UserError{};
-        zk_error = ZkError{};
     }
 
     bool call(auto && f)
@@ -403,7 +406,7 @@ public:
         }
         catch (const zkutil::KeeperException & e)
         {
-            setZkError(e.code, e.message());
+            setKeeperError(e.code, e.message());
         }
         catch (const Exception & e)
         {
@@ -412,13 +415,21 @@ public:
         return false;
     }
 
+    const auto & getUserError() const { return user_error; }
+
+    const auto & getKeeperError() const { return keeper_error; }
+
+    void allowUnconditionalTryOnce() { allow_unconditional_try_once = true; }
+
 private:
     const UInt64 max_tries = 1;
     UInt64 curr_backoff_ms;
     const UInt64 max_backoff_ms;
     UInt64 tries_count = 0;
     UserError user_error;
-    ZkError zk_error;
+    KeeperError keeper_error;
+    bool allow_unconditional_try_once = false;
+    bool is_try_successful = true;
 };
 
 void ReplicatedMergeTreeSink::commitPart(
@@ -445,7 +456,7 @@ void ReplicatedMergeTreeSink::commitPart(
         settings.insert_part_commit_retry_initial_backoff_ms,
         settings.insert_part_commit_retry_max_backoff_ms);
 
-    while (tries_ctl.canTry())
+    while (tries_ctl.shouldTry())
     {
         try
         {
@@ -698,7 +709,7 @@ void ReplicatedMergeTreeSink::commitPart(
                         part->is_duplicate = true; /// Part is duplicate, just remove it from local FS
                         throw Exception("Too many transaction retries - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
                     }
-                    tries_ctl.resetErrors(); /// tries without error are not counted
+                    tries_ctl.allowUnconditionalTryOnce(); /// we want one more iteration w/o counting it as a try and timeout
                     continue;
                 }
                 else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
@@ -744,22 +755,20 @@ void ReplicatedMergeTreeSink::commitPart(
                     block_id,
                     Coordination::errorMessage(multi_code));
             }
-
-            break;
         }
         catch (const zkutil::KeeperException & e)
         {
             if (!Coordination::isHardwareError(e.code))
                 throw;
 
-            tries_ctl.setZkError(e.code, e.message());
+            tries_ctl.setKeeperError(e.code, e.message());
         }
     }
 
     if (isQuorumEnabled())
     {
-        tries_ctl.resetErrors();
-        while (tries_ctl.canTry())
+        tries_ctl.allowUnconditionalTryOnce(); /// make first iteration for quorum a normal execution (w/o counting it as a retry and timeout)
+        while (tries_ctl.shouldTry())
         {
             try
             {
@@ -779,15 +788,13 @@ void ReplicatedMergeTreeSink::commitPart(
                         [&]()
                         { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num); }))
                     continue;
-
-                break;
             }
             catch (const zkutil::KeeperException & e)
             {
                 if (!Coordination::isHardwareError(e.code))
                     throw;
 
-                tries_ctl.setZkError(e.code, e.message());
+                tries_ctl.setKeeperError(e.code, e.message());
             }
         }
     }
