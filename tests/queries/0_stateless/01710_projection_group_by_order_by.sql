@@ -1,5 +1,3 @@
--- Tags: no-s3-storage
-
 DROP TABLE IF EXISTS t;
 drop table if exists tp;
 

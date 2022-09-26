@@ -156,6 +156,8 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
                 e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 return;
+
+            throw;
         }
         catch (const fs::filesystem_error & e)
         {
@@ -283,7 +285,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
     if (!id.starts_with(object_storage_root_path))
     {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}", id, object_storage_root_path);
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_storage_root_path, StackTrace().toString());
         return false;
     }
 
