@@ -1,4 +1,4 @@
-#include "Interpreters/UserDefinedSQLObjectsFromFolder.h"
+#include "Functions/UserDefined/UserDefinedSQLObjectsFromFolder.h"
 
 #include <filesystem>
 

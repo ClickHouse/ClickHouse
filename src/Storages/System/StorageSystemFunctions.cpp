@@ -6,8 +6,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/escapeForFileName.h>
 #include <Backups/BackupEntriesCollector.h>

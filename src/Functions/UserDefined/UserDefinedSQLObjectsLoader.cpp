@@ -1,5 +1,5 @@
-#include "Interpreters/UserDefinedSQLObjectsLoader.h"
-#include "Interpreters/UserDefinedSQLObjectsFromFolder.h"
+#include "Functions/UserDefined/UserDefinedSQLObjectsLoader.h"
+#include "Functions/UserDefined/UserDefinedSQLObjectsFromFolder.h"
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>

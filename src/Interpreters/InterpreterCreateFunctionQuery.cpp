@@ -5,9 +5,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsLoader.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

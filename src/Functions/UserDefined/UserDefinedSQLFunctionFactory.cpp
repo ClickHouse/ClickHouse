@@ -3,9 +3,9 @@
 #include <Common/quoteString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 #include <Interpreters/Context.h>
 
 

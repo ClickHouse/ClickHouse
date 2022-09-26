@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/IUserDefinedSQLObjectsSource.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsSource.h>
 
 
 namespace DB

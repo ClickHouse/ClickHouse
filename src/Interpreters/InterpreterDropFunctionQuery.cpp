@@ -4,9 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
-#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 
 
 namespace DB
