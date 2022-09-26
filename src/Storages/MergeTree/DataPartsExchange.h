@@ -67,7 +67,7 @@ private:
 class Fetcher final : private boost::noncopyable
 {
 public:
-    explicit Fetcher(StorageReplicatedMergeTree & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
+    explicit Fetcher(StorageReplicatedMergeTree & data_);
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     MergeTreeData::MutableDataPartPtr fetchSelectedPart(
