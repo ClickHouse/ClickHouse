@@ -9,12 +9,11 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/Keeper4LWInfo.h>
-#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
 
-using RaftResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
+using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
 class KeeperServer
 {
@@ -30,7 +29,7 @@ private:
     struct KeeperRaftServer;
     nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
-    std::vector<nuraft::ptr<nuraft::rpc_listener>> asio_listeners;
+    nuraft::ptr<nuraft::rpc_listener> asio_listener;
     // because some actions can be applied
     // when we are sure that there are no requests currently being
     // processed (e.g. recovery) we do all write actions
@@ -52,7 +51,7 @@ private:
 
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
     /// Allows to avoid race conditions.
-    void launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6);
+    void launchRaftServer(bool enable_ipv6);
 
     void shutdownRaftServer();
 
@@ -62,18 +61,12 @@ private:
 
     std::atomic_bool is_recovering = false;
 
-    std::shared_ptr<KeeperContext> keeper_context;
-
-    const bool create_snapshot_on_exit;
-
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_,
-        KeeperStateMachine::CommitCallback commit_callback,
-        KeeperStateMachine::ApplySnapshotCallback apply_snapshot_callback);
+        SnapshotsQueue & snapshots_queue_);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -86,7 +79,7 @@ public:
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
-    RaftResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
+    RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
@@ -121,17 +114,6 @@ public:
 
     int getServerID() const { return server_id; }
 
-    struct NodeInfo
-    {
-        uint64_t term;
-        uint64_t last_committed_index;
-
-        bool operator==(const NodeInfo &) const = default;
-    };
-
-    RaftResult getLeaderInfo();
-    NodeInfo getNodeInfo();
-
     /// Get configuration diff between current configuration in RAFT and in XML file
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
 
@@ -139,23 +121,10 @@ public:
     /// Synchronously check for update results with retries.
     void applyConfigurationUpdate(const ConfigUpdateAction & task);
 
+
     /// Wait configuration update for action. Used by followers.
     /// Return true if update was successfully received.
     bool waitConfigurationUpdate(const ConfigUpdateAction & task);
 };
 
-}
-namespace std
-{
-    template <>
-    struct hash<DB::KeeperServer::NodeInfo>
-    {
-        size_t operator()(const DB::KeeperServer::NodeInfo & info) const
-        {
-            SipHash hash_state;
-            hash_state.update(info.term);
-            hash_state.update(info.last_committed_index);
-            return hash_state.get64();
-        }
-    };
 }

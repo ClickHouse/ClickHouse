@@ -13,7 +13,6 @@
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
-#include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
@@ -149,19 +148,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     function_builder = function_factory.get(function->name, context);
 
                 if (!function_builder->isInjective({}))
-                {
-                    ++i;
-                    continue;
-                }
-            }
-            /// don't optimize functions that shadow any of it's arguments, e.g.:
-            /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
-            if (!function->alias.empty())
-            {
-                FunctionMaskingArgumentCheckVisitor::Data data{.alias=function->alias};
-                FunctionMaskingArgumentCheckVisitor(data).visit(function->arguments);
-
-                if (data.is_rejected)
                 {
                     ++i;
                     continue;
@@ -418,7 +404,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         return;
 
     std::unordered_set<String> distinct_names = getDistinctNames(*subselect);
-    std::unordered_set<std::string_view> selected_names;
+    std::unordered_set<String> selected_names;
 
     /// Check source column names from select list (ignore aliases and table names)
     for (const auto & id : select.select()->children)
@@ -427,11 +413,11 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         if (!identifier)
             return;
 
-        const String & name = identifier->shortName();
+        String name = identifier->shortName();
         if (!distinct_names.contains(name))
             return; /// Not a distinct column, keep DISTINCT for it.
 
-        selected_names.emplace(name);
+        selected_names.insert(name);
     }
 
     /// select columns list != distinct columns list
@@ -453,7 +439,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         return;
 
     /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their underlying tables
+    /// because we can't get the sorting key of their undelying tables
     /// and we can break the matching of the sorting key for `read_in_order`
     /// optimization by removing monotonous functions from the prefix of key.
     if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
@@ -632,7 +618,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
         if (!cnf_form)
             return false;
 
-        cnf_form->pushNotInFunctions();
+        cnf_form->pushNotInFuntions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
         return true;
     }
@@ -837,11 +823,11 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query);
 
-    if (settings.optimize_multiif_to_if)
-        optimizeMultiIfToIf(query);
-
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
+
+    if (settings.optimize_multiif_to_if)
+        optimizeMultiIfToIf(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)

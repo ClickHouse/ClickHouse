@@ -3,7 +3,6 @@
 #include <Common/RadixSort.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Core/Joins.h>
 #include <base/types.h>
 
 
@@ -40,7 +39,7 @@ void callWithType(TypeIndex type, F && f)
     __builtin_unreachable();
 }
 
-template <typename TKey, ASOFJoinInequality inequality>
+template <typename TKey, ASOF::Inequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
 {
     struct Entry
@@ -78,8 +77,8 @@ public:
     using Entries = PaddedPODArray<Entry>;
     using RowRefs = PaddedPODArray<RowRef>;
 
-    static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
-    static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
+    static constexpr bool is_descending = (inequality == ASOF::Inequality::Greater || inequality == ASOF::Inequality::GreaterOrEquals);
+    static constexpr bool is_strict = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::Greater);
 
     void insert(const IColumn & asof_column, const Block * block, size_t row_num) override
     {
@@ -217,7 +216,7 @@ private:
 };
 }
 
-AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
+AsofRowRefs createAsofRowRef(TypeIndex type, ASOF::Inequality inequality)
 {
     AsofRowRefs result;
     auto call = [&](const auto & t)
@@ -225,17 +224,17 @@ AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
         using T = std::decay_t<decltype(t)>;
         switch (inequality)
         {
-            case ASOFJoinInequality::LessOrEquals:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::LessOrEquals>>();
+            case ASOF::Inequality::LessOrEquals:
+                result = std::make_unique<SortedLookupVector<T, ASOF::Inequality::LessOrEquals>>();
                 break;
-            case ASOFJoinInequality::Less:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::Less>>();
+            case ASOF::Inequality::Less:
+                result = std::make_unique<SortedLookupVector<T, ASOF::Inequality::Less>>();
                 break;
-            case ASOFJoinInequality::GreaterOrEquals:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::GreaterOrEquals>>();
+            case ASOF::Inequality::GreaterOrEquals:
+                result = std::make_unique<SortedLookupVector<T, ASOF::Inequality::GreaterOrEquals>>();
                 break;
-            case ASOFJoinInequality::Greater:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::Greater>>();
+            case ASOF::Inequality::Greater:
+                result = std::make_unique<SortedLookupVector<T, ASOF::Inequality::Greater>>();
                 break;
             default:
                 throw Exception("Invalid ASOF Join order", ErrorCodes::LOGICAL_ERROR);

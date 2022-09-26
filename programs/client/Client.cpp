@@ -133,7 +133,6 @@ std::vector<String> Client::loadWarningMessages()
     std::vector<String> messages;
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
-                          {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
@@ -183,7 +182,7 @@ void Client::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    const char * home_path_cstr = getenv("HOME");
     if (home_path_cstr)
         home_path = home_path_cstr;
 
@@ -202,11 +201,11 @@ void Client::initialize(Poco::Util::Application & self)
       * may be statically allocated, and can be modified by a subsequent call to getenv(), putenv(3), setenv(3), or unsetenv(3).
       */
 
-    const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
+    const char * env_user = getenv("CLICKHOUSE_USER");
     if (env_user)
         config().setString("user", env_user);
 
-    const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
     if (env_password)
         config().setString("password", env_password);
 
@@ -620,7 +619,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     stderr,
                     "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
-                _exit(1);
+                exit(1);
             }
 
             auto fuzzed_text = ast_to_process->formatForErrorMessage();
@@ -723,7 +722,7 @@ bool Client::processWithFuzzing(const String & full_query)
         // queries, for lack of a better solution.
         // There is also a problem that fuzzer substitutes positive Int64
         // literals or Decimal literals, which are then parsed back as
-        // UInt64, and suddenly duplicate alias substitution starts or stops
+        // UInt64, and suddenly duplicate alias substitition starts or stops
         // working (ASTWithAlias::formatImpl) or something like that.
         // So we compare not even the first and second formatting of the
         // query, but second and third.
@@ -770,7 +769,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
                     fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
 
-                    _exit(1);
+                    exit(1);
                 }
             }
         }
@@ -909,7 +908,7 @@ void Client::processOptions(const OptionsDescription & options_description,
             auto exit_code = e.code() % 256;
             if (exit_code == 0)
                 exit_code = 255;
-            _exit(exit_code);
+            exit(exit_code);
         }
     }
 

@@ -102,7 +102,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3GetUnidirectionalEdgesFromHexagon)
+void registerFunctionH3GetUnidirectionalEdgesFromHexagon(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3GetUnidirectionalEdgesFromHexagon>();
 }

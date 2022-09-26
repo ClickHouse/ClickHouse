@@ -8,7 +8,6 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <bit>
 
 
 namespace DB
@@ -286,7 +285,7 @@ public:
             {
                 while (x)
                 {
-                    result_array_values_data.push_back(std::countr_zero(x));
+                    result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
                     x &= (x - 1);
                 }
             }
@@ -330,7 +329,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(BitToArray)
+void registerFunctionsBitToArray(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitPositionsToArray>();
     factory.registerFunction<FunctionBitmaskToArray>();

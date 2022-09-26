@@ -54,7 +54,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(IsNullable)
+void registerFunctionIsNullable(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIsNullable>();
 }

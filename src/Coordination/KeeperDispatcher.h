@@ -32,12 +32,9 @@ private:
     using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
 
     /// Size depends on coordination settings
-    /// Request currently being processed
-    std::unique_ptr<RequestsQueue> active_requests_queue;
+    std::unique_ptr<RequestsQueue> requests_queue;
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
-    ConcurrentBoundedQueue<KeeperStorage::RequestsForSessions> read_requests_queue;
-    ConcurrentBoundedQueue<KeeperStorage::RequestsForSessions> finalize_requests_queue;
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -67,8 +64,6 @@ private:
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
-    ThreadFromGlobalPool read_request_thread;
-    ThreadFromGlobalPool finalize_requests_thread;
 
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
@@ -82,34 +77,6 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
-    /// A read request needs to have at least the log it was the last committed log on the leader
-    /// at the time the request was being made.
-    /// If the node is stale, we need to wait to commit that log before doing local read requests to achieve
-    /// linearizability.
-    std::unordered_map<KeeperServer::NodeInfo, KeeperStorage::RequestsForSessions> leader_waiters;
-    std::mutex leader_waiter_mutex;
-
-    /// We can be actively processing one type of requests (either read or write) from a single session.
-    /// If we receive a request of a type that is not currently being processed, we put it in the waiting queue.
-    /// Also, we want to process them in ariving order, so if we have a different type in the queue, we cannot process that request
-    /// but wait for all the previous requests to finish.
-    /// E.g. READ -> WRITE -> READ, the last READ will go to the waiting queue even though we are currently processing the first READ
-    /// because we have WRITE request before it that needs to be processed.
-    struct UnprocessedRequests
-    {
-        /// how many requests are currently in the active request queue
-        size_t unprocessed_num{0};
-        /// is_read currently being processed
-        bool is_read{false};
-        std::list<KeeperStorage::RequestForSession> request_queue;
-    };
-
-    // Called every time a batch of requests are processed.
-    void finalizeRequests(const KeeperStorage::RequestsForSessions & requests_for_sessions);
-
-    std::unordered_map<int64_t, UnprocessedRequests> unprocessed_requests_for_session;
-    std::mutex unprocessed_request_mutex;
-
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -121,12 +88,6 @@ private:
     /// Thread apply or wait configuration changes from leader
     void updateConfigurationThread();
 
-    void readRequestThread();
-
-    void finalizeRequestsThread();
-
-    void processReadRequests(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestsForSessions & read_requests);
-
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
     /// Add error responses for requests to responses queue.
@@ -135,7 +96,7 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    static void forceWaitAndProcessResult(RaftResult & result);
+    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`
@@ -154,12 +115,6 @@ public:
     {
         return server && server->checkInit();
     }
-
-    /// Called when a single log with request is committed.
-    void onRequestCommit(const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx);
-
-    /// Called when a snapshot is applied
-    void onApplySnapshot(uint64_t term, uint64_t last_idx);
 
     /// Is server accepting requests, i.e. connected to the cluster
     /// and achieved quorum

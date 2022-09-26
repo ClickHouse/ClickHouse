@@ -107,7 +107,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3Distance)
+void registerFunctionH3Distance(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3Distance>();
 }
