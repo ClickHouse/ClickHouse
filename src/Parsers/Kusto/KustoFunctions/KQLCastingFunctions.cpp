@@ -90,7 +90,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
-        return false;   
+        return false;
     ++pos;
     String arg;
      if (pos->type == TokenType::QuotedIdentifier)
@@ -121,7 +121,6 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 
 bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
 {
-
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
@@ -150,7 +149,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     else if (std::regex_match(res, expr))
     {
         auto exponential_pos = res.find("e");
-        if (res[exponential_pos +1] == '+' || res[exponential_pos + 1] == '-' )
+        if (res[exponential_pos + 1] == '+' || res[exponential_pos + 1] == '-')
             scale = std::stoi(res.substr(exponential_pos + 2, res.length()));
         else
             scale = std::stoi(res.substr(exponential_pos + 1, res.length()));

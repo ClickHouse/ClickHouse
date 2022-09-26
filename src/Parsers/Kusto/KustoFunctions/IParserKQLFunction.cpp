@@ -17,6 +17,8 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
+#include <boost/lexical_cast.hpp>
+
 
 #include <pcg_random.hpp>
 
@@ -304,7 +306,7 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
             Expected expected;
 
             if (time_span.parse(pos, node, expected))
-                arg = std::to_string(time_span.toSeconds());
+                arg = boost::lexical_cast<std::string>(time_span.toSeconds());
         }
     }
     else if (pos->type == TokenType::QuotedIdentifier)
