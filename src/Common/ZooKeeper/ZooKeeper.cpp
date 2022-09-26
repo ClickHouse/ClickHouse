@@ -1222,6 +1222,13 @@ Coordination::RequestPtr makeListRequest(const std::string & path)
     return request;
 }
 
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSimpleListRequest>();
+    request->path = path;
+    return request;
+}
+
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')

@@ -36,4 +36,5 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
 
 Coordination::RequestPtr makeGetRequest(const std::string & path);
 Coordination::RequestPtr makeListRequest(const std::string & path);
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path);
 }

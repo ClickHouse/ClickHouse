@@ -351,9 +351,6 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
 
 struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
 {
-    ZooKeeperSimpleListRequest() = default;
-    explicit ZooKeeperSimpleListRequest(const ListRequest & base) : ZooKeeperListRequest(base) {}
-
     OpNum getOpNum() const override { return OpNum::SimpleList; }
     ZooKeeperResponsePtr makeResponse() const override;
 };
