@@ -9,14 +9,14 @@ namespace DB
 enum class BackupStatus
 {
     /// Statuses of making backups
-    CREATING_BACKUP,
-    BACKUP_CREATED,
-    BACKUP_FAILED,
+    MAKING_BACKUP,
+    BACKUP_COMPLETE,
+    FAILED_TO_BACKUP,
 
     /// Status of restoring
     RESTORING,
     RESTORED,
-    RESTORE_FAILED,
+    FAILED_TO_RESTORE,
 
     MAX,
 };

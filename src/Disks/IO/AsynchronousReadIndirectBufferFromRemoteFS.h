@@ -23,7 +23,7 @@ struct ReadSettings;
 *
 * Buffers chain for diskWeb:
 * AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
-* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHTTP -> ReadBufferFromIStream.
+* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHttp -> ReadBufferFromIStream.
 *
 * We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
@@ -52,8 +52,6 @@ public:
     String getInfoForLog() override;
 
     size_t getFileSize() override;
-
-    bool isIntegratedWithFilesystemCache() const override { return true; }
 
 private:
     bool nextImpl() override;

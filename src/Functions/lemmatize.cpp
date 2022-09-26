@@ -120,9 +120,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(Lemmatize)
+void registerFunctionLemmatize(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionLemmatize>();
+    factory.registerFunction<FunctionLemmatize>(FunctionFactory::CaseInsensitive);
 }
 
 }

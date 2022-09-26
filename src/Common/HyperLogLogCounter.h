@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 
-#include <bit>
 #include <cmath>
 #include <cstring>
 
@@ -206,7 +205,7 @@ struct TrailingZerosCounter<UInt32>
 {
     static int apply(UInt32 val)
     {
-        return std::countr_zero(val);
+        return __builtin_ctz(val);
     }
 };
 
@@ -215,7 +214,7 @@ struct TrailingZerosCounter<UInt64>
 {
     static int apply(UInt64 val)
     {
-        return std::countr_zero(val);
+        return __builtin_ctzll(val);
     }
 };
 

@@ -140,10 +140,10 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 template <class T>
 void registerFunctionCRCImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<T>(T::name, {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<T>(T::name, FunctionFactory::CaseInsensitive);
 }
 
-REGISTER_FUNCTION(CRC)
+void registerFunctionCRC(FunctionFactory & factory)
 {
     registerFunctionCRCImpl<FunctionCRC32ZLIB>(factory);
     registerFunctionCRCImpl<FunctionCRC32IEEE>(factory);

@@ -121,7 +121,7 @@ private:
     }
 };
 
-REGISTER_FUNCTION(Port)
+void registerFunctionPort(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPort>();
 }

@@ -17,7 +17,7 @@ using FunctionMultiMatchAnyIndex = FunctionsMultiStringSearch<MultiMatchAnyImpl<
 
 }
 
-REGISTER_FUNCTION(MultiMatchAnyIndex)
+void registerFunctionMultiMatchAnyIndex(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiMatchAnyIndex>();
 }

@@ -355,7 +355,7 @@ using FunctionTranslateUTF8 = FunctionTranslate<TranslateUTF8Impl, NameTranslate
 
 }
 
-REGISTER_FUNCTION(Translate)
+void registerFunctionTranslate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTranslateASCII>();
     factory.registerFunction<FunctionTranslateUTF8>();

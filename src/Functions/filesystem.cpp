@@ -66,7 +66,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(Filesystem)
+void registerFunctionFilesystem(FunctionFactory & factory)
 {
     factory.registerFunction<FilesystemImpl<FilesystemAvailable>>();
     factory.registerFunction<FilesystemImpl<FilesystemCapacity>>();

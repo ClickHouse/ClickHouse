@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "quota_key", "db", "database", "table",
+    "host", "port", "user", "password", "db", "database", "table",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "secure"};
 
 namespace
@@ -54,7 +54,6 @@ namespace
             configuration.db,
             configuration.user,
             configuration.password,
-            configuration.quota_key,
             "", /* cluster */
             "", /* cluster_secret */
             "ClickHouseDictionarySource",
@@ -238,7 +237,6 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::string host = config.getString(settings_config_prefix + ".host", "localhost");
         std::string user = config.getString(settings_config_prefix + ".user", "default");
         std::string password =  config.getString(settings_config_prefix + ".password", "");
-        std::string quota_key =  config.getString(settings_config_prefix + ".quota_key", "");
         std::string db = config.getString(settings_config_prefix + ".db", default_database);
         std::string table = config.getString(settings_config_prefix + ".table", "");
         UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
@@ -254,7 +252,6 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             host = configuration.host;
             user = configuration.username;
             password = configuration.password;
-            quota_key = configuration.quota_key;
             db = configuration.database;
             table = configuration.table;
             port = configuration.port;
@@ -264,7 +261,6 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .host = host,
             .user = user,
             .password = password,
-            .quota_key = quota_key,
             .db = db,
             .table = table,
             .query = config.getString(settings_config_prefix + ".query", ""),
@@ -288,9 +284,6 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         else
         {
             context = Context::createCopy(global_context);
-
-            if (created_from_ddl)
-                context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
         }
 
         context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));

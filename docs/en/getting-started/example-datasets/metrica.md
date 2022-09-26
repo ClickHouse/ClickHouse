@@ -1,5 +1,4 @@
 ---
-slug: /en/getting-started/example-datasets/metrica
 sidebar_label: Web Analytics Data
 description: Dataset consisting of two tables containing anonymized web analytics data with hits and visits
 ---

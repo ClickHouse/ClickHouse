@@ -55,6 +55,8 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
+    "DB::Exception: Cannot enqueue query",
+    "is executing longer than distributed_ddl_task_timeout",  # FIXME
 ]
 
 MAX_RETRIES = 3
@@ -178,15 +180,6 @@ def get_db_engine(args, database_name):
     if args.db_engine:
         return " ENGINE=" + args.db_engine
     return ""  # Will use default engine
-
-
-def get_create_database_settings(args, testcase_args):
-    create_database_settings = dict()
-    if testcase_args:
-        create_database_settings["log_comment"] = testcase_args.testcase_basename
-    if args.db_engine == "Ordinary":
-        create_database_settings["allow_deprecated_database_ordinary"] = 1
-    return create_database_settings
 
 
 def get_zookeeper_session_uptime(args):
@@ -454,8 +447,6 @@ class SettingsRandomizer:
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
-        "optimize_distinct_in_order": lambda: random.randint(0, 1),
-        "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -533,7 +524,7 @@ class TestCase:
         else:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
-            def random_str(length=8):
+            def random_str(length=6):
                 alphabet = string.ascii_lowercase + string.digits
                 # NOTE: it is important not to use default random generator, since it shares state.
                 return "".join(
@@ -545,7 +536,9 @@ class TestCase:
             clickhouse_execute(
                 args,
                 "CREATE DATABASE " + database + get_db_engine(testcase_args, database),
-                settings=get_create_database_settings(args, testcase_args),
+                settings={
+                    "log_comment": testcase_args.testcase_basename,
+                },
             )
 
             os.environ["CLICKHOUSE_DATABASE"] = database
@@ -920,7 +913,7 @@ class TestCase:
         description_full += result.description
         description_full += "\n"
 
-        if result.status == TestStatus.FAIL and self.testcase_args:
+        if result.status == TestStatus.FAIL:
             description_full += "Database: " + self.testcase_args.testcase_database
 
         result.description = description_full
@@ -995,12 +988,9 @@ class TestCase:
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
             try:
-                drop_database_query = "DROP DATABASE " + database
-                if args.replicated_database:
-                    drop_database_query += " ON CLUSTER test_cluster_database_replicated"
                 clickhouse_execute(
                     args,
-                    drop_database_query,
+                    "DROP DATABASE " + database,
                     timeout=seconds_left,
                     settings={
                         "log_comment": args.testcase_basename,
@@ -1188,21 +1178,15 @@ class TestSuite:
         def is_shebang(line: str) -> bool:
             return line.startswith("#!")
 
-        def find_tag_line(file):
-            for line in file:
-                line = line.strip()
-                if line and not is_shebang(line):
-                    return line
-            return ''
-
         def load_tags_from_file(filepath):
-            comment_sign = get_comment_sign(filepath)
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    line = find_tag_line(file)
+                    line = file.readline()
+                    if is_shebang(line):
+                        line = file.readline()
                 except UnicodeDecodeError:
                     return []
-            return parse_tags_from_line(line, comment_sign)
+            return parse_tags_from_line(line, get_comment_sign(filepath))
 
         all_tags = {}
         start_time = datetime.now()
@@ -1574,7 +1558,7 @@ def collect_build_flags(args):
         args,
         "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'",
     )
-    if value == b"1" or args.db_engine == "Ordinary":
+    if value == b"1":
         result.append(BuildFlags.ORDINARY_DATABASE)
 
     value = int(
@@ -1717,75 +1701,6 @@ def removesuffix(text, *suffixes):
     return text
 
 
-def reportCoverageFor(args, what, query, permissive = False):
-    value = clickhouse_execute(args, query).decode()
-
-    if value != "":
-        print(f"\nThe following {what} were not covered by tests:\n")
-        print(value)
-        print("\n")
-        return permissive
-
-    return True
-
-
-def reportCoverage(args):
-    return reportCoverageFor(
-        args,
-        "functions",
-        """
-            SELECT name
-            FROM system.functions
-            WHERE NOT is_aggregate AND origin = 'System' AND alias_to = ''
-                AND name NOT IN
-                (
-                    SELECT arrayJoin(used_functions) FROM system.query_log WHERE event_date >= yesterday()
-                )
-            ORDER BY name
-        """,
-        True
-    ) and reportCoverageFor(
-        args,
-        "aggregate functions",
-        """
-            SELECT name
-            FROM system.functions
-            WHERE is_aggregate AND origin = 'System' AND alias_to = ''
-                AND name NOT IN
-                (
-                    SELECT arrayJoin(used_aggregate_functions) FROM system.query_log WHERE event_date >= yesterday()
-                )
-            ORDER BY name
-        """
-    ) and reportCoverageFor(
-        args,
-        "aggregate function combinators",
-        """
-            SELECT name
-            FROM system.aggregate_function_combinators
-            WHERE NOT is_internal
-                AND name NOT IN
-                (
-                    SELECT arrayJoin(used_aggregate_function_combinators) FROM system.query_log WHERE event_date >= yesterday()
-                )
-            ORDER BY name
-        """
-    ) and reportCoverageFor(
-        args,
-        "data type families",
-        """
-            SELECT name
-            FROM system.data_type_families
-            WHERE alias_to = '' AND name NOT LIKE 'Interval%'
-                AND name NOT IN
-                (
-                    SELECT arrayJoin(used_data_type_families) FROM system.query_log WHERE event_date >= yesterday()
-                )
-            ORDER BY name
-        """
-    )
-
-
 def main(args):
     global server_died
     global stop_time
@@ -1830,7 +1745,10 @@ def main(args):
         stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
-        args.zookeeper = True
+        try:
+            args.zookeeper = int(extract_key(" --key zookeeper | grep . | wc -l")) > 0
+        except ValueError:
+            args.zookeeper = False
 
     if args.shard is None:
         args.shard = bool(extract_key(' --key listen_host | grep -E "127.0.0.2|::"'))
@@ -1844,7 +1762,6 @@ def main(args):
                     args,
                     f"CREATE DATABASE IF NOT EXISTS {db_name} "
                     f"{get_db_engine(args, db_name)}",
-                    settings=get_create_database_settings(args, None),
                 )
             except HTTPError as e:
                 total_time = (datetime.now() - start_time).total_seconds()
@@ -1916,9 +1833,6 @@ def main(args):
         sys.exit(1)
     else:
         print("All tests have finished.")
-
-    if args.report_coverage and not reportCoverage(args):
-        exit_code.value = 1
 
     sys.exit(exit_code.value)
 
@@ -2199,12 +2113,6 @@ if __name__ == "__main__":
         default=20,
         type=int,
         help="Max number of failed tests in a row (stop tests if higher)",
-    )
-    parser.add_argument(
-        "--report-coverage",
-        action="store_true",
-        default=False,
-        help="Check what high-level server components were covered by tests",
     )
     args = parser.parse_args()
 

@@ -19,19 +19,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeFromLogEntryTask::MergeFromLogEntryTask(
-    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
-    StorageReplicatedMergeTree & storage_,
-    IExecutableTask::TaskResultCallback & task_result_callback_)
-    : ReplicatedMergeMutateTaskBase(
-        &Poco::Logger::get(
-            storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
-        storage_,
-        selected_entry_,
-        task_result_callback_)
-{
-}
-
 
 ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
@@ -222,27 +209,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                     .need_to_check_missing_part_in_fetch = false,
                     .part_log_writer = {}
                 };
-            }
-            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
-            {
-                /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
-                /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
-                ///
-                /// It's also possible just because reads in [Zoo]Keeper are not lineariazable.
-                ///
-                /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
-                zero_copy_lock->lock->unlock();
-
-                LOG_DEBUG(log, "We took zero copy lock, but merge of part {} finished by some other replica, will release lock and download merged part to avoid data duplication", entry.new_part_name);
-                return PrepareResult{
-                    .prepared_successfully = false,
-                    .need_to_check_missing_part_in_fetch = true,
-                    .part_log_writer = {}
-                };
-            }
-            else
-            {
-                LOG_DEBUG(log, "Zero copy lock taken, will merge part {}", entry.new_part_name);
             }
         }
     }

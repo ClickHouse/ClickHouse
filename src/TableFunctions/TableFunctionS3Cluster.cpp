@@ -8,14 +8,14 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/S3Common.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/TableFunctionS3Cluster.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Access/Common/AccessFlags.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/IAST_fwd.h>

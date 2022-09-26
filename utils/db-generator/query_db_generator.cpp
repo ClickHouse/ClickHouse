@@ -1,6 +1,6 @@
 #include <map>
 #include <cstdlib>
-#include <cstdio>
+#include <stdio.h>
 #include <iostream>
 #include <string>
 
@@ -59,8 +59,8 @@ std::string randomDate()
     int32_t month = rng() % 12 + 1;
     int32_t day = rng() % 12 + 1;
     char answer[13];
-    size_t size = sprintf(answer, "'%04u-%02u-%02u'", year, month, day);
-    return std::string(answer, size);
+    sprintf(answer, "'%04u-%02u-%02u'", year, month, day);
+    return std::string(answer);
 }
 
 std::string randomDatetime()
@@ -72,7 +72,7 @@ std::string randomDatetime()
     int32_t minutes = rng() % 60;
     int32_t seconds = rng() % 60;
     char answer[22];
-    size_t size = sprintf(
+    sprintf(
             answer,
             "'%04u-%02u-%02u %02u:%02u:%02u'",
             year,
@@ -81,7 +81,7 @@ std::string randomDatetime()
             hours,
             minutes,
             seconds);
-    return std::string(answer, size);
+    return std::string(answer);
 }
 TableAndColumn get_table_a_column(const std::string & c)
 {

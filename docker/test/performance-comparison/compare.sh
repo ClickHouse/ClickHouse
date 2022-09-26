@@ -61,7 +61,7 @@ function configure
     cp -rv right/config left ||:
 
     # Start a temporary server to rename the tables
-    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
@@ -88,7 +88,7 @@ function configure
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
@@ -106,7 +106,7 @@ function configure
 
 function restart
 {
-    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     # Change the jemalloc settings here.
@@ -284,21 +284,13 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        if [ "$(grep -c $(basename $test) changed-test-definitions.txt)" -gt 0 ]
-        then
-          # Run all queries from changed test files to ensure that all new queries will be tested.
-          max_queries=0
-        else
-          max_queries=$CHPC_MAX_QUERIES
-        fi
-
         (
             set +x
             argv=(
                 --host localhost localhost
                 --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
                 --runs "$CHPC_RUNS"
-                --max-queries "$max_queries"
+                --max-queries "$CHPC_MAX_QUERIES"
                 --profile-seconds "$profile_seconds"
 
                 "$test"
@@ -1400,7 +1392,7 @@ case "$stage" in
     while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
-    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")

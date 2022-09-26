@@ -9,7 +9,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/BridgeProtocolVersion.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -54,8 +53,6 @@ class XDBCBridgeHelper : public IXDBCBridgeHelper
 
 public:
     static constexpr inline auto DEFAULT_PORT = BridgeHelperMixin::DEFAULT_PORT;
-    static constexpr inline auto PING_HANDLER = "/ping";
-    static constexpr inline auto MAIN_HANDLER = "/";
     static constexpr inline auto COL_INFO_HANDLER = "/columns_info";
     static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
@@ -75,23 +72,6 @@ public:
     }
 
 protected:
-    Poco::URI getPingURI() const override
-    {
-        auto uri = createBaseURI();
-        uri.setPath(PING_HANDLER);
-        return uri;
-    }
-
-
-    Poco::URI getMainURI() const override
-    {
-        auto uri = createBaseURI();
-        uri.setPath(MAIN_HANDLER);
-        uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
-        return uri;
-    }
-
-
     bool bridgeHandShake() override
     {
         try
@@ -165,7 +145,6 @@ protected:
     {
         auto uri = createBaseURI();
         uri.setPath(COL_INFO_HANDLER);
-        uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
         return uri;
     }
 
@@ -187,7 +166,6 @@ protected:
 
             auto uri = createBaseURI();
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
-            uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
@@ -208,7 +186,6 @@ protected:
 
             auto uri = createBaseURI();
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
-            uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
