@@ -238,9 +238,8 @@ void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, std:
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Operation `{}` can be done only by downloader. "
-            "(CallerId: {}, downloader id: {}, internal downloader id: {})",
-            operation, caller, downloader_id, background_downloader_id);
+            "Operation `{}` can be done only by downloader. ({})",
+            operation, getInfoForLogUnlocked(segment_lock));
     }
 }
 
@@ -545,7 +544,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
     assertNotDetachedUnlocked(segment_lock);
 
-    FileSegmentsHolder holder;
+    auto holder = std::make_unique<FileSegmentsHolder>();
     {
         auto & state = *background_download;
 
@@ -581,7 +580,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
          /// exist while `task` is executed. Note: shared_from_this() must be done under segment_lock.
          /// It is also important to wrap in FileSegmentHolder as
          /// need to unsure complete() is called by each user of the file segment.
-        holder.file_segments.push_back(shared_from_this());
+        holder->file_segments.push_back(shared_from_this());
     }
 
     ThreadGroupStatusPtr thread_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
@@ -592,7 +591,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         [this,
          executor_id = getCallerId() + "_async", /// Id for background downloader
          holder = std::move(holder),
-         thread_group]
+         thread_group]()
     {
         if (thread_group)
             CurrentThread::attachTo(thread_group);
@@ -603,8 +602,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         });
 
         auto & state = *background_download;
-
-        const auto & file_segment = holder.file_segments.front();
+        const auto & file_segment = holder->file_segments.front();
 
         {
             std::unique_lock lock(file_segment->mutex);
@@ -757,7 +755,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
     try
     {
-        cache->getThreadPoolForAsyncWrite().scheduleOrThrow([task]{ (*task)(); });
+        cache->getThreadPoolForAsyncWrite().scheduleOrThrow([task = std::move(task)]{ (*task)(); });
     }
     catch (...)
     {
@@ -1030,9 +1028,14 @@ void FileSegment::completePartAndResetDownloaderUnlocked(std::unique_lock<std::m
     {
         if (downloader_id.empty())
         {
+            LOG_TEST(log, "Setting DOWNLOADED state by background downloader");
             size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
             if (current_downloaded_size != 0 && current_downloaded_size == range().size())
                 setDownloadedUnlocked(segment_lock);
+        }
+        else
+        {
+            return;
         }
     }
     else

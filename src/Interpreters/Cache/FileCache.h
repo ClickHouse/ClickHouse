@@ -30,9 +30,11 @@ class FileCache : private boost::noncopyable
 
 friend class FileSegment;
 friend class IFileCachePriority;
-friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 friend struct FileSegment::BackgroundDownload::Buffer;
+
+friend struct FileSegmentsHolder;
+using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 
 struct QueryContext;
 using QueryContextPtr = std::shared_ptr<QueryContext>;
@@ -59,7 +61,7 @@ public:
      * As long as pointers to returned file segments are hold
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolderPtr getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -70,7 +72,7 @@ public:
      * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
      * it's state (and become DOWNLOADED).
      */
-    FileSegmentsHolder get(const Key & key, size_t offset, size_t size);
+    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size);
 
     /// Remove files by `key`. Removes files which might be used at the moment.
     void removeIfExists(const Key & key);
