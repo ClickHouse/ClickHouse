@@ -12,7 +12,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionGenerateRandom.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 
 #include "registerTableFunctions.h"
 

@@ -30,6 +30,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+using JoinKind = ASTTableJoin::Kind;
+
 namespace
 {
 
@@ -279,7 +281,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
 
     auto strictness = table_join->getTableJoin().strictness();
-    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
+    if (strictness != ASTTableJoin::Strictness::Any && strictness != ASTTableJoin::Strictness::All)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness {}", strictness);
 
     auto kind = table_join->getTableJoin().kind();
@@ -513,7 +515,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
     Columns lcols;
     if (!left_to_right_key_remap.empty())
     {
-        /// If we have remapped columns, then we need to get values from right columns instead of defaults
+        /// If we have remapped columns, then we need to get values from right columns insead of defaults
         const auto & indices = idx_map[0];
 
         const auto & left_src = cursors[0]->getCurrent().getColumns();
@@ -824,10 +826,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
     auto strictness = table_join->getTableJoin().strictness();
 
-    if (strictness == JoinStrictness::Any)
+    if (strictness == ASTTableJoin::Strictness::Any)
         return anyJoin(kind);
 
-    if (strictness == JoinStrictness::All)
+    if (strictness == ASTTableJoin::Strictness::All)
         return allJoin(kind);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported strictness '{}'", strictness);

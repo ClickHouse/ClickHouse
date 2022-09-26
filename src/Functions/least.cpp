@@ -63,9 +63,9 @@ using LeastImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, 
 struct NameLeast { static constexpr auto name = "least"; };
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 
-REGISTER_FUNCTION(Least)
+void registerFunctionLeast(FunctionFactory & factory)
 {
-    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>(FunctionFactory::CaseInsensitive);
 }
 
 }

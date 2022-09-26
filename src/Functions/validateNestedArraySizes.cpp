@@ -119,7 +119,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
     return ColumnUInt8::create(input_rows_count, 1);
 }
 
-REGISTER_FUNCTION(ValidateNestedArraySizes)
+void registerFunctionValidateNestedArraySizes(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidateNestedArraySizes>();
 }

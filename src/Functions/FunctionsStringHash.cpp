@@ -743,7 +743,7 @@ using FunctionWordShingleMinHashArgUTF8
 using FunctionWordShingleMinHashArgCaseInsensitiveUTF8
 = FunctionsStringHash<MinHashImpl<true, false, true>, NameWordShingleMinHashArgCaseInsensitiveUTF8, false, true>;
 
-REGISTER_FUNCTION(StringHash)
+void registerFunctionsStringHash(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNgramSimHash>();
     factory.registerFunction<FunctionNgramSimHashCaseInsensitive>();

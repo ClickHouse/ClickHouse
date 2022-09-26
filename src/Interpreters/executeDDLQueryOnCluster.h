@@ -45,6 +45,4 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, c
 BlockIO getDistributedDDLStatus(
     const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait = {});
 
-bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context);
-
 }

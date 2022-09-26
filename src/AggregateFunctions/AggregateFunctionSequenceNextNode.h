@@ -194,7 +194,7 @@ public:
 
     DataTypePtr getReturnType() const override { return data_type; }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
