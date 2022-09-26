@@ -123,7 +123,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.
 
-The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro`.
+The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro,csnp`.
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 
@@ -304,6 +304,12 @@ Sessions dump (2):
 Sessions with Ephemerals (1):
 0x0000000000000001
  /clickhouse/task_queue/ddl
+```
+
+- `csnp`: Schedule a snapshot creation task. Return `"Snapshot creation scheduled."` if successfully scheduled or Fail to scheduled snapshot creation.` if failed.
+
+```
+Snapshot creation scheduled.
 ```
 
 ## [experimental] Migration from ZooKeeper {#migration-from-zookeeper}

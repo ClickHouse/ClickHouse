@@ -903,4 +903,9 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     return result;
 }
 
+bool KeeperServer::createSnapshot()
+{
+    return raft_instance->create_snapshot();
+}
+
 }

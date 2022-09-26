@@ -634,3 +634,18 @@ def test_cmd_wchp(started_cluster):
         assert "/test_4lw_normal_node_1" in list_data
     finally:
         destroy_zk_client(zk)
+
+
+def test_cmd_csnp(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_node_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+
+        data = send_4lw_cmd(cmd="csnp")
+        assert data == "Snapshot creation scheduled."
+    finally:
+        destroy_zk_client(zk)
