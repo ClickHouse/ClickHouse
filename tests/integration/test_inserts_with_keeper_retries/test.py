@@ -2,6 +2,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+
 # from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
@@ -47,7 +48,6 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
         "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
         settings=settings,
     )
-
 
     assert node1.query("SELECT COUNT() FROM r") == "20\n"
     assert node2.query("SELECT COUNT() FROM r") == "20\n"
