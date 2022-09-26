@@ -18,18 +18,11 @@ class UserDefinedSQLFunctionFactory : public IHints<1, UserDefinedSQLFunctionFac
 public:
     static UserDefinedSQLFunctionFactory & instance();
 
-    /** Register function for function_name in factory for specified create_function_query.
-      * If function exists and if_not_exists = false and replace = false throws exception.
-      * If replace = true and sql user defined function with function_name already exists replace it with create_function_query.
-      * If persist = true persist function on disk.
-      */
-    void registerFunction(ContextPtr context, const String & function_name, ASTPtr create_function_query, bool replace, bool if_not_exists, bool persist);
+    /// Register function for function_name in factory for specified create_function_query.
+    bool registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists);
 
-    /** Unregister function for function_name.
-      * If if_exists = true then do not throw exception if function is not registered.
-      * If if_exists = false then throw exception if function is not registered.
-      */
-    void unregisterFunction(ContextPtr context, const String & function_name, bool if_exists, bool persist);
+    /// Unregister function for function_name.
+    bool unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists);
 
     /// Get function create query for function_name. If no function registered with function_name throws exception.
     ASTPtr get(const String & function_name) const;
@@ -47,8 +40,22 @@ public:
     bool empty() const;
 
 private:
-    std::unordered_map<String, ASTPtr> function_name_to_create_query;
-    mutable std::mutex mutex;
+    friend class UserDefinedSQLObjectsLoaderFromDisk;
+    friend class UserDefinedSQLObjectsLoaderFromZooKeeper;
+
+    /// Checks that a specified function can be registered, throws an exception if not.
+    static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query);
+    static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name);
+
+    /// The following functions must be called only by the loader.
+    void setAllFunctions(std::unordered_map<String, ASTPtr> && new_functions);
+    void setFunction(const String & function_name, const IAST & create_function_query);
+    void removeFunction(const String & function_name);
+    void removeAllFunctionsExcept(const Strings & function_names_to_keep);
+    std::unique_lock<std::recursive_mutex> getLock() const;
+
+    std::unordered_map<String, ASTPtr> function_name_to_create_query_map;
+    mutable std::recursive_mutex mutex;
 };
 
 }

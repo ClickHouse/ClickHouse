@@ -187,9 +187,9 @@ void StorageSystemFunctions::restoreDataFromBackup(RestorerFromBackup & restorer
             0,
             context->getSettingsRef().max_parser_depth);
 
-        bool replace = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
-        bool if_not_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreateIfNotExists);
-        user_defined_sql_functions_factory.registerFunction(context, function_name, ast, replace, if_not_exists, true);
+        bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
+        bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
+        user_defined_sql_functions_factory.registerFunction(context, function_name, ast, throw_if_exists, replace_if_exists);
     }
 }
 

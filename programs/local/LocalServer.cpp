@@ -31,7 +31,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -623,7 +623,7 @@ void LocalServer::processConfig()
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
 
         LOG_DEBUG(log, "Loaded metadata.");
     }

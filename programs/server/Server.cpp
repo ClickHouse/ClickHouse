@@ -61,7 +61,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -1573,7 +1573,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
     }
     catch (...)
     {
