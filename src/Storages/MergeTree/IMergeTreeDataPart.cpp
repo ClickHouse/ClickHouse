@@ -1350,7 +1350,7 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
     if (!wasInvolvedInTransaction() && !force)
         return;
 
-    LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+    LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {}, creation csn {})", name, version.creation_tid, version.removal_tid, version.creation_csn);
     assert(storage.supportsTransactions());
 
     if (!isStoredOnDisk())
@@ -1363,7 +1363,6 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
 {
     chassert(!version.creation_tid.isEmpty());
-    chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_tid.isPrehistoric()));
     chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_csn == 0));
     chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
     chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
@@ -1531,8 +1530,8 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     {
         WriteBufferFromOwnString expected;
         version.write(expected);
-        tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}\nlock: {}",
-                                                        version_file_name, content, expected.str(), version.removal_tid_lock));
+        tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}\nlock: {}\nname: {}",
+                                                        version_file_name, content, expected.str(), version.removal_tid_lock, name));
         return false;
     }
 }

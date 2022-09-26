@@ -236,6 +236,11 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
     for (const auto & part : removed_parts)
     {
+        /// Part has to contain creation csn in the metadata if it is created in transaction.
+        /// When part is created out of transaction and creation csn is prehistoric that record is likely omitted in the metadata, so just add it.
+        if (part->version.creation_csn == Tx::PrehistoricCSN)
+            part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::CREATION);
+
         part->version.removal_csn.store(csn);
         part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::REMOVAL);
     }

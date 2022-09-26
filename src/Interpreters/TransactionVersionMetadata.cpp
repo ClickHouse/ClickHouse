@@ -380,8 +380,9 @@ void VersionMetadata::read(ReadBuffer & buf)
 
         if (name == CREATION_CSN_STR)
         {
-            chassert(!creation_csn);
-            creation_csn = read_csn();
+            auto new_val = read_csn();
+            chassert(!creation_csn || (creation_csn == new_val && creation_csn == Tx::PrehistoricCSN));
+            creation_csn = new_val;
         }
         else if (name == REMOVAL_TID_STR)
         {
