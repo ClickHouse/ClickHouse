@@ -104,7 +104,7 @@ bool ASTSelectWithUnionQuery::hasQueryParameters() const
                 return true;
         }
 
-        for (auto child : current->children)
+        for (const auto & child : current->children)
             queue.push(child);
     }
     return false;

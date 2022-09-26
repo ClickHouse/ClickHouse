@@ -491,7 +491,7 @@ bool ASTSelectQuery::hasQueryParameters() const
         if (ast->as<ASTQueryParameter>())
             return true;
 
-        for (auto child : ast->children)
+        for (const auto & child : ast->children)
             queue.push(child);
     }
     return false;
