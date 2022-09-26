@@ -110,7 +110,7 @@ namespace ErrorCodes
 
 namespace
 {
-bool tryAddHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (config.has("http_options_response"))
     {
@@ -138,7 +138,7 @@ bool tryAddHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::La
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     /// If can add some headers from config
-    if (tryAddHeadersFromConfig(response, config))
+    if (tryAddHttpOptionHeadersFromConfig(response, config))
     {
         response.setKeepAlive(false);
         response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
@@ -774,16 +774,11 @@ void HTTPHandler::processQuery(
     if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
-    /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin,
-    /// or if config has http_options_response, which means that there
-    /// are some headers to be sent, and the client passed Origin header.
-    if (!request.get("Origin", "").empty())
-    {
-        if (config.has("http_options_response"))
-            tryAddHeadersFromConfig(response, config);
-        else if (settings.add_http_cors_header)
-            used_output.out->addHeaderCORS(true);
-    }
+    /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
+    /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
+    /// Once the authentication fails, the header can't be added.
+    if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
+        used_output.out->addHeaderCORS(true);
 
     auto append_callback = [context = context] (ProgressCallback callback)
     {
@@ -971,6 +966,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
+
+        if (!request.get("Origin", "").empty())
+            tryAddHttpOptionHeadersFromConfig(response, server.config());
+
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
