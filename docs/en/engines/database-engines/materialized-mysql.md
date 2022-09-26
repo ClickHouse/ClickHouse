@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/materialized-mysql
 sidebar_label: MaterializedMySQL
 sidebar_position: 70
 ---
