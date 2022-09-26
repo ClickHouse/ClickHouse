@@ -13,7 +13,7 @@ from pure_http_client import ClickHouseClient
 
 client = ClickHouseClient()
 
-NUM_RUNS = 20
+NUM_RUNS = 5
 TIME_TO_WAIT_MS = 500
 
 # The purpose of this test is to check that AsyncInsertQueue
@@ -27,7 +27,7 @@ TIME_TO_WAIT_MS = 500
 # and this time maybe different depending on the build type (release or with sanitizer)
 
 gen_data_query = "SELECT number + {} AS id, toString(id) AS s, range(id) AS arr FROM numbers(10) FORMAT TSV"
-insert_query = "INSERT INTO t_async_insert_user_settings FORMAT TSV"
+insert_query = "INSERT INTO t_async_insert_user_settings VALUES ({}, '{}', [{}])"
 settings = {
     "async_insert": 1,
     "wait_for_async_insert": 1,
@@ -36,11 +36,6 @@ settings = {
 
 all_data = []
 
-for i in range(NUM_RUNS):
-    all_data.append(
-        client.query(gen_data_query.format(i * 10), settings={}, binary_result=True)
-    )
-
 client.query("DROP TABLE IF EXISTS t_async_insert_user_settings")
 client.query(
     "CREATE TABLE t_async_insert_user_settings (id UInt64, s String, arr Array(UInt64)) ENGINE = Memory"
@@ -48,7 +43,7 @@ client.query(
 
 start_ms = time.time() * 1000.0
 for i in range(NUM_RUNS):
-    client.query_with_data(insert_query, all_data[i], settings=settings)
+    client.query(query = insert_query.format(i,i,i), settings=settings)
 end_ms = time.time() * 1000.0
 
 duration = end_ms - start_ms
