@@ -230,9 +230,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     auto settings_ptr = s3_settings.get();
-    ThreadPoolCallbackRunner<void> scheduler;
-    if (write_settings.s3_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+    auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
