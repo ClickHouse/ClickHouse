@@ -32,7 +32,8 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Configuration & configuration_,
     const Poco::Net::HTTPBasicCredentials & credentials_,
     Block & sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool created_from_ddl)
     : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
@@ -41,6 +42,9 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
+    if (created_from_ddl)
+        context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
+
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
 }
@@ -245,8 +249,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             credentials.setPassword(named_collection->configuration.password);
 
             header_entries.reserve(named_collection->configuration.headers.size());
-            for (const auto & [key, value] : named_collection->configuration.headers)
-                header_entries.emplace_back(std::make_tuple(key, value));
+            for (const auto & header : named_collection->configuration.headers)
+                header_entries.emplace_back(std::make_tuple(header.first, header.second.get<String>()));
         }
         else
         {
@@ -299,10 +303,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
-        if (created_from_ddl)
-            context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
-
-        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
+        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);
     };
     factory.registerSource("http", create_table_source);
 }

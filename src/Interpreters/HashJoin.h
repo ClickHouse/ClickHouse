@@ -27,12 +27,13 @@
 #include <Core/Block.h>
 
 #include <Storages/IStorage_fwd.h>
-#include <Interpreters/IKeyValueEntity.h>
+#include <Storages/IKVStorage.h>
 
 namespace DB
 {
 
 class TableJoin;
+class DictionaryReader;
 
 namespace JoinStuff
 {
@@ -53,10 +54,10 @@ public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
     void reinit(size_t size_);
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
     void reinit(const Block * block_ptr);
 
     bool getUsedSafe(size_t i) const;
@@ -170,12 +171,13 @@ public:
     /// Used by joinGet function that turns StorageJoin into a dictionary.
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
-    bool isFilled() const override { return from_storage_join; }
+    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
     JoinPipelineType pipelineType() const override
     {
-        /// No need to process anything in the right stream if hash table was already filled
-        if (from_storage_join)
+        /// No need to process anything in the right stream if it's a dictionary will just join the left stream with it.
+        bool is_filled = from_storage_join || data->type == Type::DICT;
+        if (is_filled)
             return JoinPipelineType::FilledRight;
 
         /// Default pipeline processes right stream at first and then left.
@@ -197,10 +199,10 @@ public:
 
     bool alwaysReturnsEmptySet() const final;
 
-    JoinKind getKind() const { return kind; }
-    JoinStrictness getStrictness() const { return strictness; }
+    ASTTableJoin::Kind getKind() const { return kind; }
+    ASTTableJoin::Strictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
-    ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
+    ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
@@ -231,6 +233,7 @@ public:
     {
         EMPTY,
         CROSS,
+        DICT,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -258,6 +261,7 @@ public:
             {
                 case Type::EMPTY:            break;
                 case Type::CROSS:            break;
+                case Type::DICT:             break;
 
             #define M(NAME) \
                 case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
@@ -272,6 +276,7 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
+                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
@@ -288,6 +293,7 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
+                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
@@ -304,6 +310,7 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
+                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
@@ -360,15 +367,15 @@ private:
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
-    JoinKind kind;
-    JoinStrictness strictness;
+    ASTTableJoin::Kind kind;
+    ASTTableJoin::Strictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
-    ASOFJoinInequality asof_inequality;
+    ASOF::Inequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.
@@ -405,7 +412,7 @@ private:
     Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(
         Block & block,
         const Block & block_with_columns_to_add,
@@ -414,9 +421,10 @@ private:
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
-    static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(ASTTableJoin::Kind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
+    bool overDictionary() const;
 };
 
 }

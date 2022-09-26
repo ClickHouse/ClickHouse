@@ -8,13 +8,13 @@
 
 namespace DB
 {
-REGISTER_FUNCTION(Base64Encode)
+void registerFunctionBase64Encode(FunctionFactory & factory)
 {
     tb64ini(0, 0);
     factory.registerFunction<FunctionBase64Conversion<Base64Encode>>();
 
     /// MysQL compatibility alias.
-    factory.registerAlias("TO_BASE64", "base64Encode", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionBase64Conversion<Base64Encode>>("TO_BASE64", FunctionFactory::CaseInsensitive);
 }
 }
 #endif

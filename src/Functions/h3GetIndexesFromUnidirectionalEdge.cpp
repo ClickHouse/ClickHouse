@@ -100,7 +100,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3GetIndexesFromUnidirectionalEdge)
+void registerFunctionH3GetIndexesFromUnidirectionalEdge(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3GetIndexesFromUnidirectionalEdge>();
 }

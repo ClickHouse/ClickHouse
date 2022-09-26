@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 struct L1Distance
 {
-    static constexpr auto name = "L1";
+    static inline String name = "L1";
 
     struct ConstParams {};
 
@@ -53,7 +53,7 @@ struct L1Distance
 
 struct L2Distance
 {
-    static constexpr auto name = "L2";
+    static inline String name = "L2";
 
     struct ConstParams {};
 
@@ -84,7 +84,7 @@ struct L2Distance
 
 struct L2SquaredDistance : L2Distance
 {
-    static constexpr auto name = "L2Squared";
+    static inline String name = "L2Squared";
 
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
@@ -95,7 +95,7 @@ struct L2SquaredDistance : L2Distance
 
 struct LpDistance
 {
-    static constexpr auto name = "Lp";
+    static inline String name = "Lp";
 
     struct ConstParams
     {
@@ -112,7 +112,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
+        state.sum += std::pow(fabs(x - y), params.power);
     }
 
     template <typename ResultType>
@@ -124,13 +124,13 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
+        return std::pow(state.sum, params.inverted_power);
     }
 };
 
 struct LinfDistance
 {
-    static constexpr auto name = "Linf";
+    static inline String name = "Linf";
 
     struct ConstParams {};
 
@@ -161,7 +161,7 @@ struct LinfDistance
 
 struct CosineDistance
 {
-    static constexpr auto name = "Cosine";
+    static inline String name = "Cosine";
 
     struct ConstParams {};
 
@@ -200,7 +200,8 @@ template <class Kernel>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    String getName() const override { static auto name = String("array") + Kernel::name + "Distance"; return name; }
+    static inline auto name = "array" + Kernel::name + "Distance";
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
@@ -380,8 +381,7 @@ private:
             for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
-                    Kernel::template accumulate<ResultType>(
-                        states[s], static_cast<ResultType>(data_x[prev + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
+                    Kernel::template accumulate<ResultType>(states[s], data_x[prev+s], data_y[prev+s], kernel_params);
             }
 
             typename Kernel::template State<ResultType> state;
@@ -391,8 +391,7 @@ private:
             /// Process the tail
             for (; prev < off; ++prev)
             {
-                Kernel::template accumulate<ResultType>(
-                    state, static_cast<ResultType>(data_x[prev]), static_cast<ResultType>(data_y[prev]), kernel_params);
+                Kernel::template accumulate<ResultType>(state, data_x[prev], data_y[prev], kernel_params);
             }
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
@@ -449,8 +448,7 @@ private:
             for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
-                    Kernel::template accumulate<ResultType>(
-                        states[s], static_cast<ResultType>(data_x[i + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
+                    Kernel::template accumulate<ResultType>(states[s], data_x[i+s], data_y[prev+s], kernel_params);
             }
 
             typename Kernel::template State<ResultType> state;
@@ -460,8 +458,7 @@ private:
             /// Process the tail
             for (; prev < off; ++i, ++prev)
             {
-                Kernel::template accumulate<ResultType>(
-                    state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[prev]), kernel_params);
+                Kernel::template accumulate<ResultType>(state, data_x[i], data_y[prev], kernel_params);
             }
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;

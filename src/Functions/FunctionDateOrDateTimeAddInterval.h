@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -612,7 +611,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isNativeNumber(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " (delta) must be a number",
+            throw Exception("Second argument for function " + getName() + " (delta) must be number",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2)
@@ -628,7 +627,7 @@ public:
             {
                 throw Exception(
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
-                    "must be of type Date or DateTime. The 2nd argument must be a number. "
+                    "must be of type Date or DateTime. The 2nd argument must be number. "
                     "The 3rd argument (optional) must be "
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",
@@ -672,13 +671,9 @@ public:
         using ResultDataType = TransformResultDataType<FromDataType>;
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
-        {
             return std::make_shared<DataTypeDate>();
-        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
-        {
             return std::make_shared<DataTypeDate32>();
-        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
@@ -717,8 +712,13 @@ public:
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
             }
         }
+        else
+        {
+            static_assert("Failed to resolve return type.");
+        }
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");
+        //to make PVS and GCC happy.
+        return nullptr;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -757,3 +757,4 @@ public:
 };
 
 }
+

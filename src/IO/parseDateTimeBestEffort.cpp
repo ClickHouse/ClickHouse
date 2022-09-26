@@ -45,6 +45,12 @@ inline size_t readAlpha(char * res, size_t max_chars, ReadBuffer & in)
     return num_chars;
 }
 
+#if defined(__PPC__)
+#if !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#endif
+
 template <size_t digit, size_t power_of_ten, typename T>
 inline void readDecimalNumberImpl(T & res, const char * src)
 {
@@ -650,6 +656,12 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 
 }
 
+#if defined(__PPC__)
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+#endif
+
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr);
@@ -683,11 +695,6 @@ void parseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in
 bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     return parseDateTime64BestEffortImpl<bool, false>(res, scale, in, local_time_zone, utc_time_zone);
-}
-
-bool tryParseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
-{
-    return parseDateTime64BestEffortImpl<bool, true>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 }

@@ -1,8 +1,6 @@
 #include <Processors/Formats/Impl/JSONCompactColumnsBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONUtils.h>
 
 namespace DB
 {
@@ -13,18 +11,29 @@ JSONCompactColumnsReader::JSONCompactColumnsReader(ReadBuffer & in_) : JSONColum
 
 void JSONCompactColumnsReader::readChunkStart()
 {
-    JSONUtils::skipArrayStart(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar('[', *in);
+    skipWhitespaceIfAny(*in);
 }
 
 std::optional<String> JSONCompactColumnsReader::readColumnStart()
 {
-    JSONUtils::skipArrayStart(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar('[', *in);
+    skipWhitespaceIfAny(*in);
     return std::nullopt;
 }
 
 bool JSONCompactColumnsReader::checkChunkEnd()
 {
-    return JSONUtils::checkAndSkipArrayEnd(*in);
+    skipWhitespaceIfAny(*in);
+    if (!in->eof() && *in->position() == ']')
+    {
+        ++in->position();
+        skipWhitespaceIfAny(*in);
+        return true;
+    }
+    return false;
 }
 
 
@@ -51,11 +60,6 @@ void registerJSONCompactColumnsSchemaReader(FormatFactory & factory)
             return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONCompactColumnsReader>(buf));
         }
     );
-    factory.registerAdditionalInfoForSchemaCacheGetter("JSONCompactColumns", [](const FormatSettings & settings)
-    {
-        auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
-        return result + fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
-    });
 }
 
 }

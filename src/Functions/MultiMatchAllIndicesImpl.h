@@ -86,10 +86,9 @@ struct MultiMatchAllIndicesImpl
             return;
         }
 
-        MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ true, WithEditDistance>(needles, edit_distance);
-        MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
+        const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
-        hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
+        hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
             throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
@@ -115,7 +114,7 @@ struct MultiMatchAllIndicesImpl
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
             /// scan, check, update the offsets array and the offset of haystack.
             err = hs_scan(
-                regexps->getDB(),
+                hyperscan_regex->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
                 length,
                 0,
@@ -198,10 +197,9 @@ struct MultiMatchAllIndicesImpl
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
-            MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ true, WithEditDistance>(needles, edit_distance);
-            MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
+            const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
             hs_scratch_t * scratch = nullptr;
-            hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
+            hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
             if (err != HS_SUCCESS)
                 throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
@@ -226,7 +224,7 @@ struct MultiMatchAllIndicesImpl
 
             /// scan, check, update the offsets array and the offset of haystack.
             err = hs_scan(
-                regexps->getDB(),
+                hyperscan_regex->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + prev_haystack_offset,
                 cur_haystack_length,
                 0,

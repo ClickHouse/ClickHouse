@@ -476,7 +476,8 @@ struct MatchImpl
             }
             else
             {
-                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle, regexp);
+
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
                 if (required_substr.empty())
@@ -588,7 +589,8 @@ struct MatchImpl
             }
             else
             {
-                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle, regexp);
+
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
                 if (required_substr.empty())

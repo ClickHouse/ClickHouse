@@ -62,7 +62,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(RowNumberInBlock)
+void registerFunctionRowNumberInBlock(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRowNumberInBlock>();
 }

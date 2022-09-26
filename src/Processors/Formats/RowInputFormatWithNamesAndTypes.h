@@ -57,8 +57,6 @@ private:
     bool with_names;
     bool with_types;
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
-
-protected:
     std::unordered_map<String, size_t> column_indexes_by_names;
 };
 
@@ -125,7 +123,7 @@ class FormatWithNamesAndTypesSchemaReader : public IRowSchemaReader
 public:
     FormatWithNamesAndTypesSchemaReader(
         ReadBuffer & in,
-        const FormatSettings & format_settings_,
+        const FormatSettings & format_settings,
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,

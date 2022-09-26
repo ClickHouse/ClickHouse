@@ -100,7 +100,7 @@ private:
 };
 
 
-REGISTER_FUNCTION(Array)
+void registerFunctionArray(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArray>();
 }

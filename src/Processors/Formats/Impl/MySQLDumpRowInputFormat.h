@@ -35,6 +35,7 @@ private:
     NamesAndTypesList readSchema() override;
     DataTypes readRowAndGetDataTypes() override;
 
+    const FormatSettings format_settings;
     String table_name;
 };
 

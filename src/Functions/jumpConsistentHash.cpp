@@ -39,7 +39,7 @@ using FunctionJumpConsistentHash = FunctionConsistentHashImpl<JumpConsistentHash
 
 }
 
-REGISTER_FUNCTION(JumpConsistentHash)
+void registerFunctionJumpConsistentHash(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionJumpConsistentHash>();
 }

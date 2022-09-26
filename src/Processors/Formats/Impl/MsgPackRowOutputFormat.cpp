@@ -178,7 +178,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 {
                     WriteBufferFromOwnString buf;
                     writeBinary(uuid_column.getElement(row_num), buf);
-                    std::string_view uuid_bin = buf.stringView();
+                    std::string_view uuid_bin = buf.stringRef().toView();
                     packer.pack_bin(uuid_bin.size());
                     packer.pack_bin_body(uuid_bin.data(), uuid_bin.size());
                     return;
@@ -187,7 +187,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 {
                     WriteBufferFromOwnString buf;
                     writeText(uuid_column.getElement(row_num), buf);
-                    std::string_view uuid_text = buf.stringView();
+                    std::string_view uuid_text = buf.stringRef().toView();
                     packer.pack_str(uuid_text.size());
                     packer.pack_bin_body(uuid_text.data(), uuid_text.size());
                     return;
@@ -198,7 +198,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                     UUID value = uuid_column.getElement(row_num);
                     writeBinaryBigEndian(value.toUnderType().items[0], buf);
                     writeBinaryBigEndian(value.toUnderType().items[1], buf);
-                    std::string_view uuid_ext = buf.stringView();
+                    std::string_view uuid_ext = buf.stringRef().toView();
                     packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUIDType));
                     packer.pack_ext_body(uuid_ext.data(), uuid_ext.size());
                     return;

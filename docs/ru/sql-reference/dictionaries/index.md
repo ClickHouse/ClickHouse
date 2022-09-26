@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/dictionaries/
 sidebar_label: "Словари"
 sidebar_position: 35
 ---
