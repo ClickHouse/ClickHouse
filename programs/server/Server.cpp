@@ -201,6 +201,7 @@ try
 
     /// Clearing old temporary files.
     fs::directory_iterator dir_end;
+    size_t unknown_files = 0;
     for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
         if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
@@ -209,8 +210,15 @@ try
             fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+        {
+            unknown_files++;
+            if (unknown_files < 100)
+                LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+        }
     }
+
+    if (unknown_files)
+        LOG_DEBUG(log, "Skipped {} files in temporary path", unknown_files);
 }
 catch (...)
 {
