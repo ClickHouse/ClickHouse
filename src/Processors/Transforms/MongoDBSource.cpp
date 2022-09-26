@@ -187,8 +187,8 @@ namespace
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<T>(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value()));
                 break;
             case Poco::MongoDB::ElementTraits<bool>::TypeId:
                 assert_cast<ColumnVector<T> &>(column).getData().push_back(

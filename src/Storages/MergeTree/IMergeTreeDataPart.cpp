@@ -68,6 +68,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
+
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -320,6 +321,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     minmax_idx = std::make_shared<MinMaxIndex>();
 
+    initializeIndexGranularityInfo();
     initializePartMetadataManager();
 }
 
@@ -346,6 +348,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     minmax_idx = std::make_shared<MinMaxIndex>();
 
+    initializeIndexGranularityInfo();
     initializePartMetadataManager();
 }
 
@@ -739,7 +742,7 @@ void IMergeTreeDataPart::loadIndex()
             loaded_index[i]->reserve(index_granularity.getMarksCount());
         }
 
-        String index_name = "primary.idx";
+        String index_name = "primary" + getIndexExtensionFromFilesystem(data_part_storage).value();
         String index_path = fs::path(data_part_storage->getRelativePath()) / index_name;
         auto index_file = metadata_manager->read(index_name);
         size_t marks_count = index_granularity.getMarksCount();
@@ -778,7 +781,10 @@ void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const
         return;
 
     if (metadata_snapshot->hasPrimaryKey())
-        files.push_back("primary.idx");
+    {
+        String index_name = "primary" + getIndexExtensionFromFilesystem(data_part_storage).value();
+        files.push_back(index_name);
+    }
 }
 
 NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
@@ -1433,6 +1439,15 @@ void IMergeTreeDataPart::initializePartMetadataManager()
 #endif
 }
 
+void IMergeTreeDataPart::initializeIndexGranularityInfo()
+{
+    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(data_part_storage);
+    if (mrk_ext)
+        index_granularity_info = MergeTreeIndexGranularityInfo(storage, MarkType{*mrk_ext});
+    else
+        index_granularity_info = MergeTreeIndexGranularityInfo(storage, part_type);
+}
+
 void IMergeTreeDataPart::remove() const
 {
     assert(assertHasValidVersionMetadata());
@@ -1541,8 +1556,11 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     if (!checksums.empty())
     {
-        if (!pk.column_names.empty() && !checksums.files.contains("primary.idx"))
-            throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
+        if (!pk.column_names.empty()
+            && (!checksums.files.contains("primary" + getIndexExtension(false))
+                && !checksums.files.contains("primary" + getIndexExtension(true))))
+            throw Exception("No checksum for " + toString("primary" + getIndexExtension(false)) + " or " + toString("primary" + getIndexExtension(true)),
+                            ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
@@ -1580,7 +1598,10 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
         /// Check that the primary key index is not empty.
         if (!pk.column_names.empty())
-            check_file_not_empty("primary.idx");
+        {
+            String index_name = "primary" + getIndexExtensionFromFilesystem(data_part_storage).value();
+            check_file_not_empty(index_name);
+        }
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
@@ -1633,7 +1654,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
         auto index_name_escaped = escapeForFileName(index_name);
 
         auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
-        auto index_marks_file_name = index_name_escaped + index_granularity_info.marks_file_extension;
+        auto index_marks_file_name = index_name_escaped + getMarksFileExtension();
 
         /// If part does not contain index
         auto bin_checksum = checksums.files.find(index_file_name);
@@ -1791,6 +1812,26 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part)
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::InMemory);
+}
+
+std::optional<std::string> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage)
+{
+    if (data_part_storage->exists())
+    {
+        for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
+        {
+            const auto & extension = fs::path(it->name()).extension();
+            if (extension == getIndexExtension(false)
+                    || extension == getIndexExtension(true))
+                return extension;
+        }
+    }
+    return {".idx"};
+}
+
+bool isCompressedFromIndexExtension(const String & index_extension)
+{
+    return index_extension == getIndexExtension(true);
 }
 
 }
