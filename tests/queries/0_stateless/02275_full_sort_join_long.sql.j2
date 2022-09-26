@@ -22,7 +22,16 @@ INSERT INTO t2
     FROM numbers_mt({{ rtable_size }})
 ;
 
-SET join_algorithm = 'full_sorting_merge';
+{% macro is_implemented(join_algorithm) -%}
+{% if join_algorithm == 'grace_hash' %} -- { serverError NOT_IMPLEMENTED } {% endif %}
+{% endmacro -%}
+
+{% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
+
+SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}1M{% else %}0{% endif %}';
+
+SELECT '-- {{ join_algorithm }} --';
+SET join_algorithm = '{{ join_algorithm }}';
 
 {% for kind in ['ALL', 'ANY'] -%}
 {% for block_size in [32001, 65505, 65536, range(32001, 65536) | random] %}
@@ -45,7 +54,8 @@ SELECT '{{ kind }} RIGHT';
 SELECT sum(t1.key), sum(t2.key), count(), countIf(t1.key != 0), countIf(t2.key != 0) FROM t1
 {{ kind }} RIGHT JOIN t2
 ON t1.key == t2.key
-;
+; {{ is_implemented(join_algorithm) }}
 
+{% endfor -%}
 {% endfor -%}
 {% endfor -%}
