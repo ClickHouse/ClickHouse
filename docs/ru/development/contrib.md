@@ -1,5 +1,4 @@
 ---
-slug: /ru/development/contrib
 sidebar_position: 71
 sidebar_label: "Используемые сторонние библиотеки"
 ---

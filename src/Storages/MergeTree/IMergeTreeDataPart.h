@@ -411,7 +411,7 @@ public:
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
 
     /// [Re]writes file with transactional metadata on disk
-    void storeVersionMetadata(bool force = false) const;
+    void storeVersionMetadata() const;
 
     /// Appends the corresponding CSN to file on disk (without fsync)
     void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;

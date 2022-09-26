@@ -243,20 +243,11 @@ InputFormatPtr FormatFactory::getInput(
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
                context->getApplicationType() == Context::ApplicationType::SERVER};
-        auto format = std::make_shared<ParallelParsingInputFormat>(params);
-        if (!settings.input_format_record_errors_file_path.toString().empty())
-        {
-            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
-        }
-        return format;
+        return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
 
     auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
-    if (!settings.input_format_record_errors_file_path.toString().empty())
-    {
-        format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
-    }
     return format;
 }
 
@@ -530,7 +521,6 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
         return getFormatFromFileName(file_path, false);
     return "";
 #else
-    (void)fd;
     return "";
 #endif
 }
