@@ -1467,6 +1467,8 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
+            MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
+
             if (task->executeStep())
                 return true;
 
