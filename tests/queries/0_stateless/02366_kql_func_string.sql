@@ -183,12 +183,12 @@ Customers | project indexof('abcdefg','cde') | take 1;
 Customers | project indexof('abcdefg','cde',2) | take 1;
 Customers | project indexof('abcdefg','cde',6) | take 1;
 print '-- base64_encode_fromguid()';
-print base64_encode_fromguid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb');
-print base64_encode_fromguid("abcd1231");
+print base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'));
+-- print base64_encode_fromguid("abcd1231"); exception is expected
 print '-- base64_decode_toarray()';
 print base64_decode_toarray('S3VzdG8=');
 print '-- base64_decode_toguid()';
-print base64_decode_toguid(base64_encode_fromguid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb')) == 'ae3133f2-6e22-49ae-b06a-16e6a9b212eb';
+print base64_decode_toguid(base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'))) == guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb');
 print '-- parse_url()';
 print parse_url('scheme://username:password@host:1234/this/is/a/path?k1=v1&k2=v2#fragment');
 print '-- parse_urlquery()';

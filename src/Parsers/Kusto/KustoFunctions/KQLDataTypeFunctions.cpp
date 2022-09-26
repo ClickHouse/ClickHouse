@@ -128,7 +128,7 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception("String is not parsed as double literal", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("String is not parsed as int literal.", ErrorCodes::BAD_ARGUMENTS);
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
