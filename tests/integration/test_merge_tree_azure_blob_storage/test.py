@@ -3,6 +3,12 @@ import time
 import os
 
 import pytest
+
+# FIXME Test is temporarily disabled due to flakyness
+# https://github.com/ClickHouse/ClickHouse/issues/39700
+
+pytestmark = pytest.mark.skip
+
 from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 

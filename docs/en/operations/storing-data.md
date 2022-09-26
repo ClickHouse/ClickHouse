@@ -131,7 +131,7 @@ Example of configuration for versions later or equal to 22.8:
                 <type>cache</type>
                 <disk>s3</disk>
                 <path>/s3_cache/</path>
-                <max_size>10000000</max_size>
+                <max_size>10Gi</max_size>
             </cache>
         </disks>
         <policies>
@@ -155,7 +155,7 @@ Example of configuration for versions earlier than 22.8:
                 <endpoint>...</endpoint>
                 ... s3 configuration ...
                 <data_cache_enabled>1</data_cache_enabled>
-                <data_cache_max_size>10000000</data_cache_max_size>
+                <data_cache_max_size>10737418240</data_cache_max_size>
             </s3>
         </disks>
         <policies>
@@ -172,7 +172,7 @@ Cache **configuration settings**:
 
 - `path` - path to the directory with cache. Default: None, this setting is obligatory.
 
-- `max_size` - maximum size of the cache in bytes. When the limit is reached, cache files are evicted according to the cache eviction policy. Default: None, this setting is obligatory.
+- `max_size` - maximum size of the cache in bytes or in readable format, e.g. `ki, Mi, Gi, etc`, example `10Gi` (such format works starting from `22.10` version). When the limit is reached, cache files are evicted according to the cache eviction policy. Default: None, this setting is obligatory.
 
 - `cache_on_write_operations` - allow to turn on `write-through` cache (caching data on any write operations: `INSERT` queries, background merges). Default: `false`. The `write-through` cache can be disabled per query using setting `enable_filesystem_cache_on_write_operations` (data is cached only if both cache config settings and corresponding query setting are enabled).
 
@@ -182,7 +182,7 @@ Cache **configuration settings**:
 
 - `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `false`. This setting was added in version 22.8. If you used filesystem cache before this version, then it will not work on versions starting from 22.8 if this setting is set to `true`. If you want to use this setting, clear old cache created before version 22.8 before upgrading.
 
-- `max_file_segment_size` - a maximum size of a single cache file. Default: `104857600` (100 Mb).
+- `max_file_segment_size` - a maximum size of a single cache file in bytes or in readable format (`ki, Mi, Gi, etc`, example `10Gi`). Default: `104857600` (`100Mi`).
 
 - `max_elements` - a limit for a number of cache files. Default: `1048576`.
 
