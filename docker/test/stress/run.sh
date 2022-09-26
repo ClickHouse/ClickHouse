@@ -243,7 +243,7 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 configure
 
 # But we still need default disk because some tables loaded only into it
-sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<disk>s3</disk>|<disk>s3</disk><disk>default</disk>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
 mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
