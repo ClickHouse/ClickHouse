@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -41,7 +42,7 @@ public:
     requires is_big_int_v<T>
     bool operator() (T & x) const
     {
-        x += rhs.reinterpret<T>();
+        x += applyVisitor(FieldVisitorConvertToNumber<T>(), rhs);
         return x != T(0);
     }
 };
