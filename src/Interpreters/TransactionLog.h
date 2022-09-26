@@ -169,6 +169,9 @@ private:
     using TIDMap = std::unordered_map<TIDHash, CSNEntry>;
     TIDMap tid_to_csn TSA_GUARDED_BY(mutex);
 
+    template<bool with_multiread>
+    std::vector<std::pair<TIDHash, CSNEntry>> getLoaded(Strings::const_iterator beg, Strings::const_iterator end);
+
     mutable std::mutex running_list_mutex;
     /// Transactions that are currently processed
     TransactionsList running_list TSA_GUARDED_BY(running_list_mutex);
