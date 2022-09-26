@@ -4,6 +4,11 @@ sidebar_label: Cell Towers
 title: "Cell Towers"
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+import ActionsMenu from '@site/docs/en/_snippets/_service_actions_menu.md';
+
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
 As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc).
@@ -12,6 +17,16 @@ OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4
 
 
 ## Get the Dataset {#get-the-dataset}
+
+<Tabs groupId="deployMethod">
+<TabItem value="serverless" label="ClickHouse Cloud" default>
+
+ClickHouse Cloud provides an easy-button for uploading this dataset from S3.  Log in to your ClickHouse Cloud organization, or create a free trial at [ClickHouse.cloud](https://clickhouse.cloud).
+<ActionsMenu menu="Load Data" />
+
+Choose the 
+</TabItem>
+<TabItem value="selfmanaged" label="Self-managed">
 
 1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (729 MB).
 
@@ -55,6 +70,9 @@ ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 ```bash
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
+
+</TabItem>
+</Tabs>
 
 ## Examples {#examples}
 
