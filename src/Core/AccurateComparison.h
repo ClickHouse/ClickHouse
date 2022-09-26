@@ -168,7 +168,7 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
         if (isNaN(value))
         {
-            result = value;
+            result = static_cast<To>(value);
             return true;
         }
 

@@ -332,7 +332,7 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
         /// Check settings specific for JSON formats.
 
         /// If we have numbers and strings, convert numbers to strings.
-        if (settings.json.try_infer_numbers_from_strings)
+        if (settings.json.try_infer_numbers_from_strings || settings.json.read_numbers_as_strings)
         {
             bool have_strings = false;
             bool have_numbers = false;
@@ -346,7 +346,9 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
             {
                 for (auto & type : data_types)
                 {
-                    if (isNumber(type) && (!numbers_parsed_from_json_strings || numbers_parsed_from_json_strings->contains(type.get())))
+                    if (isNumber(type)
+                        && (settings.json.read_numbers_as_strings || !numbers_parsed_from_json_strings
+                            || numbers_parsed_from_json_strings->contains(type.get())))
                         type = std::make_shared<DataTypeString>();
                 }
             }

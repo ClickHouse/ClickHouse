@@ -12,13 +12,20 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/ReadBufferFromString.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -270,9 +277,21 @@ void SerializationString::serializeTextJSON(const IColumn & column, size_t row_n
 }
 
 
-void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
+    if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
+    {
+        String field;
+        readJSONField(field, istr);
+        Float64 tmp;
+        ReadBufferFromString buf(field);
+        if (tryReadFloatText(tmp, buf))
+            read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
+    }
+    else
+        read(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
 }
 
 

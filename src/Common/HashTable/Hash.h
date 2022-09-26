@@ -444,7 +444,14 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
-            return intHash32<salt>(key);
+            union
+            {
+                T in;
+                DB::UInt64 out;
+            } u;
+            u.out = 0;
+            u.in = key;
+            return intHash32<salt>(u.out);
         }
 
         assert(false);
