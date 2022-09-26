@@ -1,7 +1,11 @@
+set (GENERATED_GIT_HASH_CPP "${CMAKE_CURRENT_BINARY_DIR}/GitHash.generated.cpp")
+configure_file(GitHash.generated.cpp.in ${GENERATED_GIT_HASH_CPP})
+
 add_library (daemon
     BaseDaemon.cpp
     GraphiteWriter.cpp
     SentryWriter.cpp
+    ${GENERATED_GIT_HASH_CPP}
 )
 
 if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
