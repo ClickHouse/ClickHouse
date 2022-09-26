@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
 namespace DB
@@ -1948,6 +1949,69 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
     return result;
 }
 
+namespace
+{
+struct BlockInfoInZooKeeper
+{
+    String partition;
+    Int64 number;
+    String zk_path;
+    std::future<Coordination::GetResponse> contents_future;
+};
+
+template<bool with_multiread>
+std::vector<BlockInfoInZooKeeper> getBlockInfos(const auto & partitions, const auto & zookeeper, const auto & zookeeper_path)
+{
+    using FutureListResponses = std::vector<std::future<Coordination::ListResponse>>;
+    using ResponsesType = std::conditional_t<with_multiread, Coordination::Responses, FutureListResponses>;
+
+    ResponsesType locks;
+
+    if constexpr (with_multiread)
+    {
+        Coordination::Requests requests;
+        for (const String & partition : partitions)
+            requests.push_back(zkutil::makeSimpleListRequest(fs::path(zookeeper_path) / "block_numbers" / partition));
+
+        locks = zookeeper->multi(requests);
+    }
+    else
+    {
+        for (const String & partition : partitions)
+            locks.push_back(zookeeper->asyncGetChildren(fs::path(zookeeper_path) / "block_numbers" / partition));
+    }
+
+    std::vector<BlockInfoInZooKeeper> block_infos;
+    for (size_t i = 0; i < partitions.size(); ++i)
+    {
+        const Strings & partition_block_numbers = [&]
+        {
+            if constexpr (with_multiread)
+                return dynamic_cast<const Coordination::ZooKeeperSimpleListResponse &>(*locks[i]).names;
+            else
+                return locks[i].get().names;
+        }();
+
+        for (const String & entry : partition_block_numbers)
+        {
+            /// TODO: cache block numbers that are abandoned.
+            /// We won't need to check them on the next iteration.
+            if (startsWith(entry, "block-"))
+            {
+                Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
+                String zk_path = fs::path(zookeeper_path) / "block_numbers" / partitions[i] / entry;
+                block_infos.emplace_back(
+                    BlockInfoInZooKeeper{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
+            }
+        }
+    }
+
+    return block_infos;
+}
+
+}
+
+
 ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
 {
     return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
@@ -1977,35 +2041,12 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
-        std::vector<std::future<Coordination::ListResponse>> lock_futures;
-        for (const String & partition : partitions)
-            lock_futures.push_back(zookeeper->asyncGetChildren(fs::path(queue.zookeeper_path) / "block_numbers" / partition));
-
-        struct BlockInfoInZooKeeper
-        {
-            String partition;
-            Int64 number;
-            String zk_path;
-            std::future<Coordination::GetResponse> contents_future;
-        };
 
         std::vector<BlockInfoInZooKeeper> block_infos;
-        for (size_t i = 0; i < partitions.size(); ++i)
-        {
-            Strings partition_block_numbers = lock_futures[i].get().names;
-            for (const String & entry : partition_block_numbers)
-            {
-                /// TODO: cache block numbers that are abandoned.
-                /// We won't need to check them on the next iteration.
-                if (startsWith(entry, "block-"))
-                {
-                    Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
-                    String zk_path = fs::path(queue.zookeeper_path) / "block_numbers" / partitions[i] / entry;
-                    block_infos.emplace_back(
-                        BlockInfoInZooKeeper{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
-                }
-            }
-        }
+        if (zookeeper->getApiVersion() >= KeeperApiVersion::WITH_MULTI_READ)
+            block_infos = getBlockInfos<true>(partitions, zookeeper, queue.zookeeper_path);
+        else
+            block_infos = getBlockInfos<false>(partitions, zookeeper, queue.zookeeper_path);
 
         for (auto & block : block_infos)
         {

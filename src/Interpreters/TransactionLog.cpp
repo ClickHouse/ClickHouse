@@ -5,11 +5,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include "Common/ZooKeeper/Types.h"
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include "Coordination/KeeperConstants.h"
 
 
 namespace DB
@@ -113,32 +115,81 @@ String TransactionLog::serializeTID(const TransactionID & tid)
     return buf.str();
 }
 
+struct IZooKeeperEntryData
+{
+    virtual Coordination::GetResponse operator[](size_t index) = 0;
+    virtual ~IZooKeeperEntryData() = default;
+};
+
+template <bool with_multiread>
+struct ZooKeeperEntryData : public IZooKeeperEntryData
+{
+public:
+    ZooKeeperEntryData(Strings::const_iterator beg, Strings::const_iterator end, const auto & zookeeper, const auto & zookeeper_path_log)
+    {
+        size_t entries_count = std::distance(beg, end);
+        responses.reserve(entries_count);
+        if constexpr (with_multiread)
+        {
+            Coordination::Requests requests;
+            for (auto it = beg; it != end; ++it)
+            {
+                requests.emplace_back(zkutil::makeGetRequest(fs::path(zookeeper_path_log) / *it));
+            }
+
+            zookeeper->multi(requests);
+        }
+        else
+        {
+            for (auto it = beg; it != end; ++it)
+            {
+                responses.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
+            }
+        }
+    }
+
+    Coordination::GetResponse operator[](size_t index) override
+    {
+        if constexpr (with_multiread)
+            return std::move(dynamic_cast<Coordination::GetResponse &>(*responses[index]));
+        else
+            return responses[index].get();
+    }
+
+private:
+    using FutureListResponses = std::vector<std::future<Coordination::GetResponse>>;
+    using ResponsesType = std::conditional_t<with_multiread, Coordination::Responses, FutureListResponses>;
+
+    ResponsesType responses;
+};
 
 void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_iterator end)
 {
-    std::vector<std::future<Coordination::GetResponse>> futures;
     size_t entries_count = std::distance(beg, end);
     if (!entries_count)
         return;
 
     String last_entry = *std::prev(end);
     LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path_log, *beg, last_entry);
-    futures.reserve(entries_count);
-    for (auto it = beg; it != end; ++it)
-        futures.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
+    std::unique_ptr<IZooKeeperEntryData> entries_data_ptr;
+    if (TSA_READ_ONE_THREAD(zookeeper)->getApiVersion() >= KeeperApiVersion::WITH_MULTI_READ)
+        entries_data_ptr = std::make_unique<ZooKeeperEntryData<true>>(beg, end, TSA_READ_ONE_THREAD(zookeeper), zookeeper_path_log);
+    else
+        entries_data_ptr = std::make_unique<ZooKeeperEntryData<false>>(beg, end, TSA_READ_ONE_THREAD(zookeeper), zookeeper_path_log);
+
+    auto & entries = *entries_data_ptr;
 
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;
     loaded.reserve(entries_count);
     auto it = beg;
     for (size_t i = 0; i < entries_count; ++i, ++it)
     {
-        auto res = futures[i].get();
+        auto res = entries[i];
         CSN csn = deserializeCSN(*it);
         TransactionID tid = deserializeTID(res.data);
         loaded.emplace_back(tid.getHash(), CSNEntry{csn, tid});
         LOG_TEST(log, "Got entry {} -> {}", tid, csn);
     }
-    futures.clear();
 
     NOEXCEPT_SCOPE_STRICT({
         std::lock_guard lock{mutex};
