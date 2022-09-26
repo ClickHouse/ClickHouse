@@ -26,26 +26,26 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
 
     bool first = true;
 
-    for (auto it = changes.begin(); it != changes.end(); ++it)
+    for (const auto & change : changes)
     {
         if (!first)
             format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(it->name, format.ostr);
-        format.ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        formatSettingName(change.name, format.ostr);
+        format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
     }
 
-    for (auto it = query_parameters.begin(); it != query_parameters.end(); ++it)
+    for (const auto & [name, value] : query_parameters)
     {
         if (!first)
             format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + it->first, format.ostr);
-        format.ostr << " = " << it->second;
+        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
+        format.ostr << " = " << value;
     }
 }
 
