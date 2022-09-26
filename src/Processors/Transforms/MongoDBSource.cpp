@@ -253,13 +253,13 @@ namespace
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
                 {
                     std::string string_id = value.toString();
-                    assert_cast<ColumnString &>(column).insertDataWithTerminatingZero(string_id.data(), string_id.size() + 1);
+                    assert_cast<ColumnString &>(column).insertData(string_id.data(), string_id.size());
                     break;
                 }
                 else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    assert_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
+                    assert_cast<ColumnString &>(column).insertData(string.data(), string.size());
                     break;
                 }
 
