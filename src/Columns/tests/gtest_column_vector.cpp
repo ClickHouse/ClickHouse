@@ -132,6 +132,7 @@ static void testIndex()
 
     try
     {
+        test_case(0, 0, 0);   /// test for zero length index
         for (size_t i = 0; i < TEST_RUNS; ++i)
         {
             /// make sure rows distribute in (column_sizes[r-1], colulmn_sizes[r]]

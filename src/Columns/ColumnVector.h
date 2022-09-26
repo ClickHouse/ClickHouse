@@ -417,6 +417,9 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
     auto indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
     auto res_pos = reinterpret_cast<UInt8 *>(res_data.data());
 
+    if (limit == 0)
+        return;   /// nothing to do, just return
+
     if (data_size <= 64)
     {
         /// one single mask load for table size <= 64
