@@ -668,9 +668,9 @@ struct TimeSlotImpl
         return dateIsNotSupported(name);
     }
 
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
+    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return {t.whole / 1800 * 1800, 0};
+       return {time_zone.toStartOfMinuteInterval(t.whole, 30), 0};
     }
 
     static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
