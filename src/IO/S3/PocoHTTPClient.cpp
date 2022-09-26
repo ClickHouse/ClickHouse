@@ -1,3 +1,4 @@
+#include "Common/DNSResolver.h"
 #include <Common/config.h>
 
 #if USE_AWS_S3
@@ -257,6 +258,9 @@ void PocoHTTPClient::makeRequestInternal(
 
             if (!request_configuration.proxy_host.empty())
             {
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
+
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
                 session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
@@ -443,6 +447,10 @@ void PocoHTTPClient::makeRequestInternal(
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 
         addMetric(request, S3MetricType::Errors);
+
+        /// Probably this is socket timeout or something more or less related to DNS
+        /// Let's just remove this host from DNS cache to be more safe
+        DNSResolver::instance().removeHostFromCache(Poco::URI(uri).getHost());
     }
 }
 
