@@ -70,10 +70,6 @@ public:
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        return getNestedColumn()->getDataAtWithTerminatingZero(n);
-    }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
