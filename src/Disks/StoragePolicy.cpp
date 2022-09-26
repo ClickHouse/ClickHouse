@@ -39,6 +39,7 @@ StoragePolicy::StoragePolicy(
     const String & config_prefix,
     DiskSelectorPtr disks)
     : name(std::move(name_))
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     String volumes_prefix = config_prefix + ".volumes";
@@ -81,11 +82,15 @@ StoragePolicy::StoragePolicy(
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
     buildVolumeIndices();
+    LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
 
 StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
-    : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
+    : volumes(std::move(volumes_))
+    , name(std::move(name_))
+    , move_factor(move_factor_)
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     if (volumes.empty())
         throw Exception("Storage policy " + backQuote(name) + " must contain at least one Volume.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
@@ -94,6 +99,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
     buildVolumeIndices();
+    LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
 
@@ -206,12 +212,16 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 
 ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
+    LOG_TRACE(log, "Reserving bytes {} from volume index {}, total volumes {}", bytes, min_volume_index, volumes.size());
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
         auto reservation = volume->reserve(bytes);
         if (reservation)
+        {
+            LOG_TRACE(log, "Successfully reserved {} bytes on volume index {}", bytes, i);
             return reservation;
+        }
     }
     return {};
 }
