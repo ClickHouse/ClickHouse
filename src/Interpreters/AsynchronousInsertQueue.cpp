@@ -138,10 +138,14 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 
     LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
 
+    shutdown = true;
     {
         std::lock_guard lock(deadline_mutex);
-        shutdown = true;
         are_tasks_available.notify_one();
+    }
+    {
+        std::lock_guard lock(cleanup_mutex);
+        cleanup_can_run.notify_one();
     }
 
     assert(dump_by_first_update_thread.joinable());
@@ -285,35 +289,39 @@ void AsynchronousInsertQueue::busyCheck()
 {
     while (!shutdown)
     {
-        std::unique_lock lock(deadline_mutex);
-        are_tasks_available.wait_for(lock, Milliseconds(getContext()->getSettingsRef().async_insert_busy_timeout_ms), [this]()
+        std::vector<QueueIterator> entries_to_flush;
         {
+            std::unique_lock deadline_lock(deadline_mutex);
+            are_tasks_available.wait_for(deadline_lock, Milliseconds(getContext()->getSettingsRef().async_insert_busy_timeout_ms), [this]()
+            {
+                if (shutdown)
+                    return true;
+
+                if (!deadline_queue.empty() && deadline_queue.begin()->first < std::chrono::steady_clock::now())
+                    return true;
+
+                return false;
+            });
+
             if (shutdown)
-                return true;
+                return;
 
-            if (!deadline_queue.empty() && deadline_queue.begin()->first < std::chrono::steady_clock::now())
-                return true;
+            const auto now = std::chrono::steady_clock::now();
 
-            return false;
-        });
+            while (true)
+            {
+                if (deadline_queue.empty() || deadline_queue.begin()->first > now)
+                    break;
 
-        if (shutdown)
-            return;
+                entries_to_flush.emplace_back(deadline_queue.begin()->second);
+                deadline_queue.erase(deadline_queue.begin());
+            }
+        }
 
-        const auto now = std::chrono::steady_clock::now();
-
-        while (true)
+        std::shared_lock read_lock(rwlock);
+        for (auto & entry : entries_to_flush)
         {
-            if (deadline_queue.empty() || deadline_queue.begin()->first > now)
-                break;
-
-
-            std::shared_lock read_lock(rwlock);
-            auto main_queue_it = deadline_queue.begin()->second;
-            auto & [key, elem] = *main_queue_it;
-
-            deadline_queue.erase(deadline_queue.begin());
-
+            auto & [key, elem] = *entry;
             std::lock_guard data_lock(elem->mutex);
             if (!elem->data)
                 continue;
@@ -328,8 +336,8 @@ void AsynchronousInsertQueue::cleanup()
     while (true)
     {
         {
-            std::unique_lock shutdown_lock(shutdown_mutex);
-            shutdown_cv.wait_for(shutdown_lock, Milliseconds(cleanup_timeout), [this]() { return shutdown; });
+            std::unique_lock cleanup_lock(cleanup_mutex);
+            cleanup_can_run.wait_for(cleanup_lock, Milliseconds(cleanup_timeout), [this]() -> bool { return shutdown; });
 
             if (shutdown)
                 return;

@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 
+#include <atomic>
 #include <unordered_map>
 
 
@@ -96,8 +97,9 @@ private:
     mutable std::shared_mutex rwlock;
     Queue queue;
 
-    mutable std::mutex shutdown_mutex;
-    mutable std::condition_variable shutdown_cv;
+    /// This is needed only for using inside cleanup() function and correct signaling about shutdown
+    mutable std::mutex cleanup_mutex;
+    mutable std::condition_variable cleanup_can_run;
 
     mutable std::mutex deadline_mutex;
     mutable std::condition_variable are_tasks_available;
@@ -118,7 +120,7 @@ private:
 
     const Milliseconds cleanup_timeout;
 
-    bool shutdown{false};
+    std::atomic<bool> shutdown{false};
 
     ThreadPool pool;  /// dump the data only inside this pool.
     ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
