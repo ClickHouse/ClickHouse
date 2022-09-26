@@ -1,8 +1,8 @@
 ---
-sidebar_position: 5
+toc_priority: 5
 ---
 
-# avg
+# avg {#agg_function-avg}
 
 Calculates the arithmetic mean.
 

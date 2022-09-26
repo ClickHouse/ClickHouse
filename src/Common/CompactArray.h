@@ -214,9 +214,6 @@ private:
 
         /// offset in bits to the next to the rightmost bit at that byte; or zero if the rightmost bit is the rightmost bit in that byte.
         offset_r = (l + content_width) % 8;
-
-        content_l = nullptr;
-        content_r = nullptr;
     }
 
     UInt8 ALWAYS_INLINE read(UInt8 value_l) const

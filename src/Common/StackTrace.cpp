@@ -33,7 +33,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__) && !defined(__powerpc__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
@@ -173,18 +173,18 @@ static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
-#    if defined(OS_FREEBSD)
+#    if defined(__FreeBSD__)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
-#    elif defined(OS_DARWIN)
+#    elif defined(__APPLE__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
 
-#elif defined(OS_DARWIN) && defined(__aarch64__)
+#elif defined(__APPLE__) && defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
 
-#elif defined(OS_FREEBSD) && defined(__aarch64__)
+#elif defined(__FreeBSD__) && defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
@@ -201,7 +201,7 @@ void StackTrace::symbolize(
     const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset,
     size_t size, StackTrace::Frames & frames)
 {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
@@ -332,7 +332,7 @@ static void toStringEveryLineImpl(
     if (size == 0)
         return callback("<Empty trace>");
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<std::string, DB::Dwarf> dwarfs;

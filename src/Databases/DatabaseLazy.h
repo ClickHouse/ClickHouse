@@ -37,7 +37,7 @@ public:
     void dropTable(
         ContextPtr context,
         const String & table_name,
-        bool sync) override;
+        bool no_delay) override;
 
     void renameTable(
         ContextPtr context,
@@ -102,8 +102,8 @@ private:
     const time_t expiration_time;
 
     /// TODO use DatabaseWithOwnTablesBase::tables
-    mutable TablesCache tables_cache TSA_GUARDED_BY(mutex);
-    mutable CacheExpirationQueue cache_expiration_queue TSA_GUARDED_BY(mutex);
+    mutable TablesCache tables_cache;
+    mutable CacheExpirationQueue cache_expiration_queue;
 
     StoragePtr loadTable(const String & table_name) const;
 

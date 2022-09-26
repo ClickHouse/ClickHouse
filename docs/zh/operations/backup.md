@@ -1,6 +1,6 @@
 ---
-sidebar_position: 49
-sidebar_label: "\u6570\u636E\u5907\u4EFD"
+toc_priority: 49
+toc_title: "\u6570\u636E\u5907\u4EFD"
 ---
 
 # 数据备份 {#data-backup}

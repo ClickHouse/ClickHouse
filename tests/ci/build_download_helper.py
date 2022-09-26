@@ -20,17 +20,15 @@ def get_with_retries(
     sleep: int = 3,
     **kwargs,
 ) -> requests.Response:
-    logging.info(
-        "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
-    )
+    logging.info("Getting URL with %i and sleep %i in between: %s", retries, sleep, url)
     exc = None  # type: Optional[Exception]
-    for i in range(retries):
+    for i in range(DOWNLOAD_RETRIES_COUNT):
         try:
             response = requests.get(url, **kwargs)
             response.raise_for_status()
             break
         except Exception as e:
-            if i + 1 < retries:
+            if i + 1 < DOWNLOAD_RETRIES_COUNT:
                 logging.info("Exception '%s' while getting, retry %i", e, i + 1)
                 time.sleep(sleep)
 

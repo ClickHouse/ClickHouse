@@ -1,9 +1,9 @@
 ---
-sidebar_position: 40
-sidebar_label: PostgreSQL
+toc_priority: 35
+toc_title: PostgreSQL
 ---
 
-# PostgreSQL
+# PostgreSQL {#postgresql}
 
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
 
@@ -52,7 +52,7 @@ Database in ClickHouse, exchanging data with the PostgreSQL server:
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
 ```
 
 ``` sql
@@ -136,3 +136,4 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
+[Original article](https://clickhouse.com/docs/en/database-engines/postgresql/) <!--hide-->

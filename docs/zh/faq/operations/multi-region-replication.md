@@ -1,7 +1,7 @@
 ---
 title: ClickHouse支持多区域复制吗?
 toc_hidden: true
-sidebar_position: 30
+toc_priority: 30
 ---
 
 # ClickHouse支持多区域复制吗? {#does-clickhouse-support-multi-region-replication}

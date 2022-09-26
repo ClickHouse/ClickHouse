@@ -8,7 +8,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
@@ -39,7 +39,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
     try
     {
-        DB::KeeperStorage storage(500, "", true);
+        DB::KeeperStorage storage(500, "");
 
         DB::deserializeKeeperStorageFromSnapshotsDir(storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
         DB::deserializeLogsAndApplyToStorage(storage, options["zookeeper-logs-dir"].as<std::string>(), logger);

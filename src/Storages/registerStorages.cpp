@@ -28,9 +28,6 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 
-// MEILISEARCH
-void registerStorageMeiliSearch(StorageFactory& factory);
-
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
@@ -107,9 +104,6 @@ void registerStorages()
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
-
-    // MEILISEARCH
-    registerStorageMeiliSearch(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);

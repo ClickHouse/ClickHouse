@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 #include <base/range.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,7 +16,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
 
 
@@ -173,7 +172,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 
-        return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
+        return StorageSQLite::create(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {

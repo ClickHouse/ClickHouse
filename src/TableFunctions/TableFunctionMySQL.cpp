@@ -66,7 +66,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
 {
     auto columns = getActualTableStructure(context);
 
-    auto res = std::make_shared<StorageMySQL>(
+    auto res = StorageMySQL::create(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         configuration->database,

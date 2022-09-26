@@ -30,12 +30,11 @@ def get_run_command(
     build_path, result_folder, repo_tests_path, server_log_folder, image
 ):
     cmd = (
-        "docker run --cap-add=SYS_PTRACE "
-        "-e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' "
-        f"--volume={build_path}:/package_folder "
+        "docker run --cap-add=SYS_PTRACE -e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' "
+        + f"--volume={build_path}:/package_folder "
         f"--volume={result_folder}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
+        f"--volume={server_log_folder}:/var/log/clickhouse-server {image}"
     )
 
     return cmd
@@ -45,8 +44,7 @@ def process_results(result_folder, server_log_path, run_log_path):
     test_results = []
     additional_files = []
     # Just upload all files from result_folder.
-    # If task provides processed results, then it's responsible for content
-    # of result_folder.
+    # If task provides processed results, then it's responsible for content of result_folder.
     if os.path.exists(result_folder):
         test_files = [
             f
@@ -160,7 +158,7 @@ if __name__ == "__main__":
         pr_info.number,
         pr_info.sha,
         test_results,
-        additional_logs,
+        [run_log_path] + additional_logs,
         check_name,
     )
     print(f"::notice ::Report url: {report_url}")
@@ -176,7 +174,4 @@ if __name__ == "__main__":
         report_url,
         check_name,
     )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "error":
-        sys.exit(1)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

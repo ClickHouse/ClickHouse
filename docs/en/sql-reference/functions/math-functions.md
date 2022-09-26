@@ -1,53 +1,53 @@
 ---
-sidebar_position: 44
-sidebar_label: Mathematical
+toc_priority: 44
+toc_title: Mathematical
 ---
 
-# Mathematical Functions
+# Mathematical Functions {#mathematical-functions}
 
 All the functions return a Float64 number. The accuracy of the result is close to the maximum precision possible, but the result might not coincide with the machine representable number nearest to the corresponding real number.
 
-## e()
+## e() {#e}
 
 Returns a Float64 number that is close to the number e.
 
-## pi()
+## pi() {#pi}
 
 Returns a Float64 number that is close to the number π.
 
-## exp(x)
+## exp(x) {#expx}
 
 Accepts a numeric argument and returns a Float64 number close to the exponent of the argument.
 
-## log(x), ln(x)
+## log(x), ln(x) {#logx-lnx}
 
 Accepts a numeric argument and returns a Float64 number close to the natural logarithm of the argument.
 
-## exp2(x)
+## exp2(x) {#exp2x}
 
 Accepts a numeric argument and returns a Float64 number close to 2 to the power of x.
 
-## log2(x)
+## log2(x) {#log2x}
 
 Accepts a numeric argument and returns a Float64 number close to the binary logarithm of the argument.
 
-## exp10(x)
+## exp10(x) {#exp10x}
 
 Accepts a numeric argument and returns a Float64 number close to 10 to the power of x.
 
-## log10(x)
+## log10(x) {#log10x}
 
 Accepts a numeric argument and returns a Float64 number close to the decimal logarithm of the argument.
 
-## sqrt(x)
+## sqrt(x) {#sqrtx}
 
 Accepts a numeric argument and returns a Float64 number close to the square root of the argument.
 
-## cbrt(x)
+## cbrt(x) {#cbrtx}
 
 Accepts a numeric argument and returns a Float64 number close to the cubic root of the argument.
 
-## erf(x)
+## erf(x) {#erfx}
 
 If ‘x’ is non-negative, then `erf(x / σ√2)` is the probability that a random variable having a normal distribution with standard deviation ‘σ’ takes the value that is separated from the expected value by more than ‘x’.
 
@@ -63,55 +63,55 @@ SELECT erf(3 / sqrt(2));
 └─────────────────────────┘
 ```
 
-## erfc(x)
+## erfc(x) {#erfcx}
 
 Accepts a numeric argument and returns a Float64 number close to 1 - erf(x), but without loss of precision for large ‘x’ values.
 
-## lgamma(x)
+## lgamma(x) {#lgammax}
 
 The logarithm of the gamma function.
 
-## tgamma(x)
+## tgamma(x) {#tgammax}
 
 Gamma function.
 
-## sin(x)
+## sin(x) {#sinx}
 
 The sine.
 
-## cos(x)
+## cos(x) {#cosx}
 
 The cosine.
 
-## tan(x)
+## tan(x) {#tanx}
 
 The tangent.
 
-## asin(x)
+## asin(x) {#asinx}
 
 The arc sine.
 
-## acos(x)
+## acos(x) {#acosx}
 
 The arc cosine.
 
-## atan(x)
+## atan(x) {#atanx}
 
 The arc tangent.
 
-## pow(x, y), power(x, y)
+## pow(x, y), power(x, y) {#powx-y-powerx-y}
 
 Takes two numeric arguments x and y. Returns a Float64 number close to x to the power of y.
 
-## intExp2
+## intExp2 {#intexp2}
 
 Accepts a numeric argument and returns a UInt64 number close to 2 to the power of x.
 
-## intExp10
+## intExp10 {#intexp10}
 
 Accepts a numeric argument and returns a UInt64 number close to 10 to the power of x.
 
-## cosh(x)
+## cosh(x) {#coshx}
 
 [Hyperbolic cosine](https://in.mathworks.com/help/matlab/ref/cosh.html).
 
@@ -147,7 +147,7 @@ Result:
 └──────────┘
 ```
 
-## acosh(x)
+## acosh(x) {#acoshx}
 
 [Inverse hyperbolic cosine](https://www.mathworks.com/help/matlab/ref/acosh.html).
 
@@ -187,7 +187,7 @@ Result:
 
 -   [cosh(x)](../../sql-reference/functions/math-functions.md#coshx)
 
-## sinh(x)
+## sinh(x) {#sinhx}
 
 [Hyperbolic sine](https://www.mathworks.com/help/matlab/ref/sinh.html).
 
@@ -223,7 +223,7 @@ Result:
 └──────────┘
 ```
 
-## asinh(x)
+## asinh(x) {#asinhx}
 
 [Inverse hyperbolic sine](https://www.mathworks.com/help/matlab/ref/asinh.html).
 
@@ -263,7 +263,7 @@ Result:
 
 -   [sinh(x)](../../sql-reference/functions/math-functions.md#sinhx)
 
-## atanh(x)
+## atanh(x) {#atanhx}
 
 [Inverse hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/atanh.html).
 
@@ -299,7 +299,7 @@ Result:
 └──────────┘
 ```
 
-## atan2(y, x)
+## atan2(y, x) {#atan2yx}
 
 The [function](https://en.wikipedia.org/wiki/Atan2) calculates the angle in the Euclidean plane, given in radians, between the positive x axis and the ray to the point `(x, y) ≠ (0, 0)`.
 
@@ -336,7 +336,7 @@ Result:
 └────────────────────┘
 ```
 
-## hypot(x, y)
+## hypot(x, y) {#hypotxy}
 
 Calculates the length of the hypotenuse of a right-angle triangle. The [function](https://en.wikipedia.org/wiki/Hypot) avoids problems that occur when squaring very large or very small numbers.
 
@@ -373,7 +373,7 @@ Result:
 └────────────────────┘
 ```
 
-## log1p(x)
+## log1p(x) {#log1px}
 
 Calculates `log(1+x)`. The [function](https://en.wikipedia.org/wiki/Natural_logarithm#lnp1) `log1p(x)` is more accurate than `log(1+x)` for small values of x.
 
@@ -413,7 +413,7 @@ Result:
 
 -   [log(x)](../../sql-reference/functions/math-functions.md#logx-lnx)
 
-## sign(x)
+## sign(x) {#signx}
 
 Returns the sign of a real number.
 
@@ -477,7 +477,7 @@ Result:
 └──────────┘
 ```
 
-## degrees(x)
+## degrees(x) {#degreesx}
 
 Converts the input value in radians to degrees.
 
@@ -513,7 +513,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## radians(x)
+## radians(x) {#radiansx}
 
 Converts the input value in degrees to radians.
 

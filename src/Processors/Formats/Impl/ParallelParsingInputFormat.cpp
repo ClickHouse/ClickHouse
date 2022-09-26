@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WithFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
@@ -88,10 +87,10 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
-        while (!parsing_finished && (chunk = parser.getChunk()))
+        while (!parsing_finished && (chunk = parser.getChunk()) != Chunk())
         {
             /// Variable chunk is moved, but it is not really used in the next iteration.
-            /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
+            /// NOLINTNEXTLINE(bugprone-use-after-move)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
         }
@@ -121,24 +120,16 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
-        {
             if (e->getLineNumber() != -1)
                 e->setLineNumber(e->getLineNumber() + offset);
-
-            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-            if (!file_name.empty())
-                e->setFileName(file_name);
-        }
     }
-
     if (is_server)
         tryLogCurrentException(__PRETTY_FUNCTION__);
-
     parsing_finished = true;
     first_parser_finished.set();
     reader_condvar.notify_all();
@@ -233,7 +224,7 @@ Chunk ParallelParsingInputFormat::generate()
         else
         {
             // Pass the unit back to the segmentator.
-            std::lock_guard lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             unit.status = READY_TO_INSERT;
             segmentator_condvar.notify_all();
         }

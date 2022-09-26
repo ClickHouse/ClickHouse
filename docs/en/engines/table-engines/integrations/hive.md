@@ -1,13 +1,13 @@
 ---
-sidebar_position: 4
-sidebar_label: Hive
+toc_priority: 4
+toc_title: Hive
 ---
 
-# Hive
+# Hive {#hive}
 
 The Hive engine allows you to perform `SELECT` quries on HDFS Hive table. Currently it supports input formats as below:
 
-- Text: only supports simple scalar column types except `binary`
+- Text: only supports simple scalar column types except `binary` 
 
 - ORC: support simple scalar columns types except `char`; only support complex types like `array`
 
@@ -66,33 +66,33 @@ When ClickHouse is started up with local cache for remote filesystem enabled, us
 #### Create Table in Hive
 ``` text
 hive > CREATE TABLE `test`.`test_orc`(
-  `f_tinyint` tinyint,
-  `f_smallint` smallint,
-  `f_int` int,
-  `f_integer` int,
-  `f_bigint` bigint,
-  `f_float` float,
-  `f_double` double,
-  `f_decimal` decimal(10,0),
-  `f_timestamp` timestamp,
-  `f_date` date,
-  `f_string` string,
-  `f_varchar` varchar(100),
-  `f_bool` boolean,
-  `f_binary` binary,
-  `f_array_int` array<int>,
-  `f_array_string` array<string>,
-  `f_array_float` array<float>,
-  `f_array_array_int` array<array<int>>,
-  `f_array_array_string` array<array<string>>,
+  `f_tinyint` tinyint, 
+  `f_smallint` smallint, 
+  `f_int` int, 
+  `f_integer` int, 
+  `f_bigint` bigint, 
+  `f_float` float, 
+  `f_double` double, 
+  `f_decimal` decimal(10,0), 
+  `f_timestamp` timestamp, 
+  `f_date` date, 
+  `f_string` string, 
+  `f_varchar` varchar(100), 
+  `f_bool` boolean, 
+  `f_binary` binary, 
+  `f_array_int` array<int>, 
+  `f_array_string` array<string>, 
+  `f_array_float` array<float>, 
+  `f_array_array_int` array<array<int>>, 
+  `f_array_array_string` array<array<string>>, 
   `f_array_array_float` array<array<float>>)
-PARTITIONED BY (
+PARTITIONED BY ( 
   `day` string)
-ROW FORMAT SERDE
-  'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
-STORED AS INPUTFORMAT
-  'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
-OUTPUTFORMAT
+ROW FORMAT SERDE 
+  'org.apache.hadoop.hive.ql.io.orc.OrcSerde' 
+STORED AS INPUTFORMAT 
+  'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat' 
+OUTPUTFORMAT 
   'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
 LOCATION
   'hdfs://testcluster/data/hive/test.db/test_orc'
@@ -178,7 +178,7 @@ f_array_array_float:  [[1.11,2.22],[3.33,4.44]]
 day:                  2021-09-18
 
 
-1 rows in set. Elapsed: 0.078 sec.
+1 rows in set. Elapsed: 0.078 sec. 
 ```
 
 ### Query Hive Table with Parquet Input Format
@@ -187,34 +187,34 @@ day:                  2021-09-18
 ``` text
 hive >
 CREATE TABLE `test`.`test_parquet`(
-  `f_tinyint` tinyint,
-  `f_smallint` smallint,
-  `f_int` int,
-  `f_integer` int,
-  `f_bigint` bigint,
-  `f_float` float,
-  `f_double` double,
-  `f_decimal` decimal(10,0),
-  `f_timestamp` timestamp,
-  `f_date` date,
-  `f_string` string,
-  `f_varchar` varchar(100),
-  `f_char` char(100),
-  `f_bool` boolean,
-  `f_binary` binary,
-  `f_array_int` array<int>,
-  `f_array_string` array<string>,
-  `f_array_float` array<float>,
-  `f_array_array_int` array<array<int>>,
-  `f_array_array_string` array<array<string>>,
+  `f_tinyint` tinyint, 
+  `f_smallint` smallint, 
+  `f_int` int, 
+  `f_integer` int, 
+  `f_bigint` bigint, 
+  `f_float` float, 
+  `f_double` double, 
+  `f_decimal` decimal(10,0), 
+  `f_timestamp` timestamp, 
+  `f_date` date, 
+  `f_string` string, 
+  `f_varchar` varchar(100), 
+  `f_char` char(100), 
+  `f_bool` boolean, 
+  `f_binary` binary, 
+  `f_array_int` array<int>, 
+  `f_array_string` array<string>, 
+  `f_array_float` array<float>, 
+  `f_array_array_int` array<array<int>>, 
+  `f_array_array_string` array<array<string>>, 
   `f_array_array_float` array<array<float>>)
-PARTITIONED BY (
+PARTITIONED BY ( 
   `day` string)
-ROW FORMAT SERDE
-  'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
-STORED AS INPUTFORMAT
-  'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat'
-OUTPUTFORMAT
+ROW FORMAT SERDE 
+  'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe' 
+STORED AS INPUTFORMAT 
+  'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat' 
+OUTPUTFORMAT 
   'org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat'
 LOCATION
   'hdfs://testcluster/data/hive/test.db/test_parquet'
@@ -299,7 +299,7 @@ f_array_array_string: [['a','b'],['c','d']]
 f_array_array_float:  [[1.11,2.22],[3.33,4.44]]
 day:                  2021-09-18
 
-1 rows in set. Elapsed: 0.357 sec.
+1 rows in set. Elapsed: 0.357 sec. 
 ```
 
 ### Query Hive Table with Text Input Format
@@ -307,34 +307,34 @@ day:                  2021-09-18
 ``` text
 hive >
 CREATE TABLE `test`.`test_text`(
-  `f_tinyint` tinyint,
-  `f_smallint` smallint,
-  `f_int` int,
-  `f_integer` int,
-  `f_bigint` bigint,
-  `f_float` float,
-  `f_double` double,
-  `f_decimal` decimal(10,0),
-  `f_timestamp` timestamp,
-  `f_date` date,
-  `f_string` string,
-  `f_varchar` varchar(100),
-  `f_char` char(100),
-  `f_bool` boolean,
-  `f_binary` binary,
-  `f_array_int` array<int>,
-  `f_array_string` array<string>,
-  `f_array_float` array<float>,
-  `f_array_array_int` array<array<int>>,
-  `f_array_array_string` array<array<string>>,
+  `f_tinyint` tinyint, 
+  `f_smallint` smallint, 
+  `f_int` int, 
+  `f_integer` int, 
+  `f_bigint` bigint, 
+  `f_float` float, 
+  `f_double` double, 
+  `f_decimal` decimal(10,0), 
+  `f_timestamp` timestamp, 
+  `f_date` date, 
+  `f_string` string, 
+  `f_varchar` varchar(100), 
+  `f_char` char(100), 
+  `f_bool` boolean, 
+  `f_binary` binary, 
+  `f_array_int` array<int>, 
+  `f_array_string` array<string>, 
+  `f_array_float` array<float>, 
+  `f_array_array_int` array<array<int>>, 
+  `f_array_array_string` array<array<string>>, 
   `f_array_array_float` array<array<float>>)
-PARTITIONED BY (
+PARTITIONED BY ( 
   `day` string)
-ROW FORMAT SERDE
-  'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
-STORED AS INPUTFORMAT
-  'org.apache.hadoop.mapred.TextInputFormat'
-OUTPUTFORMAT
+ROW FORMAT SERDE 
+  'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe' 
+STORED AS INPUTFORMAT 
+  'org.apache.hadoop.mapred.TextInputFormat' 
+OUTPUTFORMAT 
   'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
 LOCATION
   'hdfs://testcluster/data/hive/test.db/test_text'
@@ -374,7 +374,7 @@ CREATE TABLE test.test_text
     `day` String
 )
 ENGINE = Hive('thrift://localhost:9083', 'test', 'test_text')
-PARTITION BY day
+PARTITION BY day 
 ```
 
 ``` sql
@@ -406,5 +406,3 @@ f_char:      hello world
 f_bool:      true
 day:         2021-09-18
 ```
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/hive/) <!--hide-->

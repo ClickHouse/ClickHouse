@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Backups/IBackupEntry.h>
-#include <base/defines.h>
 #include <mutex>
 
 namespace Poco { class TemporaryFile; }
@@ -34,7 +33,7 @@ public:
 
     UInt64 getSize() const override;
     std::optional<UInt128> getChecksum() const override { return checksum; }
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
+    std::unique_ptr<ReadBuffer> getReadBuffer() const override;
 
     String getFilePath() const { return file_path; }
     DiskPtr getDisk() const { return disk; }
@@ -42,7 +41,7 @@ public:
 private:
     const DiskPtr disk;
     const String file_path;
-    mutable std::optional<UInt64> file_size TSA_GUARDED_BY(get_file_size_mutex);
+    mutable std::optional<UInt64> file_size;
     mutable std::mutex get_file_size_mutex;
     const std::optional<UInt128> checksum;
     const std::shared_ptr<Poco::TemporaryFile> temporary_file;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ctime>
+#include <time.h>
 
 #if defined (OS_DARWIN) || defined (OS_SUNOS)
 #    define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC

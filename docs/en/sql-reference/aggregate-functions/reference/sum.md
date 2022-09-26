@@ -1,7 +1,7 @@
 ---
-sidebar_position: 4
+toc_priority: 4
 ---
 
-# sum
+# sum {#agg_function-sum}
 
 Calculates the sum. Only works for numbers.

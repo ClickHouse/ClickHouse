@@ -7,7 +7,7 @@
 
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
-#include <ctime>
+#include <time.h>
 
 
 namespace DB

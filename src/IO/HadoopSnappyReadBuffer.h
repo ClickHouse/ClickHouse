@@ -6,7 +6,7 @@
 
 #include <memory>
 #include <IO/ReadBuffer.h>
-#include <IO/CompressedReadBufferWrapper.h>
+#include <IO/BufferWithOwnMemory.h>
 
 namespace DB
 {
@@ -67,7 +67,7 @@ private:
 };
 
 /// HadoopSnappyReadBuffer implements read buffer for data compressed with hadoop-snappy format.
-class HadoopSnappyReadBuffer : public CompressedReadBufferWrapper
+class HadoopSnappyReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
     using Status = HadoopSnappyDecoder::Status;
@@ -99,6 +99,7 @@ public:
 private:
     bool nextImpl() override;
 
+    std::unique_ptr<ReadBuffer> in;
     std::unique_ptr<HadoopSnappyDecoder> decoder;
 
     size_t in_available;

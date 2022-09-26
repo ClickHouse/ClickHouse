@@ -89,24 +89,6 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
-void ASTFunction::finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    if (!is_window_function)
-        return;
-
-    settings.ostr << " OVER ";
-    if (!window_name.empty())
-    {
-        settings.ostr << backQuoteIfNeed(window_name);
-    }
-    else
-    {
-        settings.ostr << "(";
-        window_definition->formatImpl(settings, state, frame);
-        settings.ostr << ")";
-    }
-}
-
 /** Get the text that identifies this element. */
 String ASTFunction::getID(char delim) const
 {
@@ -184,7 +166,7 @@ ASTPtr ASTFunction::toLiteral() const
   * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
   * With highlighting we make it clearly obvious.
   *
-  * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware that . is a metacharacter.
+  * Another case is regexp match. Suppose the user types match(URL, 'www.yandex.ru'). It often means that the user is unaware that . is a metacharacter.
   */
 static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const IAST::FormatSettings & settings, const char * metacharacters)
 {
@@ -581,7 +563,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (written)
     {
-        return finishFormatWithWindow(settings, state, frame);
+        return;
     }
 
     settings.ostr << (settings.hilite ? hilite_function : "") << name;
@@ -621,7 +603,22 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    return finishFormatWithWindow(settings, state, frame);
+    if (!is_window_function)
+    {
+        return;
+    }
+
+    settings.ostr << " OVER ";
+    if (!window_name.empty())
+    {
+        settings.ostr << backQuoteIfNeed(window_name);
+    }
+    else
+    {
+        settings.ostr << "(";
+        window_definition->formatImpl(settings, state, frame);
+        settings.ostr << ")";
+    }
 }
 
 String getFunctionName(const IAST * ast)

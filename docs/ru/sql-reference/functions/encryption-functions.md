@@ -1,6 +1,6 @@
 ---
-sidebar_position: 67
-sidebar_label: "Функции для шифрования"
+toc_priority: 67
+toc_title: "Функции для шифрования"
 ---
 
 # Функции шифрования {#encryption-functions}
@@ -11,7 +11,7 @@ sidebar_label: "Функции для шифрования"
 
 Длина инициализирующего вектора всегда 16 байт (лишние байты игнорируются).
 
-Обратите внимание, что до версии ClickHouse 21.1 эти функции работали медленно.
+Обратите внимание, что до версии Clickhouse 21.1 эти функции работали медленно.
 
 ## encrypt {#encrypt}
 
@@ -19,9 +19,11 @@ sidebar_label: "Функции для шифрования"
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
+-   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+-   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+-   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 -   aes-128-gcm, aes-192-gcm, aes-256-gcm
--   aes-128-ctr, aes-192-ctr, aes-256-ctr
 
 **Синтаксис**
 
@@ -61,9 +63,9 @@ ENGINE = Memory;
 Запрос:
 
 ``` sql
-INSERT INTO encryption_test VALUES('aes-256-ofb no IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212')),\
-('aes-256-ofb no IV, different key', encrypt('aes-256-ofb', 'Secret', 'keykeykeykeykeykeykeykeykeykeyke')),\
-('aes-256-ofb with IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')),\
+INSERT INTO encryption_test VALUES('aes-256-cfb128 no IV', encrypt('aes-256-cfb128', 'Secret', '12345678910121314151617181920212')),\
+('aes-256-cfb128 no IV, different key', encrypt('aes-256-cfb128', 'Secret', 'keykeykeykeykeykeykeykeykeykeyke')),\
+('aes-256-cfb128 with IV', encrypt('aes-256-cfb128', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')),\
 ('aes-256-cbc no IV', encrypt('aes-256-cbc', 'Secret', '12345678910121314151617181920212'));
 ```
 
@@ -76,12 +78,12 @@ SELECT comment, hex(secret) FROM encryption_test;
 Результат:
 
 ``` text
-┌─comment──────────────────────────┬─hex(secret)──────────────────────┐
-│ aes-256-ofb no IV                │ B4972BDC4459                     │
-│ aes-256-ofb no IV, different key │ 2FF57C092DC9                     │
-│ aes-256-ofb with IV              │ 5E6CB398F653                     │
-│ aes-256-cbc no IV                │ 1BC0629A92450D9E73A00E7D02CF4142 │
-└──────────────────────────────────┴──────────────────────────────────┘
+┌─comment─────────────────────────────┬─hex(secret)──────────────────────┐
+│ aes-256-cfb128 no IV                │ B4972BDC4459                     │
+│ aes-256-cfb128 no IV, different key │ 2FF57C092DC9                     │
+│ aes-256-cfb128 with IV              │ 5E6CB398F653                     │
+│ aes-256-cbc no IV                   │ 1BC0629A92450D9E73A00E7D02CF4142 │
+└─────────────────────────────────────┴──────────────────────────────────┘
 ```
 
 Пример в режиме `-gcm`:
@@ -114,6 +116,9 @@ SELECT comment, hex(secret) FROM encryption_test WHERE comment LIKE '%gcm%';
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
+-   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+-   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+-   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 
 **Синтаксис**
@@ -140,7 +145,7 @@ aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 Запрос:
 
 ``` sql
-SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') = aes_encrypt_mysql('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') AS ciphertexts_equal;
+SELECT encrypt('aes-256-cfb128', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') = aes_encrypt_mysql('aes-256-cfb128', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') AS ciphertexts_equal;
 ```
 
 Результат:
@@ -156,14 +161,14 @@ SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'ivi
 Запрос:
 
 ``` sql
-SELECT encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123');
+SELECT encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123');
 ```
 
 Результат:
 
 ``` text
 Received exception from server (version 21.1.2):
-Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
+Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
 ```
 
 Однако функция `aes_encrypt_mysql` в аналогичном случае возвращает результат, который может быть обработан MySQL:
@@ -171,7 +176,7 @@ Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid ke
 Запрос:
 
 ``` sql
-SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123')) AS ciphertext;
+SELECT hex(aes_encrypt_mysql('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123')) AS ciphertext;
 ```
 
 Результат:
@@ -187,7 +192,7 @@ SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '1234567891012131415161718
 Запрос:
 
 ``` sql
-SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456')) AS ciphertext
+SELECT hex(aes_encrypt_mysql('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456')) AS ciphertext
 ```
 
 Результат:
@@ -201,7 +206,7 @@ SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '1234567891012131415161718
 Это совпадает с результатом, возвращаемым MySQL при таких же входящих значениях:
 
 ``` sql
-mysql> SET  block_encryption_mode='aes-256-ofb';
+mysql> SET  block_encryption_mode='aes-256-cfb128';
 Query OK, 0 rows affected (0.00 sec)
 
 mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
@@ -219,10 +224,11 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb128
+-   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+-   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+-   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 -   aes-128-gcm, aes-192-gcm, aes-256-gcm
--   aes-128-ctr, aes-192-ctr, aes-256-ctr
 
 **Синтаксис**
 
@@ -259,12 +265,12 @@ SELECT comment, hex(secret) FROM encryption_test;
 │ aes-256-gcm          │ A8A3CCBC6426CFEEB60E4EAE03D3E94204C1B09E0254 │
 │ aes-256-gcm with AAD │ A8A3CCBC6426D9A1017A0A932322F1852260A4AD6837 │
 └──────────────────────┴──────────────────────────────────────────────┘
-┌─comment──────────────────────────┬─hex(secret)──────────────────────┐
-│ aes-256-ofb no IV                │ B4972BDC4459                     │
-│ aes-256-ofb no IV, different key │ 2FF57C092DC9                     │
-│ aes-256-ofb with IV              │ 5E6CB398F653                     │
-│ aes-256-cbc no IV                │ 1BC0629A92450D9E73A00E7D02CF4142 │
-└──────────────────────────────────┴──────────────────────────────────┘
+┌─comment─────────────────────────────┬─hex(secret)──────────────────────┐
+│ aes-256-cfb128 no IV                │ B4972BDC4459                     │
+│ aes-256-cfb128 no IV, different key │ 2FF57C092DC9                     │
+│ aes-256-cfb128 with IV              │ 5E6CB398F653                     │
+│ aes-256-cbc no IV                   │ 1BC0629A92450D9E73A00E7D02CF4142 │
+└─────────────────────────────────────┴──────────────────────────────────┘
 ```
 
 Теперь попытаемся расшифровать эти данные:
@@ -272,25 +278,19 @@ SELECT comment, hex(secret) FROM encryption_test;
 Запрос:
 
 ``` sql
-SELECT comment, decrypt('aes-256-ofb', secret, '12345678910121314151617181920212') as plaintext FROM encryption_test;
+SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') as plaintext FROM encryption_test;
 ```
 
 Результат:
 
 ``` text
-┌─comment──────────────┬─plaintext──┐
-│ aes-256-gcm          │ OQ�E
-                             �t�7T�\���\�   │
-│ aes-256-gcm with AAD │ OQ�E
-                             �\��si����;�o�� │
-└──────────────────────┴────────────┘
-┌─comment──────────────────────────┬─plaintext─┐
-│ aes-256-ofb no IV                │ Secret    │
-│ aes-256-ofb no IV, different key │ �4�
-                                        �         │
-│ aes-256-ofb with IV              │ ���6�~        │
- │aes-256-cbc no IV                │ �2*4�h3c�4w��@
-└──────────────────────────────────┴───────────┘
+┌─comment─────────────────────────────┬─plaintext─┐
+│ aes-256-cfb128 no IV                │ Secret    │
+│ aes-256-cfb128 no IV, different key │ �4�
+                                           �         │
+│ aes-256-cfb128 with IV              │ ���6�~        │
+ │aes-256-cbc no IV                   │ �2*4�h3c�4w��@
+└─────────────────────────────────────┴───────────┘
 ```
 
 Обратите внимание, что только часть данных была расшифрована верно. Оставшаяся часть расшифрована некорректно, так как при шифровании использовались другие значения `mode`, `key`, или `iv`.
@@ -305,7 +305,9 @@ SELECT comment, decrypt('aes-256-ofb', secret, '12345678910121314151617181920212
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb128
+-   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+-   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+-   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 
 **Синтаксис**
@@ -331,7 +333,7 @@ aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 
 
 ``` sql
-mysql> SET  block_encryption_mode='aes-256-ofb';
+mysql> SET  block_encryption_mode='aes-256-cfb128';
 Query OK, 0 rows affected (0.00 sec)
 
 mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
@@ -346,7 +348,7 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 Запрос:
 
 ``` sql
-SELECT aes_decrypt_mysql('aes-256-ofb', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext;
+SELECT aes_decrypt_mysql('aes-256-cfb128', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext;
 ```
 
 Результат:

@@ -1,7 +1,7 @@
 ---
 title: 谁在使用 ClickHouse?
 toc_hidden: true
-sidebar_position: 9
+toc_priority: 9
 ---
 
 # 谁在使用 ClickHouse? {#who-is-using-clickhouse}

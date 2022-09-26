@@ -1,8 +1,8 @@
 ---
-sidebar_position: 106
+toc_priority: 106
 ---
 
-# argMax
+# argMax {#agg-function-argmax}
 
 Calculates the `arg` value for a maximum `val` value. If there are several different values of `arg` for maximum values of `val`, returns the first of these values encountered.
 

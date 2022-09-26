@@ -39,14 +39,13 @@ CREATE TABLE set_null (
     a INT NULL,
     b INT NOT NULL,
     c Nullable(INT),
-    d INT,
-    f DEFAULT 1
+    d INT
 ) engine=Memory();
 
 
-INSERT INTO set_null VALUES (NULL, 2, NULL, NULL, NULL);
+INSERT INTO set_null VALUES (NULL, 2, NULL, NULL);
 
-SELECT toTypeName(a), toTypeName(b), toTypeName(c), toTypeName(d), toTypeName(f) FROM set_null;
+SELECT toTypeName(a), toTypeName(b), toTypeName(c), toTypeName(d) FROM set_null;
 
 SHOW CREATE TABLE set_null;
 DETACH TABLE set_null;

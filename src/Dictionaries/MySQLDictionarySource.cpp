@@ -16,13 +16,6 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
-#include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <Common/LocalDateTime.h>
-#include <Common/logger_useful.h>
-#include "readInvalidateQuery.h"
 
 
 namespace DB
@@ -125,6 +118,15 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
 
 #if USE_MYSQL
+#    include <Columns/ColumnString.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <IO/WriteBufferFromString.h>
+#    include <IO/WriteHelpers.h>
+#    include <Common/LocalDateTime.h>
+#    include <base/logger_useful.h>
+#    include "readInvalidateQuery.h"
+#    include <mysqlxx/Exception.h>
+#    include <Core/Settings.h>
 
 namespace DB
 {
@@ -180,13 +182,13 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
+Pipe MySQLDictionarySource::loadFromQuery(const String & query)
 {
-    return QueryPipeline(std::make_shared<MySQLWithFailoverSource>(
+    return Pipe(std::make_shared<MySQLWithFailoverSource>(
             pool, query, sample_block, settings));
 }
 
-QueryPipeline MySQLDictionarySource::loadAll()
+Pipe MySQLDictionarySource::loadAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -195,7 +197,7 @@ QueryPipeline MySQLDictionarySource::loadAll()
     return loadFromQuery(load_all_query);
 }
 
-QueryPipeline MySQLDictionarySource::loadUpdatedAll()
+Pipe MySQLDictionarySource::loadUpdatedAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -205,14 +207,14 @@ QueryPipeline MySQLDictionarySource::loadUpdatedAll()
     return loadFromQuery(load_update_query);
 }
 
-QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadFromQuery(query);
 }
 
-QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);

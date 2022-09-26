@@ -48,7 +48,7 @@ public:
         return res;
     }
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
         auto query_ptr = clone();
         auto & query = query_ptr->as<ASTRenameQuery &>();
@@ -57,9 +57,9 @@ public:
         for (Element & elem : query.elements)
         {
             if (elem.from.database.empty())
-                elem.from.database = params.default_database;
+                elem.from.database = new_database;
             if (elem.to.database.empty())
-                elem.to.database = params.default_database;
+                elem.to.database = new_database;
         }
 
         return query_ptr;

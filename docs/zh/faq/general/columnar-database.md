@@ -1,7 +1,7 @@
 ---
 title: 什么是列存储数据库?
 toc_hidden: true
-sidebar_position: 101
+toc_priority: 101
 ---
 
 # 什么是列存储数据库? {#what-is-a-columnar-database}

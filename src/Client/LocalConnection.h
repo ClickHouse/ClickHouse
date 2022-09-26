@@ -32,7 +32,7 @@ struct LocalQueryState
     std::unique_ptr<PushingAsyncPipelineExecutor> pushing_async_executor;
     InternalProfileEventsQueuePtr profile_queue;
 
-    std::unique_ptr<Exception> exception;
+    std::optional<Exception> exception;
 
     /// Current block to be sent next.
     std::optional<Block> block;
@@ -47,7 +47,6 @@ struct LocalQueryState
     bool sent_extremes = false;
     bool sent_progress = false;
     bool sent_profile_info = false;
-    bool sent_profile_events = false;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
@@ -98,8 +97,7 @@ public:
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
-        bool with_pending_data/* = false */,
-        std::function<void(const Progress &)> process_progress_callback) override;
+        bool with_pending_data/* = false */) override;
 
     void sendCancel() override;
 
@@ -142,7 +140,7 @@ private:
 
     void updateProgress(const Progress & value);
 
-    void sendProfileEvents();
+    void getProfileEvents(Block & block);
 
     bool pollImpl();
 

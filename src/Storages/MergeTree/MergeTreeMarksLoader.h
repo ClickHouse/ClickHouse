@@ -1,5 +1,5 @@
 #pragma once
-#include <Storages/MergeTree/IDataPartStorage.h>
+#include <Disks/IDisk.h>
 #include <Storages/MarkCache.h>
 
 namespace DB
@@ -13,7 +13,7 @@ public:
     using MarksPtr = MarkCache::MappedPtr;
 
     MergeTreeMarksLoader(
-        DataPartStoragePtr data_part_storage_,
+        DiskPtr disk_,
         MarkCache * mark_cache_,
         const String & mrk_path,
         size_t marks_count_,
@@ -26,7 +26,7 @@ public:
     bool initialized() const { return marks != nullptr; }
 
 private:
-    DataPartStoragePtr data_part_storage;
+    DiskPtr disk;
     MarkCache * mark_cache = nullptr;
     String mrk_path;
     size_t marks_count;

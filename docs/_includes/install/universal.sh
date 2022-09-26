@@ -13,7 +13,7 @@ then
     elif [ "${ARCH}" = "aarch64" ]
     then
         DIR="aarch64"
-    elif [ "${ARCH}" = "powerpc64le" ] || [ "${ARCH}" = "ppc64le" ]
+    elif [ "${ARCH}" = "powerpc64le" ]
     then
         DIR="powerpc64le"
     fi
@@ -25,7 +25,7 @@ then
     elif [ "${ARCH}" = "aarch64" ]
     then
         DIR="freebsd-aarch64"
-    elif [ "${ARCH}" = "powerpc64le" ] || [ "${ARCH}" = "ppc64le" ]
+    elif [ "${ARCH}" = "powerpc64le" ]
     then
         DIR="freebsd-powerpc64le"
     fi

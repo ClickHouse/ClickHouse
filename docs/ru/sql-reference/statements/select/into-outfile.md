@@ -1,5 +1,5 @@
 ---
-sidebar_label: INTO OUTFILE
+toc_title: INTO OUTFILE
 ---
 
 # Секция INTO OUTFILE  {#into-outfile-clause}

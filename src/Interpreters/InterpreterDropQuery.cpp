@@ -55,14 +55,10 @@ BlockIO InterpreterDropQuery::execute()
 {
     auto & drop = query_ptr->as<ASTDropQuery &>();
     if (!drop.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccessForDDLOnCluster());
 
     if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
-        drop.sync = true;
+        drop.no_delay = true;
 
     if (drop.table)
         return executeToTable(drop);
@@ -89,7 +85,7 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     DatabasePtr database;
     UUID table_to_wait_on = UUIDHelpers::Nil;
     auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on);
-    if (query.sync)
+    if (query.no_delay)
         waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on);
     return res;
 }
@@ -244,7 +240,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
                                                                      is_drop_or_detach_database);
-            database->dropTable(context_, table_id.table_name, query.sync);
+            database->dropTable(context_, table_id.table_name, query.no_delay);
         }
 
         db = database;
@@ -300,7 +296,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     }
     catch (...)
     {
-        if (query.sync)
+        if (query.no_delay)
         {
             for (const auto & table_uuid : tables_to_wait)
                 waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
@@ -308,7 +304,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
         throw;
     }
 
-    if (query.sync)
+    if (query.no_delay)
     {
         for (const auto & table_uuid : tables_to_wait)
             waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
@@ -345,7 +341,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.kind = query.kind;
                 query_for_table.if_exists = true;
                 query_for_table.setDatabase(database_name);
-                query_for_table.sync = query.sync;
+                query_for_table.no_delay = query.no_delay;
 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
@@ -368,7 +364,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 }
             }
 
-            if (!drop && query.sync)
+            if (!drop && query.no_delay)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
                 for (const auto & table_uuid : uuids_to_wait)
@@ -428,7 +424,7 @@ void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const 
     elem.query_kind = "Drop";
 }
 
-void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync)
+void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool no_delay)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
@@ -437,7 +433,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         drop_query->setDatabase(target_table_id.database_name);
         drop_query->setTable(target_table_id.table_name);
         drop_query->kind = kind;
-        drop_query->sync = sync;
+        drop_query->no_delay = no_delay;
         drop_query->if_exists = true;
         ASTPtr ast_drop_query = drop_query;
         /// FIXME We have to use global context to execute DROP query for inner table

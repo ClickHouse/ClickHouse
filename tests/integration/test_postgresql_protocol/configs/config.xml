@@ -29,6 +29,7 @@
      <listen_host>127.0.0.1</listen_host>
 
      <max_concurrent_queries>500</max_concurrent_queries>
+     <mark_cache_size>5368709120</mark_cache_size>
      <path>./clickhouse/</path>
      <users_config>users.xml</users_config>
  </clickhouse>

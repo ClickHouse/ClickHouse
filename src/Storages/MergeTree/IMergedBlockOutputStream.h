@@ -12,7 +12,6 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
@@ -36,7 +35,7 @@ protected:
 
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
-    NameSet removeEmptyColumnsFromPart(
+    static NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,
         NamesAndTypesList & columns,
         SerializationInfoByName & serialization_infos,
@@ -45,7 +44,9 @@ protected:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    DataPartStorageBuilderPtr data_part_storage_builder;
+    VolumePtr volume;
+    String part_path;
+
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 
     bool reset_columns = false;

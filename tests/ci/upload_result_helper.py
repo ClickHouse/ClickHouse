@@ -3,7 +3,7 @@ import logging
 import ast
 
 from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_URL
-from report import ReportColorTheme, create_test_html_report
+from report import create_test_html_report
 
 
 def process_logs(
@@ -50,7 +50,6 @@ def upload_results(
     additional_files,
     check_name,
     with_raw_logs=True,
-    statuscolors=None,
 ):
     s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(
         " ", "_"
@@ -74,10 +73,6 @@ def upload_results(
     else:
         raw_log_url = task_url
 
-    statuscolors = (
-        ReportColorTheme.bugfixcheck if "bugfix validate check" in check_name else None
-    )
-
     html_report = create_test_html_report(
         check_name,
         test_results,
@@ -88,7 +83,6 @@ def upload_results(
         commit_url,
         additional_urls,
         with_raw_logs,
-        statuscolors=statuscolors,
     )
     with open("report.html", "w", encoding="utf-8") as f:
         f.write(html_report)

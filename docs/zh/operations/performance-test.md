@@ -1,6 +1,6 @@
 ---
-sidebar_position: 54
-sidebar_label: "\u6D4B\u8BD5\u786C\u4EF6"
+toc_priority: 54
+toc_title: "\u6D4B\u8BD5\u786C\u4EF6"
 ---
 
 # 如何使用 ClickHouse 测试您的硬件 {#how-to-test-your-hardware-with-clickhouse}

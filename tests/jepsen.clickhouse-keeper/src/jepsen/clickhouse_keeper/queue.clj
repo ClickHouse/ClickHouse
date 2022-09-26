@@ -59,8 +59,7 @@
   {:client    (QueueClient. nil nil)
    :checker   (checker/compose
                {:total-queue (checker/total-queue)
-                :perf        (checker/perf)
-                :timeline    (timeline/html)})
+                :timeline (timeline/html)})
    :generator (->> (sorted-str-range 50000)
                    (map (fn [x]
                           (rand-nth [{:type :invoke, :f :enqueue :value x}
@@ -73,7 +72,6 @@
    :checker   (checker/compose
                {:linear   (checker/linearizable {:model     (model/unordered-queue)
                                                  :algorithm :linear})
-                :perf        (checker/perf)
                 :timeline (timeline/html)})
    :generator (->> (sorted-str-range 10000)
                    (map (fn [x]

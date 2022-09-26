@@ -21,14 +21,6 @@ public:
 
     bool nextImpl() override;
 
-    bool isWithFileSize() const { return dynamic_cast<const WithFileSize *>(impl.get()) != nullptr; }
-
-    const ReadBuffer & getWrappedReadBuffer() const { return *impl; }
-
-    ReadBuffer & getWrappedReadBuffer() { return *impl; }
-
-    size_t getFileSize() override;
-
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;
     String file_name;

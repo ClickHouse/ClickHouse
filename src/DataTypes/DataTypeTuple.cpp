@@ -54,6 +54,9 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
         if (name.empty())
             return Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
+        if (isNumericASCII(name[0]))
+            return Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
+
         if (!names_set.insert(name).second)
             return Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
     }

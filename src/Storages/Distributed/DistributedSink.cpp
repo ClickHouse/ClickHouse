@@ -30,7 +30,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/range.h>
 #include <base/scope_guard.h>
 
@@ -123,7 +123,7 @@ DistributedSink::DistributedSink(
     , insert_timeout(insert_timeout_)
     , main_table(main_table_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
-    , log(&Poco::Logger::get("DistributedSink"))
+    , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
@@ -610,7 +610,7 @@ void DistributedSink::writeSplitAsync(const Block & block)
 
 void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
-    OpenTelemetrySpanHolder span("DistributedSink::writeAsyncImpl()");
+    OpenTelemetrySpanHolder span("DistributedBlockOutputStream::writeAsyncImpl()");
 
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();

@@ -76,10 +76,6 @@ public:
     void setPasswordHashBinary(const Digest & hash);
     const Digest & getPasswordHashBinary() const { return password_hash; }
 
-    /// Sets the salt in String form.
-    void setSalt(String salt);
-    String getSalt() const;
-
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const { return ldap_server_name; }
     void setLDAPServerName(const String & name) { ldap_server_name = name; }
@@ -110,7 +106,6 @@ private:
     String ldap_server_name;
     String kerberos_realm;
     boost::container::flat_set<String> ssl_certificate_common_names;
-    String salt;
 };
 
 }

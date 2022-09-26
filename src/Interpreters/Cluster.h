@@ -2,8 +2,6 @@
 
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Common/Macros.h>
-#include <Common/MultiVersion.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -57,9 +55,7 @@ public:
         bool treat_local_as_remote,
         bool treat_local_port_as_remote,
         bool secure = false,
-        Int64 priority = 1,
-        String cluster_name = "",
-        String cluster_secret = "");
+        Int64 priority = 1);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -131,9 +127,7 @@ public:
             bool secure_ = false,
             Int64 priority_ = 1,
             UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0,
-            String cluster_name = "",
-            String cluster_secret_ = "");
+            UInt32 replica_index_ = 0);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -202,7 +196,6 @@ public:
         UInt32 shard_num = 0;
         UInt32 weight = 1;
         Addresses local_addresses;
-        Addresses all_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
@@ -214,11 +207,6 @@ public:
 
     const ShardsInfo & getShardsInfo() const { return shards_info; }
     const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
-
-    /// Returns addresses of some replicas according to specified `only_shard_num` and `only_replica_num`.
-    /// `only_shard_num` is 1-based index of a shard, 0 means all shards.
-    /// `only_replica_num` is 1-based index of a replica, 0 means all replicas.
-    std::vector<const Address *> filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const;
 
     const ShardInfo & getAnyShardInfo() const
     {
@@ -236,9 +224,6 @@ public:
 
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
-
-    /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
-    std::vector<Strings> getHostIDs() const;
 
     const String & getSecret() const { return secret; }
 
@@ -298,7 +283,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class Clusters
 {
 public:
-    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix = "remote_servers");
+    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix = "remote_servers");
 
     Clusters(const Clusters &) = delete;
     Clusters & operator=(const Clusters &) = delete;
@@ -316,8 +301,6 @@ protected:
 
     /// setup outside of this class, stored to prevent deleting from impl on config update
     std::unordered_set<std::string> automatic_clusters;
-
-    MultiVersion<Macros>::Version macros_;
 
     Impl impl;
     mutable std::mutex mutex;

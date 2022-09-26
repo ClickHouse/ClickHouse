@@ -1,6 +1,7 @@
 ---
 title: Что делать, если у меня проблема с кодировками при использовании Oracle через ODBC?
-sidebar_position: 20
+toc_hidden: true
+toc_priority: 20
 ---
 
 # Что делать, если у меня проблема с кодировками при использовании Oracle через ODBC? {#oracle-odbc-encodings}

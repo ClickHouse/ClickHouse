@@ -46,7 +46,7 @@ NamesAndAliases OpenTelemetrySpanLogElement::getNamesAndAliases()
     return
     {
         {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"},
-        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapValues(attribute)"}
+        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"}
     };
 }
 
@@ -118,14 +118,11 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
         auto * thread_group = CurrentThread::getGroup().get();
         // Not sure whether and when this can be null.
         if (!thread_group)
-            return;
-
-        ContextPtr context;
         {
-            std::lock_guard lock(thread_group->mutex);
-            context = thread_group->query_context.lock();
+            return;
         }
 
+        auto context = thread_group->query_context.lock();
         if (!context)
         {
             // Both global and query contexts can be null when executing a
@@ -269,3 +266,4 @@ std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
 
 
 }
+

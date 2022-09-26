@@ -1,6 +1,6 @@
 ---
-sidebar_position: 46
-sidebar_label: Cловари полигонов
+toc_priority: 46
+toc_title: Cловари полигонов
 ---
 
 # Cловари полигонов {#polygon-dictionaries}

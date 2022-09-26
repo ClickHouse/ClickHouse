@@ -1,9 +1,9 @@
 ---
-sidebar_position: 60
-sidebar_label: Nothing
+toc_priority: 60
+toc_title: Nothing
 ---
 
-# Nothing
+# Nothing {#nothing}
 
 The only purpose of this data type is to represent cases where a value is not expected. So you can’t create a `Nothing` type value.
 

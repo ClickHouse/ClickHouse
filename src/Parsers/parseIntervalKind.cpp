@@ -7,27 +7,6 @@ namespace DB
 {
 bool parseIntervalKind(IParser::Pos & pos, Expected & expected, IntervalKind & result)
 {
-    if (ParserKeyword("NANOSECOND").ignore(pos, expected) || ParserKeyword("SQL_TSI_NANOSECOND").ignore(pos, expected)
-        || ParserKeyword("NS").ignore(pos, expected))
-    {
-        result = IntervalKind::Nanosecond;
-        return true;
-    }
-
-    if (ParserKeyword("MICROSECOND").ignore(pos, expected) || ParserKeyword("SQL_TSI_MICROSECOND").ignore(pos, expected)
-        || ParserKeyword("MCS").ignore(pos, expected))
-    {
-        result = IntervalKind::Microsecond;
-        return true;
-    }
-
-    if (ParserKeyword("MILLISECOND").ignore(pos, expected) || ParserKeyword("SQL_TSI_MILLISECOND").ignore(pos, expected)
-        || ParserKeyword("MS").ignore(pos, expected))
-    {
-        result = IntervalKind::Millisecond;
-        return true;
-    }
-
     if (ParserKeyword("SECOND").ignore(pos, expected) || ParserKeyword("SQL_TSI_SECOND").ignore(pos, expected)
         || ParserKeyword("SS").ignore(pos, expected) || ParserKeyword("S").ignore(pos, expected))
     {

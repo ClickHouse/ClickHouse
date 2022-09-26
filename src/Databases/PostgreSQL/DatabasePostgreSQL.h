@@ -53,7 +53,7 @@ public:
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
-    void dropTable(ContextPtr, const String & table_name, bool sync) override;
+    void dropTable(ContextPtr, const String & table_name, bool no_delay) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
@@ -81,7 +81,7 @@ private:
 
     bool checkPostgresTable(const String & table_name) const;
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
 
     void removeOutdatedTables();
 

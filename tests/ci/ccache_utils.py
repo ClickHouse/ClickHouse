@@ -57,12 +57,10 @@ def dowload_file_with_progress(url, path):
 
 def get_ccache_if_not_exists(
     path_to_ccache_dir, s3_helper, current_pr_number, temp_path
-) -> int:
-    """returns: number of PR for downloaded PR. -1 if ccache not found"""
+):
     ccache_name = os.path.basename(path_to_ccache_dir)
     cache_found = False
     prs_to_check = [current_pr_number]
-    ccache_pr = -1
     if current_pr_number != 0:
         prs_to_check.append(0)
     for pr_number in prs_to_check:
@@ -89,7 +87,6 @@ def get_ccache_if_not_exists(
                 decompress_fast(compressed_cache, path_to_decompress)
                 logging.info("Files on path %s", os.listdir(path_to_decompress))
                 cache_found = True
-                ccache_pr = pr_number
                 break
         if cache_found:
             break
@@ -100,8 +97,6 @@ def get_ccache_if_not_exists(
             logging.info("But at least we have some local cache")
     else:
         logging.info("ccache downloaded")
-
-    return ccache_pr
 
 
 def upload_ccache(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):

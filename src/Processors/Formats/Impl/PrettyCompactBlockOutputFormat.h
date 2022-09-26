@@ -17,12 +17,13 @@ public:
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
 private:
-    void write(Chunk chunk, PortKind port_kind) override;
+    void write(const Chunk & chunk, PortKind port_kind) override;
     void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths);
     void writeBottom(const Widths & max_widths);
     void writeRow(
         size_t row_num,
         const Block & header,
+        const Serializations & serializations,
         const Columns & columns,
         const WidthsPerColumn & widths,
         const Widths & max_widths);

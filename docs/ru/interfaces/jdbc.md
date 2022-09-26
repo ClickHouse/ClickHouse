@@ -1,6 +1,6 @@
 ---
-sidebar_position: 22
-sidebar_label: "JDBC-драйвер"
+toc_priority: 22
+toc_title: "JDBC-драйвер"
 ---
 
 # JDBC-драйвер {#jdbc-draiver}

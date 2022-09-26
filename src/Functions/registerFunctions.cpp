@@ -8,7 +8,6 @@ namespace DB
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
-void registerFunctionsMakeDate(FunctionFactory &);
 void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
 void registerFunctionsBinaryRepr(FunctionFactory &);
@@ -24,7 +23,6 @@ void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
-void registerFunctionHashID(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
 void registerFunctionsLogical(FunctionFactory &);
@@ -58,17 +56,13 @@ void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 void registerFunctionsTimeWindow(FunctionFactory &);
 void registerFunctionToBool(FunctionFactory &);
-void registerFunctionMinSampleSize(FunctionFactory &);
-
-// meilisearch
-void registerFunctionMeiliMatch(FunctionFactory & factory);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
 void registerFunctionDecrypt(FunctionFactory & factory);
 void registerFunctionAESEncryptMysql(FunctionFactory & factory);
 void registerFunctionAESDecryptMysql(FunctionFactory & factory);
-void registerFunctionShowCertificate(FunctionFactory &);
+
 #endif
 
 void registerFunctions()
@@ -78,7 +72,6 @@ void registerFunctions()
     registerFunctionsArithmetic(factory);
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
-    registerFunctionsMakeDate(factory);
     registerFunctionsMap(factory);
     registerFunctionsBitmap(factory);
     registerFunctionsBinaryRepr(factory);
@@ -125,21 +118,15 @@ void registerFunctions()
     registerFunctionsSnowflake(factory);
     registerFunctionsTimeWindow(factory);
     registerFunctionToBool(factory);
-    registerFunctionMinSampleSize(factory);
-
-    //meilisearch
-    registerFunctionMeiliMatch(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);
     registerFunctionDecrypt(factory);
     registerFunctionAESEncryptMysql(factory);
     registerFunctionAESDecryptMysql(factory);
-    registerFunctionShowCertificate(factory);
 #endif
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
-    registerFunctionHashID(factory);
 }
 
 }

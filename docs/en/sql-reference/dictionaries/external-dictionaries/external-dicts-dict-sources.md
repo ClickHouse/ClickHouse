@@ -1,9 +1,9 @@
 ---
-sidebar_position: 43
-sidebar_label: Sources of External Dictionaries
+toc_priority: 43
+toc_title: Sources of External Dictionaries
 ---
 
-# Sources of External Dictionaries
+# Sources of External Dictionaries {#dicts-external-dicts-dict-sources}
 
 An external dictionary can be connected from many different sources.
 
@@ -72,7 +72,7 @@ Types of sources (`source_type`):
     -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
     -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
-## Local File
+## Local File {#dicts-external_dicts_dict_sources-local_file}
 
 Example of settings:
 
@@ -102,7 +102,7 @@ When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONAR
 
 -   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
-## Executable File
+## Executable File {#dicts-external_dicts_dict_sources-executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
@@ -126,12 +126,12 @@ Setting fields:
 -   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 -   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
--   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Executable Pool
+## Executable Pool {#dicts-external_dicts_dict_sources-executable_pool}
 
 Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts.
 
@@ -161,12 +161,12 @@ Setting fields:
 -   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 -   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
--   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Http(s)
+## Http(s) {#dicts-external_dicts_dict_sources-http}
 
 Working with an HTTP(s) server depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
@@ -218,11 +218,10 @@ Setting fields:
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
-### Known Vulnerability of the ODBC Dictionary Functionality
+### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-:::note
-When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
-:::
+!!! attention "Attention"
+    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
 
 **Example of insecure use**
 
@@ -247,7 +246,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
-### Example of Connecting Postgresql
+### Example of Connecting Postgresql {#example-of-connecting-postgresql}
 
 Ubuntu OS.
 
@@ -328,7 +327,7 @@ LIFETIME(MIN 300 MAX 360)
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of Connecting MS SQL Server
+### Example of Connecting MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Ubuntu OS.
 
@@ -432,9 +431,9 @@ LAYOUT(FLAT())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-## DBMS
+## DBMS {#dbms}
 
-### ODBC
+### ODBC {#dicts-external_dicts_dict_sources-odbc}
 
 You can use this method to connect any database that has an ODBC driver.
 
@@ -472,15 +471,14 @@ Setting fields:
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
 
-:::note
-The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/integration/oracle-odbc.md) item.
+If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
 
-### Mysql
+### Mysql {#dicts-external_dicts_dict_sources-mysql}
 
 Example of settings:
 
@@ -551,9 +549,8 @@ Setting fields:
 
 -   `query` – The custom query. Optional parameter.
 
-:::note
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -593,7 +590,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### ClickHouse
+### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
 Example of settings:
 
@@ -642,11 +639,10 @@ Setting fields:
 -   `secure` - Use ssl for connection.
 -   `query` – The custom query. Optional parameter.
 
-:::note
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 
-### Mongodb
+### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
 Example of settings:
 
@@ -685,7 +681,7 @@ Setting fields:
 -   `db` – Name of the database.
 -   `collection` – Name of the collection.
 
-### Redis
+### Redis {#dicts-external_dicts_dict_sources-redis}
 
 Example of settings:
 
@@ -718,7 +714,7 @@ Setting fields:
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-### Cassandra
+### Cassandra {#dicts-external_dicts_dict_sources-cassandra}
 
 Example of settings:
 
@@ -756,11 +752,10 @@ Setting fields:
 -   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 -   `query` – The custom query. Optional parameter.
 
-:::note
-The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
 
-### PostgreSQL
+### PostgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
 Example of settings:
 
@@ -813,6 +808,5 @@ Setting fields:
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
 
-:::note
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.

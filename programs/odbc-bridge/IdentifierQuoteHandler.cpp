@@ -10,11 +10,11 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
-#include "ODBCPooledConnectionFactory.h"
+#include "ODBCConnectionFactory.h"
 
 
 namespace DB
@@ -42,7 +42,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         std::string connection_string = params.get("connection_string");
 
-        auto connection = ODBCPooledConnectionFactory::instance().get(
+        auto connection = ODBCConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 

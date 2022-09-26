@@ -86,6 +86,8 @@ public:
     /// Get the regexp re2 or nullptr if the pattern is trivial (for output to the log).
     const std::unique_ptr<RegexType> & getRE2() const { return re2; }
 
+    static void analyze(const std::string & regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
+
     void getAnalyzeResult(std::string & out_required_substring, bool & out_is_trivial, bool & out_required_substring_is_prefix) const
     {
         out_required_substring = required_substring;
@@ -102,9 +104,6 @@ private:
     std::optional<DB::StringSearcher<false, true>> case_insensitive_substring_searcher;
     std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
-
-    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 };
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
-using OptimizedRegularExpressionSingleThreaded = OptimizedRegularExpressionImpl<false>;

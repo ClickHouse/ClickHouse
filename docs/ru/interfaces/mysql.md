@@ -1,6 +1,6 @@
 ---
-sidebar_position: 20
-sidebar_label: "MySQL-интерфейс"
+toc_priority: 20
+toc_title: "MySQL-интерфейс"
 ---
 
 # MySQL-интерфейс {#mysql-interface}

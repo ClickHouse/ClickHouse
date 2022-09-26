@@ -252,7 +252,7 @@ Strings DictionaryStructure::getKeysNames() const
 static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
     static const std::unordered_set<std::string_view> valid_keys
-        = {"name", "type", "expression", "null_value", "hierarchical", "bidirectional", "injective", "is_object_id"};
+        = {"name", "type", "expression", "null_value", "hierarchical", "injective", "is_object_id"};
 
     for (const auto & key : keys)
     {
@@ -350,7 +350,6 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         }
 
         const auto hierarchical = config.getBool(prefix + "hierarchical", false);
-        const auto bidirectional = config.getBool(prefix + "bidirectional", false);
         const auto injective = config.getBool(prefix + "injective", false);
         const auto is_object_id = config.getBool(prefix + "is_object_id", false);
 
@@ -363,9 +362,6 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if (has_hierarchy && hierarchical)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one hierarchical attribute supported");
 
-        if (bidirectional && !hierarchical)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bidirectional can only be applied to hierarchical attributes");
-
         has_hierarchy = has_hierarchy || hierarchical;
 
         res_attributes.emplace_back(DictionaryAttribute{
@@ -376,7 +372,6 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             expression,
             null_value,
             hierarchical,
-            bidirectional,
             injective,
             is_object_id,
             is_nullable});

@@ -1,7 +1,7 @@
 option(ENABLE_THRIFT "Enable Thrift" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_THRIFT)
-    message (STATUS "Not using thrift")
+    message (STATUS "thrift disabled")
     return()
 endif()
 
