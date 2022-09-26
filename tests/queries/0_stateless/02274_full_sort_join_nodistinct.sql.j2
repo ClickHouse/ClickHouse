@@ -21,7 +21,7 @@ INSERT INTO tn2 VALUES (1, 'val11'), (1, 'val12'), (NULL, 'val22'), (NULL, 'val2
 
 {% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
 
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}5K{% else %}0{% endif %}';
+SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';
 
 SET join_algorithm = '{{ join_algorithm }}';
 
