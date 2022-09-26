@@ -310,11 +310,24 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
-class TriesControl
+struct RetriesInfo
+{
+    RetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+        : max_retries(max_retries_), curr_backoff_ms(initial_backoff_ms_), max_backoff_ms(max_backoff_ms_)
+    {
+    }
+
+    const UInt64 max_retries = 0;
+    UInt64 curr_backoff_ms = 1;
+    const UInt64 max_backoff_ms = 0;
+    UInt64 retry_count = 0;
+};
+
+class RetriesControl
 {
 public:
-    TriesControl(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
-        : max_tries(1 + max_retries_), curr_backoff_ms(initial_backoff_ms_), max_backoff_ms(max_backoff_ms_)
+    explicit RetriesControl(RetriesInfo& retries_info_)
+        : retries_info(retries_info_)
     {
     }
 
@@ -331,38 +344,37 @@ public:
         std::string message;
     };
 
-    bool shouldTry()
+    bool canTry()
     {
-        /// zero try is ordinary execution, not a retry
-        if (0 == tries_count)
+        ++iteration_count;
+        /// first iteration is ordinary execution, no further checks needed
+        if (0 == iteration_count - 1)
+            return true;
+
+        if (unconditional_retry)
         {
-            ++tries_count;
+            unconditional_retry = false;
             return true;
         }
 
-        if (allow_unconditional_try_once)
-        {
-            allow_unconditional_try_once = false;
-            return true;
-        }
-
-        if (is_try_successful)
+        /// iteration succeeded -> no need to retry
+        if (iteration_succeeded)
             return false;
 
-        is_try_successful = true;
+        /// the flag will set to false in case of error
+        iteration_succeeded = true;
 
-        if (tries_count >= max_tries)
+        if (retries_info.retry_count >= retries_info.max_retries)
         {
             throwIfError();
             return false;
         }
 
         /// retries
-        assert(tries_count > 0);
-        sleepForMilliseconds(curr_backoff_ms);
-        curr_backoff_ms = std::min(curr_backoff_ms * 2, max_backoff_ms);
+        ++retries_info.retry_count;
+        sleepForMilliseconds(retries_info.curr_backoff_ms);
+        retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
 
-        ++tries_count;
         return true;
     }
 
@@ -377,7 +389,7 @@ public:
 
     void setUserError(int code, std::string message)
     {
-        is_try_successful = false;
+        iteration_succeeded = false;
         user_error.code = code;
         user_error.message = std::move(message);
         keeper_error = KeeperError{};
@@ -391,7 +403,7 @@ public:
 
     void setKeeperError(KeeperError::Code code, std::string message)
     {
-        is_try_successful = false;
+        iteration_succeeded = false;
         keeper_error.code = code;
         keeper_error.message = std::move(message);
         user_error = UserError{};
@@ -419,17 +431,15 @@ public:
 
     const auto & getKeeperError() const { return keeper_error; }
 
-    void allowUnconditionalTryOnce() { allow_unconditional_try_once = true; }
+    void requestUnconditionalRetry() { unconditional_retry = true; }
 
 private:
-    const UInt64 max_tries = 1;
-    UInt64 curr_backoff_ms;
-    const UInt64 max_backoff_ms;
-    UInt64 tries_count = 0;
+    RetriesInfo& retries_info;
+    UInt64 iteration_count = 0;
     UserError user_error;
     KeeperError keeper_error;
-    bool allow_unconditional_try_once = false;
-    bool is_try_successful = true;
+    bool unconditional_retry = false;
+    bool iteration_succeeded = true;
 };
 
 void ReplicatedMergeTreeSink::commitPart(
@@ -451,12 +461,13 @@ void ReplicatedMergeTreeSink::commitPart(
     bool is_already_existing_part = false;
 
     const auto& settings = context->getSettingsRef();
-    TriesControl tries_ctl(
+    RetriesInfo retries_info(
         settings.insert_part_commit_max_retries,
         settings.insert_part_commit_retry_initial_backoff_ms,
         settings.insert_part_commit_retry_max_backoff_ms);
 
-    while (tries_ctl.shouldTry())
+    RetriesControl retries_ctl(retries_info);
+    while (retries_ctl.canTry())
     {
         try
         {
@@ -589,7 +600,7 @@ void ReplicatedMergeTreeSink::commitPart(
                         else
                             quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                        if (!tries_ctl.call(
+                        if (!retries_ctl.call(
                                 [&]()
                                 {
                                     waitForQuorum(
@@ -677,7 +688,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
                 /// We do not know whether or not data has been inserted.
-                tries_ctl.setUserError(
+                retries_ctl.setUserError(
                     ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                     "Unknown status, client must retry. Reason: {}",
                     Coordination::errorMessage(multi_code));
@@ -709,7 +720,7 @@ void ReplicatedMergeTreeSink::commitPart(
                         part->is_duplicate = true; /// Part is duplicate, just remove it from local FS
                         throw Exception("Too many transaction retries - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
                     }
-                    tries_ctl.allowUnconditionalTryOnce(); /// we want one more iteration w/o counting it as a try and timeout
+                    retries_ctl.requestUnconditionalRetry(); /// we want one more iteration w/o counting it as a try and timeout
                     continue;
                 }
                 else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
@@ -736,7 +747,7 @@ void ReplicatedMergeTreeSink::commitPart(
             {
                 storage.unlockSharedData(*part);
                 transaction.rollback();
-                tries_ctl.setUserError(
+                retries_ctl.setUserError(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Unrecoverable network error while adding block {} with ID '{}': {}",
                     block_number,
@@ -761,14 +772,14 @@ void ReplicatedMergeTreeSink::commitPart(
             if (!Coordination::isHardwareError(e.code))
                 throw;
 
-            tries_ctl.setKeeperError(e.code, e.message());
+            retries_ctl.setKeeperError(e.code, e.message());
         }
     }
 
     if (isQuorumEnabled())
     {
-        tries_ctl.allowUnconditionalTryOnce(); /// make first iteration for quorum a normal execution (w/o counting it as a retry and timeout)
-        while (tries_ctl.shouldTry())
+        RetriesControl quorum_retries_ctl(retries_info);
+        while (quorum_retries_ctl.canTry())
         {
             try
             {
@@ -784,7 +795,7 @@ void ReplicatedMergeTreeSink::commitPart(
                         storage.updateQuorum(part->name, false);
                 }
 
-                if (!tries_ctl.call(
+                if (!quorum_retries_ctl.call(
                         [&]()
                         { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num); }))
                     continue;
@@ -794,7 +805,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 if (!Coordination::isHardwareError(e.code))
                     throw;
 
-                tries_ctl.setKeeperError(e.code, e.message());
+                quorum_retries_ctl.setKeeperError(e.code, e.message());
             }
         }
     }
