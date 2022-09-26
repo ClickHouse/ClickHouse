@@ -255,11 +255,6 @@ start
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
-mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
-for table in query_log trace_log
-do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.stress.tsv.gz ||:
-done
 
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
@@ -344,7 +339,7 @@ echo $previous_release_tag | download_release_packets && echo -e 'Download scrip
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
 for table in query_log trace_log
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.clean.tsv.gz ||:
+    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
 done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
@@ -408,10 +403,6 @@ else
 
     stop
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
-    for table in query_log trace_log
-    do
-        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.stress.tsv.gz ||:
-    done
 
     # Start new server
     mv package_folder/clickhouse /usr/bin/
@@ -514,7 +505,7 @@ else
     tar -chf /test_output/coordination.backward.tar /var/lib/clickhouse/coordination ||:
     for table in query_log trace_log
     do
-        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.clean.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.tsv.gz ||:
     done
 fi
 
