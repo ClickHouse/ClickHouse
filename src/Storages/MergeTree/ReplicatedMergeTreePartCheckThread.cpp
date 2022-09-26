@@ -149,6 +149,7 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
         String replica_path = storage.zookeeper_path + "/replicas/" + replica;
 
         Strings parts = zookeeper->getChildren(replica_path + "/parts");
+        Strings parts_found;
         for (const String & part_on_replica : parts)
         {
             auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.format_version);
@@ -174,14 +175,22 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
             if (part_info.contains(part_on_replica_info))
             {
                 if (part_on_replica_info.min_block == part_info.min_block)
+                {
                     found_part_with_the_same_min_block = true;
+                    parts_found.push_back(part_on_replica);
+                }
                 if (part_on_replica_info.max_block == part_info.max_block)
+                {
                     found_part_with_the_same_max_block = true;
+                    parts_found.push_back(part_on_replica);
+                }
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
                     /// FIXME It may never appear
-                    LOG_INFO(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
+                    LOG_INFO(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. "
+                             "Hoping that it will eventually appear as a result of a merge. Parts: {}",
+                             part_name, replica, fmt::join(parts_found, ", "));
                     return MissingPartSearchResult::FoundAndDontNeedFetch;
                 }
             }
