@@ -18,4 +18,9 @@ print bin(4.5, 1);
 print bin(datetime(1970-05-11 13:45:07), 1d);
 print bin(16d, 7d);
 print bin(datetime(1970-05-11 13:45:07.345623), 1ms);
-print bin(datetime(1970-05-11 13:45:07.345623), 6microsecond);
+-- print bin(datetime(2022-09-26 10:13:23.987234), 6ms); -> 2022-09-26 10:13:23.982000000
+print bin(datetime(1970-05-11 13:45:07.345623), 1microsecond);
+print bin(datetime(2022-09-26 10:13:23.987234), 6microseconds);
+print bin(datetime(1970-05-11 13:45:07.456345672), 16microseconds);
+-- print bin(datetime(2022-09-26 10:13:23.987234128), 1tick); -> 2022-09-26 10:13:23.987234100
+-- print bin(datetime(2022-09-26 10:13:23.987234128), 99nanosecond); -> null
