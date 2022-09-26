@@ -1569,9 +1569,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
     const auto & path = file->path();
     WriteBufferFromFile file_buf(path);
-    WriteBufferFinalizer file_buf_finalizer(file_buf);
+    WriteBufferFinalizer file_buf_finalizer(&file_buf);
     CompressedWriteBuffer compressed_buf(file_buf);
-    WriteBufferFinalizer compressed_buf_finalizer(compressed_buf);
+    WriteBufferFinalizer compressed_buf_finalizer(&compressed_buf);
     NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", path);

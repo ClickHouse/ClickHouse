@@ -68,7 +68,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     if (compress)
     {
         CompressedWriteBuffer compressed_out(*used_output.out);
-        WriteBufferFinalizer finalizer(compressed_out);
+        WriteBufferFinalizer finalizer(&compressed_out);
         endpoint->processQuery(params, body, compressed_out, response);
         finalizer.finalize();
     }

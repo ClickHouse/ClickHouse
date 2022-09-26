@@ -553,7 +553,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
         ShellCommandSource::SendDataTask task = [pipeline, timeout_write_buffer, write_buffer, is_executable_pool]()
         {
-            WriteBufferFinalizer finalizer(*timeout_write_buffer);
+            WriteBufferFinalizer finalizer(timeout_write_buffer.get());
             CompletedPipelineExecutor executor(*pipeline);
             executor.execute();
             finalizer.finalize();

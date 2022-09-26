@@ -200,12 +200,15 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
             {
                 auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, write_settings);
+                WriteBufferFinalizer out_finalizer(count_out.get());
                 HashingWriteBuffer count_out_hashing(*count_out);
+                WriteBufferFinalizer hashing_finalizer(&count_out_hashing);
                 writeIntText(rows_count, count_out_hashing);
-                count_out_hashing.finalize();
+                hashing_finalizer.finalize();
                 checksums.files["count.txt"].file_size = count_out_hashing.count();
                 checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
                 count_out->preFinalize();
+                out_finalizer.release();
                 written_files.emplace_back(std::move(count_out));
             }
         }
@@ -214,12 +217,15 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             if (new_part->uuid != UUIDHelpers::Nil)
             {
                 auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, write_settings);
+                WriteBufferFinalizer out_finalizer(out.get());
                 HashingWriteBuffer out_hashing(*out);
+                WriteBufferFinalizer hashing_finalizer(&out_hashing);
                 writeUUIDText(new_part->uuid, out_hashing);
-                out_hashing.finalize();
+                hashing_finalizer.finalize();
                 checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
                 checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
                 out->preFinalize();
+                out_finalizer.release();
                 written_files.emplace_back(std::move(out));
             }
 
@@ -242,12 +248,15 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             {
                 auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, write_settings);
+                WriteBufferFinalizer out_finalizer(count_out.get());
                 HashingWriteBuffer count_out_hashing(*count_out);
+                WriteBufferFinalizer hashing_finalizer(&count_out_hashing);
                 writeIntText(rows_count, count_out_hashing);
-                count_out_hashing.finalize();
+                hashing_finalizer.finalize();
                 checksums.files["count.txt"].file_size = count_out_hashing.count();
                 checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
                 count_out->preFinalize();
+                out_finalizer.release();
                 written_files.emplace_back(std::move(count_out));
             }
         }
@@ -256,40 +265,50 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         {
             /// Write a file with ttl infos in json format.
             auto out = data_part_storage_builder->writeFile("ttl.txt", 4096, write_settings);
+            WriteBufferFinalizer out_finalizer(out.get());
             HashingWriteBuffer out_hashing(*out);
+            WriteBufferFinalizer hashing_finalizer(&out_hashing);
             new_part->ttl_infos.write(out_hashing);
-            out_hashing.finalize();
+            hashing_finalizer.finalize();
             checksums.files["ttl.txt"].file_size = out_hashing.count();
             checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
             out->preFinalize();
+            out_finalizer.release();
             written_files.emplace_back(std::move(out));
         }
 
         if (!new_part->getSerializationInfos().empty())
         {
             auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, write_settings);
+            WriteBufferFinalizer out_finalizer(out.get());
             HashingWriteBuffer out_hashing(*out);
+            WriteBufferFinalizer hashing_finalizer(&out_hashing);
             new_part->getSerializationInfos().writeJSON(out_hashing);
-            out_hashing.finalize();
+            hashing_finalizer.finalize();
             checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
             checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
             out->preFinalize();
+            out_finalizer.release();
             written_files.emplace_back(std::move(out));
         }
 
         {
             /// Write a file with a description of columns.
             auto out = data_part_storage_builder->writeFile("columns.txt", 4096, write_settings);
+            WriteBufferFinalizer out_finalizer(out.get());
             new_part->getColumns().writeText(*out);
             out->preFinalize();
+            out_finalizer.release();
             written_files.emplace_back(std::move(out));
         }
 
         if (default_codec != nullptr)
         {
             auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings);
+            WriteBufferFinalizer out_finalizer(out.get());
             DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
             out->preFinalize();
+            out_finalizer.release();
             written_files.emplace_back(std::move(out));
         }
         else
@@ -302,8 +321,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         {
             /// Write file with checksums.
             auto out = data_part_storage_builder->writeFile("checksums.txt", 4096, write_settings);
+            WriteBufferFinalizer out_finalizer(out.get());
             checksums.write(*out);
             out->preFinalize();
+            out_finalizer.release();
             written_files.emplace_back(std::move(out));
         }
 

@@ -602,7 +602,7 @@ try
     static DiskWriteCheckData data;
     String tmp_template = fs::path(disk_path) / "";
     auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
-    WriteBufferFinalizer finalizer(*buf);
+    WriteBufferFinalizer finalizer(buf.get());
     buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
     buf->sync();
     finalizer.finalize();

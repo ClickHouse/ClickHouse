@@ -738,9 +738,9 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             auto tmp_dir_sync_guard = make_directory_sync_guard(*it + "/tmp/");
 
             WriteBufferFromFile out{first_file_tmp_path};
-            WriteBufferFinalizer out_finalizer(out);
+            WriteBufferFinalizer out_finalizer(&out);
             CompressedWriteBuffer compress{out, compression_codec};
-            WriteBufferFinalizer compress_finalizer(compress);
+            WriteBufferFinalizer compress_finalizer(&compress);
             NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.

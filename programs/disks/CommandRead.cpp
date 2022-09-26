@@ -60,7 +60,7 @@ public:
 
             auto in = disk->readFile(full_path);
             auto out = disk->writeFile(full_path_output);
-            WriteBufferFinalizer finalizer(*out);
+            WriteBufferFinalizer finalizer(out.get());
             copyData(*in, *out);
             finalizer.finalize();
             return;
@@ -69,7 +69,7 @@ public:
         {
             auto in = disk->readFile(full_path);
             std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
-            WriteBufferFinalizer finalizer(*out);
+            WriteBufferFinalizer finalizer(out.get());
             copyData(*in, *out);
             finalizer.finalize();
         }

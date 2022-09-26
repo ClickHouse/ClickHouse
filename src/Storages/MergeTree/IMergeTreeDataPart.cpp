@@ -134,13 +134,16 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
             auto serialization = data_types.at(i)->getDefaultSerialization();
 
             auto out = data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
+            WriteBufferFinalizer out_finalizer(out.get());
             HashingWriteBuffer out_hashing(*out);
+            WriteBufferFinalizer hashing_finalizer(&out_hashing);
             serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
             serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
-            out_hashing.finalize();
+            hashing_finalizer.finalize();
             out_checksums.files[file_name].file_size = out_hashing.count();
             out_checksums.files[file_name].file_hash = out_hashing.getHash();
             out->preFinalize();
+            out_finalizer.release();
             written_files.emplace_back(std::move(out));
         }
 

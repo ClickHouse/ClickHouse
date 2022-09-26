@@ -69,7 +69,7 @@ void NATSSink::onCancel()
 
 void NATSSink::finalize()
 {
-    WriteBufferFinalizer buffer_finalizer(*buffer);
+    WriteBufferFinalizer buffer_finalizer(buffer.get());
     format->finalize();
     buffer->updateMaxWait();
     buffer_finalizer.finalize();

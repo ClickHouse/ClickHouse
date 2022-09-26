@@ -66,7 +66,7 @@ void KafkaSink::finalize()
     if (!buffer || !format)
         return;
 
-    WriteBufferFinalizer buffer_finalizer(*buffer);
+    WriteBufferFinalizer buffer_finalizer(buffer.get());
     format->finalize();
     buffer->flush();
     buffer_finalizer.finalize();

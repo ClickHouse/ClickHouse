@@ -65,7 +65,7 @@ public:
         }
 
         auto out = disk->writeFile(full_path);
-        WriteBufferFinalizer finalizer(*out);
+        WriteBufferFinalizer finalizer(out.get());
         copyData(*in, *out);
         finalizer.finalize();
     }

@@ -137,7 +137,7 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        WriteBufferFinalizer finalizer(out_buffer);
+        WriteBufferFinalizer finalizer(&out_buffer);
         auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
         output_format->finalize();
@@ -170,7 +170,7 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        WriteBufferFinalizer finalizer(out_buffer);
+        WriteBufferFinalizer finalizer(&out_buffer);
         auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
         output_format->finalize();

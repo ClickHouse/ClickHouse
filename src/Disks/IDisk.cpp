@@ -31,7 +31,7 @@ void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const Strin
 
     auto in = readFile(from_file_path);
     auto out = to_disk.writeFile(to_file_path);
-    WriteBufferFinalizer out_finalizer(*out);
+    WriteBufferFinalizer out_finalizer(out.get());
     copyData(*in, *out);
     out_finalizer.finalize();
 }

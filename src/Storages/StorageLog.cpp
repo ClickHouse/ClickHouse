@@ -1061,7 +1061,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             auto backup_entry = backup->readFile(file_path_in_backup);
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
-            WriteBufferFinalizer out_finalizer(*out);
+            WriteBufferFinalizer out_finalizer(out.get());
             copyData(*in, *out);
             out_finalizer.finalize();
         }

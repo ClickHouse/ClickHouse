@@ -865,7 +865,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
                 coordination->updateFileInfo(info);
             }
             auto out = getArchiveWriter(current_archive_suffix)->writeFile(info.data_file_name);
-            WriteBufferFinalizer out_finalizer(*out);
+            WriteBufferFinalizer out_finalizer(out.get());
             copyData(*read_buffer, *out);
             out_finalizer.finalize();
         }

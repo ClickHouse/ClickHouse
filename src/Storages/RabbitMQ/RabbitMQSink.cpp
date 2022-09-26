@@ -72,7 +72,7 @@ void RabbitMQSink::finalize()
     if (!format || !buffer)
         return;
 
-    WriteBufferFinalizer buffer_finalizer(*buffer);
+    WriteBufferFinalizer buffer_finalizer(buffer.get());
     format->finalize();
     buffer->updateMaxWait();
     buffer_finalizer.finalize();

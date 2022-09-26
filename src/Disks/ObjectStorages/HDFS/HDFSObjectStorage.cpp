@@ -163,7 +163,7 @@ void HDFSObjectStorage::copyObject( /// NOLINT
 
     auto in = readObject(object_from);
     auto out = writeObject(object_to, WriteMode::Rewrite);
-    WriteBufferFinalizer out_finalizer(*out);
+    WriteBufferFinalizer out_finalizer(out.get());
     copyData(*in, *out);
     out_finalizer.finalize();
 }

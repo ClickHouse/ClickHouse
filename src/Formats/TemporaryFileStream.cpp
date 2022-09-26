@@ -28,9 +28,9 @@ TemporaryFileStream::TemporaryFileStream(const std::string & path, const Block &
 TemporaryFileStream::Stat TemporaryFileStream::write(const std::string & path, const Block & header, QueryPipelineBuilder builder, const std::string & codec)
 {
     WriteBufferFromFile file_buf(path);
-    WriteBufferFinalizer file_buf_finalizer(file_buf);
+    WriteBufferFinalizer file_buf_finalizer(&file_buf);
     CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
-    WriteBufferFinalizer compressed_buf_finalizer(compressed_buf);
+    WriteBufferFinalizer compressed_buf_finalizer(&compressed_buf);
     NativeWriter output(compressed_buf, 0, header);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));

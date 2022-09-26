@@ -1335,7 +1335,7 @@ try
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
-    WriteBufferFinalizer out_finalizer(file_out);
+    WriteBufferFinalizer out_finalizer(&file_out);
 
     if (load_from_file.empty() || structure.empty())
     {

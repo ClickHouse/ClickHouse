@@ -186,22 +186,28 @@ void tryFinalizeAndLogException(Object & obj, Poco::Logger * logger)
 class WriteBufferFinalizer
 {
 public:
-    explicit WriteBufferFinalizer(WriteBuffer & buf_) : buf(buf_) {}
+    explicit WriteBufferFinalizer(WriteBuffer * buf_) : buf(buf_) {}
 
     void finalize()
     {
         finalized = true;
-        buf.finalize();
+        if (buf)
+            buf->finalize();
+    }
+
+    void release()
+    {
+        buf = nullptr;
     }
 
     ~WriteBufferFinalizer()
     {
-        if (!finalized)
-            tryFinalizeAndLogException(buf, &Poco::Logger::get("WriteBufferFinalizer"));
+        if (buf && !finalized)
+            tryFinalizeAndLogException(*buf, &Poco::Logger::get("WriteBufferFinalizer"));
     }
 
 private:
-    WriteBuffer & buf;
+    WriteBuffer * buf = nullptr;
     bool finalized = false;
 };
 
