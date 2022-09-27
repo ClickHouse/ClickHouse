@@ -567,7 +567,7 @@ Result:
 
 ## tryBase58Decode(s)
 
-Similar to base58Decode, but returns en empty string in case of error.
+Similar to base58Decode, but returns an empty string in case of error.
 
 ## base64Encode(s)
 
