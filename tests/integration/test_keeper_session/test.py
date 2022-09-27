@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import time
 import socket
 import struct
@@ -52,25 +53,8 @@ def destroy_zk_client(zk):
         pass
 
 
-def wait_node(node):
-    for _ in range(100):
-        zk = None
-        try:
-            zk = get_fake_zk(node.name, timeout=30.0)
-            print("node", node.name, "ready")
-            break
-        except Exception as ex:
-            time.sleep(0.2)
-            print("Waiting until", node.name, "will be ready, exception", ex)
-        finally:
-            destroy_zk_client(zk)
-    else:
-        raise Exception("Can't wait node", node.name, "to become ready")
-
-
 def wait_nodes():
-    for n in [node1, node2, node3]:
-        wait_node(n)
+    keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
 
 def get_fake_zk(nodename, timeout=30.0):

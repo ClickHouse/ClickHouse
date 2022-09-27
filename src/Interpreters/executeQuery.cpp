@@ -73,6 +73,7 @@
 #include <memory>
 #include <random>
 
+#include <Parsers/Kusto/ParserKQLStatement.h>
 
 namespace ProfileEvents
 {
@@ -392,10 +393,20 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
+        if (settings.dialect == Dialect::kusto && !internal)
+        {
+            ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
 
-        /// TODO: parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
+        else
+        {
+            ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
+
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
 
         if (auto txn = context->getCurrentTransaction())
         {
@@ -548,9 +559,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (insert_query)
         {
             if (insert_query->table_id)
+            {
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
+            }
             else if (auto table = insert_query->getTable(); !table.empty())
+            {
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
+            }
         }
 
         if (insert_query && insert_query->select)
@@ -778,7 +795,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Common code for finish and exception callbacks
             auto status_info_to_query_log = [](QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr) mutable
             {
-                DB::UInt64 query_time = info.elapsed_seconds * 1000000;
+                UInt64 query_time = static_cast<UInt64>(info.elapsed_seconds * 1000000);
                 ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
                 if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
                 {
@@ -793,7 +810,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, query_time);
                 }
 
-                element.query_duration_ms = info.elapsed_seconds * 1000;
+                element.query_duration_ms = static_cast<UInt64>(info.elapsed_seconds * 1000);
 
                 element.read_rows = info.read_rows;
                 element.read_bytes = info.read_bytes;
