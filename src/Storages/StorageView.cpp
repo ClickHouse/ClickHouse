@@ -176,7 +176,7 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceQueryParameters(ASTPtr & outer_query, const NameToNameMap & parameter_values)
+void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values) const
 {
     if (is_parameterized_view)
     {
@@ -219,7 +219,11 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     for (auto & child : table_expression->children)
         if (child.get() == view_name.get())
             child = view_query;
-        else if (child.get() && child->as<ASTFunction>() && child->as<ASTFunction>()->name == table_expression->table_function->as<ASTFunction>()->name)
+        else if (child.get()
+                 && child->as<ASTFunction>()
+                 && table_expression->table_function
+                 && table_expression->table_function->as<ASTFunction>()
+                 && child->as<ASTFunction>()->name == table_expression->table_function->as<ASTFunction>()->name)
             child = view_query;
 }
 

@@ -10,7 +10,7 @@ namespace DB
 class ParserSelectQuery : public IParserBase
 {
 public:
-    ParserSelectQuery(bool allow_query_parameters_=false)
+    explicit ParserSelectQuery(bool allow_query_parameters_ = false)
         : allow_query_parameters(allow_query_parameters_)
     {
     }

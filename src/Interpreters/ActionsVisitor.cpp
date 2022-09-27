@@ -54,6 +54,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/QueryParameterVisitor.h>
 
 
 namespace DB
@@ -742,29 +743,11 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     if (const auto * node = index.tryGetNode(child_column_name))
         return NameAndTypePair(child_column_name, node->result_type);
 
-    if (!data.only_consts)
+    if (!data.only_consts && analyzeReceiveQueryParams(ast).empty())
     {
-        bool has_query_parameter = false;
-
-        std::queue<ASTPtr> astQueue;
-        astQueue.push(ast);
-
-        while (!astQueue.empty())
-        {
-            auto current = astQueue.front();
-            astQueue.pop();
-
-            if (auto * ast_query_parameter = current->as<ASTQueryParameter>())
-                has_query_parameter = true;
-
-            for (auto astChild : current->children)
-                astQueue.push(astChild);
-        }
-
-        if (!has_query_parameter)
-            throw Exception(
-                "Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
-                ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception(
+            "Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
+            ErrorCodes::UNKNOWN_IDENTIFIER);
     }
     return {};
 }

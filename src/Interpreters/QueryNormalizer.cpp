@@ -128,7 +128,7 @@ void QueryNormalizer::visit(ASTQueryParameter & node, const ASTPtr & ast, Data &
     if (it_alias != data.aliases.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Same alias used multiple times {} ", backQuote(node.name));
 
-    data.aliases[node.name] =ast;
+    data.aliases[node.name] = ast;
 }
 
 

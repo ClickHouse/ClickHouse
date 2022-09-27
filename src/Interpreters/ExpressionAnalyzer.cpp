@@ -1906,11 +1906,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                         before_where,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
 
-                    if (!(query.allow_query_parameters && query.hasQueryParameters()))
+                    bool has_query_parameters = query.allow_query_parameters && query.hasQueryParameters();
+                    if (!has_query_parameters)
                     {
                         auto & column_elem
                             = before_where_sample.getByName(query.where()->getColumnName());
-                        /// If the filter column is a constant, record it.
+                        /// If the filter column is a constant and not a query parameter, record it.
                         if (column_elem.column)
                             where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
                     }

@@ -502,7 +502,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
-            view->replaceQueryParameters(query_ptr, getSelectQuery().getQueryParameterValues());
+            view->replaceQueryParametersIfParametrizedView(query_ptr, getSelectQuery().getQueryParameterValues());
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(

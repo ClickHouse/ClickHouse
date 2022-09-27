@@ -35,7 +35,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void replaceQueryParameters(ASTPtr & outer_query, const NameToNameMap & parameter_values);
+    void replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values) const;
 
     static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot)
     {
