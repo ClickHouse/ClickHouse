@@ -63,6 +63,7 @@ namespace DB
         {"extract", KQLFunctionValue::extract},
         {"extract_all", KQLFunctionValue::extract_all},
         {"extract_json", KQLFunctionValue::extract_json},
+        {"extractjson", KQLFunctionValue::extract_json},
         {"has_any_index", KQLFunctionValue::has_any_index},
         {"indexof", KQLFunctionValue::indexof},
         {"isempty", KQLFunctionValue::isempty},

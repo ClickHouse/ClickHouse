@@ -20,12 +20,12 @@ extern const int BAD_ARGUMENTS;
 namespace DB
 {
 
-bool Base64EncodeToString::convertImpl(String & out,IParser::Pos & pos)
+bool Base64EncodeToString::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out,pos,"base64Encode");
 }
 
-bool Base64EncodeFromGuid::convertImpl(String & out,IParser::Pos & pos)
+bool Base64EncodeFromGuid::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -50,12 +50,12 @@ bool Base64EncodeFromGuid::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool Base64DecodeToString::convertImpl(String & out,IParser::Pos & pos)
+bool Base64DecodeToString::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out,pos,"base64Decode");
+    return directMapping(out, pos, "base64Decode");
 }
 
-bool Base64DecodeToArray::convertImpl(String & out,IParser::Pos & pos)
+bool Base64DecodeToArray::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -69,9 +69,9 @@ bool Base64DecodeToArray::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool Base64DecodeToGuid::convertImpl(String & out,IParser::Pos & pos)
+bool Base64DecodeToGuid::convertImpl(String & out, IParser::Pos & pos)
 {
-   return directMapping(out,pos,"base64Decode");
+    return directMapping(out, pos, "base64Decode");
 }
 
 bool CountOf::convertImpl(String & out, IParser::Pos & pos)
@@ -94,7 +94,7 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
     }
     assert (kind =="'normal'" || kind =="'regex'");
 
-    if (kind == "'normal'" )
+    if (kind == "'normal'")
         out = "countSubstrings(" + source + ", " + search + ")";
     else
         out = "countMatches("+ source + ", " + search + ")";
@@ -217,7 +217,7 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ExtractAll::convertImpl(String & out,IParser::Pos & pos)
+bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -243,7 +243,7 @@ bool ExtractAll::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool ExtractJson::convertImpl(String & out,IParser::Pos & pos)
+bool ExtractJson::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -281,21 +281,20 @@ bool ExtractJson::convertImpl(String & out,IParser::Pos & pos)
         if (s_kql.ignore(pos_type, expected))
         {
             ++pos_type;
-            auto kql_type= String(pos_type->begin,pos_type->end);
+            auto kql_type = String(pos_type->begin,pos_type->end);
             if (type_cast.find(kql_type) == type_cast.end())
                 return false;
             datatype = type_cast[kql_type];
         }
     }    
-    const auto json_val = std::format("JSON_VALUE({0},{1})" , json_datasource , json_datapath);
+    const auto json_val = std::format("JSON_VALUE({0},{1})", json_datasource, json_datapath);
 
-    out = std::format("accurateCastOrNull({},'{}')" , json_val  , datatype );
-   // ++pos;
+    out = std::format("accurateCastOrNull({},'{}')" , json_val, datatype);
     return true;
 
 }
 
-bool HasAnyIndex::convertImpl(String & out,IParser::Pos & pos)
+bool HasAnyIndex::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -307,12 +306,11 @@ bool HasAnyIndex::convertImpl(String & out,IParser::Pos & pos)
     ++pos;
     const String lookup = getConvertedArgument(fn_name, pos);
     String src_array = std::format("splitByChar(' ',{})", source);
-    out = std::format("if (empty({1}), -1, indexOf(arrayMap ( x -> (x in {0}),  if (empty({1}),[''], arrayMap(x->(toString(x)),{1}))),1) - 1)",
-        src_array, lookup);
+    out = std::format("if (empty({1}), -1, indexOf(arrayMap ( x -> (x in {0}),  if (empty({1}),[''], arrayMap(x->(toString(x)),{1}))),1) - 1)", src_array, lookup);
     return true;
 }
 
-bool IndexOf::convertImpl(String & out,IParser::Pos & pos)
+bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
 {
     int start_index = 0, length = -1, occurrence = 1;
 
@@ -361,22 +359,22 @@ bool IndexOf::convertImpl(String & out,IParser::Pos & pos)
     return false;
 }
 
-bool IsEmpty::convertImpl(String & out,IParser::Pos & pos)
+bool IsEmpty::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "empty");
 }
 
-bool IsNotEmpty::convertImpl(String & out,IParser::Pos & pos)
+bool IsNotEmpty::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "notEmpty");
 }
 
-bool IsNotNull::convertImpl(String & out,IParser::Pos & pos)
+bool IsNotNull::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "isNotNull");
 }
 
-bool ParseCommandLine::convertImpl(String & out,IParser::Pos & pos)
+bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -386,7 +384,7 @@ bool ParseCommandLine::convertImpl(String & out,IParser::Pos & pos)
     const String json_string = getConvertedArgument(fn_name, pos);
 
     ++pos;
-    const String type = getConvertedArgument(fn_name, pos);   
+    const String type = getConvertedArgument(fn_name, pos);
 
     if (Poco::toLower(type) != "'windows'")
         throw Exception("Supported type argument is windows for  " + fn_name, ErrorCodes::BAD_ARGUMENTS);
@@ -396,12 +394,12 @@ bool ParseCommandLine::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool IsNull::convertImpl(String & out,IParser::Pos & pos)
+bool IsNull::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "isNull");
 }
 
-bool ParseCSV::convertImpl(String & out,IParser::Pos & pos)
+bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -409,37 +407,34 @@ bool ParseCSV::convertImpl(String & out,IParser::Pos & pos)
 
     ++pos;
     String csv_string = getConvertedArgument(fn_name, pos);
-    out = std::format("splitByChar(',' , substring({0} , 1 , position({0} ,'\n') -1 ))", csv_string);
 
+    out = std::format("if(position({0} ,'\n')::UInt8, (splitByChar(',', substring({0}, 1, position({0},'\n') -1))), (splitByChar(',', substring({0}, 1, length({0})))))" , csv_string);
     return true;
-
 }
 
-bool ParseJson::convertImpl(String & out,IParser::Pos & pos)
+bool ParseJson::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
     ++pos;
-    if (String(pos->begin, pos->end) == "dynamic" )
+    if (String(pos->begin, pos->end) == "dynamic")
     {
         --pos;
         auto arg = getArgument(fn_name,pos);
         auto result =  kqlCallToExpression("dynamic", {arg}, pos.max_depth);
-        out = std::format("{}" , result);
+        out = std::format("{}", result);
     }
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format( "if(isValidJSON({0}) , JSON_QUERY({0}, '$') , toJSONString({0}))" , arg);
-
+        out = std::format("if (isValidJSON({0}) , JSON_QUERY({0}, '$') , toJSONString({0}))" , arg);
     }
-
     return true;
 }
 
-bool ParseURL::convertImpl(String & out,IParser::Pos & pos)
+bool ParseURL::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -463,7 +458,7 @@ bool ParseURL::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool ParseURLQuery::convertImpl(String & out,IParser::Pos & pos)
+bool ParseURLQuery::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -478,7 +473,7 @@ bool ParseURLQuery::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool ParseVersion::convertImpl(String & out,IParser::Pos & pos)
+bool ParseVersion::convertImpl(String & out, IParser::Pos & pos)
 {
     
     const String fn_name = getKQLFunctionName(pos);
@@ -489,58 +484,23 @@ bool ParseVersion::convertImpl(String & out,IParser::Pos & pos)
     ++pos;
 
     arg = getConvertedArgument(fn_name, pos);
-    if ( arg.front() == '\"' || arg.front() == '\'' )
+    if (arg.front() == '\"' || arg.front() == '\'')
     {
-        arg.erase( 0, 1 ); // erase the first quote
-        arg.erase( arg.size() - 1 ); // erase the last quote
+        arg.erase( 0, 1); // erase the first quote
+        arg.erase( arg.size() - 1); // erase the last quote
     }
 
-    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha);
-    if(is_string)
-    {
-        out = "NULL";
-        return true;
-    }
+    out = std::format("substring(arrayStringConcat( arrayMap(x ->leftPad(x, 8, '0') ,arrayMap(x ->empty(x) ? '0' : x, arrayResize(splitByChar('.', '{}') , 4)))),8)", arg);
     
-    std::vector<String> tokens(4 ,"0");
-    boost::split(tokens, arg, boost::is_any_of("."));
-
-    if(tokens.size() >4)
-    {
-        out = "NULL";
-        return true;
-    }
-    
-    while(tokens.size() < 4)
-    {
-        tokens.push_back("0");
-    }
-
-    for(int i = 0;i<4;i++)
-    {
-        if(std::stoi(tokens[i]) > 99999999 )
-        {
-            out = "NULL";
-            return true;
-        }
-    }
-    
-    tokens[0] = tokens[0] + String(8 - tokens[0].length(), '0');
-    tokens[1] = tokens[1] + String(8 - tokens[1].length(), '0');
-    tokens[2] = tokens[2] + String(8 - tokens[2].length(), '0');
-
-    auto result = tokens[0] + tokens[1] + tokens[2] + tokens[3];
-
-    out = std::format("toInt128('{}')", result);
     return true;
 }
 
-bool ReplaceRegex::convertImpl(String & out,IParser::Pos & pos)
+bool ReplaceRegex::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "replaceRegexpAll");
 }
 
-bool Reverse::convertImpl(String & out,IParser::Pos & pos)
+bool Reverse::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -548,19 +508,14 @@ bool Reverse::convertImpl(String & out,IParser::Pos & pos)
 
     ++pos;
 
-    //if(pos->type != TokenType::QuotedIdentifier || pos->type != TokenType::StringLiteral)
-   // {
+    auto arg = getConvertedArgument(fn_name, pos);
         
-        auto arg = getConvertedArgument(fn_name, pos);
-        
-        out = std::format("reverse(accurateCastOrNull({} , 'String'))" , arg);
-    //}
+    out = std::format("reverse(accurateCastOrNull({} , 'String'))", arg);
 
     return true;
-   
 }
 
-bool Split::convertImpl(String & out,IParser::Pos & pos)
+bool Split::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -581,18 +536,17 @@ bool Split::convertImpl(String & out,IParser::Pos & pos)
 
     out = "splitByString(" + delimiter + ", " + source + ")";
     if (requested_index >= 0)
-    {
         out = "arrayPushBack([],arrayElement(" + out + ", " + std::to_string(requested_index + 1) + "))";
-    }
+        
     return true;
 }
 
-bool StrCat::convertImpl(String & out,IParser::Pos & pos)
+bool StrCat::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "concat");
 }
 
-bool StrCatDelim::convertImpl(String & out,IParser::Pos & pos)
+bool StrCatDelim::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -623,7 +577,7 @@ bool StrCatDelim::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool StrCmp::convertImpl(String & out,IParser::Pos & pos)
+bool StrCmp::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -638,12 +592,12 @@ bool StrCmp::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool StrLen::convertImpl(String & out,IParser::Pos & pos)
+bool StrLen::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "lengthUTF8");
 }
 
-bool StrRep::convertImpl(String & out,IParser::Pos & pos)
+bool StrRep::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -669,7 +623,7 @@ bool StrRep::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool SubString::convertImpl(String & out,IParser::Pos & pos)
+bool SubString::convertImpl(String & out, IParser::Pos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -698,17 +652,17 @@ bool SubString::convertImpl(String & out,IParser::Pos & pos)
     return true;
 }
 
-bool ToLower::convertImpl(String & out,IParser::Pos & pos)
+bool ToLower::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "lower");
 }
 
-bool ToUpper::convertImpl(String & out,IParser::Pos & pos)
+bool ToUpper::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "upper");
 }
 
-bool Translate::convertImpl(String & out,IParser::Pos & pos)
+bool Translate::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -725,7 +679,7 @@ bool Translate::convertImpl(String & out,IParser::Pos & pos)
     String len_diff = std::format("length({}) - length({})", from, to);
     String to_str = std::format("multiIf(length({1}) = 0, {0}, {2} > 0, concat({1},repeat(substr({1},length({1}),1),toUInt16({2}))),{2} < 0 , substr({1},1,length({0})),{1})",
          from, to, len_diff);
-    out = std::format("if (length({3}) = 0,'',translate({0},{1},{2}))", source, from, to_str, to); 
+    out = std::format("if (length({3}) = 0,'',translate({0},{1},{2}))", source, from, to_str, to);
     return true;
 }
 
@@ -768,12 +722,12 @@ bool TrimStart::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool URLDecode::convertImpl(String & out,IParser::Pos & pos)
+bool URLDecode::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "decodeURLComponent");
 }
 
-bool URLEncode::convertImpl(String & out,IParser::Pos & pos)
+bool URLEncode::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "encodeURLComponent");
 }
