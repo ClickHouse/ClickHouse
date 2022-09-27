@@ -42,6 +42,14 @@ endif ()
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
+if (NO_SSE3_OR_HIGHER)
+    # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
+    # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
+    # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
+    # machinery and always use generic code. (The cleaner alternative is removing FORCE_INLINE but that impacts performance too much.)
+    set(ENABLE_MULTITARGET_CODE OFF)
+endif()
+
 if (ENABLE_MULTITARGET_CODE)
     add_definitions(-DENABLE_MULTITARGET_CODE=1)
 else()
@@ -570,6 +578,10 @@ if (TARGET ch_contrib::rapidjson)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
+
+if (TARGET ch_contrib::annoy)
+    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
+endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 

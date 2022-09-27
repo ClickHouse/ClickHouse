@@ -5,6 +5,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
@@ -30,6 +31,14 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace ActionLocks
+{
+    extern StorageActionBlockType PartsMerge;
+    extern StorageActionBlockType PartsFetch;
+    extern StorageActionBlockType PartsSend;
+    extern StorageActionBlockType DistributedSend;
 }
 
 static void executeCreateQuery(
@@ -327,8 +336,23 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         }
 
         auto local_context = Context::createCopy(context);
+
+        /// We have to stop background operations that may lock table for share to avoid DEADLOCK_AVOIDED error
+        /// on moving tables from Ordinary database. Server has not started to accept connections yet,
+        /// so there are no user queries, only background operations
+        LOG_INFO(log, "Will stop background operations to be able to rename tables in Ordinary database {}", database_name);
+        static const auto actions_to_stop = {
+            ActionLocks::PartsMerge, ActionLocks::PartsFetch, ActionLocks::PartsSend, ActionLocks::DistributedSend
+        };
+        for (const auto & action : actions_to_stop)
+            InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ false, database_name, database, context, log);
+
         local_context->setSetting("check_table_dependencies", false);
         convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
+
+        LOG_INFO(log, "Will start background operations after renaming tables in database {}", database_name);
+        for (const auto & action : actions_to_stop)
+            InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ true, database_name, database, context, log);
 
         auto new_database = DatabaseCatalog::instance().getDatabase(database_name);
         UUID db_uuid = new_database->getUUID();
@@ -366,8 +390,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     catch (Exception & e)
     {
         e.addMessage("Exception while trying to convert database {} from Ordinary to Atomic. It may be in some intermediate state."
-            "You can finish conversion manually by moving the rest tables from {} to {} (using RENAME TABLE)"
-            "and executing DROP DATABASE {} and RENAME DATABASE {} TO {}.",
+            " You can finish conversion manually by moving the rest tables from {} to {} (using RENAME TABLE)"
+            " and executing DROP DATABASE {} and RENAME DATABASE {} TO {}.",
             database_name, database_name, tmp_name, database_name, tmp_name, database_name);
         throw;
     }

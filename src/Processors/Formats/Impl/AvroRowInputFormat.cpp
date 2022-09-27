@@ -105,45 +105,45 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
     switch (type.idx)
     {
         case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(value);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(value);
+            assert_cast<ColumnUInt64 &>(column).insertValue(static_cast<UInt64>(value));
             break;
         case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(value);
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(value);
+            assert_cast<ColumnInt64 &>(column).insertValue(static_cast<Int64>(value));
             break;
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(value);
+            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
             break;
         case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(value);
+            assert_cast<ColumnFloat64 &>(column).insertValue(static_cast<Float64>(value));
             break;
         case TypeIndex::Decimal32:
-            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(value);
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Decimal64:
-            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         case TypeIndex::DateTime64:
-            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(value);
+            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         default:
             throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);

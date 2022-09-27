@@ -1763,7 +1763,7 @@ static void executeMergeAggregatedImpl(
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads);
+    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2206,7 +2206,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_remote)
-            max_streams *= settings.max_streams_to_max_threads_ratio;
+            max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
@@ -2359,6 +2359,8 @@ static Aggregator::Params getAggregatorParams(
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
+        settings.max_block_size,
+        settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         stats_collecting_params
     };

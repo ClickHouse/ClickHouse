@@ -10,6 +10,7 @@
 #include <Storages/StorageExternalDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 
 
@@ -102,10 +103,9 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     for (const auto & [header, value] : configuration.headers)
     {
-        auto value_literal = value.safeGet<String>();
         if (header == "Range")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-        headers.emplace_back(std::make_pair(header, value_literal));
+        headers.emplace_back(header, value);
     }
     return headers;
 }
@@ -113,12 +113,15 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageURL::getTableStructureFromData(format,
             filename,
             chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
             getHeaders(),
             std::nullopt,
             context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }

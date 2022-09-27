@@ -38,7 +38,10 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
-        settings.min_count_to_compile_aggregate_expression);
+        settings.min_count_to_compile_aggregate_expression,
+        settings.max_block_size,
+        settings.enable_software_prefetch_in_aggregation,
+        false /* only_merge */);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

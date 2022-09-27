@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int REPLICA_STATUS_CHANGED;
 }
 
 ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicatedMergeTree & storage_)
@@ -54,6 +55,8 @@ void ReplicatedMergeTreeAttachThread::run()
     {
         if (const auto * coordination_exception = dynamic_cast<const Coordination::Exception *>(&e))
             needs_retry = Coordination::isHardwareError(coordination_exception->code);
+        else if (e.code() == ErrorCodes::REPLICA_STATUS_CHANGED)
+            needs_retry = true;
 
         if (needs_retry)
         {
@@ -84,14 +87,14 @@ void ReplicatedMergeTreeAttachThread::run()
 
 void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path)
 {
-    /// Since 20.4 and until 22.9 "/metadata" and "/metadata_version" nodes were created on replica startup.
+    /// Since 20.4 and until 22.9 "/metadata" node was created on replica startup and "/metadata_version" was created on ALTER.
     /// Since 21.12 we could use "/metadata" to check if replica is dropped (see StorageReplicatedMergeTree::dropReplica),
     /// but it did not work correctly, because "/metadata" node was re-created on server startup.
     /// Since 22.9 we do not recreate these nodes and use "/host" to check if replica is dropped.
 
     String replica_metadata;
     const bool replica_metadata_exists = zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
-    if (!replica_metadata_exists || replica_metadata.empty() || !zookeeper->exists(replica_path + "/metadata_version"))
+    if (!replica_metadata_exists || replica_metadata.empty())
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Upgrade from 20.3 and older to 22.9 and newer "
                         "should be done through an intermediate version (failed to get metadata or metadata_version for {},"
@@ -139,17 +142,42 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
     checkHasReplicaMetadataInZooKeeper(zookeeper, replica_path);
 
+    String replica_metadata_version;
+    const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
+    if (replica_metadata_version_exists)
+    {
+        storage.metadata_version = parse<int>(replica_metadata_version);
+    }
+    else
+    {
+        /// Table was created before 20.4 and was never altered,
+        /// let's initialize replica metadata version from global metadata version.
+        Coordination::Stat table_metadata_version_stat;
+        zookeeper->get(zookeeper_path + "/metadata", &table_metadata_version_stat);
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", table_metadata_version_stat.version));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(table_metadata_version_stat.version), zkutil::CreateMode::Persistent));
+
+        Coordination::Responses res;
+        auto code = zookeeper->tryMulti(ops, res);
+
+        if (code == Coordination::Error::ZBADVERSION)
+            throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Failed to initialize metadata_version "
+                                                                "because table was concurrently altered, will retry");
+
+        zkutil::KeeperMultiException::check(code, ops, res);
+    }
+
     storage.checkTableStructure(replica_path, metadata_snapshot);
     storage.checkParts(skip_sanity_checks);
-
-    storage.metadata_version = parse<int>(zookeeper->get(replica_path + "/metadata_version"));
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
     storage.clearOldWriteAheadLogs();
     if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
-        storage.clearOldBrokenPartsFromDetachedDirecory();
+        storage.clearOldBrokenPartsFromDetachedDirectory();
 
     storage.createNewZooKeeperNodes();
     storage.syncPinnedPartUUIDs();
