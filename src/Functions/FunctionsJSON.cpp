@@ -699,7 +699,7 @@ public:
         if (dest.getDataType() == TypeIndex::LowCardinality)
         {
             ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
-            col_low.insertData(reinterpret_cast<const char * >(&value), sizeof(value));
+            col_low.insertData(reinterpret_cast<const char *>(&value), sizeof(value));
         }
         else
         {
@@ -824,8 +824,7 @@ struct JSONExtractTree
     class LowCardinalityFixedStringNode : public Node
     {
     public:
-        LowCardinalityFixedStringNode(const size_t fixed_length_)
-            : fixed_length(fixed_length_) {}
+        LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) {}
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
             auto str = element.getString();
@@ -833,12 +832,15 @@ struct JSONExtractTree
             if (str.size() > fixed_length)
                 return false;
 
+            // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
+            // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
+            // the data is padded here and writen directly to the Low Cardinality Column
             auto padded_str = str.data() + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
 
             assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
             return true;
-
         }
+
     private:
         const size_t fixed_length;
     };
@@ -855,7 +857,7 @@ struct JSONExtractTree
             if (dest.getDataType() == TypeIndex::LowCardinality)
             {
                 ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
-                col_low.insertData(reinterpret_cast<const char * >(&uuid), sizeof(uuid));
+                col_low.insertData(reinterpret_cast<const char *>(&uuid), sizeof(uuid));
             }
             else
             {
@@ -880,6 +882,7 @@ struct JSONExtractTree
             assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
             return true;
         }
+
     private:
         DataTypePtr data_type;
     };
@@ -1128,6 +1131,11 @@ struct JSONExtractTree
             case TypeIndex::UUID: return std::make_unique<UUIDNode>();
             case TypeIndex::LowCardinality:
             {
+                // The low cardinality case is treated in two different ways:
+                // For FixedString type, an especial class is implemented for inserting the data in the destination column,
+                // as the string length must be passed in order to check and pad the incoming data.
+                // For the rest of low cardinality types, the insertion is done in their corresponding class, adapting the data
+                // as needed for the insertData function of the ColumnLowCardinality.
                 auto dictionary_type = typeid_cast<const DataTypeLowCardinality *>(type.get())->getDictionaryType();
                 if ((*dictionary_type).getTypeId() == TypeIndex::FixedString)
                 {
