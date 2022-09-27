@@ -40,6 +40,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Columns & columns, size_t row_
             {
                 WriteBufferFromString text_out(buffer);
                 serializations[column_idx]->serializeText(*column, row_idx, text_out, format_settings);
+                text_out.finalize();
             }
             writeODBCString(out, buffer);
         }

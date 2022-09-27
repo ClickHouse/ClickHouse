@@ -201,11 +201,10 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
     String bytes;
-    {
-        auto read_buf = getReadBufferFromASTInsertQuery(query);
-        WriteBufferFromString write_buf(bytes);
-        copyData(*read_buf, write_buf);
-    }
+    auto read_buf = getReadBufferFromASTInsertQuery(query);
+    WriteBufferFromString write_buf(bytes);
+    copyData(*read_buf, write_buf);
+    write_buf.finalize();
 
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());

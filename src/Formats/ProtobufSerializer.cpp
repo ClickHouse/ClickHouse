@@ -893,6 +893,7 @@ namespace
         {
             WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
+            buf.finalize();
         }
 
         void prepareEnumMapping()
@@ -1382,6 +1383,7 @@ namespace
                 writeDateTimeText(decimal, scale, buf);
             else
                 writeText(decimal, scale, buf, false);
+            buf.finalize();
         }
 
         DecimalType stringToDecimal(const String & str) const
@@ -1473,6 +1475,7 @@ namespace
         {
             WriteBufferFromString buf{str};
             writeText(date, buf);
+            buf.finalize();
         }
 
         static DayNum stringToDate(const String & str)
@@ -1555,6 +1558,7 @@ namespace
         {
             WriteBufferFromString buf{str};
             writeDateTimeText(tm, buf, lut);
+            buf.finalize();
         }
 
         static time_t stringToDateTime(const String & str, const DateLUTImpl & lut)
@@ -1637,6 +1641,7 @@ namespace
         {
             WriteBufferFromString buf{str};
             writeText(uuid, buf);
+            buf.finalize();
         }
 
         std::function<void(UUID)> write_function;
@@ -1712,6 +1717,7 @@ namespace
         {
             WriteBufferFromString buf{str};
             aggregate_function->serialize(data, buf);
+            buf.finalize();
         }
 
         AggregateDataPtr stringToData(const String & str, Arena & arena) const

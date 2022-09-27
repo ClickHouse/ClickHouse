@@ -266,13 +266,17 @@ public:
 
 ClientBase::~ClientBase()
 {
+    if (pager_cmd)
+        pager_cmd->in.close();
+
     std_out.finalize();
 
+    auto * log = &Poco::Logger::get("ClientBase");
     if (out_file_buf)
-        out_file_buf->finalize();
+        tryFinalizeAndLogException(*out_file_buf, log);
 
     if (out_logs_buf)
-        out_logs_buf->finalize();
+        tryFinalizeAndLogException(*out_logs_buf, log);
 }
 
 ClientBase::ClientBase() = default;
@@ -471,8 +475,6 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 {
     have_error = true;
     server_exception = std::move(e);
-    if (output_format)
-        output_format->finalize();
     resetOutput();
 }
 
@@ -1032,8 +1034,11 @@ void ClientBase::onProfileEvents(Block & block)
 void ClientBase::resetOutput()
 {
     if (output_format)
+    {
         output_format->finalize();
-    output_format.reset();
+        output_format.reset();
+    }
+
     logs_out_stream.reset();
 
     if (pager_cmd)

@@ -80,6 +80,8 @@ public:
         /// Don't write prefix if any.
         out->doNotWritePrefix();
         out->write(arg_columns);
+        out->finalizeBuffers();
+        buffer.finalize();
         return col_str;
     }
 

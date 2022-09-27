@@ -64,6 +64,8 @@ void MySQLClient::connect()
 void MySQLClient::disconnect()
 {
     in = nullptr;
+    if (out)
+        out->finalize();
     out = nullptr;
     if (socket)
         socket->close();

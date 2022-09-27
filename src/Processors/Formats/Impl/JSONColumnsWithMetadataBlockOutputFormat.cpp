@@ -2,7 +2,6 @@
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferValidUTF8.h>
 
 namespace DB
 {

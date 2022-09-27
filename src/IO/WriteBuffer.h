@@ -171,7 +171,7 @@ private:
 };
 
 template <typename Object>
-void tryFinalizeAndLogException(Object & obj, Poco::Logger * logger)
+void tryFinalizeAndLogException(Object & obj, Poco::Logger * logger = nullptr, const String & message = "")
 {
     try
     {
@@ -179,7 +179,8 @@ void tryFinalizeAndLogException(Object & obj, Poco::Logger * logger)
     }
     catch (...)
     {
-        tryLogCurrentException(logger);
+        if (logger)
+            tryLogCurrentException(logger, message);
     }
 }
 

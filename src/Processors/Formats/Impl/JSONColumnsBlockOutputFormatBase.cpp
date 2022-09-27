@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferValidUTF8.h>
 #include <Formats/JSONUtils.h>
 
 

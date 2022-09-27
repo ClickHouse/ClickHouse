@@ -446,7 +446,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
         executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
-
+        ostr.finalize();
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
             /// Most queries commit changes to ZooKeeper right before applying local changes,
@@ -457,6 +457,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
     }
     catch (const DB::Exception & e)
     {
+        ostr.finalize();
+
         if (task.is_initial_query)
             throw;
 

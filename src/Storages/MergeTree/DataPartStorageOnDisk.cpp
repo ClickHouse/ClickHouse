@@ -488,8 +488,9 @@ void DataPartStorageOnDisk::writeChecksums(const MergeTreeDataPartChecksums & ch
     try
     {
         auto out = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
-        SCOPE_EXIT(out->finalize());
+        WriteBufferFinalizer finalizer(out.get());
         checksums.write(*out);
+        finalizer.finalize();
 
         volume->getDisk()->moveFile(path + ".tmp", path);
     }
@@ -516,8 +517,9 @@ void DataPartStorageOnDisk::writeColumns(const NamesAndTypesList & columns, cons
     try
     {
         auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
+        WriteBufferFinalizer finalizer(buf.get());
         columns.writeText(*buf);
-        buf->finalize();
+        finalizer.finalize();
 
         volume->getDisk()->moveFile(path + ".tmp", path);
     }
@@ -548,8 +550,9 @@ void DataPartStorageOnDisk::writeVersionMetadata(const VersionMetadata & version
             /// and then overwrite it.
             volume->getDisk()->createFile(path + ".tmp");
             auto buf = volume->getDisk()->writeFile(path + ".tmp", 256);
+            WriteBufferFinalizer finalizer(buf.get());
             version.write(*buf);
-            buf->finalize();
+            finalizer.finalize();
             buf->sync();
         }
 
@@ -585,8 +588,9 @@ void DataPartStorageOnDisk::appendCSNToVersionMetadata(const VersionMetadata & v
     std::string version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
     DiskPtr disk = volume->getDisk();
     auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
+    WriteBufferFinalizer finalizer(out.get());
     version.writeCSN(*out, which_csn);
-    out->finalize();
+    finalizer.finalize();
 }
 
 void DataPartStorageOnDisk::appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const
@@ -594,8 +598,9 @@ void DataPartStorageOnDisk::appendRemovalTIDToVersionMetadata(const VersionMetad
     String version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
     DiskPtr disk = volume->getDisk();
     auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
+    WriteBufferFinalizer finalizer(out.get());
     version.writeRemovalTID(*out, clear);
-    out->finalize();
+    finalizer.finalize();
 
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
     if (!clear)

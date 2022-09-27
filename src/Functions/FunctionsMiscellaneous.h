@@ -274,21 +274,18 @@ private:
 
     static String toString(const DataTypes & data_types)
     {
-        std::string result;
+        WriteBufferFromOwnString buffer;
+        bool first = true;
+        for (const auto & type : data_types)
         {
-            WriteBufferFromString buffer(result);
-            bool first = true;
-            for (const auto & type : data_types)
-            {
-                if (!first)
-                    buffer << ", ";
+            if (!first)
+                buffer << ", ";
 
-                first = false;
-                buffer << type->getName();
-            }
+            first = false;
+            buffer << type->getName();
         }
 
-        return result;
+        return buffer.str();
     }
 };
 

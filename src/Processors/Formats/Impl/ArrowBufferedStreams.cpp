@@ -179,6 +179,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
 
         WriteBufferFromString file_buffer(file_data);
         copyData(buf, file_buffer, is_cancelled);
+        file_buffer.finalize();
     }
 
     return std::make_shared<arrow::io::BufferReader>(arrow::Buffer::FromString(std::move(file_data)));

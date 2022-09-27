@@ -40,6 +40,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
         WriteBufferFromString buf(names_and_paddings[i]);
         writeString(sample.getByPosition(i).name, buf);
         writeCString(": ", buf);
+        buf.finalize();
     }
 
     for (size_t i = 0; i < columns; ++i)

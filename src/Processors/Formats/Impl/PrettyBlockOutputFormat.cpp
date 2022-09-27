@@ -59,11 +59,10 @@ void PrettyBlockOutputFormat::calculateWidths(
 
         for (size_t j = 0; j < num_rows; ++j)
         {
-            {
-                WriteBufferFromString out_serialize(serialized_value);
-                auto serialization = elem.type->getDefaultSerialization();
-                serialization->serializeText(*column, j, out_serialize, format_settings);
-            }
+            WriteBufferFromString out_serialize(serialized_value);
+            auto serialization = elem.type->getDefaultSerialization();
+            serialization->serializeText(*column, j, out_serialize, format_settings);
+            out_serialize.finalize();
 
             /// Avoid calculating width of too long strings by limiting the size in bytes.
             /// Note that it is just an estimation. 4 is the maximum size of Unicode code point in bytes in UTF-8.
@@ -335,10 +334,9 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     size_t value_width, size_t pad_to_width, bool align_right)
 {
     String serialized_value = " ";
-    {
-        WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
-        serialization.serializeText(column, row_num, out_serialize, format_settings);
-    }
+    WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+    serialization.serializeText(column, row_num, out_serialize, format_settings);
+    out_serialize.finalize();
 
     if (value_width > format_settings.pretty.max_value_width)
     {

@@ -93,22 +93,21 @@ bool DatabaseDictionary::empty() const
 ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     String query;
+    WriteBufferFromString buffer(query);
+
+    auto load_result = getContext()->getExternalDictionariesLoader().getLoadResult(table_name);
+    if (!load_result.config)
     {
-        WriteBufferFromString buffer(query);
-
-        auto load_result = getContext()->getExternalDictionariesLoader().getLoadResult(table_name);
-        if (!load_result.config)
-        {
-            if (throw_on_error)
-                throw Exception{"Dictionary " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY};
-            return {};
-        }
-
-        auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config));
-        buffer << "CREATE TABLE " << backQuoteIfNeed(getDatabaseName()) << '.' << backQuoteIfNeed(table_name) << " (";
-        buffer << StorageDictionary::generateNamesAndTypesDescription(names_and_types);
-        buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
+        if (throw_on_error)
+            throw Exception{"Dictionary " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY};
+        return {};
     }
+
+    auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config));
+    buffer << "CREATE TABLE " << backQuoteIfNeed(getDatabaseName()) << '.' << backQuoteIfNeed(table_name) << " (";
+    buffer << StorageDictionary::generateNamesAndTypesDescription(names_and_types);
+    buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
+    buffer.finalize();
 
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
@@ -126,12 +125,11 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
 ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
 {
     String query;
-    {
-        WriteBufferFromString buffer(query);
-        buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
-        if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-            buffer << " COMMENT " << backQuote(comment_value);
-    }
+    WriteBufferFromString buffer(query);
+    buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        buffer << " COMMENT " << backQuote(comment_value);
+    buffer.finalize();
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
     return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);

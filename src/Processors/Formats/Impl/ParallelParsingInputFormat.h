@@ -104,6 +104,7 @@ public:
 
     ~ParallelParsingInputFormat() override
     {
+        LOG_DEBUG(&Poco::Logger::get("ParallelParsing"), "destruct");
         finishAndWait();
     }
 
@@ -136,6 +137,7 @@ private:
          * IInputFormat that checks whether it was cancelled.
          */
 
+        LOG_DEBUG(&Poco::Logger::get("ParallelParsing"), "cancel");
         finishAndWait();
     }
 
@@ -275,6 +277,7 @@ private:
 
     void finishAndWait()
     {
+        LOG_DEBUG(&Poco::Logger::get("ParallelParsing"), "finishAndWait");
         /// Defending concurrent segmentator thread join
         std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
 

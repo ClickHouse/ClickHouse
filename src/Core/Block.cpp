@@ -760,6 +760,9 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
         rhs_diff_writer << it->dumpStructure();
         rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
     }
+
+    lhs_diff_writer.finalize();
+    rhs_diff_writer.finalize();
 }
 
 

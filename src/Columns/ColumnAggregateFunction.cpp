@@ -420,10 +420,9 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = AggregateFunctionStateData();
     field.get<AggregateFunctionStateData &>().name = type_string;
-    {
-        WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
-        func->serialize(data[n], buffer, version);
-    }
+    WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
+    func->serialize(data[n], buffer, version);
+    buffer.finalize();
     return field;
 }
 
@@ -431,10 +430,9 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = AggregateFunctionStateData();
     res.get<AggregateFunctionStateData &>().name = type_string;
-    {
-        WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
-        func->serialize(data[n], buffer, version);
-    }
+    WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
+    func->serialize(data[n], buffer, version);
+    buffer.finalize();
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
@@ -652,6 +650,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     {
         WriteBufferFromString buffer(serialized.data);
         func->serialize(place, buffer, version);
+        buffer.finalize();
     }
     catch (...)
     {

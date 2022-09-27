@@ -63,7 +63,7 @@ namespace ErrorCodes
 Connection::~Connection()
 {
     if (maybe_compressed_out && is_compressed)
-        maybe_compressed_out->finalize();
+        tryFinalizeAndLogException(*maybe_compressed_out, log_wrapper.get());
 }
 
 Connection::Connection(const String & host_, UInt16 port_,

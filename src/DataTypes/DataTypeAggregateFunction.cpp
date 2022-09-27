@@ -104,6 +104,7 @@ Field DataTypeAggregateFunction::getDefault() const
     {
         WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
         function->serialize(place, buffer_from_field, version);
+        buffer_from_field.finalize();
     }
     catch (...)
     {

@@ -232,9 +232,9 @@ InputFormatPtr FormatFactory::getInput(
     if (parallel_parsing)
     {
         const auto & input_getter = getCreators(name).input_creator;
-
+        LOG_DEBUG(&Poco::Logger::get("FormatFacrory"), "max_block_size: {}", max_block_size);
         RowInputFormatParams row_input_format_params;
-        row_input_format_params.max_block_size = max_block_size;
+        row_input_format_params.max_block_size = DEFAULT_BLOCK_SIZE;
         row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
         row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
         row_input_format_params.max_execution_time = settings.max_execution_time;

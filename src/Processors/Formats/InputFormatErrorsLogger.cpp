@@ -63,9 +63,9 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
 
 InputFormatErrorsLogger::~InputFormatErrorsLogger()
 {
-    writer->finalize();
-    writer->flush();
-    write_buf->finalize();
+    auto * log = &Poco::Logger::get("InputFormatErrorsLogger");
+    tryFinalizeAndLogException(*writer, log);
+    tryFinalizeAndLogException(*write_buf, log);
 }
 
 void InputFormatErrorsLogger::logErrorImpl(ErrorEntry entry)

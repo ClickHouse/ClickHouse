@@ -562,6 +562,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             temp_data_file.emplace(temporary_disk);
             auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getPath());
             copyData(*in, *out);
+            out->finalize();
             out.reset();
             in = createReadBufferFromFileBase(temp_data_file->getPath(), {});
         }

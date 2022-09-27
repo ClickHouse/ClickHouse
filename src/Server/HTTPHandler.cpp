@@ -910,15 +910,7 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Cannot send exception to client");
-
-    try
-    {
-        used_output.finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
-    }
+    tryFinalizeAndLogException(used_output, log, "Cannot flush data to client (after sending exception)");
 }
 
 

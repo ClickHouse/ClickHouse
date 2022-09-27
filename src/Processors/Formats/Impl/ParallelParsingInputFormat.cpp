@@ -91,6 +91,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         Chunk chunk;
         while (!parsing_finished && (chunk = parser.getChunk()))
         {
+            LOG_DEBUG(&Poco::Logger::get("ParallelParsing"), "parsed Chunk {}", chunk.getNumRows());
             /// Variable chunk is moved, but it is not really used in the next iteration.
             /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
@@ -148,6 +149,8 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 
 Chunk ParallelParsingInputFormat::generate()
 {
+    LOG_DEBUG(&Poco::Logger::get("ParallelParsing"), "generate");
+
     /// Delayed launching of segmentator thread
     if (unlikely(!parsing_started.exchange(true)))
     {
@@ -239,6 +242,8 @@ Chunk ParallelParsingInputFormat::generate()
             segmentator_condvar.notify_all();
         }
     }
+
+    LOG_DEBUG(&Poco::Logger::get("ParallelParsing"), "generate finished {}", res.getNumRows());
 
     return res;
 }

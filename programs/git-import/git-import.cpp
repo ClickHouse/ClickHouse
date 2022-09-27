@@ -533,9 +533,9 @@ struct ResultWriter
 
     ~ResultWriter()
     {
-        commits.finalize();
-        file_changes.finalize();
-        line_changes.finalize();
+        tryFinalizeAndLogException(commits);
+        tryFinalizeAndLogException(file_changes);
+        tryFinalizeAndLogException(line_changes);
     }
 };
 

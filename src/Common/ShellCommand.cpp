@@ -285,6 +285,9 @@ int ShellCommand::tryWait()
     out.close();
     err.close();
 
+    for (auto & [fd, wb] : write_fds)
+        wb.close();
+
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
     int status = 0;

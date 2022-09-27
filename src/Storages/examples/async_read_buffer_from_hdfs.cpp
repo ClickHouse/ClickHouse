@@ -31,6 +31,7 @@ int main()
     String output;
     WriteBufferFromString out(output);
     copyData(buf, out);
+    out.finalize();
     std::cout << "output:" << output << std::endl;
     return 0;
 }

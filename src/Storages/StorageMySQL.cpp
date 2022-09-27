@@ -34,10 +34,9 @@ namespace ErrorCodes
 static String backQuoteMySQL(const String & x)
 {
     String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeBackQuotedStringMySQL(x, wb);
-    }
+    WriteBufferFromString wb(res);
+    writeBackQuotedStringMySQL(x, wb);
+    wb.finalize();
     return res;
 }
 

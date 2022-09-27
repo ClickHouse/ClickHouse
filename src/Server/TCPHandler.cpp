@@ -114,13 +114,14 @@ TCPHandler::~TCPHandler()
     try
     {
         state.reset();
-        if (out)
-            out->finalize();
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
+
+    if (out)
+        tryFinalizeAndLogException(*out, log);
 }
 
 void TCPHandler::runImpl()
