@@ -501,6 +501,15 @@ void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
         callback(column);
 }
 
+void ColumnTuple::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    for (auto & column : columns)
+    {
+        callback(column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+}
+
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))

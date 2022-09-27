@@ -72,10 +72,6 @@ public:
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        return getNestedColumn()->getDataAtWithTerminatingZero(n);
-    }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -112,6 +108,15 @@ public:
     void forEachSubcolumn(IColumn::ColumnCallback callback) override
     {
         callback(column_holder);
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
+    void forEachSubcolumnRecursively(IColumn::ColumnCallback callback) override
+    {
+        callback(column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
