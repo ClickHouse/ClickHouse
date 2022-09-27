@@ -1507,8 +1507,10 @@ bool MutateTask::prepare()
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
+        auto settings_ptr = ctx->data->getSettings();
+        bool copy_instead_of_hardlink = ctx->data->supportsReplication() && settings_ptr->allow_remote_fs_zero_copy_replication && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, copy_instead_of_hardlink);
         ctx->temporary_directory_lock = std::move(lock);
         promise.set_value(std::move(part));
         return false;
