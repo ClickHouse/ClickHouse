@@ -6,7 +6,8 @@
 #include <functional>
 #include <filesystem>
 
-#include "Common/ZooKeeper/Types.h"
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
@@ -1215,10 +1216,12 @@ Coordination::RequestPtr makeGetRequest(const std::string & path)
     return request;
 }
 
-Coordination::RequestPtr makeListRequest(const std::string & path)
+Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type)
 {
-    auto request = std::make_shared<Coordination::ListRequest>();
+    // Keeper server that support MultiRead also support FilteredList
+    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
     request->path = path;
+    request->list_request_type = list_request_type;
     return request;
 }
 
