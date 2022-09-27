@@ -7,6 +7,7 @@
 #include <vector>
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
 
@@ -64,7 +65,6 @@ struct S3Settings
 class StorageS3Settings
 {
 public:
-    StorageS3Settings() = default;
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings);
 
     S3Settings getSettings(const String & endpoint) const;

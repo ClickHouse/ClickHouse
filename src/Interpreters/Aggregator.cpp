@@ -3,6 +3,10 @@
 #include <numeric>
 #include <Poco/Util/Application.h>
 
+#ifdef OS_LINUX
+#    include <unistd.h>
+#endif
+
 #include <base/sort.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
@@ -282,6 +286,26 @@ DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Agg
         keys_positions[i] = header.getPositionByName(params.keys[i]);
     return keys_positions;
 }
+
+template <typename HashTable, typename KeyHolder>
+concept HasPrefetchMemberFunc = requires
+{
+    {std::declval<HashTable>().prefetch(std::declval<KeyHolder>())};
+};
+
+size_t getMinBytesForPrefetch()
+{
+    size_t l2_size = 0;
+
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+    if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+        l2_size = ret;
+#endif
+
+    /// 256KB looks like a reasonable default L2 size. 4 is empirical constant.
+    return 4 * std::max<size_t>(l2_size, 256 * 1024);
+}
+
 }
 
 namespace DB
@@ -325,7 +349,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 
     switch (type)
     {
-    #define M(NAME) \
+#define M(NAME) \
         case Type::NAME: \
             NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
             (NAME).reset(); \
@@ -539,7 +563,10 @@ public:
 #endif
 
 Aggregator::Aggregator(const Block & header_, const Params & params_)
-    : header(header_), keys_positions(calculateKeysPositions(header, params_)), params(params_)
+    : header(header_)
+    , keys_positions(calculateKeysPositions(header, params_))
+    , params(params_)
+    , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -970,24 +997,38 @@ void NO_INLINE Aggregator::executeImpl(
 
     if (!no_more_keys)
     {
+        /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+        const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+            && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
         {
-            executeImplBatch<false, true>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            if (prefetch)
+                executeImplBatch<false, true, true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            else
+                executeImplBatch<false, true, false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
         }
         else
 #endif
         {
-            executeImplBatch<false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            if (prefetch)
+                executeImplBatch<false, false, true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            else
+                executeImplBatch<false, false, false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
         }
     }
     else
     {
-        executeImplBatch<true, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+        executeImplBatch<true, false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
     }
 }
 
-template <bool no_more_keys, bool use_compiled_functions, typename Method>
+template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     typename Method::State & state,
@@ -997,6 +1038,12 @@ void NO_INLINE Aggregator::executeImplBatch(
     AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr overflow_row) const
 {
+    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
+
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
     {
@@ -1006,7 +1053,21 @@ void NO_INLINE Aggregator::executeImplBatch(
         /// For all rows.
         AggregateDataPtr place = aggregates_pool->alloc(0);
         for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            {
+                if (i == row_begin + prefetching.iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                if (i + prefetch_look_ahead < row_end)
+                {
+                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                    method.data.prefetch(std::move(key_holder));
+                }
+            }
+
             state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+        }
         return;
     }
 
@@ -1059,6 +1120,18 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         if constexpr (!no_more_keys)
         {
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            {
+                if (i == row_begin + prefetching.iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                if (i + prefetch_look_ahead < row_end)
+                {
+                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                    method.data.prefetch(std::move(key_holder));
+                }
+            }
+
             auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
@@ -1131,7 +1204,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 continue;
 
             AggregateFunctionInstruction * inst = aggregate_instructions + i;
-            size_t arguments_size = inst->that->getArgumentTypes().size();
+            size_t arguments_size = inst->that->getArgumentTypes().size(); // NOLINT
 
             for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
@@ -1530,8 +1603,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     file_buf.next();
 
     double elapsed_seconds = watch.elapsedSeconds();
-    double compressed_bytes = file_buf.count();
-    double uncompressed_bytes = compressed_buf.count();
+    size_t compressed_bytes = file_buf.count();
+    size_t uncompressed_bytes = compressed_buf.count();
 
     {
         std::lock_guard lock(temporary_files.mutex);
@@ -1553,12 +1626,12 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         rows,
         ReadableSize(uncompressed_bytes),
         ReadableSize(compressed_bytes),
-        uncompressed_bytes / rows,
-        compressed_bytes / rows,
-        uncompressed_bytes / compressed_bytes,
-        rows / elapsed_seconds,
-        ReadableSize(uncompressed_bytes / elapsed_seconds),
-        ReadableSize(compressed_bytes / elapsed_seconds));
+        static_cast<double>(uncompressed_bytes) / rows,
+        static_cast<double>(compressed_bytes) / rows,
+        static_cast<double>(uncompressed_bytes) / compressed_bytes,
+        static_cast<double>(rows) / elapsed_seconds,
+        ReadableSize(static_cast<double>(uncompressed_bytes) / elapsed_seconds),
+        ReadableSize(static_cast<double>(compressed_bytes) / elapsed_seconds));
 }
 
 
@@ -2338,16 +2411,13 @@ void NO_INLINE Aggregator::mergeDataNullKey(
 }
 
 
-template <typename Method, bool use_compiled_functions, typename Table>
-void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst,
-    Table & table_src,
-    Arena * arena) const
+template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
+void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const
 {
     if constexpr (Method::low_cardinality_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    table_src.mergeToViaEmplace(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+    auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
     {
         if (!inserted)
         {
@@ -2362,7 +2432,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
                     for (size_t i = 0; i < params.aggregates_size; ++i)
                     {
                         if (!is_aggregate_function_compiled[i])
-                            aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+                            aggregate_functions[i]->merge(
+                                dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
                     }
 
                     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2388,7 +2459,9 @@ void NO_INLINE Aggregator::mergeDataImpl(
         }
 
         src = nullptr;
-    });
+    };
+
+    table_src.template mergeToViaEmplace<decltype(merge), prefetch>(table_dst, std::move(merge));
 
     table_src.clearAndShrink();
 }
@@ -2483,6 +2556,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
+    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
@@ -2496,18 +2572,22 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder)
             {
-                mergeDataImpl<Method, true>(
-                    getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool);
+                if (prefetch)
+                    mergeDataImpl<Method, true, true>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
+                else
+                    mergeDataImpl<Method, true, false>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
             }
             else
 #endif
             {
-                mergeDataImpl<Method, false>(
-                    getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool);
+                if (prefetch)
+                    mergeDataImpl<Method, false, true>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
+                else
+                    mergeDataImpl<Method, false, false>(
+                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
             }
         }
         else if (res->without_key)
@@ -2543,6 +2623,10 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 {
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
+
+    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst))
@@ -2552,18 +2636,22 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            mergeDataImpl<Method, true>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena);
+            if (prefetch)
+                mergeDataImpl<Method, true, true>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
+            else
+                mergeDataImpl<Method, true, false>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
         }
         else
 #endif
         {
-            mergeDataImpl<Method, false>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena);
+            if (prefetch)
+                mergeDataImpl<Method, false, true>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
+            else
+                mergeDataImpl<Method, false, false>(
+                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
         }
     }
 }
