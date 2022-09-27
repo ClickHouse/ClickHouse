@@ -494,13 +494,10 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     std::optional<OperationType> operation_type;
 private:
     void checkOperationType(OperationType type);
-
 };
 
-struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
+struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
 {
-    OpNum getOpNum() const override { return OpNum::Multi; }
-
     explicit ZooKeeperMultiResponse(const Requests & requests)
     {
         responses.reserve(requests.size());
@@ -521,6 +518,18 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
     size_t bytesSize() const override { return MultiResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
+};
+
+struct ZooKeeperMultiWriteResponse final : public ZooKeeperMultiResponse
+{
+    OpNum getOpNum() const override { return OpNum::Multi; }
+    using ZooKeeperMultiResponse::ZooKeeperMultiResponse;
+};
+
+struct ZooKeeperMultiReadResponse final : public ZooKeeperMultiResponse
+{
+    OpNum getOpNum() const override { return OpNum::MultiRead; }
+    using ZooKeeperMultiResponse::ZooKeeperMultiResponse;
 };
 
 /// Fake internal coordination (keeper) response. Never received from client
