@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
@@ -48,9 +49,10 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const ValueSizeMap & /* avg_value_size_hints */,
     const ReadBufferFromFileBase::ProfileCallback & /* profile_callback */) const
 {
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
     return std::make_unique<MergeTreeReaderInMemory>(
-        ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
+        read_info, ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
@@ -78,7 +80,7 @@ DataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_rel
     auto new_data_part = storage.createPart(name, new_type, info, new_data_part_storage);
 
     new_data_part->uuid = uuid;
-    new_data_part->setColumns(columns);
+    new_data_part->setColumns(columns, {});
     new_data_part->partition.value = partition.value;
     new_data_part->minmax_idx = minmax_idx;
 
@@ -118,7 +120,7 @@ DataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_rel
             auto projection_data_part
                 = storage.createPart(projection_name, projection_type, projection_info, projection_part_storage_builder->getStorage(), parent_part);
             projection_data_part->is_temp = false; // clean up will be done on parent part
-            projection_data_part->setColumns(projection->getColumns());
+            projection_data_part->setColumns(projection->getColumns(), {});
 
             projection_part_storage_builder->createDirectories();
             const auto & desc = projections.get(name);

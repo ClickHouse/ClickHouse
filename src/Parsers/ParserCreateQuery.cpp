@@ -31,6 +31,7 @@ namespace ErrorCodes
 
 namespace
 {
+
 ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_comment("COMMENT");
@@ -41,7 +42,9 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
     return comment;
 }
+
 }
+
 
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -149,7 +152,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_assume("ASSUME");
 
     ParserIdentifier name_p;
-    ParserLogicalOrExpression expression_p;
+    ParserExpression expression_p;
 
     ASTPtr name;
     ASTPtr expr;
@@ -855,8 +858,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserStorage storage_p;
     ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
-    ParserIntervalOperatorExpression watermark_p;
-    ParserIntervalOperatorExpression lateness_p;
+    ParserExpression watermark_p;
+    ParserExpression lateness_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr table;

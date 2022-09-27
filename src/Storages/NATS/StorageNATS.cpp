@@ -92,10 +92,24 @@ StorageNATS::StorageNATS(
 
     try
     {
-        connection = std::make_shared<NATSConnectionManager>(configuration, log);
-        if (!connection->connect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to {}. Nats last error: {}",
-                            connection->connectionInfoForLog(), nats_GetLastError(nullptr));
+        size_t num_tries = nats_settings->nats_startup_connect_tries;
+        for (size_t i = 0; i < num_tries; ++i)
+        {
+            connection = std::make_shared<NATSConnectionManager>(configuration, log);
+
+            if (connection->connect())
+                break;
+
+            if (i == num_tries - 1)
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_CONNECT_NATS,
+                    "Cannot connect to {}. Nats last error: {}",
+                    connection->connectionInfoForLog(), nats_GetLastError(nullptr));
+            }
+
+            LOG_DEBUG(log, "Connect attempt #{} failed, error: {}. Reconnecting...", i + 1, nats_GetLastError(nullptr));
+        }
     }
     catch (...)
     {
@@ -144,6 +158,8 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
+    /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
+    modified_context->setSetting("max_analyze_depth", Field{0});
 
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);

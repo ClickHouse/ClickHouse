@@ -318,6 +318,11 @@ DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
     return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
 }
 
+void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings, reader.getEscapingRule());
+}
+
 void registerInputFormatCustomSeparated(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
@@ -348,6 +353,24 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings);
             });
+            if (!with_types)
+            {
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
+                {
+                    String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
+                    if (!with_names)
+                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                    return result + fmt::format(
+                            ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                            " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                            settings.custom.result_before_delimiter,
+                            settings.custom.row_before_delimiter,
+                            settings.custom.field_delimiter,
+                            settings.custom.row_after_delimiter,
+                            settings.custom.row_between_delimiter,
+                            settings.custom.result_after_delimiter);
+                });
+            }
         };
 
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);

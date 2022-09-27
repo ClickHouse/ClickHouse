@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/create/role
 sidebar_position: 40
 sidebar_label: "Роль"
 ---
@@ -11,7 +12,7 @@ sidebar_label: "Роль"
 
 ```sql
 CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 ...]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
 ## Управление ролями {#managing-roles}

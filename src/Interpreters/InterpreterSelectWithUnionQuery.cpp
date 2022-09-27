@@ -317,13 +317,13 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             data_streams[i] = plans[i]->getCurrentDataStream();
         }
 
-        auto max_threads = context->getSettingsRef().max_threads;
+        auto max_threads = settings.max_threads;
         auto union_step = std::make_unique<UnionStep>(std::move(data_streams), max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
         const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
-        if (query.union_mode == SelectUnionMode::DISTINCT)
+        if (query.union_mode == SelectUnionMode::UNION_DISTINCT)
         {
             /// Add distinct transform
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);

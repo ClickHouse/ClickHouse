@@ -1,4 +1,3 @@
-SET prefer_localhost_replica=0;
 -- { echoOn }
 SELECT toString(dummy) as dummy FROM remote('127.{1,1}', 'system.one') GROUP BY dummy;
 SELECT toString(dummy+1) as dummy FROM remote('127.{1,1}', 'system.one') GROUP BY dummy;

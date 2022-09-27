@@ -184,12 +184,12 @@ namespace
                     std::vector<String> hhmmss;
                     boost::split(hhmmss, time_str, [](char c) { return c == ':'; });
                     Int64 v = 0;
+
                     if (hhmmss.size() == 3)
-                    {
-                        v = (std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000;
-                    }
+                        v = static_cast<Int64>((std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000);
                     else
                         throw Exception("Unsupported value format", ErrorCodes::NOT_IMPLEMENTED);
+
                     if (negative) v = -v;
                     assert_cast<ColumnInt64 &>(column).insertValue(v);
                     read_bytes_size += value.size();
@@ -202,7 +202,7 @@ namespace
                 break;
             }
             case ValueType::vtFloat32:
-                assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
+                assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value.getDouble()));
                 read_bytes_size += 4;
                 break;
             case ValueType::vtFloat64:

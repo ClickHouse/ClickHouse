@@ -109,7 +109,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     const size_t tuple_size = columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = DB::get<Tuple &>(res);
+    Tuple & res_tuple = res.get<Tuple &>();
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
@@ -137,7 +137,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const auto & tuple = DB::get<const Tuple &>(x);
+    const auto & tuple = x.get<const Tuple &>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -501,6 +501,15 @@ void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
         callback(column);
 }
 
+void ColumnTuple::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    for (auto & column : columns)
+    {
+        callback(column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+}
+
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
@@ -559,17 +568,6 @@ double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
-}
-
-SerializationInfoPtr ColumnTuple::getSerializationInfo() const
-{
-    MutableSerializationInfos infos;
-    infos.reserve(columns.size());
-
-    for (const auto & column : columns)
-        infos.push_back(const_pointer_cast<SerializationInfo>(column->getSerializationInfo()));
-
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), SerializationInfo::Settings{});
 }
 
 }

@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/integration/
 title: Интеграция ClickHouse с другими системами
 toc_hidden_folder: true
 sidebar_position: 4
@@ -15,5 +16,6 @@ sidebar_label: Интеграция
 
 :::info "Если вы не нашли то, что искали"
     Загляните в другие подразделы F.A.Q. или поищите в остальных разделах документации, ориентируйтесь по оглавлению слева.
+:::
 
 [Original article](https://clickhouse.com/docs/ru/faq/integration/)

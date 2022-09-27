@@ -153,6 +153,9 @@ template struct SettingFieldNumber<Int64>;
 template struct SettingFieldNumber<float>;
 template struct SettingFieldNumber<bool>;
 
+template struct SettingAutoWrapper<SettingFieldNumber<UInt64>>;
+template struct SettingAutoWrapper<SettingFieldNumber<Int64>>;
+template struct SettingAutoWrapper<SettingFieldNumber<float>>;
 
 namespace
 {

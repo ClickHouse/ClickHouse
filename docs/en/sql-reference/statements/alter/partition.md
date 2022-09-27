@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/alter/partition
 sidebar_position: 38
 sidebar_label: PARTITION
+title: "Manipulating Partitions and Parts"
 ---
-
-# Manipulating Partitions and Parts
 
 The following operations with [partitions](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 

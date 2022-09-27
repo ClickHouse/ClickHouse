@@ -382,7 +382,7 @@ bool StorageLiveView::getNewBlocks()
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
 
     /// can't set mergeable_blocks here or anywhere else outside the writeIntoLiveView function
-    /// as there could be a race codition when the new block has been inserted into
+    /// as there could be a race condition when the new block has been inserted into
     /// the source table by the PushingToViews chain and this method
     /// called before writeIntoLiveView function is called which can lead to
     /// the same block added twice to the mergeable_blocks leading to
@@ -582,7 +582,7 @@ Pipe StorageLiveView::watch(
     if (query.limit_length)
     {
         has_limit = true;
-        limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
+        limit = typeid_cast<ASTLiteral &>(*query.limit_length).value.safeGet<UInt64>();
     }
 
     if (query.is_watch_events)

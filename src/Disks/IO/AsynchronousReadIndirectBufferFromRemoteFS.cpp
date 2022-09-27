@@ -2,8 +2,8 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/ReadSettings.h>
 
 
@@ -37,7 +37,7 @@ namespace ErrorCodes
 
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
-        AsynchronousReaderPtr reader_,
+        IAsynchronousReader & reader_,
         const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t min_bytes_for_seek_)
@@ -111,7 +111,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
         request.ignore = bytes_to_ignore;
         bytes_to_ignore = 0;
     }
-    return reader->submit(request);
+    return reader.submit(request);
 }
 
 

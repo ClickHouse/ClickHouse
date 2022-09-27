@@ -60,6 +60,13 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
 
 bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & rhs) const
 {
+    const auto & lhs_base = getBaseAggregateFunctionWithSameStateRepresentation();
+    const auto & rhs_base = rhs.getBaseAggregateFunctionWithSameStateRepresentation();
+    return lhs_base.haveSameStateRepresentationImpl(rhs_base);
+}
+
+bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const
+{
     bool res = getName() == rhs.getName()
         && parameters == rhs.parameters
         && haveEqualArgumentTypes(rhs);
