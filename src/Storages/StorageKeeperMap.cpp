@@ -384,7 +384,7 @@ StorageKeeperMap::StorageKeeperMap(
         auto code = client->tryMulti(create_requests, create_responses);
         if (code == Coordination::Error::ZNODEEXISTS)
         {
-            LOG_WARNING(log, "It looks like a table on path {} was created by another server at the same moment, will retry", root_path);
+            LOG_INFO(log, "It looks like a table on path {} was created by another server at the same moment, will retry", root_path);
             continue;
         }
         else if (code != Coordination::Error::ZOK)
