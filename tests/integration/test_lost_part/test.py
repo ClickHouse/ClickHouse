@@ -252,7 +252,7 @@ def test_lost_last_part(start_cluster):
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
-        assert int(result) <= 1, "Have a lot of entries in queue {}".format(
+        assert int(result) <= 2, "Have a lot of entries in queue {}".format(
             node1.query("SELECT * FROM system.replication_queue FORMAT Vertical")
         )
         if node1.contains_in_log("Cannot create empty part") and node1.contains_in_log(
