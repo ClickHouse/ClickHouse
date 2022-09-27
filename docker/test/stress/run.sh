@@ -255,6 +255,7 @@ start
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
