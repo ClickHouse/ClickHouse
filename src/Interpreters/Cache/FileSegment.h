@@ -29,6 +29,8 @@ class ReadBufferFromFileBase;
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
+struct FileSegmentsHolder;
+using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 
 
 struct CreateFileSegmentSettings

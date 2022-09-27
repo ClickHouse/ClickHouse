@@ -42,9 +42,9 @@ void printRanges(const auto & segments)
         std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
 }
 
-std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolder & holder)
+std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolderPtr & holder)
 {
-    return std::vector<DB::FileSegmentPtr>(holder.file_segments.begin(), holder.file_segments.end());
+    return std::vector<DB::FileSegmentPtr>(holder->file_segments.begin(), holder->file_segments.end());
 }
 
 String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
@@ -74,9 +74,9 @@ void prepareAndDownload(DB::FileSegmentPtr file_segment)
     download(file_segment);
 }
 
-void complete(const DB::FileSegmentsHolder & holder)
+void complete(const DB::FileSegmentsHolderPtr & holder)
 {
-    for (const auto & file_segment : holder.file_segments)
+    for (const auto & file_segment : holder->file_segments)
     {
         ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(file_segment);
@@ -410,7 +410,7 @@ TEST(FileCache, get)
             /// state is changed not manually via segment->completeWithState(state) but from destructor of holder
             /// and notify_all() is also called from destructor of holder.
 
-            std::optional<DB::FileSegmentsHolder> holder;
+            std::optional<DB::FileSegmentsHolderPtr> holder;
             holder.emplace(cache.getOrSet(key, 3, 23, {})); /// Get [3, 25]
 
             auto segments = fromHolder(*holder);
