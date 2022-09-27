@@ -52,7 +52,7 @@ ln -sf $SRC_PATH/config.d/enable_zero_copy_replication.xml $DEST_SERVER_PATH/con
 ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
-if [ "${DST_PATH}" = "/etc/clickhouse-server" ]
+if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
 then
    ln -sf $SRC_PATH/config.d/legacy_geobase.xml $DEST_SERVER_PATH/config.d/
 fi
