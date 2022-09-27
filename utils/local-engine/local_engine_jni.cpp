@@ -186,7 +186,7 @@ jlong Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeCreat
 {
     LOCAL_ENGINE_JNI_METHOD_START
     auto context = Coordination::Context::createCopy(local_engine::SerializedPlanParser::global_context);
-    
+
     local_engine::SerializedPlanParser parser(context);
     jsize iter_num = env->GetArrayLength(iter_arr);
     for (jsize i = 0; i < iter_num; i++)

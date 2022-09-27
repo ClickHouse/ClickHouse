@@ -67,7 +67,7 @@ void JniErrorsGlobalState::throwException(JNIEnv * env,jclass exception_class, c
         std::string error_msg = message + "\n" + stack_trace;
         env->ThrowNew(exception_class, error_msg.c_str());
     }
-    else 
+    else
     {
         // This will cause a coredump
         throw std::runtime_error("Not found java runtime exception class");

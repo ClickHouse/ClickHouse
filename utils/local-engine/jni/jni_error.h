@@ -5,6 +5,7 @@
 #include <jni.h>
 #include <exception>
 #include <Common/Exception.h>
+#include <IO/WriteBufferFromString.h>
 #include <jni/jni_common.h>
 #include <boost/stacktrace.hpp>
 #include <sstream>
@@ -60,8 +61,9 @@ private:
     }\
     catch (...)\
     {\
-        std::ostringstream ostr;\
-        ostr << boost::stacktrace::stacktrace();\
+        DB::WriteBufferFromOwnString ostr;\
+        auto trace = boost::stacktrace::stacktrace();\
+        boost::stacktrace::detail::to_string(&trace.as_vector()[0], trace.size());\
         local_engine::JniErrorsGlobalState::instance().throwRuntimeException(env, "Unknow Exception", ostr.str().c_str());\
         return ret;\
     }

@@ -19,7 +19,6 @@
 #include <Storages/BatchParquetFileSource.h>
 #include <Parser/SerializedPlanParser.h>
 
-
 static void BM_ParquetReadString(benchmark::State& state)
 {
     using namespace DB;
@@ -43,7 +42,6 @@ static void BM_ParquetReadString(benchmark::State& state)
         }
     }
 }
-
 
 static void BM_ParquetReadDate32(benchmark::State& state)
 {
@@ -69,7 +67,6 @@ static void BM_ParquetReadDate32(benchmark::State& state)
         }
     }
 }
-
 
 static void BM_OptimizedParquetReadString(benchmark::State& state)
 {
@@ -100,8 +97,6 @@ static void BM_OptimizedParquetReadString(benchmark::State& state)
     }
 }
 
-
-
 static void BM_OptimizedParquetReadDate32(benchmark::State& state)
 {
     using namespace DB;
@@ -131,7 +126,6 @@ static void BM_OptimizedParquetReadDate32(benchmark::State& state)
         }
     }
 }
-
 
 BENCHMARK(BM_ParquetReadString)->Unit(benchmark::kMillisecond)->Iterations(10);
 BENCHMARK(BM_ParquetReadDate32)->Unit(benchmark::kMillisecond)->Iterations(10);

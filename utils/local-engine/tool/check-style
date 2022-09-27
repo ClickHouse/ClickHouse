@@ -136,9 +136,9 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
 
 # Broken XML files (requires libxml2-utils)
-find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs xmllint --noout --nonet
+#find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
+#    grep -vP $EXCLUDE_DIRS |
+#    xargs xmllint --noout --nonet
 
 # FIXME: for now only clickhouse-test
 #pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
