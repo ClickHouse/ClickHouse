@@ -918,6 +918,8 @@ public:
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
+    StoragePolicyPtr getOrSetStoragePolicyForSingleDisk(const String & name) const;
+
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
 

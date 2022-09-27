@@ -1632,13 +1632,18 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
-        throw Exception("Table " + getStorageID().getNameForLogs() + " supports movePartitionToTable only for MergeTree family of table engines."
-                        " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
+            getStorageID().getNameForLogs(), dest_table->getName());
+
     if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
-        throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
-                       " should have the same storage policy of source table " + getStorageID().getNameForLogs() + ". " +
-                       getStorageID().getNameForLogs() + ": " + this->getStoragePolicy()->getName() + ", " +
-                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_POLICY);
+        throw Exception(
+            ErrorCodes::UNKNOWN_POLICY,
+            "Destination table {} should have the same storage policy of source table {}. {} : {}, {} : {}",
+            dest_table_storage->getStorageID().getNameForLogs(), getStorageID().getNameForLogs(),
+            getStorageID().getNameForLogs(), this->getStoragePolicy()->getName(),
+            dest_table_storage->getStorageID().getNameForLogs(), dest_table_storage->getStoragePolicy()->getName());
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();

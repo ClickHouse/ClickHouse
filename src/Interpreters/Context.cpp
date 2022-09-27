@@ -33,6 +33,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -2662,6 +2663,30 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
+StoragePolicyPtr Context::getOrSetStoragePolicyForSingleDisk(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + name;
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+    StoragePolicyPtr storage_policy = storage_policy_selector->tryGet(storage_policy_name);
+
+    if (!storage_policy)
+    {
+        auto disk_selector = getDiskSelector(lock);
+        auto disk = disk_selector->get(name);
+        auto volume = std::make_shared<SingleDiskVolume>("_volume_" + name, disk);
+
+        static const auto move_factor_for_single_disk_volume = 0.0;
+        storage_policy = std::make_shared<StoragePolicy>(storage_policy_name, Volumes{volume}, move_factor_for_single_disk_volume);
+        const_cast<StoragePolicySelector *>(storage_policy_selector.get())->add(storage_policy);
+    }
+    /// Note: it is important to put storage policy into disk selector (and not recreate it on each call)
+    /// because in some places there are checks that storage policy pointers are the same from different tables.
+    /// (We can assume that tables with the same `disk` setting are on the same storage policy).
+
+    return storage_policy;
+}
 
 DisksMap Context::getDisksMap() const
 {
