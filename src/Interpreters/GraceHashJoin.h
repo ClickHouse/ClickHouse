@@ -36,7 +36,7 @@ class HashJoin;
  * Inside @getDelayedBlocks we select the next not processed bucket, load right table blocks from disk into in-memory HashJoin,
  * And then join them with left table blocks.
  *
- * After joining the left table blocks, we can load non-joined rows from the right talble for RIGHT/FULL JOINs.
+ * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
  * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
  */
 class GraceHashJoin final : public IJoin
@@ -122,7 +122,6 @@ private:
     size_t max_block_size;
 
     InMemoryJoinPtr first_bucket;
-    std::mutex first_bucket_mutex;
 
     MultiVersion<Buckets> buckets;
     std::mutex rehash_mutex;

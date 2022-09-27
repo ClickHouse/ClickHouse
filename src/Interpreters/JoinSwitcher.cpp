@@ -34,25 +34,25 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
     size_t bytes = join->getTotalByteCount();
 
     if (!limits.softCheck(rows, bytes))
-        switchJoin();
+        return switchJoin();
 
     return true;
 }
 
-void JoinSwitcher::switchJoin()
+bool JoinSwitcher::switchJoin()
 {
-    HashJoin& hash_join = assert_cast<HashJoin &>(*join);
-    BlocksList right_blocks = std::move(hash_join).releaseJoinedBlocks();
+    HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
+    BlocksList right_blocks = hash_join->releaseJoinedBlocks();
 
     /// Destroy old join & create new one.
     join = make_on_disk_join();
 
+    bool success = true;
     for (const Block & saved_block : right_blocks)
-    {
-        join->addJoinedBlock(saved_block);
-    }
+        success = success && join->addJoinedBlock(saved_block);
 
     switched = true;
+    return success;
 }
 
 }

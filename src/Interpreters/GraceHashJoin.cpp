@@ -388,11 +388,11 @@ void GraceHashJoin::rehashInMemoryJoin(InMemoryJoinPtr & join, const BucketsSnap
 
 bool GraceHashJoin::fitsInMemory(InMemoryJoin * join) const
 {
+    /// One row can't be splitted, avoid loop
     if (join->join->getTotalRowCount() < 2)
         return true;
 
-    bool fits = table_join->sizeLimits().softCheck(join->join->getTotalRowCount(), join->join->getTotalByteCount());
-    return fits;
+    return table_join->sizeLimits().softCheck(join->join->getTotalRowCount(), join->join->getTotalByteCount());
 }
 
 GraceHashJoin::BucketsSnapshot GraceHashJoin::rehash(size_t desired_size)
@@ -454,8 +454,6 @@ void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    std::lock_guard<std::mutex> lock{first_bucket_mutex};
-
     if (need_left_sample_block.exchange(false))
     {
         left_sample_block = block.cloneEmpty();

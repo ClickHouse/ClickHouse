@@ -52,6 +52,8 @@ SELECT key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 ALL FULL JOIN {{ t2 }
 
 {% endfor -%}
 {% endfor -%}
+SET max_bytes_in_join = 0;
+
 {% endfor -%}
 
 DROP TABLE IF EXISTS t1;

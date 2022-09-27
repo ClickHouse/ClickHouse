@@ -349,7 +349,7 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks() &&;
+    BlocksList releaseJoinedBlocks();
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
     bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
