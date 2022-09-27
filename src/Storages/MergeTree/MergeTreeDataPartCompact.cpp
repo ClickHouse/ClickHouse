@@ -121,7 +121,6 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     else
         marks_reader = std::move(buffer);
 
-    size_t marks_file_decompressed_size = 0;
     while (!marks_reader->eof())
     {
         marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
