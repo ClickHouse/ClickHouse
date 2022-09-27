@@ -106,13 +106,6 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
 
-    /// Like getData, but has special behavior for columns that contain variable-length strings.
-    /// Returns zero-ending memory chunk (i.e. its size is 1 byte longer).
-    [[nodiscard]] virtual StringRef getDataAtWithTerminatingZero(size_t n) const
-    {
-        return getDataAt(n);
-    }
-
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
@@ -420,6 +413,9 @@ public:
     /// Shallow: doesn't do recursive calls; don't do call for itself.
     using ColumnCallback = std::function<void(WrappedPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
+
+    /// Similar to forEachSubcolumn but it also do recursive calls.
+    virtual void forEachSubcolumnRecursively(ColumnCallback) {}
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.

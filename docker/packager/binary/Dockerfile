@@ -46,7 +46,7 @@ RUN apt-get install binutils-riscv64-linux-gnu
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
-ARG NFPM_VERSION=2.16.0
+ARG NFPM_VERSION=2.18.1
 
 RUN arch=${TARGETARCH:-amd64} \
   && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \

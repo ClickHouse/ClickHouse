@@ -81,11 +81,6 @@ public:
         return data->getDataAt(0);
     }
 
-    StringRef getDataAtWithTerminatingZero(size_t) const override
-    {
-        return data->getDataAtWithTerminatingZero(0);
-    }
-
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
@@ -238,6 +233,12 @@ public:
     void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(data);
+    }
+
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(data);
+        data->forEachSubcolumnRecursively(callback);
     }
 
     bool structureEquals(const IColumn & rhs) const override
