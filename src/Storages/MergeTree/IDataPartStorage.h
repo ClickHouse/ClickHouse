@@ -197,6 +197,7 @@ public:
         const std::string & dir_path,
         bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
+        const NameSet & files_to_copy_instead_of_hardlinks,
         bool copy_instead_of_hardlink) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).

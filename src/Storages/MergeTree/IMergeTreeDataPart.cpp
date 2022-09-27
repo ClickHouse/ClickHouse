@@ -1523,6 +1523,7 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
         getRelativePathForDetachedPart(prefix),
         /*make_source_readonly*/ true,
         {},
+        {},
         copy_instead_of_hardlink);
 }
 

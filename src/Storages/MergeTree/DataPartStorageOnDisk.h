@@ -100,6 +100,7 @@ public:
         const std::string & dir_path,
         bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
+        const NameSet & files_to_copy_instead_of_hardlinks,
         bool copy_instead_of_hardlink) const override;
 
     DataPartStoragePtr clone(
