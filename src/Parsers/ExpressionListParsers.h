@@ -84,7 +84,7 @@ private:
 class ParserUnionList : public IParserBase
 {
 public:
-    ParserUnionList(bool allow_query_parameters_=false)
+    explicit ParserUnionList(bool allow_query_parameters_ = false)
         : allow_query_parameters(allow_query_parameters_)
     {
     }

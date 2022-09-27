@@ -8,8 +8,8 @@
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTQueryParameter.h>
 #include <Common/FieldVisitorToString.h>
+#include <Interpreters/QueryParameterVisitor.h>
 
 #include <queue>
 
@@ -480,19 +480,9 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
 
 bool ASTSelectQuery::hasQueryParameters() const
 {
-    std::queue<ASTPtr> queue;
-    queue.push(this->clone());
-
-    while (!queue.empty())
+    if (!analyzeReceiveQueryParams(this->where()).empty())
     {
-        auto ast = queue.front();
-        queue.pop();
-
-        if (ast->as<ASTQueryParameter>())
-            return true;
-
-        for (const auto & child : ast->children)
-            queue.push(child);
+        return true;
     }
     return false;
 }
@@ -507,15 +497,14 @@ NameToNameMap ASTSelectQuery::getQueryParameterValues() const
     {
         auto ast = queue.front();
         queue.pop();
-        if (auto * expression_list = ast->as<ASTExpressionList>())
+        if (const auto * expression_list = ast->as<ASTExpressionList>())
         {
             if (expression_list->children.size() == 2)
             {
-                if (auto * identifier = expression_list->children[0]->as<ASTIdentifier>())
+                if (const auto * identifier = expression_list->children[0]->as<ASTIdentifier>())
                 {
-                    if (auto * literal = expression_list->children[1]->as<ASTLiteral>())
+                    if (const auto * literal = expression_list->children[1]->as<ASTLiteral>())
                     {
-
                         parameter_values[identifier->name()] = convertFieldToString(literal->value);
                     }
                 }

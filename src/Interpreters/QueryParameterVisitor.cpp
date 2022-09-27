@@ -17,11 +17,11 @@ public:
 
     void visit(const ASTPtr & ast)
     {
-        for (const auto & child : ast->children)
+        if (const auto & query_parameter = ast->as<ASTQueryParameter>())
+            visitQueryParameter(*query_parameter);
+        else
         {
-            if (const auto & query_parameter = child->as<ASTQueryParameter>())
-                visitQueryParameter(*query_parameter);
-            else
+            for (const auto & child : ast->children)
                 visit(child);
         }
     }
@@ -47,5 +47,13 @@ NameSet analyzeReceiveQueryParams(const std::string & query)
     QueryParameterVisitor(query_params).visit(extract_query_ast);
     return query_params;
 }
+
+NameSet analyzeReceiveQueryParams(const ASTPtr & ast)
+{
+    NameSet query_params;
+    QueryParameterVisitor(query_params).visit(ast);
+    return query_params;
+}
+
 
 }

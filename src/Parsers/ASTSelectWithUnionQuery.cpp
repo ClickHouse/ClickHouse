@@ -4,8 +4,8 @@
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/QueryParameterVisitor.h>
 
-#include <queue>
 #include <iostream>
 
 namespace DB
@@ -90,22 +90,9 @@ bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 
 bool ASTSelectWithUnionQuery::hasQueryParameters() const
 {
-    std::queue<ASTPtr> queue;
-    queue.push(this->clone());
-
-    while (!queue.empty())
+    if (!analyzeReceiveQueryParams(this->list_of_selects).empty())
     {
-        auto current = queue.front();
-        queue.pop();
-
-        if (auto * select = current->as<ASTSelectQuery>())
-        {
-            if (select->hasQueryParameters())
-                return true;
-        }
-
-        for (const auto & child : current->children)
-            queue.push(child);
+        return true;
     }
     return false;
 }
