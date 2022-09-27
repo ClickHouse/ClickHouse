@@ -1523,8 +1523,8 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
         getRelativePathForDetachedPart(prefix),
         /*make_source_readonly*/ true,
         {},
-        {},
-        copy_instead_of_hardlink);
+        copy_instead_of_hardlink,
+        {});
 }
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
