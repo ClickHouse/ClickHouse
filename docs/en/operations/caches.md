@@ -20,6 +20,7 @@ Additional cache types:
 - [Avro format](../interfaces/formats.md#data-format-avro) schemas cache.
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.
+- [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
 
 Indirectly used:
 

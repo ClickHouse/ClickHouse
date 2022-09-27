@@ -15,8 +15,10 @@
 #include <filesystem>
 #include <memory>
 #include <Common/logger_useful.h>
-#include "Coordination/KeeperContext.h"
+#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+
 
 namespace DB
 {
@@ -148,33 +150,6 @@ namespace
     }
 }
 
-namespace
-{
-
-enum class PathMatchResult
-{
-    NOT_MATCH,
-    EXACT,
-    IS_CHILD
-};
-
-PathMatchResult matchPath(const std::string_view path, const std::string_view match_to)
-{
-    using enum PathMatchResult;
-
-    auto [first_it, second_it] = std::mismatch(path.begin(), path.end(), match_to.begin(), match_to.end());
-
-    if (second_it != match_to.end())
-        return NOT_MATCH;
-
-    if (first_it == path.end())
-        return EXACT;
-
-    return *first_it == '/' ? IS_CHILD : NOT_MATCH;
-}
-
-}
-
 void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
@@ -219,7 +194,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         const auto & path = it->key;
 
         // write only the root system path because of digest
-        if (matchPath(path.toView(), keeper_system_path) == PathMatchResult::IS_CHILD)
+        if (Coordination::matchPath(path.toView(), keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
         {
             ++it;
             continue;
@@ -447,8 +422,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         readBinary(path, in);
         readNode(node, in, current_version, storage.acl_map);
 
-        using enum PathMatchResult;
-        auto match_result = matchPath(path, keeper_system_path);
+        using enum Coordination::PathMatchResult;
+        auto match_result = Coordination::matchPath(path, keeper_system_path);
 
         const auto get_error_msg = [&path = path]
         {
