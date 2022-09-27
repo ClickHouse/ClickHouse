@@ -490,10 +490,10 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
             checkOperationType(Read);
             requests.push_back(std::make_shared<ZooKeeperSimpleListRequest>(*concrete_request_simple_list));
         }
-        else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
+        else if (const auto * concrete_request_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(generic_request.get()))
         {
             checkOperationType(Read);
-            requests.push_back(std::make_shared<ZooKeeperListRequest>(*concrete_request_list));
+            requests.push_back(std::make_shared<ZooKeeperFilteredListRequest>(*concrete_request_list));
         }
         else
             throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
