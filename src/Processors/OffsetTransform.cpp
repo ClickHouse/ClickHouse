@@ -100,13 +100,14 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
     auto & input = *data.input_port;
 
     /// Check can output.
-    bool output_finished = false;
+
     if (output.isFinished())
     {
-        output_finished = true;
+        input.close();
+        return Status::Finished;
     }
 
-    if (!output_finished && !output.canPush())
+    if (!output.canPush())
     {
         input.setNotNeeded();
         return Status::PortFull;
