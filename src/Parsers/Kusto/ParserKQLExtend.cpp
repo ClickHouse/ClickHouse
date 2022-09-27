@@ -23,9 +23,10 @@ bool ParserKQLExtend :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!ParserSelectQuery().parse(new_pos, select_query, expected))
         return false;
-    setSubQuerySource(select_query, node, false, false);
-    node = select_query;
+    if (!setSubQuerySource(select_query, node, false, false))
+        return false;
 
+    node = select_query;
     return true;
 }
 

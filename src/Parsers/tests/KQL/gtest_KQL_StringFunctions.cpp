@@ -125,6 +125,33 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         {
             "print bin(datetime(1970-05-11 13:45:07), 1d)",
             "SELECT toDateTime64(toInt64(toFloat64(parseDateTime64BestEffortOrNull('1970-05-11 13:45:07', 9, 'UTC')) / 86400) * 86400, 9, 'UTC')"
+        },
+        {
+            "print extract('x=([0-9.]+)', 1, 'hello x=456|wo' , typeof(bool));",
+            "SELECT accurateCastOrNull(toInt64OrNull(extract('hello x=456|wo', '[0-9.]+')), 'Boolean')"
+        },
+        {
+            "print extract('x=([0-9.]+)', 1, 'hello x=456|wo' , typeof(date));",
+            "SELECT accurateCastOrNull(extract('hello x=456|wo', '[0-9.]+'), 'DateTime')"
+        },
+        {
+            "print extract('x=([0-9.]+)', 1, 'hello x=456|wo' , typeof(guid));",
+            "SELECT accurateCastOrNull(extract('hello x=456|wo', '[0-9.]+'), 'UUID')"
+        },
+        {
+            "print extract('x=([0-9.]+)', 1, 'hello x=456|wo' , typeof(int));",
+            "SELECT accurateCastOrNull(extract('hello x=456|wo', '[0-9.]+'), 'Int32')"
+        },
+        {
+            "print extract('x=([0-9.]+)', 1, 'hello x=456|wo' , typeof(long));",
+            "SELECT accurateCastOrNull(extract('hello x=456|wo', '[0-9.]+'), 'Int64')"
+        },
+        {
+            "print extract('x=([0-9.]+)', 1, 'hello x=456|wo' , typeof(real));",
+            "SELECT accurateCastOrNull(extract('hello x=456|wo', '[0-9.]+'), 'Float64')"
+        },
+        {
+            "print extract('x=([0-9.]+)', 1, 'hello x=456|wo' , typeof(decimal));",
+            "SELECT toDecimal128OrNull(if(countSubstrings(extract('hello x=456|wo', '[0-9.]+'), '.') > 1, NULL, extract('hello x=456|wo', '[0-9.]+')), length(substr(extract('hello x=456|wo', '[0-9.]+'), position(extract('hello x=456|wo', '[0-9.]+'), '.') + 1)))"
         }
-
-})));   
+})));

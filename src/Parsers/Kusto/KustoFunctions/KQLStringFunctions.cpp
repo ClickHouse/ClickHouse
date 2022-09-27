@@ -9,6 +9,7 @@
 namespace DB::ErrorCodes
 {
 extern const int SYNTAX_ERROR;
+extern const int UNKNOWN_TYPE;
 }
 
 namespace DB
@@ -87,6 +88,25 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool Extract::convertImpl(String & out, IParser::Pos & pos)
 {
+    ParserKeyword s_kql("typeof");
+    ParserToken open_bracket(TokenType::OpeningRoundBracket);
+    ParserToken close_bracket(TokenType::ClosingRoundBracket);
+    Expected expected;
+
+    std::unordered_map<String,String> type_cast =
+    {   {"bool", "Boolean"},
+        {"boolean", "Boolean"},
+        {"datetime", "DateTime"},
+        {"date", "DateTime"},
+        {"guid", "UUID"},
+        {"int", "Int32"},
+        {"long", "Int64"},
+        {"real", "Float64"},
+        {"double", "Float64"},
+        {"string", "String"},
+        {"decimal", "Decimal"}
+    };
+
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
@@ -105,7 +125,23 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::Comma)
     {
         ++pos;
-        type_literal = getConvertedArgument(fn_name, pos);
+
+        if (s_kql.ignore(pos, expected))
+        {
+            if (!open_bracket.ignore(pos, expected))
+                throw Exception("Syntax error near typeof", ErrorCodes::SYNTAX_ERROR);
+
+            type_literal= String(pos->begin, pos->end);
+
+            if (type_cast.find(type_literal) == type_cast.end())
+                throw Exception(type_literal + " is not a supported kusto data type for extract", ErrorCodes::UNKNOWN_TYPE);
+
+            type_literal = type_cast[type_literal];
+            ++pos;
+
+            if (!close_bracket.ignore(pos, expected))
+                throw Exception("Syntax error near typeof", ErrorCodes::SYNTAX_ERROR);
+        }
     }
 
     if (capture_group == 0)
@@ -148,42 +184,21 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
     }
 
     out = "extract(" + source + ", " + regex + ")";
-    if (!type_literal.empty())
+
+    if (type_literal == "Decimal")
     {
-        std::unordered_map<String,String> type_cast =
-        {   {"bool", "Boolean"},
-            {"boolean", "Boolean"},
-            {"datetime", "DateTime"},
-            {"date", "DateTime"},
-            {"dynamic", "Array"},
-            {"guid", "UUID"},
-            {"int", "Int32"},
-            {"long", "Int64"},
-            {"real", "Float64"},
-            {"double", "Float64"},
-            {"string", "String"},
-            {"decimal", "Decimal"}
-        };
+        out = std::format("countSubstrings({0}, '.') > 1 ? NULL: {0}, length(substr({0}, position({0},'.') + 1)))", out);
+        out = std::format("toDecimal128OrNull({0})", out);
+    }
+    else
+    {
+        if (type_literal == "Boolean")
+            out = std::format("toInt64OrNull({})", out);
 
-        Tokens token_type(type_literal.c_str(), type_literal.c_str() + type_literal.size());
-        IParser::Pos pos_type(token_type, pos.max_depth);
-        ParserKeyword s_kql("typeof");
-        Expected expected;
-
-        if (s_kql.ignore(pos_type, expected))
-        {
-            ++pos_type;
-            auto kql_type= String(pos_type->begin,pos_type->end);
-            if (type_cast.find(kql_type) == type_cast.end())
-                return false;
-            auto ch_type = type_cast[kql_type];
-            out = "CAST(" + out + ", '" + ch_type + "')";
-        }
-        else
-            return false;
+        if (!type_literal.empty())
+            out = "accurateCastOrNull(" + out + ", '" + type_literal + "')";
     }
     return true;
-
 }
 
 bool ExtractAll::convertImpl(String & out,IParser::Pos & pos)

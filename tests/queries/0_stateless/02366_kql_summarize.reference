@@ -80,3 +80,5 @@ Management abcd defg	1
 245	2
 0	1
 245	2
+-- make_list_with_nulls --
+['Theodore','Stephanie','Peter','Latoya','Joshua','Edward','Dalton','Christine','Cameron','Angel','Apple',NULL]

@@ -29,12 +29,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
+    extern const int SYNTAX_ERROR;
 }
 
 bool ParserKQLBase::parseByString(const String expr, ASTPtr & node, const uint32_t & max_depth)
 {
     Expected expected;
-    
+
     Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
     IParser::Pos pos(tokens, max_depth);
     return parse(pos, node, expected);
@@ -50,15 +51,24 @@ bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, A
     return true;
 };
 
-void ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bool dest_is_subquery, bool src_is_subquery)
+bool ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bool dest_is_subquery, bool src_is_subquery)
 {
     ASTPtr table_expr;
     if (!dest_is_subquery)
     {
+        if (!select_query || !select_query->as<ASTSelectQuery>()->tables() || select_query->as<ASTSelectQuery>()->tables()->as<ASTTablesInSelectQuery>()->children.empty())
+            return false;
         table_expr = select_query->as<ASTSelectQuery>()->tables()->as<ASTTablesInSelectQuery>()->children[0];
         table_expr->as<ASTTablesInSelectQueryElement>()->table_expression = source->as<ASTSelectQuery>()->tables()->children[0]->as<ASTTablesInSelectQueryElement>()-> table_expression;
-        return;
+        return true;
     }
+
+    if (!select_query || select_query->as<ASTTablesInSelectQuery>()->children.empty() ||
+        !select_query->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression ||
+        select_query->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>()->subquery->children.empty() ||
+        select_query->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>()->subquery->children[0]->as<ASTSelectWithUnionQuery>()->list_of_selects->children.empty() ||
+        select_query->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>()->subquery->children[0]->as<ASTSelectWithUnionQuery>()->list_of_selects->children[0]->as<ASTSelectQuery>()->tables()->as<ASTTablesInSelectQuery>()->children.empty())
+        return false;
 
     table_expr = select_query->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()
                 ->table_expression->as<ASTTableExpression>()->subquery->children[0]->as<ASTSelectWithUnionQuery>()
@@ -71,11 +81,11 @@ void ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bo
     }
     else
     {
-        table_expr->as<ASTTablesInSelectQueryElement>()->table_expression = 
+        table_expr->as<ASTTablesInSelectQueryElement>()->table_expression =
             source ->children[0]->as<ASTTablesInSelectQueryElement>()-> table_expression;
     }
 
-    return;
+    return true;
 }
 
 String ParserKQLBase::getExprFromToken(const String & text, const uint32_t & max_depth)
@@ -124,6 +134,9 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
             ++pos;
             if (String(pos->begin,pos->end) != "~" )
             {
+                if (tokens.empty())
+                    throw Exception("Syntax error near equal symbol", ErrorCodes::SYNTAX_ERROR);
+
                 alias = tokens.back();
                 tokens.pop_back();
             }
@@ -238,46 +251,37 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             ++pos;
             String kql_operator(pos->begin, pos->end);
-            if (kql_operator == "order" || kql_operator == "sort")
-            {
-                ++pos;
-                ParserKeyword s_by("by");
-                if (s_by.ignore(pos,expected))
-                {
-                    kql_operator = "order by";
-                    --pos;
-                }
-            }
-            else if (kql_operator == "make")
-            {
-                ++pos;
-                ParserKeyword s_series("series");
-                ParserToken s_dash(TokenType::Minus);
-                if (s_dash.ignore(pos,expected))
-                {
-                    if (s_series.ignore(pos,expected))
-                    {
-                        kql_operator = "make-series";
-                        --pos;
-                    }
-                }
-            }
-            else if (kql_operator == "mv")
-            {
-                ++pos;
-                ParserKeyword s_series("expand");
-                ParserToken s_dash(TokenType::Minus);
-                if (s_dash.ignore(pos,expected))
-                {
-                    if (s_series.ignore(pos,expected))
-                    {
-                        kql_operator = "mv-expand";
-                        --pos;
-                    }
-                }
-            }
 
-            if (pos->type != TokenType::BareWord || kql_parser.find(kql_operator) == kql_parser.end())
+            auto validate_kql_operator = [&]
+            {
+                if (kql_operator == "order" || kql_operator == "sort")
+                {
+                    ++pos;
+                    ParserKeyword s_by("by");
+                    if (s_by.ignore(pos,expected))
+                    {
+                        kql_operator = "order by";
+                        --pos;
+                    }
+                }
+                else
+                {   auto op_pos_begin = pos;
+                    ++pos;
+                    ParserToken s_dash(TokenType::Minus);
+                    if (s_dash.ignore(pos,expected))
+                    {
+                        String tmp_op(op_pos_begin->begin, pos->end);
+                        kql_operator = tmp_op;
+                    }
+                    else
+                        --pos;
+                }
+                if (kql_parser.find(kql_operator) == kql_parser.end())
+                    return false;
+                return true;
+            };
+
+            if (!validate_kql_operator())
                 return false;
             ++pos;
             operation_pos.push_back(std::make_pair(kql_operator, pos));
