@@ -136,6 +136,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "aarch64v80compat",
             "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
