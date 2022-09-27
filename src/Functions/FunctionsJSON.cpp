@@ -57,7 +57,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 template <typename T>
@@ -768,7 +767,7 @@ public:
     static bool insertResultToColumn(IColumn & dest, const Iterator &)
     {
         /// This function is called only if JSON is valid.
-        /// If JSON isn't valid then `FunctionJSON::ExecutorString::run()` adds default value (=zero) to `dest` without calling this function.
+        /// If JSON isn't valid then `FunctionJSON::Executor::run()` adds default value (=zero) to `dest` without calling this function.
         auto & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
         col_vec.insertValue(1);
         return true;
@@ -1751,7 +1750,7 @@ struct JSONExtractTree
                     }
                 }
 
-                for(size_t i = 0; i < this->nested.size(); ++i)
+                for (size_t i = 0; i < this->nested.size(); ++i)
                 {
                     auto & element = to_tuple.getColumn(i);
                     if (element.size() == old_size)
@@ -1856,67 +1855,100 @@ protected:
     std::unique_ptr<typename JSONExtractTree<Iterator>::Node> extract_tree;
 };
 
-// template <typename Iterator>
-// class JSONExtractKeysAndValuesImpl
-// {
-// public:
-//     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
-//     {
-//         if (arguments.size() < 2)
-//             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-//                 "Function {} requires at least two arguments", function_name);
+template <typename Iterator>
+class JSONExtractKeysAndValuesImpl
+{
+public:
+    static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least two arguments", function_name);
 
-//         const auto & col = arguments.back();
-//         const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
-//         if (!col_type_const || !isString(col.type))
-//             throw Exception{ErrorCodes::ILLEGAL_COLUMN,
-//                 "The last argument of function {} should be a constant string specifying the values' data type, illegal value: {}",
-//                 function_name, col.name};
+        const auto & col = arguments.back();
+        const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
+        if (!col_type_const || !isString(col.type))
+            throw Exception{ErrorCodes::ILLEGAL_COLUMN,
+                "The last argument of function {} should be a constant string specifying the values' data type, illegal value: {}",
+                function_name, col.name};
 
-//         DataTypePtr key_type = std::make_unique<DataTypeString>();
-//         DataTypePtr value_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
-//         DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{key_type, value_type});
-//         return std::make_unique<DataTypeArray>(tuple_type);
-//     }
+        DataTypePtr key_type = std::make_unique<DataTypeString>();
+        DataTypePtr value_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
+        DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{key_type, value_type});
+        return std::make_unique<DataTypeArray>(tuple_type);
+    }
 
-//     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
 
-//     void prepare(const char * function_name, const ColumnsWithTypeAndName &, const DataTypePtr & result_type)
-//     {
-//         const auto tuple_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
-//         const auto value_type = typeid_cast<const DataTypeTuple *>(tuple_type.get())->getElements()[1];
-//         extract_tree = JSONExtractTreeString<JSONParser>::build(function_name, value_type);
-//     }
+    void prepare(const char * function_name, const DataTypePtr & result_type)
+    {
+        const auto tuple_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
+        const auto value_type = typeid_cast<const DataTypeTuple *>(tuple_type.get())->getElements()[1];
+        extract_tree = JSONExtractTree<Iterator>::build(function_name, value_type);
+    }
 
-//     bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
-//     {
-//         if (!element.isObject())
-//             return false;
+    bool insertResultToColumn(IColumn & dest, const Iterator & iterator) requires (IsElementIterator<Iterator>)
+    {
+        const auto & element = iterator.getElement();
+        if (!element.isObject())
+            return false;
 
-//         auto object = element.getObject();
+        auto object = element.getObject();
 
-//         auto & col_arr = assert_cast<ColumnArray &>(dest);
-//         auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
-//         size_t old_size = col_tuple.size();
-//         auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
-//         auto & col_value = col_tuple.getColumn(1);
+        auto & col_arr = assert_cast<ColumnArray &>(dest);
+        auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
+        size_t old_size = col_tuple.size();
+        auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
+        auto & col_value = col_tuple.getColumn(1);
 
-//         for (const auto & [key, value] : object)
-//         {
-//             if (extract_tree->insertResultToColumn(col_value, value))
-//                 col_key.insertData(key.data(), key.size());
-//         }
+        for (const auto & [key, value] : object)
+        {
+            Iterator elem_iter(value);
+            if (extract_tree->insertResultToColumn(col_value, elem_iter))
+                col_key.insertData(key.data(), key.size());
+        }
 
-//         if (col_tuple.size() == old_size)
-//             return false;
+        if (col_tuple.size() == old_size)
+            return false;
 
-//         col_arr.getOffsets().push_back(col_tuple.size());
-//         return true;
-//     }
+        col_arr.getOffsets().push_back(col_tuple.size());
+        return true;
+    }
 
-// private:
-//     std::unique_ptr<typename JSONExtractTreeString<JSONParser>::Node> extract_tree;
-// };
+    bool insertResultToColumn(IColumn & dest, const Iterator & iterator) requires (IsObjectIterator<Iterator>)
+    {
+        const auto * from_tuple_type = typeid_cast<const DataTypeTuple *>(iterator.getType().get());
+        if (!from_tuple_type || !from_tuple_type->haveExplicitNames())
+            return false;
+
+        auto & to_array = assert_cast<ColumnArray &>(dest);
+        auto & to_tuple = assert_cast<ColumnTuple &>(to_array.getData());
+
+        size_t old_size = to_tuple.size();
+        auto & to_key = assert_cast<ColumnString &>(to_tuple.getColumn(0));
+        auto & to_value = to_tuple.getColumn(1);
+
+        const auto & from_tuple = assert_cast<const ColumnTuple &>(*iterator.getColumn());
+        const auto & from_names = from_tuple_type->getElementNames();
+        const auto & from_elements = from_tuple_type->getElements();
+
+        for (size_t i = 0; i < from_names.size(); ++i)
+        {
+            Iterator elem_iter(from_elements[i], from_tuple.getColumnPtr(i), iterator.getRow());
+            if (extract_tree->insertResultToColumn(to_value, elem_iter))
+                to_key.insertData(from_names[i].data(), from_names[i].size());
+        }
+
+        if (to_tuple.size() == old_size)
+            return false;
+
+        to_array.getOffsets().push_back(to_tuple.size());
+        return true;
+    }
+
+private:
+    std::unique_ptr<typename JSONExtractTree<Iterator>::Node> extract_tree;
+};
 
 template <typename Iterator>
 class JSONExtractArrayRawImpl
@@ -2101,7 +2133,7 @@ REGISTER_FUNCTION(JSON)
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractBool, JSONExtractBoolImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractString, JSONExtractStringImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtract, JSONExtractImpl>>();
-    // factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractRaw, JSONExtractRawImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>();
