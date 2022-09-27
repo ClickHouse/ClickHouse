@@ -35,6 +35,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_JOIN_ON_EXPRESSION;
+}
+
 namespace
 {
 
@@ -149,11 +154,6 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         select_query_options,
         planner_context);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-
-    if (join_node.getStrictness() == JoinStrictness::Asof)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "JOIN {} ASOF is not supported",
-            join_node.formatASTForErrorMessage());
 
     JoinClausesAndActions join_clauses_and_actions;
 
@@ -291,11 +291,22 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
     if (join_node.getKind() == JoinKind::Comma)
         table_join->getTableJoin().kind = JoinKind::Cross;
-    table_join->getTableJoin().strictness = JoinStrictness::All;
+
+    table_join->getTableJoin().strictness = join_node.getStrictness();
 
     if (join_node.isOnJoinExpression())
     {
         const auto & join_clauses = join_clauses_and_actions.join_clauses;
+        bool is_asof = table_join->strictness() == JoinStrictness::Asof;
+
+        if (join_clauses.size() > 1)
+        {
+            if (is_asof)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "ASOF join {} doesn't support multiple ORs for keys in JOIN ON section",
+                    join_node.formatASTForErrorMessage());
+        }
+
         auto & table_join_clauses = table_join->getClauses();
 
         for (const auto & join_clause : join_clauses)
@@ -339,6 +350,32 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 
                 const auto & join_clause_right_filter_condition_name = join_clause_get_right_filter_condition_nodes[0]->result_name;
                 table_join_clause.analyzer_right_filter_condition_column_name = join_clause_right_filter_condition_name;
+            }
+
+            if (is_asof)
+            {
+                if (!join_clause.hasASOF())
+                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                        "JOIN {} no inequality in ASOF JOIN ON section.",
+                        join_node.formatASTForErrorMessage());
+
+                if (table_join_clause.key_names_left.size() <= 1)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "JOIN {} ASOF join needs at least one equi-join column",
+                        join_node.formatASTForErrorMessage());
+            }
+
+            if (join_clause.hasASOF())
+            {
+                const auto & asof_conditions = join_clause.getASOFConditions();
+                assert(asof_conditions.size() == 1);
+
+                const auto & asof_condition = asof_conditions[0];
+                table_join->setAsofInequality(asof_condition.asof_inequality);
+
+                /// Execution layer of JOIN algorithms expects that ASOF keys are last JOIN keys
+                std::swap(table_join_clause.key_names_left.at(asof_condition.key_index), table_join_clause.key_names_left.back());
+                std::swap(table_join_clause.key_names_right.at(asof_condition.key_index), table_join_clause.key_names_right.back());
             }
         }
     }

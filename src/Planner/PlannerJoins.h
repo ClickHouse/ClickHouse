@@ -40,6 +40,12 @@ namespace DB
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
+struct ASOFCondition
+{
+    size_t key_index;
+    ASOFJoinInequality asof_inequality;
+};
+
 /// Single JOIN ON section clause representation
 class JoinClause
 {
@@ -49,6 +55,13 @@ public:
     {
         left_key_nodes.emplace_back(left_key_node);
         right_key_nodes.emplace_back(right_key_node);
+    }
+
+    void addASOFKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, ASOFJoinInequality asof_inequality)
+    {
+        left_key_nodes.emplace_back(left_key_node);
+        right_key_nodes.emplace_back(right_key_node);
+        asof_conditions.push_back(ASOFCondition{left_key_nodes.size() - 1, asof_inequality});
     }
 
     /// Add condition for table side
@@ -74,6 +87,16 @@ public:
     ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes()
     {
         return left_key_nodes;
+    }
+
+    bool hasASOF() const
+    {
+        return !asof_conditions.empty();
+    }
+
+    const std::vector<ASOFCondition> & getASOFConditions() const
+    {
+        return asof_conditions;
     }
 
     /// Get right key nodes
@@ -114,6 +137,8 @@ public:
 private:
     ActionsDAG::NodeRawConstPtrs left_key_nodes;
     ActionsDAG::NodeRawConstPtrs right_key_nodes;
+
+    std::vector<ASOFCondition> asof_conditions;
 
     ActionsDAG::NodeRawConstPtrs left_filter_condition_nodes;
     ActionsDAG::NodeRawConstPtrs right_filter_condition_nodes;

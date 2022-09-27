@@ -74,7 +74,7 @@ namespace ErrorCodes
 
 /** ClickHouse query planner.
   *
-  * TODO: JOIN support ASOF. JOIN support strictness. JOIN support constants. JOIN support ON t1.id = t1.id
+  * TODO: JOIN support different algorithms. JOIN support constants. JOIN support ON t1.id = t1.id
   * TODO: JOIN drop unnecessary columns after ON, USING section
   * TODO: Support display names
   * TODO: Support RBAC. Support RBAC for ALIAS columns

@@ -377,7 +377,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERYTREE query");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
-            auto query_tree = buildQueryTree(ast.getExplainedQuery());
+            auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
 
             if (settings.run_passes)
             {
