@@ -400,11 +400,16 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
 {
     std::shared_ptr<StoragePolicySelector> result = std::make_shared<StoragePolicySelector>(config, config_prefix, disks);
 
+    std::lock_guard lock(mutex);
+
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            continue;
+
         if (!result->policies.contains(name))
-            throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
         policy->checkCompatibleWith(result->policies[name]);
     }
@@ -412,20 +417,43 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// Second pass, load.
     for (const auto & [name, policy] : policies)
     {
-        result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
+        /// Do not reload from config temporary storage policy, because it is not present in config.
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            result->policies[name] = policy;
+        else
+            result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
     }
 
     return result;
 }
 
+StoragePolicyPtr StoragePolicySelector::tryGet(const String & name) const
+{
+    std::lock_guard lock(mutex);
+
+    auto it = policies.find(name);
+    if (it == policies.end())
+        return nullptr;
+
+    return it->second;
+}
 
 StoragePolicyPtr StoragePolicySelector::get(const String & name) const
 {
-    auto it = policies.find(name);
-    if (it == policies.end())
+    auto policy = tryGet(name);
+    if (!policy)
         throw Exception("Unknown storage policy " + backQuote(name), ErrorCodes::UNKNOWN_POLICY);
 
-    return it->second;
+    return policy;
+}
+
+void StoragePolicySelector::add(StoragePolicyPtr storage_policy)
+{
+    std::lock_guard lock(mutex);
+
+    auto [_, inserted] = policies.emplace(storage_policy->getName(), storage_policy);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StoragePolicy is already present in StoragePolicySelector");
 }
 
 }
