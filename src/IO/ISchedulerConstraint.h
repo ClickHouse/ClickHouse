@@ -25,7 +25,7 @@ public:
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
-    /// Resource consumption by `request` is finised.
+    /// Resource consumption by `request` is finished.
     /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
     virtual void finishRequest(ResourceRequest * request) = 0;
 

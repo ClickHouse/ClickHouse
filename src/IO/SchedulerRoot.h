@@ -228,7 +228,7 @@ private:
             else // No more requests -- block until any event happens
                 events.process();
 
-            // Process all events before dequeing to ensure fair competition
+            // Process all events before dequeuing to ensure fair competition
             while (events.tryProcess()) {}
         }
     }
