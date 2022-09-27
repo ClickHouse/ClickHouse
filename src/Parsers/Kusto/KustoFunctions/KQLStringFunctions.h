@@ -65,7 +65,7 @@ protected:
 class ExtractJson : public IParserKQLFunction
 {
 protected:
-    const char * getName() const override { return "extract_json()"; }
+    const char * getName() const override { return "extract_json() , extractjson()"; }
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 

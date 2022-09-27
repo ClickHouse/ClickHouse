@@ -169,11 +169,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         {
 
             "print parse_version('1.2.3.40')",
-            "SELECT toInt128('10000000200000003000000040')"
+            "SELECT substring(arrayStringConcat(arrayMap(x -> leftPad(x, 8, '0'), arrayMap(x -> if(empty(x), '0', x), arrayResize(splitByChar('.', '1.2.3.40'), 4)))), 8)"
         },
         {
             "print parse_version('1')",
-            "SELECT toInt128('1000000000000000000000000')"
+            "SELECT substring(arrayStringConcat(arrayMap(x -> leftPad(x, 8, '0'), arrayMap(x -> if(empty(x), '0', x), arrayResize(splitByChar('.', '1'), 4)))), 8)"
         },
         {
             "print parse_json( dynamic([1, 2, 3]))",
@@ -202,8 +202,12 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         },
         {
             "print result=parse_csv('aa,b,cc')",
-            "SELECT splitByChar(',', substring('aa,b,cc', 1, position('aa,b,cc', '\\n') - 1)) AS result"
+            "SELECT if(CAST(position('aa,b,cc', '\\n'), 'UInt8'), splitByChar(',', substring('aa,b,cc', 1, position('aa,b,cc', '\\n') - 1)), splitByChar(',', substring('aa,b,cc', 1, length('aa,b,cc')))) AS result"
 
+        },
+        {
+            "print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z')",
+            "SELECT if(CAST(position('record1,a,b,c\\nrecord2,x,y,z', '\\n'), 'UInt8'), splitByChar(',', substring('record1,a,b,c\\nrecord2,x,y,z', 1, position('record1,a,b,c\\nrecord2,x,y,z', '\\n') - 1)), splitByChar(',', substring('record1,a,b,c\\nrecord2,x,y,z', 1, length('record1,a,b,c\\nrecord2,x,y,z')))) AS result_multi_record"
         }
 })));   
 
