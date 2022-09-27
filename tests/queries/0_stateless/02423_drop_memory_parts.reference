@@ -5,7 +5,7 @@ init state
 2_3_3_0	InMemory	10	1
 drop part 0
 20
-0_1_1_0	InMemory	0	0
+0_1_1_1	Compact	0	0
 1_2_2_0	InMemory	10	1
 2_3_3_0	InMemory	10	1
 detach table

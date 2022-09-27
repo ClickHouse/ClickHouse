@@ -7292,7 +7292,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     auto new_data_part = createPart(
         new_part_name,
-        choosePartType(0, block.rows()),
+        choosePartTypeOnDisk(0, block.rows()),
         new_part_info,
         new_data_part_storage
         );
