@@ -31,6 +31,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/wipePasswordFromQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -134,8 +135,11 @@ static String prepareQueryForLogging(const String & query, ContextPtr context)
 {
     String res = query;
 
-    // wiping sensitive data before cropping query by log_queries_cut_to_length,
-    // otherwise something like credit card without last digit can go to log
+    // Wiping a password or its hash from CREATE/ALTER USER query because we don't want it to go to logs.
+    res = wipePasswordFromQuery(res);
+
+    // Wiping sensitive data before cropping query by log_queries_cut_to_length,
+    // otherwise something like credit card without last digit can go to log.
     if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
