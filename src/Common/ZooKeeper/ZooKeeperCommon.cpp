@@ -665,7 +665,16 @@ ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return setTime(
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperListResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSimpleListResponse>()); }
 ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCheckResponse>()); }
-ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperMultiResponse>(requests)); }
+ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const
+{
+    std::shared_ptr<ZooKeeperMultiResponse> response;
+    if (getOpNum() == OpNum::Multi)
+       response = std::make_shared<ZooKeeperMultiWriteResponse>(requests);
+    else
+       response = std::make_shared<ZooKeeperMultiReadResponse>(requests);
+
+    return setTime(std::move(response));
+}
 ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCloseResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSetACLRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSetACLResponse>()); }
 ZooKeeperResponsePtr ZooKeeperGetACLRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperGetACLResponse>()); }
