@@ -633,7 +633,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -673,7 +673,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -695,7 +695,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -709,7 +709,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -761,7 +761,7 @@ static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t 
     {
         writeable_rows_mask[index + 1] = true;
         writeable_rows_mask[index] = differenceSortingKeys(
-            DB::get<const Tuple &>(rows_data[index]), DB::get<const Tuple &>(rows_data[index + 1]), sorting_columns_index);
+            rows_data[index].get<const Tuple &>(), rows_data[index + 1].get<const Tuple &>(), sorting_columns_index);
     }
 
     for (size_t column = 0; column < buffer.columns() - 2; ++column)

@@ -105,10 +105,6 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 template <typename T>
 class DecimalField
 {
@@ -168,9 +164,6 @@ private:
     T dec;
     UInt32 scale;
 };
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -432,16 +425,6 @@ public:
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
 
-    template <typename T>
-    T & reinterpret();
-
-    template <typename T>
-    const T & reinterpret() const
-    {
-        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
-        return mutable_this->reinterpret<T>();
-    }
-
     template <typename T> bool tryGet(T & result)
     {
         const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
@@ -461,7 +444,9 @@ public:
     }
 
     template <typename T> auto & safeGet() const
-    { return const_cast<Field *>(this)->safeGet<T>(); }
+    {
+        return const_cast<Field *>(this)->safeGet<T>();
+    }
 
     template <typename T> auto & safeGet();
 
@@ -559,7 +544,7 @@ public:
             case Types::Float64:
             {
                 // Compare as UInt64 so that NaNs compare as equal.
-                return reinterpret<UInt64>() == rhs.reinterpret<UInt64>();
+                return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
             }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::String:  return get<String>()  == rhs.get<String>();
@@ -594,11 +579,6 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
-// gcc 8.2.1
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
             case Types::UInt256: return f(field.template get<UInt256>());
@@ -622,9 +602,6 @@ public:
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
         }
 
         __builtin_unreachable();
@@ -859,54 +836,6 @@ auto & Field::safeGet()
 
 
 template <typename T>
-T & Field::reinterpret()
-{
-    assert(which != Types::String); // See specialization for char
-    using ValueType = std::decay_t<T>;
-    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
-    return *ptr;
-}
-
-// Specialize reinterpreting to char (used in ColumnUnique) to make sure Strings are reinterpreted correctly
-// inline to avoid multiple definitions
-template <>
-inline char & Field::reinterpret<char>()
-{
-    if (which == Types::String)
-    {
-        // For String we want to return a pointer to the data, not the start of the class
-        // as the layout of std::string depends on the STD version and options
-        char * ptr = reinterpret_cast<String *>(&storage)->data();
-        return *ptr;
-    }
-    return *reinterpret_cast<char *>(&storage);
-}
-
-template <typename T>
-T get(const Field & field)
-{
-    return field.template get<T>();
-}
-
-template <typename T>
-T get(Field & field)
-{
-    return field.template get<T>();
-}
-
-template <typename T>
-T safeGet(const Field & field)
-{
-    return field.template safeGet<T>();
-}
-
-template <typename T>
-T safeGet(Field & field)
-{
-    return field.template safeGet<T>();
-}
-
-template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
@@ -1036,4 +965,3 @@ struct fmt::formatter<DB::Field>
         return format_to(ctx.out(), "{}", toString(x));
     }
 };
-

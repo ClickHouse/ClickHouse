@@ -7,6 +7,7 @@
 #include <vector>
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/HeaderCollection.h>
 
 namespace Poco::Util
 {
@@ -15,15 +16,6 @@ class AbstractConfiguration;
 
 namespace DB
 {
-struct HttpHeader
-{
-    String name;
-    String value;
-
-    inline bool operator==(const HttpHeader & other) const { return name == other.name && value == other.value; }
-};
-
-using HeaderCollection = std::vector<HttpHeader>;
 
 struct Settings;
 
@@ -50,6 +42,21 @@ struct S3Settings
                 && use_environment_credentials == other.use_environment_credentials
                 && use_insecure_imds_request == other.use_insecure_imds_request;
         }
+
+        void updateFrom(const AuthSettings & from)
+        {
+            /// Update with check for emptyness only parameters which
+            /// can be passed not only from config, but via ast.
+
+            if (!from.access_key_id.empty())
+                access_key_id = from.access_key_id;
+            if (!from.secret_access_key.empty())
+                secret_access_key = from.secret_access_key;
+
+            headers = from.headers;
+            region = from.region;
+            server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
+        }
     };
 
     struct ReadWriteSettings
@@ -61,6 +68,7 @@ struct S3Settings
         size_t max_single_part_upload_size = 0;
         size_t max_connections = 0;
         bool check_objects_after_upload = false;
+        size_t max_unexpected_write_error_retries = 0;
 
         ReadWriteSettings() = default;
         explicit ReadWriteSettings(const Settings & settings);
@@ -73,7 +81,8 @@ struct S3Settings
                 && upload_part_size_multiply_parts_count_threshold == other.upload_part_size_multiply_parts_count_threshold
                 && max_single_part_upload_size == other.max_single_part_upload_size
                 && max_connections == other.max_connections
-                && check_objects_after_upload == other.check_objects_after_upload;
+                && check_objects_after_upload == other.check_objects_after_upload
+                && max_unexpected_write_error_retries == other.max_unexpected_write_error_retries;
         }
 
         void updateFromSettingsIfEmpty(const Settings & settings);
@@ -92,7 +101,6 @@ struct S3Settings
 class StorageS3Settings
 {
 public:
-    StorageS3Settings() = default;
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings);
 
     S3Settings getSettings(const String & endpoint) const;

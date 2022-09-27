@@ -354,9 +354,6 @@ void KeeperDispatcher::shutdown()
                 update_configuration_thread.join();
         }
 
-        if (server)
-            server->shutdown();
-
         KeeperStorage::RequestForSession request_for_session;
 
         /// Set session expired for all pending requests
@@ -368,10 +365,58 @@ void KeeperDispatcher::shutdown()
             setResponse(request_for_session.session_id, response);
         }
 
-        /// Clear all registered sessions
-        std::lock_guard lock(session_to_response_callback_mutex);
-        session_to_response_callback.clear();
+        KeeperStorage::RequestsForSessions close_requests;
+        {
+            /// Clear all registered sessions
+            std::lock_guard lock(session_to_response_callback_mutex);
+
+            if (server && hasLeader())
+            {
+                close_requests.reserve(session_to_response_callback.size());
+                // send to leader CLOSE requests for active sessions
+                for (const auto & [session, response] : session_to_response_callback)
+                {
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    request->xid = Coordination::CLOSE_XID;
+                    using namespace std::chrono;
+                    KeeperStorage::RequestForSession request_info
+                    {
+                        .session_id = session,
+                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
+                        .request = std::move(request),
+                    };
+
+                    close_requests.push_back(std::move(request_info));
+                }
+            }
+
+            session_to_response_callback.clear();
+        }
+
+        // if there is no leader, there is no reason to do CLOSE because it's a write request
+        if (server && hasLeader() && !close_requests.empty())
+        {
+            LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
+            const auto raft_result = server->putRequestBatch(close_requests);
+            auto sessions_closing_done_promise = std::make_shared<std::promise<void>>();
+            auto sessions_closing_done = sessions_closing_done_promise->get_future();
+            raft_result->when_ready([sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
+                                        nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
+                                        nuraft::ptr<std::exception> & /*exception*/) { sessions_closing_done_promise->set_value(); });
+
+            auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
+            if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
+                LOG_WARNING(
+                    log,
+                    "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
+                    session_shutdown_timeout);
+        }
+
+        if (server)
+            server->shutdown();
+
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
+
     }
     catch (...)
     {
@@ -418,13 +463,15 @@ void KeeperDispatcher::sessionCleanerTask()
                     LOG_INFO(log, "Found dead session {}, will try to close it", dead_session);
 
                     /// Close session == send close request to raft server
-                    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
-                    KeeperStorage::RequestForSession request_info;
-                    request_info.request = request;
                     using namespace std::chrono;
-                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-                    request_info.session_id = dead_session;
+                    KeeperStorage::RequestForSession request_info
+                    {
+                        .session_id = dead_session,
+                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
+                        .request = std::move(request),
+                    };
                     {
                         std::lock_guard lock(push_request_mutex);
                         if (!requests_queue->push(std::move(request_info)))

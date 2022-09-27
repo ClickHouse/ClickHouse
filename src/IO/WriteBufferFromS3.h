@@ -15,6 +15,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
@@ -33,7 +34,6 @@ namespace Aws::S3::Model
 namespace DB
 {
 
-using ScheduleFunc = std::function<void(std::function<void()>)>;
 class WriteBufferFromFile;
 
 /**
@@ -53,7 +53,7 @@ public:
         const S3Settings::ReadWriteSettings & s3_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ScheduleFunc schedule_ = {},
+        ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;
@@ -80,37 +80,39 @@ private:
 
     struct PutObjectTask;
     void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
-    void processPutRequest(PutObjectTask & task);
+    void processPutRequest(const PutObjectTask & task);
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
+    void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
-    String bucket;
-    String key;
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    const String bucket;
+    const String key;
+    const S3Settings::ReadWriteSettings s3_settings;
+    const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    const std::optional<std::map<String, String>> object_metadata;
+
     size_t upload_part_size = 0;
-    S3Settings::ReadWriteSettings s3_settings;
-    std::optional<std::map<String, String>> object_metadata;
-
-    /// Buffer to accumulate data.
-    std::shared_ptr<Aws::StringStream> temporary_buffer;
+    std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
     std::atomic<size_t> total_parts_uploaded = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
-    std::vector<String> part_tags;
+    std::vector<String> TSA_GUARDED_BY(bg_tasks_mutex) part_tags;
 
     bool is_prefinalized = false;
 
     /// Following fields are for background uploads in thread pool (if specified).
     /// We use std::function to avoid dependency of Interpreters
-    ScheduleFunc schedule;
-    std::unique_ptr<PutObjectTask> put_object_task;
-    std::list<UploadPartTask> upload_object_tasks;
-    size_t num_added_bg_tasks = 0;
-    size_t num_finished_bg_tasks = 0;
+    const ThreadPoolCallbackRunner<void> schedule;
+
+    std::unique_ptr<PutObjectTask> put_object_task; /// Does not need protection by mutex because of the logic around is_finished field.
+    std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) upload_object_tasks;
+    size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;
 

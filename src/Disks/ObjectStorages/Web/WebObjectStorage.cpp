@@ -30,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int FILE_DOESNT_EXIST;
     extern const int NETWORK_ERROR;
 }
 
@@ -153,20 +152,6 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    const auto & path = object.absolute_path;
-    LOG_TRACE(log, "Read from path: {}", path);
-
-    auto iter = files.find(path);
-    if (iter == files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
-
-    auto fs_path = fs::path(url) / path;
-    auto remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
-    remote_path = remote_path.string().substr(url.size());
-
-    StoredObjects objects;
-    objects.emplace_back(remote_path, iter->second.size);
-
     auto read_buffer_creator =
          [this, read_settings]
          (const std::string & path_, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
@@ -179,16 +164,16 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
              read_until_position);
      };
 
-    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, read_settings);
+    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), StoredObjects{object}, read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = IObjectStorage::getThreadPoolReader();
+        auto & reader = IObjectStorage::getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl));
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl), read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
     }
 }

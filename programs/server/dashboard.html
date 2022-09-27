@@ -820,7 +820,7 @@ async function draw(idx, chart, url_params, query) {
     sync.sub(plots[idx]);
 
     /// Set title
-    const title = queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] );
+    const title = queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
     chart.querySelector('.title').firstChild.data = title;
 }
 

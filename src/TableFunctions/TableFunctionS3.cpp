@@ -8,9 +8,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
+#include <Storages/StorageURL.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -38,6 +40,10 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
     {
         if (args.empty() || args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
+
+        auto header_it = StorageURL::collectHeaders(args, s3_configuration, context);
+        if (header_it != args.end())
+            args.erase(header_it);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -133,15 +139,8 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
 {
     if (configuration.structure == "auto")
     {
-        return StorageS3::getTableStructureFromData(
-            configuration.format,
-            S3::URI(Poco::URI(configuration.url)),
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
-            configuration.compression_method,
-            false,
-            std::nullopt,
-            context);
+        context->checkAccess(getSourceAccessType());
+        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -159,19 +158,14 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         columns = structure_hint;
 
     StoragePtr storage = std::make_shared<StorageS3>(
-        s3_uri,
-        configuration.auth_settings.access_key_id,
-        configuration.auth_settings.secret_access_key,
+        configuration,
         StorageID(getDatabaseName(), table_name),
-        configuration.format,
-        configuration.rw_settings,
         columns,
         ConstraintsDescription{},
         String{},
         context,
         /// No format_settings for table function S3
-        std::nullopt,
-        configuration.compression_method);
+        std::nullopt);
 
     storage->startup();
 

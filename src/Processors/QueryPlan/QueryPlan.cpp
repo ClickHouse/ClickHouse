@@ -195,7 +195,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
 
@@ -333,8 +333,8 @@ static void explainStep(
     {
         if (step.hasOutputStream())
         {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_mode << ")";
-            if (step.getOutputStream().sort_mode != DataStream::SortMode::None)
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
             {
                 settings.out << ": ";
                 dumpSortDescription(step.getOutputStream().sort_description, settings.out);

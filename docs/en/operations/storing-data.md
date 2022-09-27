@@ -112,6 +112,155 @@ Example of disk configuration:
 </clickhouse>
 ```
 
+## Using local cache {#using-local-cache}
+
+It is possible to configure local cache over disks in storage configuration starting from version 22.3. For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc. Cache uses `LRU` cache policy.
+
+Example of configuration for versions later or equal to 22.8:
+
+``` xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+            </s3>
+            <cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </cache>
+        </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>cache</disk>
+                </main>
+            </volumes>
+        <policies>
+    </storage_configuration>
+```
+
+Example of configuration for versions earlier than 22.8:
+
+``` xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_max_size>10737418240</data_cache_max_size>
+            </s3>
+        </disks>
+        <policies>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
+        <policies>
+    </storage_configuration>
+```
+
+Cache **configuration settings**:
+
+- `path` - path to the directory with cache. Default: None, this setting is obligatory.
+
+- `max_size` - maximum size of the cache in bytes or in readable format, e.g. `ki, Mi, Gi, etc`, example `10Gi` (such format works starting from `22.10` version). When the limit is reached, cache files are evicted according to the cache eviction policy. Default: None, this setting is obligatory.
+
+- `cache_on_write_operations` - allow to turn on `write-through` cache (caching data on any write operations: `INSERT` queries, background merges). Default: `false`. The `write-through` cache can be disabled per query using setting `enable_filesystem_cache_on_write_operations` (data is cached only if both cache config settings and corresponding query setting are enabled).
+
+- `enable_filesystem_query_cache_limit` - allow to limit the size of cache which is downloaded within each query (depends on user setting `max_query_cache_size`). Default: `false`.
+
+- `enable_cache_hits_threshold` - a number, which defines how many times some data needs to be read before it will be cached. Default: `0`, e.g. the data is cached at the first attempt to read it.
+
+- `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `false`. This setting was added in version 22.8. If you used filesystem cache before this version, then it will not work on versions starting from 22.8 if this setting is set to `true`. If you want to use this setting, clear old cache created before version 22.8 before upgrading.
+
+- `max_file_segment_size` - a maximum size of a single cache file in bytes or in readable format (`ki, Mi, Gi, etc`, example `10Gi`). Default: `104857600` (`100Mi`).
+
+- `max_elements` - a limit for a number of cache files. Default: `1048576`.
+
+Cache **query settings**:
+
+- `enable_filesystem_cache` - allows to disable cache per query even if storage policy was configured with `cache` disk type. Default: `true`.
+
+- `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise query data will not be written to local cache storage. Default: `false`.
+
+- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on.
+
+- `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. Default: `false`.
+
+- `max_query_cache_size` - a limit for the cache size, which can be written to local cache storage. Requires enabled `enable_filesystem_query_cache_limit` in cache configuration. Default: `false`.
+
+- `skip_download_if_exceeds_query_cache` - allows to change the behaviour of setting `max_query_cache_size`. Default: `true`. If this setting is turned on and cache download limit during query was reached, no more cache will be downloaded to cache storage. If this setting is turned off and cache download limit during query was reached, cache will still be written by cost of evicting previously downloaded (within current query) data, e.g. second behaviour allows to preserve `last recentltly used` behaviour while keeping query cache limit.
+
+** Warning **
+Cache configuration settings and cache query settings correspond to the latest ClickHouse version, for earlier versions something might not be supported.
+
+Cache **system tables**:
+
+- `system.filesystem_cache` - system tables which shows current state of cache.
+
+- `system.filesystem_cache_log` - system table which shows detailed cache usage per query. Requires `enable_filesystem_cache_log` setting to be `true`.
+
+Cache **commands**:
+
+- `SYSTEM DROP FILESYSTEM CACHE (<path>) (ON CLUSTER)`
+
+- `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions <= `22.8` the command is named `SHOW CACHES`)
+
+```sql
+SHOW FILESYSTEM CACHES
+```
+
+Result:
+
+``` text
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
+- `DESCRIBE CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW CACHES` command. (For versions <= `22.8` the command is named `DESCRIBE CACHE`)
+
+```sql
+DESCRIBE CACHE 's3_cache'
+```
+
+``` text
+┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─cache_on_write_operations─┬─enable_cache_hits_threshold─┬─current_size─┬─current_elements─┬─path────────┬─do_not_evict_index_and_mark_files─┐
+│ 10000000000 │      1048576 │             104857600 │                         1 │                           0 │         3276 │               54 │ /s3_cache/  │                                 1 │
+└─────────────┴──────────────┴───────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────┴──────────────────┴─────────────┴───────────────────────────────────┘
+```
+
+Cache current metrics:
+
+- `FilesystemCacheSize`
+
+- `FilesystemCacheElements`
+
+Cache asynchronous metrics:
+
+- `FilesystemCacheBytes`
+
+- `FilesystemCacheFiles`
+
+Cache profile events:
+
+- `CachedReadBufferReadFromSourceBytes`, `CachedReadBufferReadFromCacheBytes,`
+
+- `CachedReadBufferReadFromSourceMicroseconds`, `CachedReadBufferReadFromCacheMicroseconds`
+
+- `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`
+
+- `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`
+
 ## Storing Data on Web Server {#storing-data-on-webserver}
 
 There is a tool `clickhouse-static-files-uploader`, which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation, you can load this table into any ClickHouse server via `DiskWeb`.
