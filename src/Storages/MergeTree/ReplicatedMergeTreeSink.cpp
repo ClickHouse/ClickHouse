@@ -3,12 +3,10 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Interpreters/PartLog.h>
-#include "Common/Exception.h"
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
-
 
 namespace ProfileEvents
 {
@@ -155,14 +153,35 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     auto zookeeper = storage.getZooKeeper();
-    assertSessionIsNotExpired(zookeeper);
+    const auto& settings = context->getSettingsRef();
+    keeper_retries_info = RetriesInfo(
+        settings.insert_part_commit_max_retries,
+        settings.insert_part_commit_retry_initial_backoff_ms,
+        settings.insert_part_commit_retry_max_backoff_ms);
+    // assertSessionIsNotExpired(zookeeper);
 
     /** If write is with quorum, then we check that the required number of replicas is now live,
       *  and also that for all previous parts for which quorum is required, this quorum is reached.
       * And also check that during the insertion, the replica was not reinitialized or disabled (by the value of `is_active` node).
       * TODO Too complex logic, you can do better.
       */
-    size_t replicas_num = checkQuorumPrecondition(zookeeper);
+    size_t replicas_num = 0;
+    RetriesControl quorum_retries_ctl(keeper_retries_info);
+    while (quorum_retries_ctl.canTry())
+    {
+        zookeeper = storage.getZooKeeper();
+        try
+        {
+            checkQuorumPrecondition(zookeeper);
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+
+            quorum_retries_ctl.setKeeperError(e.code, e.message());
+        }
+    }
 
     deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
@@ -172,7 +191,6 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 
     size_t streams = 0;
     bool support_parallel_write = false;
-    const Settings & settings = context->getSettingsRef();
 
     for (auto & current_block : part_blocks)
     {
@@ -310,138 +328,6 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
-struct RetriesInfo
-{
-    RetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
-        : max_retries(max_retries_), curr_backoff_ms(initial_backoff_ms_), max_backoff_ms(max_backoff_ms_)
-    {
-    }
-
-    const UInt64 max_retries = 0;
-    UInt64 curr_backoff_ms = 1;
-    const UInt64 max_backoff_ms = 0;
-    UInt64 retry_count = 0;
-};
-
-class RetriesControl
-{
-public:
-    explicit RetriesControl(RetriesInfo& retries_info_)
-        : retries_info(retries_info_)
-    {
-    }
-
-    struct KeeperError
-    {
-        using Code = Coordination::Error;
-        Code code = Code::ZOK;
-        std::string message;
-    };
-
-    struct UserError
-    {
-        int code = ErrorCodes::OK;
-        std::string message;
-    };
-
-    bool canTry()
-    {
-        ++iteration_count;
-        /// first iteration is ordinary execution, no further checks needed
-        if (0 == iteration_count - 1)
-            return true;
-
-        if (unconditional_retry)
-        {
-            unconditional_retry = false;
-            return true;
-        }
-
-        /// iteration succeeded -> no need to retry
-        if (iteration_succeeded)
-            return false;
-
-        /// the flag will set to false in case of error
-        iteration_succeeded = true;
-
-        if (retries_info.retry_count >= retries_info.max_retries)
-        {
-            throwIfError();
-            return false;
-        }
-
-        /// retries
-        ++retries_info.retry_count;
-        sleepForMilliseconds(retries_info.curr_backoff_ms);
-        retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
-
-        return true;
-    }
-
-    void throwIfError() const
-    {
-        if (user_error.code != ErrorCodes::OK)
-            throw Exception(user_error.code, user_error.message);
-
-        if (keeper_error.code != KeeperError::Code::ZOK)
-            throw zkutil::KeeperException(keeper_error.code, keeper_error.message);
-    }
-
-    void setUserError(int code, std::string message)
-    {
-        iteration_succeeded = false;
-        user_error.code = code;
-        user_error.message = std::move(message);
-        keeper_error = KeeperError{};
-    }
-
-    template <typename... Args>
-    void setUserError(int code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
-    void setKeeperError(KeeperError::Code code, std::string message)
-    {
-        iteration_succeeded = false;
-        keeper_error.code = code;
-        keeper_error.message = std::move(message);
-        user_error = UserError{};
-    }
-
-    bool call(auto && f)
-    {
-        try
-        {
-            f();
-            return true;
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            setKeeperError(e.code, e.message());
-        }
-        catch (const Exception & e)
-        {
-            setUserError(e.code(), e.what());
-        }
-        return false;
-    }
-
-    const auto & getUserError() const { return user_error; }
-
-    const auto & getKeeperError() const { return keeper_error; }
-
-    void requestUnconditionalRetry() { unconditional_retry = true; }
-
-private:
-    RetriesInfo& retries_info;
-    UInt64 iteration_count = 0;
-    UserError user_error;
-    KeeperError keeper_error;
-    bool unconditional_retry = false;
-    bool iteration_succeeded = true;
-};
-
 void ReplicatedMergeTreeSink::commitPart(
     zkutil::ZooKeeperPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
@@ -469,11 +355,11 @@ void ReplicatedMergeTreeSink::commitPart(
     RetriesControl retries_ctl(retries_info);
     while (retries_ctl.canTry())
     {
+        /// create new zookeeper session if zookeeper session is expired
+        zookeeper = storage.getZooKeeper();
+
         try
         {
-            /// create new zookeeper session if zookeeper session is expired
-            zookeeper = storage.getZooKeeper();
-
             /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
             /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
             /// Also, make deduplication check. If a duplicate is detected, no nodes are created.

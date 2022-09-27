@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 import pytest
+import time
+import threading
 from helpers.cluster import ClickHouseCluster
-
-# from multiprocessing.dummy import Pool
+from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
 from helpers.test_tools import assert_eq_with_retry
-import time
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -28,26 +27,91 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_replica_inserts_with_keeper_restart(started_cluster):
+    try:
+        settings = {"insert_quorum": "2", "insert_quorum_parallel": "0", "insert_part_commit_max_retries": "10"}
+        node1.query(
+            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
+        )
+        node2.query(
+            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '1') ORDER BY tuple()"
+        )
+
+        p = Pool(3)
+        zk_stopped_event = threading.Event()
+
+        def zoo_restart(zk_stopped_event):
+            cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+            zk_stopped_event.set()
+            cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+
+        job = p.apply_async(zoo_restart, (zk_stopped_event, ))
+
+        zk_stopped_event.wait(60)
+
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10)",
+            settings=settings,
+        )
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
+            settings=settings,
+        )
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(20, 10)",
+            settings=settings,
+        )
+
+        job.wait()
+        p.close()
+        p.join()
+
+        assert node1.query("SELECT COUNT() FROM r") == "30\n"
+        assert node2.query("SELECT COUNT() FROM r") == "30\n"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS r SYNC")
+        node2.query("DROP TABLE IF EXISTS r SYNC")
+
+
 def test_replica_inserts_with_keeper_disconnect(started_cluster):
-    settings = {"insert_quorum": "2", "insert_quorum_parallel": "0"}
-    node1.query(
-        "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
-    )
-    node2.query(
-        "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '1') ORDER BY tuple()"
-    )
+    try:
+        settings = {"insert_quorum": "2", "insert_quorum_parallel": "0", "insert_part_commit_max_retries": "10"}
+        node1.query(
+            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
+        )
+        node2.query(
+            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '1') ORDER BY tuple()"
+        )
 
-    with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(node1)
+        p = Pool(1)
+        disconnect_event = threading.Event()
 
-    node1.query(
-        "INSERT INTO r SELECT number, toString(number) FROM numbers(10)",
-        settings=settings,
-    )
-    node1.query(
-        "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
-        settings=settings,
-    )
+        def keeper_disconnect(node, event):
+            with PartitionManager() as pm2:
+                pm.drop_instance_zk_connections(node)
+                event.set()
+                time.sleep(5)
 
-    assert node1.query("SELECT COUNT() FROM r") == "20\n"
-    assert node2.query("SELECT COUNT() FROM r") == "20\n"
+        job = p.apply_async(keeper_disconnect, (node1, disconnect_event, ))
+        disconnect_event.wait(60)
+
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10)",
+            settings=settings,
+        )
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
+            settings=settings,
+        )
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(20, 10)",
+            settings=settings,
+        )
+
+        assert node1.query("SELECT COUNT() FROM r") == "30\n"
+        assert node2.query("SELECT COUNT() FROM r") == "30\n"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS r SYNC")
+        node2.query("DROP TABLE IF EXISTS r SYNC")

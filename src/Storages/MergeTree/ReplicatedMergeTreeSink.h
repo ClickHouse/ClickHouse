@@ -3,6 +3,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
+#include <Storages/MergeTree/KeeperRetries.h>
 
 
 namespace Poco { class Logger; }
@@ -60,6 +61,7 @@ public:
     }
 
 private:
+    RetriesInfo keeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
