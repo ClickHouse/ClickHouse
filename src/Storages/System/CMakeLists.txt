@@ -2,8 +2,6 @@
 # You can also regenerate it manually this way:
 # execute_process(COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh")
 
-set (CONFIG_BUILD "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp")
-
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
 get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
 
@@ -11,14 +9,14 @@ function(generate_system_build_options)
     include(${ClickHouse_SOURCE_DIR}/src/configure_config.cmake)
     include(${ClickHouse_SOURCE_DIR}/src/Functions/configure_config.cmake)
     include(${ClickHouse_SOURCE_DIR}/src/Formats/configure_config.cmake)
-    configure_file(StorageSystemBuildOptions.generated.cpp.in ${CONFIG_BUILD})
+    configure_file(StorageSystemBuildOptions.cpp.in StorageSystemBuildOptions.generated.cpp)
 endfunction()
 
 generate_system_build_options()
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(storages_system .)
-list (APPEND storages_system_sources ${CONFIG_BUILD})
+list (APPEND storages_system_sources StorageSystemBuildOptions.generated.cpp)
 
 add_custom_target(generate-contributors
     ./StorageSystemContributors.sh
