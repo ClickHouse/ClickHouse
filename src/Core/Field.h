@@ -16,6 +16,7 @@
 #include <base/DayNum.h>
 #include <base/strong_typedef.h>
 #include <base/EnumReflection.h>
+#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -548,7 +549,7 @@ public:
             case Types::Float64:
             {
                 // Compare as UInt64 so that NaNs compare as equal.
-                return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
+                return bit_cast<UInt64>(get<Float64>()) == bit_cast<UInt64>(rhs.get<Float64>());
             }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::String:  return get<String>()  == rhs.get<String>();
@@ -842,6 +843,31 @@ auto & Field::safeGet()
             "Bad get: has {}, requested {}", getTypeName(), requested);
 
     return get<T>();
+}
+
+
+template <typename T>
+T get(const Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T get(Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T safeGet(const Field & field)
+{
+    return field.template safeGet<T>();
+}
+
+template <typename T>
+T safeGet(Field & field)
+{
+    return field.template safeGet<T>();
 }
 
 

@@ -1088,7 +1088,7 @@ private:
         {
             case Field::Types::UInt64:      return x.get<UInt64>();
             case Field::Types::Int64:       return x.get<Int64>();
-            case Field::Types::Float64:     return std::bit_cast<UInt64>(x.get<Float64>());
+            case Field::Types::Float64:     return bit_cast<UInt64>(x.get<Float64>());
             case Field::Types::Bool:        return x.get<bool>();
             case Field::Types::Decimal32:   return x.get<DecimalField<Decimal32>>().getValue();
             case Field::Types::Decimal64:   return x.get<DecimalField<Decimal64>>().getValue();
