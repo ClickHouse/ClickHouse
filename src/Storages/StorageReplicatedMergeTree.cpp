@@ -7451,8 +7451,9 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     /// can be called only during table initialization
     std::lock_guard lock(table_shared_id_mutex);
 
+    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
-    if (table_shared_id == UUIDHelpers::Nil)
+    if (maybe_has_metadata_in_zookeeper && table_shared_id == UUIDHelpers::Nil)
         createTableSharedID();
 
     return toString(table_shared_id);
