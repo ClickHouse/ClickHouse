@@ -276,7 +276,7 @@ private:
                             attribute,
                             fetched_columns_index,
                             fetched_keys,
-                            [&](auto value) { data.push_back(value); },
+                            [&](auto value) { data.push_back(static_cast<AttributeType>(value)); },
                             default_value_provider);
                     }
                 };
@@ -338,7 +338,7 @@ private:
                         }
                         else
                         {
-                            container.back() = column_value.get<NearestFieldType<ElementType>>();
+                            container.back() = static_cast<ElementType>(column_value.get<ElementType>());
                         }
                     });
                 }
@@ -391,7 +391,7 @@ private:
                         }
                         else
                         {
-                            container[index_to_use] = column_value.get<NearestFieldType<ElementType>>();
+                            container[index_to_use] = static_cast<ElementType>(column_value.get<ElementType>());
                         }
                     });
                 }

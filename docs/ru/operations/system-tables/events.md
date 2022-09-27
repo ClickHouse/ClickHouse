@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/events
+---
 # system.events {#system_tables-events}
 
 Содержит информацию о количестве событий, произошедших в системе. Например, в таблице можно найти, сколько запросов `SELECT` обработано с момента запуска сервера ClickHouse.

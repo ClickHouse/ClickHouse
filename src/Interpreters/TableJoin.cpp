@@ -13,7 +13,6 @@
 
 #include <Dictionaries/DictionaryStructure.h>
 
-#include <Interpreters/DictionaryReader.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -417,75 +416,6 @@ bool TableJoin::needStreamWithNonJoinedRows() const
     return isRightOrFull(kind());
 }
 
-static std::optional<String> getDictKeyName(const String & dict_name , ContextPtr context)
-{
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
-    if (!dictionary)
-        return {};
-
-    if (const auto & structure = dictionary->getStructure(); structure.id)
-        return structure.id->name;
-    return {};
-}
-
-bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
-{
-    bool allowed_inner = isInner(kind()) && strictness() == JoinStrictness::All;
-    bool allowed_left = isLeft(kind()) && (strictness() == JoinStrictness::Any ||
-                                           strictness() == JoinStrictness::All ||
-                                           strictness() == JoinStrictness::Semi ||
-                                           strictness() == JoinStrictness::Anti);
-
-    /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
-    if (!allowed_inner && !allowed_left)
-        return false;
-
-    if (clauses.size() != 1 || clauses[0].key_names_right.size() != 1)
-        return false;
-
-    const auto & right_key = getOnlyClause().key_names_right[0];
-
-    /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
-    auto it_key = original_names.find(right_key);
-    if (it_key == original_names.end())
-        return false;
-
-    if (!right_storage_dictionary)
-        return false;
-
-    auto dict_name = right_storage_dictionary->getDictionaryName();
-
-    auto dict_key = getDictKeyName(dict_name, context);
-    if (!dict_key.has_value() || *dict_key != it_key->second)
-        return false; /// JOIN key != Dictionary key
-
-    Names src_names;
-    NamesAndTypesList dst_columns;
-    for (const auto & col : sample_block)
-    {
-        if (col.name == right_key)
-            continue; /// do not extract key column
-
-        auto it = original_names.find(col.name);
-        if (it != original_names.end())
-        {
-            String original = it->second;
-            src_names.push_back(original);
-            dst_columns.push_back({col.name, col.type});
-        }
-        else
-        {
-            /// Can't extract column from dictionary table
-            /// TODO: Sometimes it should be possible to recunstruct required column,
-            /// e.g. if it's an expression depending on dictionary attributes
-            return false;
-        }
-    }
-    dictionary_reader = std::make_shared<DictionaryReader>(dict_name, src_names, dst_columns, context);
-
-    return true;
-}
-
 static void renameIfNeeded(String & name, const NameToNameMap & renames)
 {
     if (const auto it = renames.find(name); it != renames.end())
@@ -715,23 +645,24 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     return dag_stage1;
 }
 
-void TableJoin::setStorageJoin(std::shared_ptr<IKeyValueStorage> storage)
+void TableJoin::setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage)
 {
     right_kv_storage = storage;
 }
 
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
 {
-    if (right_storage_dictionary)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
     right_storage_join = storage;
 }
 
-void TableJoin::setStorageJoin(std::shared_ptr<StorageDictionary> storage)
+void TableJoin::setRightStorageName(const std::string & storage_name)
 {
-    if (right_storage_join)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
-    right_storage_dictionary = storage;
+    right_storage_name = storage_name;
+}
+
+const std::string & TableJoin::getRightStorageName() const
+{
+    return right_storage_name;
 }
 
 String TableJoin::renamedRightColumnName(const String & name) const
@@ -818,7 +749,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (dictionary_reader || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
+    if (!right_storage_name.empty() || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
     if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
         return false;

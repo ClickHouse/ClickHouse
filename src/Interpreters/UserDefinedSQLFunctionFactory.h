@@ -43,6 +43,9 @@ public:
     /// Get all user defined functions registered names.
     std::vector<String> getAllRegisteredNames() const override;
 
+    /// Check whether any UDFs have been registered
+    bool empty() const;
+
 private:
     std::unordered_map<String, ASTPtr> function_name_to_create_query;
     mutable std::mutex mutex;

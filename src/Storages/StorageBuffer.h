@@ -169,6 +169,8 @@ private:
     void backgroundFlush();
     void reschedule();
 
+    StoragePtr getDestinationTable() const;
+
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
 };

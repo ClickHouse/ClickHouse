@@ -28,8 +28,12 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToDecimal256>();
 
     factory.registerFunction<FunctionToDate>();
-    /// MySQL compatibility alias.
-    factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
+
+    /// MySQL compatibility alias. Cannot be registered as alias,
+    /// because we don't want it to be normalized to toDate in queries,
+    /// otherwise CREATE DICTIONARY query breaks.
+    factory.registerFunction<FunctionToDate>("DATE", {}, FunctionFactory::CaseInsensitive);
+
     factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToDateTime32>();
@@ -103,6 +107,9 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionParseDateTime64BestEffort>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUS>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrZero>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrNull>();
 
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalNanosecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMicrosecond, PositiveMonotonicity>>();

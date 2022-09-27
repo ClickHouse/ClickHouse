@@ -1127,7 +1127,7 @@ Pipe StorageWindowView::watch(
     if (query.limit_length)
     {
         has_limit = true;
-        limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
+        limit = typeid_cast<ASTLiteral &>(*query.limit_length).value.safeGet<UInt64>();
     }
 
     auto reader = std::make_shared<WindowViewSource>(

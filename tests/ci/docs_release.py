@@ -39,7 +39,7 @@ if __name__ == "__main__":
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -106,7 +106,7 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     report_url = upload_results(
         s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME

@@ -227,6 +227,8 @@ void LocalServer::cleanup()
             global_context.reset();
         }
 
+        /// thread status should be destructed before shared context because it relies on process list.
+
         status.reset();
 
         // Delete the temporary directory if needed.
@@ -366,7 +368,7 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    ThreadStatus thread_status;
+    thread_status.emplace();
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 
@@ -558,14 +560,16 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size);
+        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
     /// Size of cache for marks (index of MergeTree family of tables).
+    String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
+        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
@@ -618,9 +622,13 @@ void LocalServer::processConfig()
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        loadMetadata(global_context);
         startupSystemTables();
-        DatabaseCatalog::instance().loadDatabases();
+
+        if (!config().has("only-system-tables"))
+        {
+            loadMetadata(global_context);
+            DatabaseCatalog::instance().loadDatabases();
+        }
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
@@ -711,6 +719,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
+        ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
@@ -739,6 +748,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("table-structure", options["structure"].as<std::string>());
     if (options.count("no-system-tables"))
         config().setBool("no-system-tables", true);
+    if (options.count("only-system-tables"))
+        config().setBool("only-system-tables", true);
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());

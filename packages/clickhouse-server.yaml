@@ -37,6 +37,10 @@ overrides:
     depends:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
 
+deb:
+  fields:
+    Source: clickhouse
+
 contents:
 - src: root/etc/clickhouse-server
   dst: /etc/clickhouse-server

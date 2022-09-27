@@ -37,6 +37,21 @@ private:
     IDisk & disk;
 };
 
+struct ChmodOperation final : public IMetadataOperation
+{
+    ChmodOperation(const std::string & path_, mode_t mode_, IDisk & disk_);
+
+    void execute(std::unique_lock<std::shared_mutex> & metadata_lock) override;
+
+    void undo() override;
+
+private:
+    std::string path;
+    mode_t mode;
+    mode_t old_mode;
+    IDisk & disk;
+};
+
 
 struct UnlinkFileOperation final : public IMetadataOperation
 {

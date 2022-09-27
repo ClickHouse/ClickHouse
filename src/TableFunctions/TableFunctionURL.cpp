@@ -9,7 +9,8 @@
 #include <Storages/StorageURL.h>
 #include <Storages/StorageExternalDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 
 
@@ -54,7 +55,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
         filename = configuration.url;
         format = configuration.format;
         if (format == "auto")
-            format = FormatFactory::instance().getFormatFromFileName(filename, true);
+            format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
         structure = configuration.structure;
         compression_method = configuration.compression_method;
     }
@@ -102,10 +103,9 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     for (const auto & [header, value] : configuration.headers)
     {
-        auto value_literal = value.safeGet<String>();
         if (header == "Range")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-        headers.emplace_back(std::make_pair(header, value_literal));
+        headers.emplace_back(header, value);
     }
     return headers;
 }
@@ -113,9 +113,22 @@ ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
-        return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
+    {
+        context->checkAccess(getSourceAccessType());
+        return StorageURL::getTableStructureFromData(format,
+            filename,
+            chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+            getHeaders(),
+            std::nullopt,
+            context);
+    }
 
     return parseColumnsListFromString(structure, context);
+}
+
+String TableFunctionURL::getFormatFromFirstArgument()
+{
+    return FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

@@ -12,6 +12,7 @@ namespace DB
 class MergeTreeData;
 struct MergeTreeReadTask;
 struct MergeTreeBlockSizePredictor;
+class IMergeTreeDataPartInfoForReader;
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
@@ -23,9 +24,8 @@ using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredict
   * Adds them to the `columns`.
   */
 NameSet injectRequiredColumns(
-    const MergeTreeData & storage,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeData::DataPartPtr & part,
     bool with_subcolumns,
     Names & columns);
 
@@ -68,16 +68,19 @@ struct MergeTreeReadTask
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, size_t part_index_in_query_,
-        const Names & ordered_names_, const NameSet & column_name_set_, const MergeTreeReadTaskColumns & task_columns_,
+        const MergeTreeData::DataPartPtr & data_part_,
+        const MarkRanges & mark_ranges_,
+        size_t part_index_in_query_,
+        const Names & ordered_names_,
+        const NameSet & column_name_set_,
+        const MergeTreeReadTaskColumns & task_columns_,
         bool remove_prewhere_column_,
         MergeTreeBlockSizePredictorPtr && size_predictor_);
 };
 
 MergeTreeReadTaskColumns getReadTaskColumns(
-    const MergeTreeData & storage,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
     const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
@@ -113,7 +116,7 @@ struct MergeTreeBlockSizePredictor
     inline size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
-            ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, bytes_per_row_current))
+            ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, static_cast<size_t>(bytes_per_row_current)))
             : 0;
     }
 

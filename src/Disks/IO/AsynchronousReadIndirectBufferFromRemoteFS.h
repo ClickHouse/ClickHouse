@@ -23,7 +23,7 @@ struct ReadSettings;
 *
 * Buffers chain for diskWeb:
 * AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
-* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHttp -> ReadBufferFromIStream.
+* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHTTP -> ReadBufferFromIStream.
 *
 * We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
@@ -31,7 +31,7 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
-        AsynchronousReaderPtr reader_, const ReadSettings & settings_,
+        IAsynchronousReader & reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE);
 
@@ -53,6 +53,8 @@ public:
 
     size_t getFileSize() override;
 
+    bool isIntegratedWithFilesystemCache() const override { return true; }
+
 private:
     bool nextImpl() override;
 
@@ -62,7 +64,7 @@ private:
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    AsynchronousReaderPtr reader;
+    IAsynchronousReader & reader;
 
     Int32 priority;
 
