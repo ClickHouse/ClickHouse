@@ -388,7 +388,7 @@ void GraceHashJoin::rehashInMemoryJoin(InMemoryJoinPtr & join, const BucketsSnap
 
 bool GraceHashJoin::fitsInMemory(InMemoryJoin * join) const
 {
-    /// One row can't be splitted, avoid loop
+    /// One row can't be split, avoid loop
     if (join->join->getTotalRowCount() < 2)
         return true;
 
