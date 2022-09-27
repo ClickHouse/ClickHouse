@@ -346,13 +346,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     bool is_already_existing_part = false;
 
-    const auto& settings = context->getSettingsRef();
-    RetriesInfo retries_info(
-        settings.insert_part_commit_max_retries,
-        settings.insert_part_commit_retry_initial_backoff_ms,
-        settings.insert_part_commit_retry_max_backoff_ms);
-
-    RetriesControl retries_ctl(retries_info);
+    RetriesControl retries_ctl(keeper_retries_info);
     while (retries_ctl.canTry())
     {
         /// create new zookeeper session if zookeeper session is expired
@@ -664,7 +658,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     if (isQuorumEnabled())
     {
-        RetriesControl quorum_retries_ctl(retries_info);
+        RetriesControl quorum_retries_ctl(keeper_retries_info);
         while (quorum_retries_ctl.canTry())
         {
             try
