@@ -142,6 +142,7 @@ ORDER BY t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, t2.s
 ; {{ is_implemented(join_algorithm) }}
 
 SET join_use_nulls = 0;
+SET max_bytes_in_join = 0;
 
 {% endfor -%}
 {% endfor -%}

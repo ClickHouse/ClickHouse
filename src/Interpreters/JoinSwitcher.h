@@ -85,7 +85,7 @@ private:
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
     /// Throws an error if join-on-disk do not support JOIN kind or strictness.
-    void switchJoin();
+    bool switchJoin();
 };
 
 }
