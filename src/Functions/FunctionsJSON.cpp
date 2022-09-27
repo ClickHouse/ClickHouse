@@ -834,7 +834,7 @@ struct JSONExtractTree
 
             // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
             // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
-            // the data is padded here and writen directly to the Low Cardinality Column
+            // the data is padded here and written directly to the Low Cardinality Column
             auto padded_str = str.data() + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
 
             assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
