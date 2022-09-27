@@ -73,12 +73,14 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
 
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
+    /// We map levels to our own logger 1 to 1 except WARN+ levels. In most cases we failover such errors with retries
+    /// and don't want to see them as Errors in our logs.
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
     {
-        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::error, Poco::Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::error, Poco::Message::PRIO_ERROR}},
-        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::warning, Poco::Message::PRIO_WARNING}},
+        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
         {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
@@ -899,6 +901,22 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
         use_environment_credentials,
         use_insecure_imds_request
     };
+}
+
+
+void AuthSettings::updateFrom(const AuthSettings & from)
+{
+    /// Update with check for emptyness only parameters which
+    /// can be passed not only from config, but via ast.
+
+    if (!from.access_key_id.empty())
+        access_key_id = from.access_key_id;
+    if (!from.secret_access_key.empty())
+        secret_access_key = from.secret_access_key;
+
+    headers = from.headers;
+    region = from.region;
+    server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
 }
 
 }

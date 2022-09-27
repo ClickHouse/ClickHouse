@@ -32,7 +32,7 @@ struct Base58Encode
         /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
         /// and we take double scale to avoid any reallocation.
 
-        size_t max_result_size = ceil(2 * src_column.getChars().size() + 1);
+        size_t max_result_size = static_cast<size_t>(ceil(2 * src_column.getChars().size() + 1));
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);

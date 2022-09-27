@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include <Storages/HeaderCollection.h>
 #include <IO/S3/PocoHTTPClient.h>
 
 #include <string>
@@ -115,6 +116,7 @@ struct URI
     bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
+    explicit URI(const std::string & uri_) : URI(Poco::URI(uri_)) {}
 
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
@@ -155,6 +157,8 @@ struct AuthSettings
     std::optional<bool> use_insecure_imds_request;
 
     bool operator==(const AuthSettings & other) const = default;
+
+    void updateFrom(const AuthSettings & from);
 };
 
 }

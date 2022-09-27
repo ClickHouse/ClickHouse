@@ -80,7 +80,7 @@ void VerticalRowOutputFormat::writeRowStartDelimiter()
     writeIntText(row_number, out);
     writeCString(":\n", out);
 
-    size_t width = log10(row_number + 1) + 1 + strlen("Row :");
+    size_t width = static_cast<size_t>(log10(row_number + 1)) + 1 + strlen("Row :");
     for (size_t i = 0; i < width; ++i)
         writeCString("─", out);
     writeChar('\n', out);

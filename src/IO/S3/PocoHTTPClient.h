@@ -11,29 +11,12 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
+#include <Storages/HeaderCollection.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
-
-#endif
-
-namespace DB
-{
-
-struct HttpHeader
-{
-    std::string name;
-    std::string value;
-
-    inline bool operator==(const HttpHeader & other) const { return name == other.name && value == other.value; }
-};
-
-using HeaderCollection = std::vector<HttpHeader>;
-}
-
-#if USE_AWS_S3
 
 namespace Aws::Http::Standard
 {
