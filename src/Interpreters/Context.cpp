@@ -31,6 +31,9 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ThreadPoolReader.h>
+#include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -228,6 +231,12 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::unique_ptr<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
 
+    mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
+    mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
+    mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
+
+    mutable std::unique_ptr<ThreadPool> threadpool_writer;
+
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
     mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
@@ -311,23 +320,76 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
-        try
+        /// Wait for thread pool for background reads and writes,
+        /// since it may use per-user MemoryTracker which will be destroyed here.
+        if (asynchronous_remote_fs_reader)
         {
-            /// Wait for thread pool for background writes,
-            /// since it may use per-user MemoryTracker which will be destroyed here.
-            IObjectStorage::getThreadPoolWriter().wait();
-            /// Make sure that threadpool is destructed before this->process_list
-            /// because thread_status, which was created for threads inside threadpool,
-            /// relies on it.
-            if (load_marks_threadpool)
+            try
             {
+                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
+                asynchronous_remote_fs_reader->wait();
+                asynchronous_remote_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (asynchronous_local_fs_reader)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                asynchronous_local_fs_reader->wait();
+                asynchronous_local_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (synchronous_local_fs_reader)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                synchronous_local_fs_reader->wait();
+                synchronous_local_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (threadpool_writer)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing threadpool writer");
+                threadpool_writer->wait();
+                threadpool_writer.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (load_marks_threadpool)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
         try
@@ -3378,6 +3440,66 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
+IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
+{
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+
+    switch (type)
+    {
+        case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
+        {
+            if (!shared->asynchronous_remote_fs_reader)
+            {
+                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 100);
+                auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
+
+                shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
+            }
+
+            return *shared->asynchronous_remote_fs_reader;
+        }
+        case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
+        {
+            if (!shared->asynchronous_local_fs_reader)
+            {
+                auto pool_size = config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
+                auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
+
+                shared->asynchronous_local_fs_reader = std::make_unique<ThreadPoolReader>(pool_size, queue_size);
+            }
+
+            return *shared->asynchronous_local_fs_reader;
+        }
+        case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
+        {
+            if (!shared->synchronous_local_fs_reader)
+            {
+                shared->synchronous_local_fs_reader = std::make_unique<SynchronousReader>();
+            }
+
+            return *shared->synchronous_local_fs_reader;
+        }
+    }
+}
+
+ThreadPool & Context::getThreadPoolWriter() const
+{
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+
+    if (!shared->threadpool_writer)
+    {
+        auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
+        auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
+
+        shared->threadpool_writer = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+    }
+
+    return *shared->threadpool_writer;
+}
 
 ReadSettings Context::getReadSettings() const
 {

@@ -190,7 +190,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = getThreadPoolReader();
+        auto & reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
     }
     else
@@ -230,6 +230,8 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     auto settings_ptr = s3_settings.get();
+    auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
         bucket,
@@ -237,7 +239,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         settings_ptr->s3_settings,
         attributes,
         buf_size,
-        threadPoolCallbackRunner(getThreadPoolWriter()),
+        std::move(scheduler),
         disk_write_settings);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(
