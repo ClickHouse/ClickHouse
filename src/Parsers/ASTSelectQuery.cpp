@@ -480,7 +480,7 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
 
 bool ASTSelectQuery::hasQueryParameters() const
 {
-    if (!analyzeReceiveQueryParams(this->where()).empty())
+    if (!analyzeReceiveQueryParams(this->clone()).empty())
     {
         return true;
     }
