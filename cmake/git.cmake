@@ -31,7 +31,7 @@ if (Git_FOUND)
     OUTPUT_VARIABLE GIT_COMMIT_SUBJECT
     ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-  message(STATUS "HEAD's commit hash ${GIT_HASH}")
+  message(STATUS "Git HEAD commit hash: ${GIT_HASH}")
 
   execute_process(
     COMMAND ${GIT_EXECUTABLE} status
