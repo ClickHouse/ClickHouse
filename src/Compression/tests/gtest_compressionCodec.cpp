@@ -1019,7 +1019,7 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
             Codec("Gorilla")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(MonotonicGenerator<Float32>(M_E, 5))),
+            generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(M_E), 5))),
             generateSeq<Float64>(G(MonotonicGenerator<Float64>(M_E, 5)))
         )
     )
@@ -1032,7 +1032,7 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
             Codec("Gorilla")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(MonotonicGenerator<Float32>(-1 * M_E, 5))),
+            generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(-1 * M_E), 5))),
             generateSeq<Float64>(G(MonotonicGenerator<Float64>(-1 * M_E, 5)))
         )
     )
