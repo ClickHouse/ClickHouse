@@ -148,6 +148,7 @@ struct FormatSettings
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
         bool try_infer_numbers_from_strings = false;
+        bool try_infer_objects = false;
     } json;
 
     struct
