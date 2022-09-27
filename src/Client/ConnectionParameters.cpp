@@ -6,6 +6,7 @@
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "Common/SSH/Wrappers.h"
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
@@ -72,7 +73,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
             passphrase = result;
 
-        ssh::SshKey key(filename, passphrase);
+        ssh::SshKey key = ssh::SshKeyFactory::makePrivateFromFile(filename, passphrase);
         if (key.isPrivate())
         {
            ssh_private_key = std::move(key);

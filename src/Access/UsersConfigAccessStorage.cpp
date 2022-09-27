@@ -162,7 +162,7 @@ namespace
 
                     try
                     {
-                        keys.emplace_back(base64_key, ssh::SshKey::typeFromName(algorithm));
+                        keys.emplace_back(ssh::SshKeyFactory::makePublicFromBase64(base64_key, algorithm));
                     }
                     catch (const std::invalid_argument&)
                     {

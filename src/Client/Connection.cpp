@@ -264,6 +264,7 @@ void Connection::sendHello()
     if (!ssh_private_key.isEmpty())
     {
         writeVarUInt(Protocol::Client::SshChallengeRequest, *out);
+        out->next();
         UInt64 packet_type = 0;
         if (in->eof())
             throw Poco::Net::NetException("Connection reset by peer");

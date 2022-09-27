@@ -1119,7 +1119,8 @@ void TCPHandler::receiveHello()
     {
         challenge = createChallenge();
         writeVarUInt(Protocol::Server::SshChallenge, *out);
-        writeString(challenge, *out);
+        writeStringBinary(challenge, *out);
+        out->next();
         readVarUInt(packet_type, *in);
     }
 
