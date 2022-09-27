@@ -22,6 +22,9 @@ description: |
   Static clickhouse-keeper binary
     A stand-alone clickhouse-keeper package
 
+deb:
+  fields:
+    Source: clickhouse
 
 contents:
 - src: root/etc/clickhouse-keeper

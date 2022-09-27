@@ -139,11 +139,13 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
 }
 
+
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    : zk_log(std::move(zk_log_))
 {
-    zk_log = std::move(zk_log_);
     init(args_);
 }
+
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))
