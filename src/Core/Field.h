@@ -849,6 +849,31 @@ auto & Field::safeGet()
 
 
 template <typename T>
+T get(const Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T get(Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T safeGet(const Field & field)
+{
+    return field.template safeGet<T>();
+}
+
+template <typename T>
+T safeGet(Field & field)
+{
+    return field.template safeGet<T>();
+}
+
+
+template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
