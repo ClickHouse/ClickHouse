@@ -11,6 +11,11 @@
 #include <format>
 #include <unordered_map>
 
+namespace DB::ErrorCodes
+{
+extern const int UNKNOWN_TYPE;
+}
+
 namespace DB
 {
 
@@ -88,6 +93,9 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
             if (!open_bracket.ignore(pos, expected))
                 return false;
             to_type = String(pos->begin, pos->end);
+
+            if (type_cast.find(to_type) == type_cast.end())
+                 throw Exception(to_type + " is not a supported kusto data type for mv-expand", ErrorCodes::UNKNOWN_TYPE);
 
             ++pos;
             if (!close_bracket.ignore(pos, expected))
@@ -199,7 +207,13 @@ bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_no
         if (!column.to_type.empty())
         {  
             cast_type_column_remove = cast_type_column_remove.empty() ? " Except " + column.alias : cast_type_column_remove + " Except " + column.alias ;
-            auto rename_str = std::format("accurateCastOrNull({0},'{1}') as {0}_ali",column.alias, type_cast[column.to_type]);
+            String rename_str;
+
+            if (type_cast[column.to_type] == "Boolean")
+                rename_str = std::format("accurateCastOrNull(toInt64OrNull(toString({0})),'{1}') as {0}_ali",column.alias, type_cast[column.to_type]);
+            else
+                rename_str = std::format("accurateCastOrNull({0},'{1}') as {0}_ali",column.alias, type_cast[column.to_type]);
+
             cast_type_column_rename = cast_type_column_rename.empty() ? rename_str : cast_type_column_rename + "," + rename_str;
             cast_type_column_restore = cast_type_column_restore.empty() ? std::format(" Except {}_ali ", column.alias) : cast_type_column_restore + std::format(" Except {}_ali ", column.alias);
             cast_type_column_restore_name =  cast_type_column_restore_name.empty() ? std::format("{0}_ali as {0}", column.alias ) :cast_type_column_restore_name + std::format(", {0}_ali as {0}", column.alias);
@@ -231,21 +245,24 @@ bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_no
         query = std::format("Select {} {} From {} {}", columns, extra_columns, input, expand_str);
         if (!parseSQLQueryByString(std::make_unique<ParserSelectQuery>(), query, sub_query_node, max_depth))
             return false;
-       setSubQuerySource(sub_query_node, select_node, false ,false);
-       select_node = std::move(sub_query_node);
+        if (!setSubQuerySource(sub_query_node, select_node, false, false))
+            return false;
+        select_node = std::move(sub_query_node);
     }
     else
     {
         query = std::format("(Select {} {} From {} {})", columns, extra_columns, input, expand_str);
         if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), query, sub_query_node, max_depth))
             return false;
-        setSubQuerySource(sub_query_node, select_node, true, false);
+        if (!setSubQuerySource(sub_query_node, select_node, true, false))
+            return false;
         select_node = std::move(sub_query_node);
 
         auto rename_query = std::format("(Select * {}, {} From {})", cast_type_column_remove, cast_type_column_rename, "query");
         if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), rename_query, sub_query_node, max_depth))
             return false;
-        setSubQuerySource(sub_query_node, select_node, true, true);
+        if (!setSubQuerySource(sub_query_node, select_node, true, true))
+            return false;
 
         select_node = std::move(sub_query_node);
         query = std::format("Select * {}, {} from {}", cast_type_column_restore, cast_type_column_restore_name, "rename_query");

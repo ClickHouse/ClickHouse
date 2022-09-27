@@ -517,7 +517,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | project extract('(\\b[A-Z]+\\b).+(\\b\\d+)', 2, 'The price of PINEAPPLE ice cream is 40', typeof(int))",
-            "SELECT CAST(extract('The price of PINEAPPLE ice cream is 40', '\\b\\\\d+'), 'Int32')\nFROM Customers"
+            "SELECT accurateCastOrNull(extract('The price of PINEAPPLE ice cream is 40', '\\b\\\\d+'), 'Int32')\nFROM Customers"
         },
         {
             "Customers | project extract_all('(\\w)(\\w+)(\\w)','The price of PINEAPPLE ice cream is 50')",
@@ -573,10 +573,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
          {
              "Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName",
              "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_list_with_nulls(FirstName) by FirstName",
-             "SELECT\n    FirstName,\n    groupArray(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
          },
          {
              "Customers | summarize t = make_set(FirstName) by FirstName",

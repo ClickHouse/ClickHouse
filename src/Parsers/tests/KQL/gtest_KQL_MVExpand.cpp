@@ -16,7 +16,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_MVExpand, ParserTest,
         },
         {
             "T | mv-expand c to typeof(bool)",
-            "SELECT\n    * EXCEPT c_ali,\n    c_ali AS c\nFROM\n(\n    SELECT\n        * EXCEPT c,\n        accurateCastOrNull(c, 'Boolean') AS c_ali\n    FROM\n    (\n        SELECT *\n        FROM T\n        ARRAY JOIN c\n    )\n)\nSETTINGS enable_unaligned_array_join = 1"
+            "SELECT\n    * EXCEPT c_ali,\n    c_ali AS c\nFROM\n(\n    SELECT\n        * EXCEPT c,\n        accurateCastOrNull(toInt64OrNull(toString(c)), 'Boolean') AS c_ali\n    FROM\n    (\n        SELECT *\n        FROM T\n        ARRAY JOIN c\n    )\n)\nSETTINGS enable_unaligned_array_join = 1"
         },
         {
             "T | mv-expand b | mv-expand c",
@@ -40,6 +40,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_MVExpand, ParserTest,
         },
         {
             "T | mv-expand with_itemindex=index c,d to typeof(bool)",
-            "SELECT\n    * EXCEPT d_ali,\n    d_ali AS d\nFROM\n(\n    SELECT\n        * EXCEPT d,\n        accurateCastOrNull(d, 'Boolean') AS d_ali\n    FROM\n    (\n        SELECT\n            index,\n            *\n        FROM T\n        ARRAY JOIN\n            c,\n            d,\n            range(0, arrayMax([length(c), length(d)])) AS index\n    )\n)\nSETTINGS enable_unaligned_array_join = 1"
+            "SELECT\n    * EXCEPT d_ali,\n    d_ali AS d\nFROM\n(\n    SELECT\n        * EXCEPT d,\n        accurateCastOrNull(toInt64OrNull(toString(d)), 'Boolean') AS d_ali\n    FROM\n    (\n        SELECT\n            index,\n            *\n        FROM T\n        ARRAY JOIN\n            c,\n            d,\n            range(0, arrayMax([length(c), length(d)])) AS index\n    )\n)\nSETTINGS enable_unaligned_array_join = 1"
         }
 })));
