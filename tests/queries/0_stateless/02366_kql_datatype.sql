@@ -37,7 +37,7 @@ print time('12:30:55.123');
 print time(1d);
 print time(-1d);
 print time(6nanoseconds);
--- print time(6tick); == 6e-7
+print time(6tick);
 print '-- guid'
 print guid(74be27de-1e4e-49d9-b579-fe0b331d3642);
 print guid(null);
@@ -49,7 +49,7 @@ print timespan(10s); -- 	        10 seconds
 print timespan(0.1s); -- 	        0.1 second
 print timespan(100ms); -- 	        100 millisecond
 print timespan(10microsecond); -- 	10 microseconds
--- print timespan(1tick); --           100 nanoseconds -> 1e-7
+print timespan(1tick); --           100 nanoseconds
 print timespan(1.5h) / timespan(30m);
 print timespan('12.23:12:23') / timespan(1s);
 print '-- null';
@@ -100,6 +100,7 @@ print todatetime('abc') == null;
 print '-- make_timespan()';
 print v1=make_timespan(1,12), v2=make_timespan(1,12,30), v3=make_timespan(1,12,30,55.123);
 print '-- totimespan()';
+print totimespan(1tick);
 print totimespan('0.00:01:00');
 print totimespan('abc');
 print totimespan('12.23:12:23') / totimespan(1s);
