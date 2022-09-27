@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int OK;
     extern const int TOO_FEW_LIVE_REPLICAS;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
