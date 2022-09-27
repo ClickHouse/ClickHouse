@@ -78,15 +78,15 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef source = column_concrete->getDataAtWithTerminatingZero(i);
+            StringRef source = column_concrete->getDataAt(i);
             auto demangled = tryDemangle(source.data);
             if (demangled)
             {
-                result_column->insertDataWithTerminatingZero(demangled.get(), strlen(demangled.get()) + 1);
+                result_column->insertData(demangled.get(), strlen(demangled.get()));
             }
             else
             {
-                result_column->insertDataWithTerminatingZero(source.data, source.size);
+                result_column->insertData(source.data, source.size);
             }
         }
 
@@ -102,4 +102,3 @@ void registerFunctionDemangle(FunctionFactory & factory)
 }
 
 }
-
