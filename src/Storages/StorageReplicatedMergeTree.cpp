@@ -4185,6 +4185,11 @@ void StorageReplicatedMergeTree::startupImpl()
 
         /// In this thread replica will be activated.
         restarting_thread.start();
+        /// And this is just a callback
+        session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
+        {
+            restarting_thread.start();
+        });
 
         /// Wait while restarting_thread finishing initialization.
         /// NOTE It does not mean that replication is actually started after receiving this event.
@@ -4227,6 +4232,8 @@ void StorageReplicatedMergeTree::shutdown()
 {
     if (shutdown_called.exchange(true))
         return;
+
+    session_expired_callback_handler.reset();
 
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
@@ -7440,12 +7447,22 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 
 String StorageReplicatedMergeTree::getTableSharedID() const
 {
+    /// Lock is not required in other places because createTableSharedID()
+    /// can be called only during table initialization
+    std::lock_guard lock(table_shared_id_mutex);
+
+    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
+    /// Can happen if table was partially initialized before drop by DatabaseCatalog
+    if (maybe_has_metadata_in_zookeeper && table_shared_id == UUIDHelpers::Nil)
+        createTableSharedID();
+
     return toString(table_shared_id);
 }
 
 
-void StorageReplicatedMergeTree::createTableSharedID()
+void StorageReplicatedMergeTree::createTableSharedID() const
 {
+    LOG_DEBUG(log, "Creating shared ID for table {}", getStorageID().getNameForLogs());
     if (table_shared_id != UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
 
@@ -7454,6 +7471,7 @@ void StorageReplicatedMergeTree::createTableSharedID()
     String id;
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))
     {
+        LOG_DEBUG(log, "Shared ID for table {} doesn't exist in ZooKeeper on path {}", getStorageID().getNameForLogs(), zookeeper_table_id_path);
         UUID table_id_candidate;
         auto local_storage_id = getStorageID();
         if (local_storage_id.uuid != UUIDHelpers::Nil)
@@ -7462,11 +7480,13 @@ void StorageReplicatedMergeTree::createTableSharedID()
             table_id_candidate = UUIDHelpers::generateV4();
 
         id = toString(table_id_candidate);
+        LOG_DEBUG(log, "Got candidate ID {}, will try to create it in ZooKeeper on path {}", id, zookeeper_table_id_path);
 
         auto code = zookeeper->tryCreate(zookeeper_table_id_path, id, zkutil::CreateMode::Persistent);
         if (code == Coordination::Error::ZNODEEXISTS)
         { /// Other replica create node early
             id = zookeeper->get(zookeeper_table_id_path);
+            LOG_DEBUG(log, "Shared ID on path {} concurrently created, will set ID {}", zookeeper_table_id_path, id);
         }
         else if (code != Coordination::Error::ZOK)
         {
@@ -7474,6 +7494,7 @@ void StorageReplicatedMergeTree::createTableSharedID()
         }
     }
 
+    LOG_DEBUG(log, "Initializing table shared ID with {}", id);
     table_shared_id = parseFromString<UUID>(id);
 }
 
@@ -7604,7 +7625,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     }
     else
     {
-        LOG_TRACE(log, "Part {} looks temporary, because checksums file doesn't exists, blobs can be removed", part.name);
+        LOG_TRACE(log, "Part {} looks temporary, because {} file doesn't exists, blobs can be removed", part.name, IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
         /// Temporary part with some absent file cannot be locked in shared mode
         return std::make_pair(true, NameSet{});
     }

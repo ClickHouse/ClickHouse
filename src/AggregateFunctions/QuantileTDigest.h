@@ -165,8 +165,8 @@ class QuantileTDigest
                 {
                     l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                 }
-                l->mean = l_mean;
-                l->count = l_count;
+                l->mean = static_cast<Value>(l_mean);
+                l->count = static_cast<Value>(l_count);
                 batch_pos += 1;
             }
             else
@@ -252,8 +252,8 @@ public:
                     {
                         l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                     }
-                    l->mean = l_mean;
-                    l->count = l_count;
+                    l->mean = static_cast<Value>(l_mean);
+                    l->count = static_cast<Value>(l_count);
                 }
                 else
                 {
@@ -369,7 +369,12 @@ public:
                 else if (x >= right)
                     return checkOverflow<ResultType>(c.mean);
                 else
-                    return checkOverflow<ResultType>(interpolate(x, left, prev_mean, right, c.mean));
+                    return checkOverflow<ResultType>(interpolate(
+                        static_cast<Value>(x),
+                        static_cast<Value>(left),
+                        prev_mean,
+                        static_cast<Value>(right),
+                        c.mean));
             }
 
             sum += c.count;
@@ -401,7 +406,7 @@ public:
         if (centroids.size() == 1)
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-                result[result_num] = centroids.front().mean;
+                result[result_num] = static_cast<ResultType>(centroids.front().mean);
             return;
         }
 
@@ -425,11 +430,12 @@ public:
                 while (current_x >= x)
                 {
                     if (x <= left)
-                        result[levels_permutation[result_num]] = prev_mean;
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(prev_mean);
                     else if (x >= right)
-                        result[levels_permutation[result_num]] = c.mean;
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(c.mean);
                     else
-                        result[levels_permutation[result_num]] = interpolate(x, left, prev_mean, right, c.mean);
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(interpolate(
+                            static_cast<Value>(x), static_cast<Value>(left), prev_mean, static_cast<Value>(right), c.mean));
 
                     ++result_num;
                     if (result_num >= size)
@@ -447,7 +453,7 @@ public:
 
         auto rest_of_results = centroids.back().mean;
         for (; result_num < size; ++result_num)
-            result[levels_permutation[result_num]] = rest_of_results;
+            result[levels_permutation[result_num]] = static_cast<ResultType>(rest_of_results);
     }
 
     T get(Float64 level)
