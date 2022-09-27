@@ -1,9 +1,10 @@
 #pragma once
+#include <base/sleep.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <base/sleep.h>
 
-namespace DB{
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -27,7 +28,7 @@ struct RetriesInfo
 class RetriesControl
 {
 public:
-    explicit RetriesControl(RetriesInfo& retries_info_)
+    explicit RetriesControl(RetriesInfo & retries_info_)
         : retries_info(retries_info_)
     {
     }
@@ -135,7 +136,7 @@ public:
     void requestUnconditionalRetry() { unconditional_retry = true; }
 
 private:
-    RetriesInfo& retries_info;
+    RetriesInfo & retries_info;
     UInt64 iteration_count = 0;
     UserError user_error;
     KeeperError keeper_error;
