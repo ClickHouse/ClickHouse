@@ -6205,7 +6205,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, files_to_copy_instead_of_hardlinks, copy_instead_of_hardlink);
+    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 
@@ -6393,8 +6393,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             part->data_part_storage->getPartDirectory(),
             /*make_source_readonly*/ true,
             callback,
-            {},
-            /*copy_instead_of_hardlink*/ false);
+            /*copy_instead_of_hardlink*/ false,
+            {});
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{

@@ -89,7 +89,7 @@ private:
 void localBackup(
     const DiskPtr & disk, const String & source_path,
     const String & destination_path, bool make_source_readonly,
-    std::optional<size_t> max_level, const NameSet & files_to_copy_intead_of_hardlinks, bool copy_instead_of_hardlinks)
+    std::optional<size_t> max_level, bool copy_instead_of_hardlinks, const NameSet & files_to_copy_intead_of_hardlinks)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
