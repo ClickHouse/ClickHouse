@@ -2936,14 +2936,13 @@ void Context::shutdown()
         }
     }
 
-    // Special volumes might also use disks that require shutdown.
-    if (auto tmp_volume = shared->temp_data_on_disk->getVolume())
+    /// Special volumes might also use disks that require shutdown.
+    auto & tmp_data = shared->temp_data_on_disk;
+    if (tmp_data && tmp_data->getVolume())
     {
-        auto & disks = tmp_volume->getDisks();
+        auto & disks = tmp_data->getVolume()->getDisks();
         for (auto & disk : disks)
-        {
             disk->shutdown();
-        }
     }
 
     shared->shutdown();

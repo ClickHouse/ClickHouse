@@ -53,7 +53,7 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
+        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
             : ISource(tmp_stream_->getHeader())
             , tmp_stream(tmp_stream_)
         {}
