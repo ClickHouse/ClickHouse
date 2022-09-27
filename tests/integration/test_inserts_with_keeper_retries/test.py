@@ -29,7 +29,11 @@ def started_cluster():
 
 def test_replica_inserts_with_keeper_restart(started_cluster):
     try:
-        settings = {"insert_quorum": "2", "insert_quorum_parallel": "0", "insert_part_commit_max_retries": "10"}
+        settings = {
+            "insert_quorum": "2",
+            "insert_quorum_parallel": "0",
+            "insert_part_commit_max_retries": "10",
+        }
         node1.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
         )
@@ -45,7 +49,7 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
             zk_stopped_event.set()
             cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
 
-        job = p.apply_async(zoo_restart, (zk_stopped_event, ))
+        job = p.apply_async(zoo_restart, (zk_stopped_event,))
 
         zk_stopped_event.wait(60)
 
@@ -76,7 +80,11 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
 
 def test_replica_inserts_with_keeper_disconnect(started_cluster):
     try:
-        settings = {"insert_quorum": "2", "insert_quorum_parallel": "0", "insert_part_commit_max_retries": "10"}
+        settings = {
+            "insert_quorum": "2",
+            "insert_quorum_parallel": "0",
+            "insert_part_commit_max_retries": "10",
+        }
         node1.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
         )
@@ -93,7 +101,13 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
                 event.set()
                 time.sleep(5)
 
-        job = p.apply_async(keeper_disconnect, (node1, disconnect_event, ))
+        job = p.apply_async(
+            keeper_disconnect,
+            (
+                node1,
+                disconnect_event,
+            ),
+        )
         disconnect_event.wait(60)
 
         node1.query(
