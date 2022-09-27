@@ -58,15 +58,16 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int EXPECTED_ALL_OR_ANY;
 }
 
 namespace
 {
 
-class QueryTreeBuilder : public WithContext
+class QueryTreeBuilder
 {
 public:
-    explicit QueryTreeBuilder(ASTPtr query_);
+    explicit QueryTreeBuilder(ASTPtr query_, ContextPtr context_);
 
     QueryTreeNodePtr getQueryTreeNode()
     {
@@ -99,12 +100,14 @@ private:
     ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, size_t start_child_index) const;
 
     ASTPtr query;
+    ContextPtr context;
     QueryTreeNodePtr query_tree_node;
 
 };
 
-QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_)
+QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_, ContextPtr context_)
     : query(query_->clone())
+    , context(std::move(context_))
 {
     if (query->as<ASTSelectWithUnionQuery>() ||
         query->as<ASTSelectIntersectExceptQuery>() ||
@@ -727,12 +730,46 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
             else if (table_join.on_expression)
                 join_expression = buildExpression(table_join.on_expression);
 
+            const auto & settings = context->getSettingsRef();
+            auto join_default_strictness = settings.join_default_strictness;
+            auto any_join_distinct_right_table_keys = settings.any_join_distinct_right_table_keys;
+
+            JoinStrictness result_join_strictness = table_join.strictness;
+            JoinKind result_join_kind = table_join.kind;
+
+            if (result_join_strictness == JoinStrictness::Unspecified && (result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma))
+            {
+                if (join_default_strictness == JoinStrictness::Any)
+                    result_join_strictness = JoinStrictness::Any;
+                else if (join_default_strictness == JoinStrictness::All)
+                    result_join_strictness = JoinStrictness::All;
+                else
+                    throw Exception(ErrorCodes::EXPECTED_ALL_OR_ANY,
+                        "Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty");
+            }
+
+            if (any_join_distinct_right_table_keys)
+            {
+                if (result_join_strictness == JoinStrictness::Any && result_join_kind == JoinKind::Inner)
+                {
+                    result_join_strictness = JoinStrictness::Semi;
+                    result_join_kind = JoinKind::Left;
+                }
+
+                if (result_join_strictness == JoinStrictness::Any)
+                    result_join_strictness = JoinStrictness::RightAny;
+            }
+            else if (result_join_strictness == JoinStrictness::Any && result_join_kind == JoinKind::Full)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
+            }
+
             auto join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
                 std::move(right_table_expression),
                 std::move(join_expression),
                 table_join.locality,
-                table_join.strictness,
-                table_join.kind);
+                result_join_strictness,
+                result_join_kind);
 
             /** Original AST is not set because it will contain only join part and does
               * not include left table expression.
@@ -835,9 +872,9 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
 
 }
 
-QueryTreeNodePtr buildQueryTree(ASTPtr query)
+QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context)
 {
-    QueryTreeBuilder builder(std::move(query));
+    QueryTreeBuilder builder(std::move(query), context);
     return builder.getQueryTreeNode();
 }
 

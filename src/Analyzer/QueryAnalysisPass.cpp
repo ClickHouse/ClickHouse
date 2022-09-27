@@ -875,7 +875,7 @@ private:
 
     static QueryTreeNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression_node, IdentifierView nested_path);
 
-    static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunction(const std::string & function_name);
+    QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunction(const std::string & function_name);
 
     void evaluateScalarSubquery(QueryTreeNodePtr & query_tree_node, size_t subquery_depth);
 
@@ -994,7 +994,7 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunction(const std
         return {};
 
     const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
-    auto result_node = buildQueryTree(create_function_query->function_core);
+    auto result_node = buildQueryTree(create_function_query->function_core, context);
     if (result_node->getNodeType() != QueryTreeNodeType::LAMBDA)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "SQL user defined function {} must represent lambda expression. Actual {}",
@@ -4203,7 +4203,7 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
 
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
-                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, buildQueryTree(column_default->expression), table_expression_node);
+                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, buildQueryTree(column_default->expression, context), table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
                 alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
             }

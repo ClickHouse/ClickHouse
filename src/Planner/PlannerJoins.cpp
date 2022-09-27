@@ -127,8 +127,13 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
     const JoinNode & join_node,
     JoinClause & join_clause)
 {
-    /// For and function go into children
-    if (join_expressions_actions_node->function && join_expressions_actions_node->function->getName() == "and")
+    std::string function_name;
+
+    if (join_expressions_actions_node->function)
+        function_name = join_expressions_actions_node->function->getName();
+
+    /// For 'and' function go into children
+    if (function_name == "and")
     {
         for (const auto & child : join_expressions_actions_node->children)
         {
@@ -144,59 +149,77 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
         return;
     }
 
-    if (join_expressions_actions_node->function && join_expressions_actions_node->function->getName() == "equals")
+    auto asof_inequality = getASOFJoinInequality(function_name);
+    bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
+
+    if (function_name == "equals" || is_asof_join_inequality)
     {
-        const auto * equals_left_child = join_expressions_actions_node->children.at(0);
-        const auto * equals_right_child = join_expressions_actions_node->children.at(1);
+        const auto * left_child = join_expressions_actions_node->children.at(0);
+        const auto * right_child = join_expressions_actions_node->children.at(1);
 
-        auto left_equals_expression_side_optional = extractJoinTableSideFromExpression(equals_left_child,
+        auto left_expression_side_optional = extractJoinTableSideFromExpression(left_child,
             join_expression_dag_input_nodes,
             left_table_expression_columns_names,
             right_table_expression_columns_names,
             join_node);
 
-        auto right_equals_expression_side_optional = extractJoinTableSideFromExpression(equals_right_child,
+        auto right_expression_side_optional = extractJoinTableSideFromExpression(right_child,
             join_expression_dag_input_nodes,
             left_table_expression_columns_names,
             right_table_expression_columns_names,
             join_node);
 
-        if (!left_equals_expression_side_optional && !right_equals_expression_side_optional)
+        if (!left_expression_side_optional && !right_expression_side_optional)
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "JOIN {} ON expression {} with constants is not supported",
                 join_node.formatASTForErrorMessage(),
                 join_expressions_actions_node->function->getName());
         }
-        else if (left_equals_expression_side_optional && !right_equals_expression_side_optional)
+        else if (left_expression_side_optional && !right_expression_side_optional)
         {
-            join_clause.addCondition(*left_equals_expression_side_optional, join_expressions_actions_node);
+            join_clause.addCondition(*left_expression_side_optional, join_expressions_actions_node);
         }
-        else if (!left_equals_expression_side_optional && right_equals_expression_side_optional)
+        else if (!left_expression_side_optional && right_expression_side_optional)
         {
-            join_clause.addCondition(*right_equals_expression_side_optional, join_expressions_actions_node);
+            join_clause.addCondition(*right_expression_side_optional, join_expressions_actions_node);
         }
         else
         {
-            auto left_equals_expression_side = *left_equals_expression_side_optional;
-            auto right_equals_expression_side = *right_equals_expression_side_optional;
+            auto left_expression_side = *left_expression_side_optional;
+            auto right_expression_side = *right_expression_side_optional;
 
-            if (left_equals_expression_side != right_equals_expression_side)
+            if (left_expression_side != right_expression_side)
             {
-                const ActionsDAG::Node * left_key = equals_left_child;
-                const ActionsDAG::Node * right_key = equals_right_child;
+                const ActionsDAG::Node * left_key = left_child;
+                const ActionsDAG::Node * right_key = right_child;
 
-                if (left_equals_expression_side == JoinTableSide::Right)
+                if (left_expression_side_optional == JoinTableSide::Right)
                 {
-                    left_key = equals_right_child;
-                    right_key = equals_left_child;
+                    left_key = right_child;
+                    right_key = left_child;
+                    asof_inequality = reverseASOFJoinInequality(asof_inequality);
                 }
 
-                join_clause.addKey(left_key, right_key);
+                if (is_asof_join_inequality)
+                {
+                    if (join_clause.hasASOF())
+                    {
+                        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                            "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
+                            join_node.formatASTForErrorMessage());
+                    }
+
+                    join_clause.addASOFKey(left_key, right_key, asof_inequality);
+                }
+                else
+                {
+                    join_clause.addKey(left_key, right_key);
+                }
             }
             else
             {
-                join_clause.addCondition(left_equals_expression_side, join_expressions_actions_node);
+                join_clause.addCondition(left_expression_side, join_expressions_actions_node);
             }
         }
 
