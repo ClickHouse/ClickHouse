@@ -35,7 +35,7 @@ namespace ErrorCodes
 }
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
-    AsynchronousReaderPtr reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
+    IAsynchronousReader & reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
     : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , priority(settings_.priority)
@@ -72,7 +72,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncRe
     request.offset = file_offset_of_buffer_end;
     request.priority = priority;
     request.ignore = 0;
-    return reader->submit(request);
+    return reader.submit(request);
 }
 
 void AsynchronousReadBufferFromHDFS::prefetch()
