@@ -64,6 +64,7 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
 JSONEachRowWithProgress
+JSONObjectEachRow
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
@@ -251,6 +252,7 @@ dragonbox
 durations
 endian
 enum
+exFAT
 fastops
 fcoverage
 filesystem
@@ -299,6 +301,7 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
+jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
 jsonstringseachrowwithprogress
