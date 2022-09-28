@@ -705,7 +705,7 @@ void KeeperServer::waitInit()
 
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
-        throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
+        LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
 std::vector<int64_t> KeeperServer::getDeadSessions()
