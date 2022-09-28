@@ -7,6 +7,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
+#include <Storages/MergeTree/KeeperAccess.h>
 
 namespace ProfileEvents
 {
@@ -81,7 +82,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
 ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink() = default;
 
 /// Allow to verify that the session in ZooKeeper is still alive.
-static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
+static void assertSessionIsNotExpired(const zkutil::ZooKeeperPtr & zookeeper)
 {
     if (!zookeeper)
         throw Exception("No ZooKeeper session.", ErrorCodes::NO_ZOOKEEPER);
@@ -90,7 +91,7 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
         throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
 }
 
-size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper)
+size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const KeeperAccessPtr & zookeeper)
 {
     if (!isQuorumEnabled())
         return 0;
@@ -98,14 +99,14 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
     Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
-    std::vector<std::future<Coordination::ExistsResponse>> replicas_status_futures;
+    std::vector<zkutil::ZooKeeper::FutureExists> replicas_status_futures;
     replicas_status_futures.reserve(replicas.size());
     for (const auto & replica : replicas)
         if (replica != storage.replica_name)
             replicas_status_futures.emplace_back(zookeeper->asyncExists(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active"));
 
-    std::future<Coordination::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
-    std::future<Coordination::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
+    zkutil::ZooKeeper::FutureGet is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
+    zkutil::ZooKeeper::FutureGet host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
     size_t active_replicas = 1;     /// Assume current replica is active (will check below)
     for (auto & status : replicas_status_futures)
@@ -151,12 +152,13 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-    auto zookeeper = storage.getZooKeeper();
     const auto& settings = context->getSettingsRef();
     keeper_retries_info = RetriesInfo(
         settings.insert_part_commit_max_retries,
         settings.insert_part_commit_retry_initial_backoff_ms,
         settings.insert_part_commit_retry_max_backoff_ms);
+
+    auto zookeeper = std::make_shared<KeeperAccess>(storage.getZooKeeper());
     // assertSessionIsNotExpired(zookeeper);
 
     /** If write is with quorum, then we check that the required number of replicas is now live,
@@ -168,7 +170,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     RetriesControl quorum_retries_ctl(keeper_retries_info);
     while (quorum_retries_ctl.canTry())
     {
-        zookeeper = storage.getZooKeeper();
+        zookeeper->setKeeper(storage.getZooKeeper());
         try
         {
             checkQuorumPrecondition(zookeeper);
@@ -269,7 +271,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         finishDelayedChunk(zookeeper);
 }
 
-void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper)
+void ReplicatedMergeTreeSink::finishDelayedChunk(const KeeperAccessPtr & zookeeper)
 {
     if (!delayed_chunk)
         return;
@@ -307,8 +309,8 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 {
     /// NOTE: No delay in this case. That's Ok.
 
-    auto zookeeper = storage.getZooKeeper();
-    assertSessionIsNotExpired(zookeeper);
+    assertSessionIsNotExpired(storage.getZooKeeper());
+    auto zookeeper = std::make_shared<KeeperAccess>(storage.getZooKeeper());
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 
@@ -328,7 +330,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 }
 
 void ReplicatedMergeTreeSink::commitPart(
-    zkutil::ZooKeeperPtr & zookeeper,
+    const KeeperAccessPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const String & block_id,
     DataPartStorageBuilderPtr builder,
@@ -349,7 +351,7 @@ void ReplicatedMergeTreeSink::commitPart(
     while (retries_ctl.canTry())
     {
         /// create new zookeeper session if zookeeper session is expired
-        zookeeper = storage.getZooKeeper();
+        zookeeper->setKeeper(storage.getZooKeeper());
 
         try
         {
@@ -662,7 +664,7 @@ void ReplicatedMergeTreeSink::commitPart(
         {
             try
             {
-                zookeeper = storage.getZooKeeper();
+                zookeeper->setKeeper(storage.getZooKeeper());
 
                 if (is_already_existing_part)
                 {
@@ -700,12 +702,13 @@ void ReplicatedMergeTreeSink::onStart()
 void ReplicatedMergeTreeSink::onFinish()
 {
     auto zookeeper = storage.getZooKeeper();
+    /// todo: check this place, afaiu, it can be called after Generate apart of Consume
     assertSessionIsNotExpired(zookeeper);
-    finishDelayedChunk(zookeeper);
+    finishDelayedChunk(std::make_shared<KeeperAccess>(zookeeper));
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(
-    zkutil::ZooKeeperPtr & zookeeper,
+    const KeeperAccessPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
     const std::string & is_active_node_value,

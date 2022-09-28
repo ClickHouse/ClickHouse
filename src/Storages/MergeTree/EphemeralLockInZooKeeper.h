@@ -28,10 +28,10 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
         const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path);
 
 protected:
-    EphemeralLockInZooKeeper() = delete;
     EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & holder_path_);
 
 public:
+    EphemeralLockInZooKeeper() = delete;
     EphemeralLockInZooKeeper(EphemeralLockInZooKeeper && rhs) noexcept
     {
         *this = std::move(rhs);

@@ -83,6 +83,9 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
+class KeeperAccess;
+using KeeperAccessPtr = std::shared_ptr<KeeperAccess>;
+
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
 public:
@@ -708,9 +711,12 @@ private:
     /// Creates new block number if block with such block_id does not exist
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
+    template <typename KeeperPtr>
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
-        const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
-        const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
+        const String & partition_id,
+        const KeeperPtr & zookeeper,
+        const String & zookeeper_block_id_path = "",
+        const String & zookeeper_path_prefix = "") const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.

@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
 #include <Storages/MergeTree/KeeperRetries.h>
+#include <Storages/MergeTree/KeeperAccess.h>
 
 
 namespace Poco { class Logger; }
@@ -74,11 +75,11 @@ private:
 
     /// Checks active replicas.
     /// Returns total number of replicas.
-    size_t checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
+    size_t checkQuorumPrecondition(const KeeperAccessPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(
-        zkutil::ZooKeeperPtr & zookeeper,
+        const KeeperAccessPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id,
         DataPartStorageBuilderPtr part_builder,
@@ -87,8 +88,11 @@ private:
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(
-        zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
-        const std::string & quorum_path, const std::string & is_active_node_value, size_t replicas_num) const;
+        const KeeperAccessPtr & zookeeper,
+        const std::string & part_name,
+        const std::string & quorum_path,
+        const std::string & is_active_node_value,
+        size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -120,7 +124,7 @@ private:
     struct DelayedChunk;
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
+    void finishDelayedChunk(const KeeperAccessPtr & zookeeper);
 };
 
 }
