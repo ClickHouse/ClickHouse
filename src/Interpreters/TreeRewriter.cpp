@@ -6,29 +6,30 @@
 #include <Common/checkStackSize.h>
 #include <Core/SettingsEnums.h>
 
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/GroupingSetsRewriterVisitor.h>
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
-#include <Interpreters/TableJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
-#include <Interpreters/getTableExpressions.h>
-#include <Interpreters/TreeOptimizer.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/GroupingSetsRewriterVisitor.h>
+#include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/RewriteOrderByVisitor.hpp>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/TreeOptimizer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -520,10 +521,15 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
                 ++new_elements_size;
             }
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
-            if (func && AggregateUtils::isAggregateFunction(*func) && !select_query->groupBy())
+            if (func && !select_query->groupBy())
             {
-                new_elements[result_index] = elem;
-                ++new_elements_size;
+                GetAggregatesVisitor::Data data = {};
+                GetAggregatesVisitor(data).visit(elem);
+                if (!data.aggregates.empty())
+                {
+                    new_elements[result_index] = elem;
+                    ++new_elements_size;
+                }
             }
         }
     }
@@ -1019,7 +1025,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     has_explicit_columns = !required.empty();
     if (is_select && !has_explicit_columns)
     {
-        optimize_trivial_count = true;
+        optimize_trivial_count = !columns_context.has_array_join;
 
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -1252,9 +1258,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
-
-
     if (getContext()->getSettingsRef().enable_positional_arguments)
     {
         if (select_query->groupBy())
@@ -1273,6 +1276,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
         }
     }
+
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -1405,8 +1410,11 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
 {
-    UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
-    UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+    {
+        UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+        UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
+    }
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);

@@ -140,8 +140,8 @@ public:
 
     void addFilter(ActionsDAGPtr expression, std::string column_name)
     {
-        added_filter = std::move(expression);
-        added_filter_column_name = std::move(column_name);
+        added_filter_dags.push_back(expression);
+        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
     }
 
 private:
@@ -160,7 +160,9 @@ private:
     ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;
 
-    ActionsDAGPtr added_filter;
+    std::vector<ActionsDAGPtr> added_filter_dags;
+    ActionDAGNodes added_filter_nodes;
+
     std::string added_filter_column_name;
 
     struct AliasData

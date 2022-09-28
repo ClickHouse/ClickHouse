@@ -490,7 +490,8 @@ static NameSet collectFilesToSkip(
 
     for (const auto & index : indices_to_recalc)
     {
-        files_to_skip.insert(index->getFileName() + ".idx");
+        /// Since MinMax index has .idx2 extension, we need to add correct extension.
+        files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
 
@@ -735,6 +736,8 @@ struct MutationContext
     MergeTreeTransactionPtr txn;
 
     MergeTreeData::HardlinkedFiles hardlinked_files;
+
+    scope_guard temporary_directory_lock;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -1167,7 +1170,10 @@ private:
             ctx->new_data_part->getColumns(),
             skip_part_indices,
             ctx->compression_codec,
-            ctx->txn);
+            ctx->txn,
+            false,
+            false,
+            ctx->context->getWriteSettings());
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1296,7 +1302,7 @@ private:
                     *ctx->source_part->data_part_storage, it->name(), destination);
                 hardlinked_files.insert(it->name());
             }
-            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
+            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->data_part_storage_builder->createProjection(destination);
@@ -1461,6 +1467,8 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
+            MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
+
             if (task->executeStep())
                 return true;
 
@@ -1500,7 +1508,9 @@ bool MutateTask::prepare()
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+        ctx->temporary_directory_lock = std::move(lock);
+        promise.set_value(std::move(part));
         return false;
     }
     else
@@ -1531,15 +1541,18 @@ bool MutateTask::prepare()
     /// FIXME new_data_part is not used in the case when we clone part with cloneAndLoadDataPartOnSameDisk and return false
     /// Is it possible to handle this case earlier?
 
+    String tmp_part_dir_name = "tmp_mut_" + ctx->future_part->name;
+    ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
+
     auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
         single_disk_volume,
         ctx->data->getRelativeDataPath(),
-        "tmp_mut_" + ctx->future_part->name);
+        tmp_part_dir_name);
 
     ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
         single_disk_volume,
         ctx->data->getRelativeDataPath(),
-        "tmp_mut_" + ctx->future_part->name);
+        tmp_part_dir_name);
 
     ctx->new_data_part = ctx->data->createPart(
         ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, data_part_storage);
@@ -1559,8 +1572,7 @@ bool MutateTask::prepare()
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     /// Don't change granularity type while mutating subset of columns
-    ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())
-                                                                         : getNonAdaptiveMrkExtension();
+    ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
 
     const auto data_settings = ctx->data->getSettings();
     ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
@@ -1607,7 +1619,11 @@ bool MutateTask::prepare()
             && ctx->files_to_rename.empty())
         {
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
-            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
+            /// new_data_part is not used here, another part is created instead (see the comment above)
+            ctx->temporary_directory_lock = {};
+            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+            ctx->temporary_directory_lock = std::move(lock);
+            promise.set_value(std::move(part));
             return false;
         }
 

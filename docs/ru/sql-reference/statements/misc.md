@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/misc
 sidebar_position: 41
 ---
 

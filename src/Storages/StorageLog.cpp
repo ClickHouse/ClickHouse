@@ -729,6 +729,7 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 {
     assert(table_path != new_path_to_table_data);
     {
+        disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
 
         table_path = new_path_to_table_data;

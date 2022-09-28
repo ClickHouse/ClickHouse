@@ -31,6 +31,9 @@ from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
 NAME = "Fast test"
 
+# Will help to avoid errors like _csv.Error: field larger than field limit (131072)
+csv.field_size_limit(sys.maxsize)
+
 
 def get_fasttest_cmd(
     workspace, output_path, ccache_path, repo_path, pr_number, commit_sha, image
@@ -105,7 +108,7 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     workspace = os.path.join(temp_path, "fasttest-workspace")
     if not os.path.exists(workspace):
@@ -122,7 +125,7 @@ if __name__ == "__main__":
 
     logging.info("Will try to fetch cache for our build")
     ccache_for_pr = get_ccache_if_not_exists(
-        cache_path, s3_helper, pr_info.number, temp_path
+        cache_path, s3_helper, pr_info.number, temp_path, pr_info.release_pr
     )
     upload_master_ccache = ccache_for_pr in (-1, 0)
 

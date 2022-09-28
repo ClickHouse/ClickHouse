@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/ym-dict-functions
 sidebar_position: 59
 sidebar_label: Embedded Dictionaries
 ---

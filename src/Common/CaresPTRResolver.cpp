@@ -15,14 +15,27 @@ namespace DB
 
     static void callback(void * arg, int status, int, struct hostent * host)
     {
-        auto * ptr_records = reinterpret_cast<std::vector<std::string>*>(arg);
-        if (status == ARES_SUCCESS && host->h_aliases)
+        auto * ptr_records = static_cast<std::unordered_set<std::string>*>(arg);
+        if (ptr_records && status == ARES_SUCCESS)
         {
-            int i = 0;
-            while (auto * ptr_record = host->h_aliases[i])
+            /*
+             * In some cases (e.g /etc/hosts), hostent::h_name is filled and hostent::h_aliases is empty.
+             * Thus, we can't rely solely on hostent::h_aliases. More info on:
+             * https://github.com/ClickHouse/ClickHouse/issues/40595#issuecomment-1230526931
+             * */
+            if (auto * ptr_record = host->h_name)
             {
-                ptr_records->emplace_back(ptr_record);
-                i++;
+                ptr_records->insert(ptr_record);
+            }
+
+            if (host->h_aliases)
+            {
+                int i = 0;
+                while (auto * ptr_record = host->h_aliases[i])
+                {
+                    ptr_records->insert(ptr_record);
+                    i++;
+                }
             }
         }
     }
@@ -35,8 +48,13 @@ namespace DB
          * See https://github.com/grpc/grpc/blob/master/src/core/ext/filters/client_channel/resolver/dns/c_ares/grpc_ares_wrapper.cc#L1187
          * That means it's safe to init it here, but we should be cautious when introducing new code that depends on c-ares and even updates
          * to grpc. As discussed in https://github.com/ClickHouse/ClickHouse/pull/37827#discussion_r919189085, c-ares should be adapted to be atomic
+         *
+         * Since C++ 11 static objects are initialized in a thread safe manner. The static qualifier also makes sure
+         * it'll be called/ initialized only once.
          * */
-        if (ares_library_init(ARES_LIB_INIT_ALL) != ARES_SUCCESS || ares_init(&channel) != ARES_SUCCESS)
+        static const auto library_init_result = ares_library_init(ARES_LIB_INIT_ALL);
+
+        if (library_init_result != ARES_SUCCESS || ares_init(&channel) != ARES_SUCCESS)
         {
             throw DB::Exception("Failed to initialize c-ares", DB::ErrorCodes::DNS_ERROR);
         }
@@ -45,12 +63,17 @@ namespace DB
     CaresPTRResolver::~CaresPTRResolver()
     {
         ares_destroy(channel);
-        ares_library_cleanup();
+        /*
+         * Library initialization is currently done only once in the constructor. Multiple instances of CaresPTRResolver
+         * will be used in the lifetime of ClickHouse, thus it's problematic to have de-init here.
+         * In a practical view, it makes little to no sense to de-init a DNS library since DNS requests will happen
+         * until the end of the program. Hence, ares_library_cleanup() will not be called.
+         * */
     }
 
-    std::vector<std::string> CaresPTRResolver::resolve(const std::string & ip)
+    std::unordered_set<std::string> CaresPTRResolver::resolve(const std::string & ip)
     {
-        std::vector<std::string> ptr_records;
+        std::unordered_set<std::string> ptr_records;
 
         resolve(ip, ptr_records);
         wait();
@@ -58,9 +81,9 @@ namespace DB
         return ptr_records;
     }
 
-    std::vector<std::string> CaresPTRResolver::resolve_v6(const std::string & ip)
+    std::unordered_set<std::string> CaresPTRResolver::resolve_v6(const std::string & ip)
     {
-        std::vector<std::string> ptr_records;
+        std::unordered_set<std::string> ptr_records;
 
         resolve_v6(ip, ptr_records);
         wait();
@@ -68,7 +91,7 @@ namespace DB
         return ptr_records;
     }
 
-    void CaresPTRResolver::resolve(const std::string & ip, std::vector<std::string> & response)
+    void CaresPTRResolver::resolve(const std::string & ip, std::unordered_set<std::string> & response)
     {
         in_addr addr;
 
@@ -77,7 +100,7 @@ namespace DB
         ares_gethostbyaddr(channel, reinterpret_cast<const void*>(&addr), sizeof(addr), AF_INET, callback, &response);
     }
 
-    void CaresPTRResolver::resolve_v6(const std::string & ip, std::vector<std::string> & response)
+    void CaresPTRResolver::resolve_v6(const std::string & ip, std::unordered_set<std::string> & response)
     {
         in6_addr addr;
         inet_pton(AF_INET6, ip.c_str(), &addr);

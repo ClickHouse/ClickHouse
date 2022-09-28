@@ -53,7 +53,8 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     NameParser name_parser;
     ParserDataType type_parser;
 
-    ASTPtr name, type;
+    ASTPtr name;
+    ASTPtr type;
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
@@ -133,7 +134,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_remove{"REMOVE"};
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
-    ParserTernaryOperatorExpression expr_parser;
+    ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
     ParserCodec codec_parser;

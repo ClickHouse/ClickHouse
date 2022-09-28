@@ -63,11 +63,11 @@ void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exceptio
     exception = exception_;
 }
 
-void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
+    DatabaseAtomic::startupTables(thread_pool, mode);
 
-    if (!force_attach)
+    if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
         materialize_thread.assertMySQLAvailable();
 
     materialize_thread.startSynchronization();

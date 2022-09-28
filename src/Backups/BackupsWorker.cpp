@@ -90,7 +90,8 @@ namespace
         }
         catch (...)
         {
-            coordination->setError(current_host, Exception{getCurrentExceptionCode(), getCurrentExceptionMessage(true, true)});
+            if (coordination)
+                coordination->setError(current_host, Exception{getCurrentExceptionCode(), getCurrentExceptionMessage(true, true)});
         }
     }
 
@@ -164,9 +165,9 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         backup_coordination = makeBackupCoordination(backup_settings.coordination_zk_path, context, backup_settings.internal);
     }
 
+    auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
     try
     {
-        auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         addInfo(backup_id, backup_info.toString(), backup_settings.internal, BackupStatus::CREATING_BACKUP);
 
         /// Prepare context to use.
@@ -213,6 +214,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     }
     catch (...)
     {
+        tryLogCurrentException(log, fmt::format("Failed to start {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_info.toString()));
         /// Something bad happened, the backup has not built.
         setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
         sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);

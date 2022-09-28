@@ -1,11 +1,16 @@
 #pragma once
+
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MarkCache.h>
+#include <IO/ReadSettings.h>
+#include <Common/ThreadPool.h>
+
 
 namespace DB
 {
 
 struct MergeTreeIndexGranularityInfo;
+class Threadpool;
 
 class MergeTreeMarksLoader
 {
@@ -19,11 +24,13 @@ public:
         size_t marks_count_,
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         bool save_marks_in_cache_,
+        const ReadSettings & read_settings_,
+        ThreadPool * load_marks_threadpool_,
         size_t columns_in_mark_ = 1);
 
-    const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
+    ~MergeTreeMarksLoader();
 
-    bool initialized() const { return marks != nullptr; }
+    const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
 private:
     DataPartStoragePtr data_part_storage;
@@ -34,9 +41,14 @@ private:
     bool save_marks_in_cache = false;
     size_t columns_in_mark;
     MarkCache::MappedPtr marks;
+    ReadSettings read_settings;
 
-    void loadMarks();
+    MarkCache::MappedPtr loadMarks();
+    std::future<MarkCache::MappedPtr> loadMarksAsync();
     MarkCache::MappedPtr loadMarksImpl();
+
+    std::future<MarkCache::MappedPtr> future;
+    ThreadPool * load_marks_threadpool;
 };
 
 }

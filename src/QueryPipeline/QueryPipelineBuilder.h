@@ -20,8 +20,7 @@ class QueryPlan;
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
-struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+class SubqueryForSet;
 
 struct SizeLimits;
 
@@ -70,7 +69,7 @@ public:
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
-    void transform(const Transformer & transformer);
+    void transform(const Transformer & transformer, bool check_ports = true);
 
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
@@ -150,6 +149,7 @@ public:
     const Block & getHeader() const { return pipe.getHeader(); }
 
     void setProcessListElement(QueryStatus * elem);
+    void setProgressCallback(ProgressCallback callback);
 
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
@@ -190,6 +190,7 @@ private:
     size_t max_threads = 0;
 
     QueryStatus * process_list_element = nullptr;
+    ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();

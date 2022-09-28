@@ -15,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// Info that represents a scalar or array field in a decomposed view.
@@ -35,6 +35,10 @@ struct FieldInfo
 
     /// Number of dimension in array. 0 if field is scalar.
     size_t num_dimensions;
+
+    /// If true then this field is an array of variadic dimension field
+    /// and we need to normalize the dimension
+    bool need_fold_dimension;
 };
 
 FieldInfo getFieldInfo(const Field & field);
@@ -207,6 +211,7 @@ public:
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumnRecursively(ColumnCallback callback) override;
     void insert(const Field & field) override;
     void insertDefault() override;
     void insertFrom(const IColumn & src, size_t n) override;
@@ -220,6 +225,19 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumnPtr cloneResized(size_t new_size) const override;
 
+    /// Order of rows in ColumnObject is undefined.
+    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
+
+    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    void getExtremes(Field & min, Field & max) const override;
+
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    void gather(ColumnGathererStream & gatherer) override;
+
     /// All other methods throw exception.
 
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
@@ -232,14 +250,7 @@ public:
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
     void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
-    int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeConcrete(); }
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
-    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override { throwMustBeConcrete(); }
-    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeConcrete(); }
-    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeConcrete(); }
-    void gather(ColumnGathererStream &) override { throwMustBeConcrete(); }
-    void getExtremes(Field &, Field &) const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
@@ -247,7 +258,7 @@ public:
 private:
     [[noreturn]] static void throwMustBeConcrete()
     {
-        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     template <typename Func>

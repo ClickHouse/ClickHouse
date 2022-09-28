@@ -208,8 +208,9 @@ public:
     /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
     KeyCondition(
         const ASTPtr & query,
+        const ASTs & additional_filter_asts,
         TreeRewriterResultPtr syntax_analyzer_result,
-        PreparedSets prepared_sets_,
+        PreparedSetsPtr prepared_sets_,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -217,9 +218,29 @@ public:
         bool strict_ = false);
 
     KeyCondition(
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
+        const Names & key_column_names,
+        const ExpressionActionsPtr & key_expr_,
+        bool single_point_ = false,
+        bool strict_ = false)
+        : KeyCondition(
+            query_info.query,
+            query_info.filter_asts,
+            query_info.syntax_analyzer_result,
+            query_info.prepared_sets,
+            context,
+            key_column_names,
+            key_expr_,
+            single_point_,
+            strict_)
+    {
+    }
+
+    KeyCondition(
         ActionDAGNodes dag_nodes,
         TreeRewriterResultPtr syntax_analyzer_result,
-        PreparedSets prepared_sets_,
+        PreparedSetsPtr prepared_sets_,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -257,6 +278,8 @@ public:
     /// Checks that the index can not be used
     /// Does not allow any FUNCTION_UNKNOWN (will instantly return true).
     bool anyUnknownOrAlwaysTrue() const;
+
+    bool alwaysFalse() const;
 
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
@@ -450,7 +473,7 @@ private:
     const NameSet key_subexpr_names;
 
     NameSet array_joined_columns;
-    PreparedSets prepared_sets;
+    PreparedSetsPtr prepared_sets;
 
     // If true, always allow key_expr to be wrapped by function
     bool single_point;

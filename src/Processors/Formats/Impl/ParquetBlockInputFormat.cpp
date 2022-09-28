@@ -55,7 +55,16 @@ Chunk ParquetBlockInputFormat::generate()
         return res;
 
     std::shared_ptr<arrow::Table> table;
-    arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, column_indices, &table);
+
+    std::unique_ptr<::arrow::RecordBatchReader> rbr;
+    std::vector<int> row_group_indices { row_group_current };
+    arrow::Status get_batch_reader_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &rbr);
+
+    if (!get_batch_reader_status.ok())
+        throw ParsingException{"Error while reading Parquet data: " + get_batch_reader_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
+
+    arrow::Status read_status = rbr->ReadAll(&table);
+
     if (!read_status.ok())
         throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
 

@@ -203,7 +203,7 @@ def main():
         json.dump(changed_images, ci)
 
     pr_info = PRInfo()
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 

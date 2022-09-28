@@ -53,7 +53,6 @@ class AccessRightsElements;
 enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
-class ExternalModelsLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
@@ -364,8 +363,26 @@ private:
     bool apply_deleted_mask = true;
 
 public:
-    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
-    OpenTelemetryTraceContext query_trace_context;
+    /// Some counters for current query execution.
+    /// Most of them are workarounds and should be removed in the future.
+    struct KitchenSink
+    {
+        std::atomic<size_t> analyze_counter = 0;
+
+        KitchenSink() = default;
+
+        KitchenSink(const KitchenSink & rhs)
+            : analyze_counter(rhs.analyze_counter.load())
+        {}
+
+        KitchenSink & operator=(const KitchenSink & rhs)
+        {
+            analyze_counter = rhs.analyze_counter.load();
+            return *this;
+        }
+    };
+
+    KitchenSink kitchen_sink;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -594,6 +611,7 @@ public:
 
     void killCurrentQuery();
 
+    bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
     const StorageID & getInsertionTable() const { return insertion_table; }
 
@@ -626,19 +644,15 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
-    const ExternalModelsLoader & getExternalModelsLoader() const;
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
-    ExternalModelsLoader & getExternalModelsLoader();
-    ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
-    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
@@ -780,14 +794,15 @@ public:
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes);
+    void setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void dropUncompressedCache() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(size_t cache_size_in_bytes);
+    void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+    ThreadPool & getLoadMarksThreadpool() const;
 
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
@@ -904,7 +919,7 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
-    time_t getUptimeSeconds() const;
+    double getUptimeSeconds() const;
 
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
@@ -918,7 +933,7 @@ public:
     bool applyDeletedMask() const { return apply_deleted_mask; }
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
-    ActionLocksManagerPtr getActionLocksManager();
+    ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType
     {
@@ -946,8 +961,13 @@ public:
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
+
+    /// Throws if parameter with the given name already set.
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
+
+    /// Overrides values of existing parameters.
+    void addQueryParameters(const NameToNameMap & parameters);
 
     /// Add started bridge command. It will be killed after context destruction
     void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
@@ -990,6 +1010,17 @@ public:
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
+
+    enum class FilesystemReaderType
+    {
+        SYNCHRONOUS_LOCAL_FS_READER,
+        ASYNCHRONOUS_LOCAL_FS_READER,
+        ASYNCHRONOUS_REMOTE_FS_READER,
+    };
+
+    IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+
+    ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

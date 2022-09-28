@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/deltasumtimestamp
 sidebar_position: 141
 ---
 
