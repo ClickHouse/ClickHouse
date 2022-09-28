@@ -153,7 +153,7 @@ std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys)
             path = key.substr(0, slash);
         }
 
-        // every filename contains metadata splitted by "_", timestamp is after last "_"
+        // every filename contains metadata split by "_", timestamp is after last "_"
         uint64_t timestamp = std::stoul(key.substr(key.find_last_of("_") + 1));
 
         auto it = latest_parquets.find(path);
