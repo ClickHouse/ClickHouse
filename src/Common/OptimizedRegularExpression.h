@@ -5,9 +5,8 @@
 #include <memory>
 #include <optional>
 #include <Common/StringSearcher.h>
+#include "config.h"
 #include <re2/re2.h>
-
-#include <Common/config.h>
 #include <re2_st/re2.h>
 
 

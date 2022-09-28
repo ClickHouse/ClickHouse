@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Formats/NativeWriter.h>
 #include <Disks/SingleDiskVolume.h>

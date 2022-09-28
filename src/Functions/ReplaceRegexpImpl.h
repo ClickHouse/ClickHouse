@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 
 #include "config_functions.h"
-#include <Common/config.h>
+#include "config.h"
 #include <re2_st/re2.h>
 
 
