@@ -9,7 +9,6 @@
 #include "Regexps.h"
 
 #include "config.h"
-#include "config.h"
 
 #if USE_VECTORSCAN
 #    include <hs.h>

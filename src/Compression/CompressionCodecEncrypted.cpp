@@ -1,5 +1,5 @@
-#include <string_view>
 #include "config.h"
+#include <string_view>
 #include <Common/Exception.h>
 #include <base/types.h>
 #include <IO/VarInt.h>

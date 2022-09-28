@@ -2,8 +2,6 @@
 #include <Storages/StorageFactory.h>
 
 #include "config.h"
-#include "config.h"
-#include "config.h"
 
 namespace DB
 {

@@ -8,7 +8,6 @@
 #include "Regexps.h"
 
 #include "config.h"
-#include "config.h"
 #include <re2_st/re2.h>
 
 
