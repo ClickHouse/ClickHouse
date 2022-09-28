@@ -99,7 +99,8 @@ struct Base58Decode
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset - 1;
             std::optional<size_t> decoded_size = decodeBase58(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
-            if (!decoded_size) {
+            if (!decoded_size)
+            {
                 if constexpr (ErrorHandling == Base58DecodeErrorHandling::ThrowException)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base58 value, cannot be decoded");
                 else
