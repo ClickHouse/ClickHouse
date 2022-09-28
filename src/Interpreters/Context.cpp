@@ -1133,45 +1133,47 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
             StoragePtr res = DatabaseCatalog::instance().getTable({getCurrentDatabase(), function->name}, getQueryContext());
             if (res.get()->isView() && res->as<StorageView>()->isParameterizedView())
                 return res;
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a parameterized view `{}`", function->name);
-            }
         }
-        else
+        auto hash = table_expression->getTreeHash();
+        String key = toString(hash.first) + '_' + toString(hash.second);
+        StoragePtr & res = table_function_results[key];
+        if (!res)
         {
-            auto hash = table_expression->getTreeHash();
-            String key = toString(hash.first) + '_' + toString(hash.second);
-            StoragePtr & res = table_function_results[key];
-            if (!res)
+            TableFunctionPtr table_function_ptr;
+            try
             {
-                TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-                if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
+                table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(" or incorrect parameterized view");
+                throw;
+            }
+            if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
+            {
+                const auto & insertion_table = getInsertionTable();
+                if (!insertion_table.empty())
                 {
-                    const auto & insertion_table = getInsertionTable();
-                    if (!insertion_table.empty())
-                    {
-                        const auto & structure_hint
-                            = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
-                        table_function_ptr->setStructureHint(structure_hint);
-                    }
-                }
-
-                res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
-
-                /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
-                ///
-                ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
-                ///
-                auto new_hash = table_expression->getTreeHash();
-                if (hash != new_hash)
-                {
-                    key = toString(new_hash.first) + '_' + toString(new_hash.second);
-                    table_function_results[key] = res;
+                    const auto & structure_hint
+                        = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
+                    table_function_ptr->setStructureHint(structure_hint);
                 }
             }
-            return res;
+
+            res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+
+            /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
+            ///
+            ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
+            ///
+            auto new_hash = table_expression->getTreeHash();
+            if (hash != new_hash)
+            {
+                key = toString(new_hash.first) + '_' + toString(new_hash.second);
+                table_function_results[key] = res;
+            }
         }
+        return res;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to fetch function from query");
 }

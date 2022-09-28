@@ -13,7 +13,7 @@ SELECT Price FROM v1(price=20);
 SELECT Price FROM v123(price=20); -- { serverError UNKNOWN_FUNCTION }
 
 CREATE VIEW v10 AS SELECT * FROM Catalog WHERE Price=10;
-SELECT Price FROM v10(price=10);  -- { serverError BAD_ARGUMENTS }
+SELECT Price FROM v10(price=10);  -- { serverError UNKNOWN_FUNCTION }
 
 
 CREATE VIEW v2 AS SELECT * FROM Catalog WHERE Price={price:UInt64} AND Quantity={quantity:UInt64};
