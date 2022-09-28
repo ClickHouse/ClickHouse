@@ -12,7 +12,7 @@ using FunctionVisitParamExtractFloat = FunctionsStringSearch<ExtractParamImpl<Na
 struct NameSimpleJSONExtractFloat  { static constexpr auto name = "simpleJSONExtractFloat"; };
 using FunctionSimpleJSONExtractFloat = FunctionsStringSearch<ExtractParamImpl<NameSimpleJSONExtractFloat, ExtractNumericType<Float64>>>;
 
-REGISTER_FUNCTION(VisitParamExtractFloat)
+void registerFunctionVisitParamExtractFloat(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisitParamExtractFloat>();
     factory.registerFunction<FunctionSimpleJSONExtractFloat>();

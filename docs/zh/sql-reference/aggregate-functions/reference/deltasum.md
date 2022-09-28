@@ -1,5 +1,5 @@
 ---
-sidebar_position: 141
+toc_priority: 141
 ---
 
 # deltaSum {#agg_functions-deltasum}

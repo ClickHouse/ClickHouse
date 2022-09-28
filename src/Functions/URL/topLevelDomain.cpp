@@ -11,7 +11,7 @@ struct ExtractTopLevelDomain
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
-        StringRef host = StringRef(getURLHost(data, size));
+        StringRef host = getURLHost(data, size);
 
         res_data = data;
         res_size = 0;
@@ -43,7 +43,7 @@ struct ExtractTopLevelDomain
 struct NameTopLevelDomain { static constexpr auto name = "topLevelDomain"; };
 using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, NameTopLevelDomain>;
 
-REGISTER_FUNCTION(TopLevelDomain)
+void registerFunctionTopLevelDomain(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTopLevelDomain>();
 }

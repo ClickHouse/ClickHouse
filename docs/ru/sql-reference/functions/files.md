@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: "Функции для работы с файлами"
+toc_priority: 43
+toc_title: "Функции для работы с файлами"
 ---
 
 # Функции для работы с файлами {#funktsii-dlia-raboty-s-failami}
@@ -12,13 +12,12 @@ sidebar_label: "Функции для работы с файлами"
 **Синтаксис**
 
 ``` sql
-file(path[, default])
+file(path)
 ```
 
 **Аргументы**
 
 -   `path` — относительный путь до файла от [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Путь к файлу может включать следующие символы подстановки и шаблоны: `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc', 'def'` — строки.
--   `default` — Значение возвращаемое в случае, если указанный файл не существует. Поддерживаемые типы данных: [String](../../sql-reference/data-types/string.md) и [NULL](../../sql-reference/syntax.md#null-literal).
 
 **Примеры**
 

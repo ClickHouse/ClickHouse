@@ -63,11 +63,6 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** Default implementation in presence of arguments with type Nothing is the following:
-      *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
-      */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
-
     /** If the function have non-zero number of arguments,
       *  and if all arguments are constant, that we could automatically provide default implementation:
       *  arguments are converted to ordinary columns with single value, then function is executed as usual,
@@ -104,9 +99,6 @@ private:
 
     ColumnPtr defaultImplementationForNulls(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
-
-    ColumnPtr defaultImplementationForNothing(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -174,8 +166,8 @@ public:
     /** If function isSuitableForConstantFolding then, this method will be called during query analyzis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
       * return they result based on some constant arguments.
-      * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForNothing,
-      * useDefaultImplementationForConstants, useDefaultImplementationForLowCardinality are not applied.
+      * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForConstants,
+      * useDefaultImplementationForLowCardinality are not applied.
       */
     virtual ColumnPtr getConstantResultForNonConstArguments(
         const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
@@ -362,13 +354,7 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** If useDefaultImplementationForNothing() is true, then change arguments for getReturnType() and build():
-      *  if some of arguments are Nothing then don't call getReturnType(), call build() with return_type = Nothing,
-      * Otherwise build returns build(arguments, getReturnType(arguments));
-      */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
-
-    /** If useDefaultImplementationForLowCardinalityColumns() is true, then change arguments for getReturnType() and build().
+    /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build().
       * If function arguments has low cardinality types, convert them to ordinary types.
       * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
       */
@@ -416,11 +402,6 @@ public:
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
-
-    /** Default implementation in presence of arguments with type Nothing is the following:
-      *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
-      */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
 
     /** If the function have non-zero number of arguments,
       *  and if all arguments are constant, that we could automatically provide default implementation:

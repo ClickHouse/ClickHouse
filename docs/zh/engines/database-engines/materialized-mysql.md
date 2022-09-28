@@ -1,6 +1,6 @@
 ---
-sidebar_position: 29
-sidebar_label: MaterializedMySQL
+toc_priority: 29
+toc_title: MaterializedMySQL
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
@@ -53,7 +53,7 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 - `default_authentication_plugin = mysql_native_password `，因为 `MaterializedMySQL` 只能授权使用该方法。
 - `gtid_mode = on`，因为基于GTID的日志记录是提供正确的 `MaterializedMySQL`复制的强制要求。
 
-    :::info "注意"
+!!! attention "注意"
     当打开`gtid_mode`时，您还应该指定`enforce_gtid_consistency = on`。
 
 ## 虚拟列 {#virtual-columns}
@@ -108,7 +108,7 @@ MySQL中的Time 类型，会被ClickHouse转换成微秒来存储
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
+MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
 
 
 ### 数据复制 {#data-replication}

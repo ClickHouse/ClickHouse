@@ -1,9 +1,9 @@
 ---
-sidebar_position: 90
-sidebar_label:  GraphiteMergeTree
+toc_priority: 38
+toc_title: GraphiteMergeTree
 ---
 
-# GraphiteMergeTree
+# GraphiteMergeTree {#graphitemergetree}
 
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
@@ -54,9 +54,8 @@ When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/t
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
-Do not use this method in new projects and, if possible, switch old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -87,18 +86,10 @@ Rollup configuration structure:
 
 ### Required Columns {#required-columns}
 
-#### path_column_name
-
-`path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
-
-#### time_column_name
-`time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
-
-#### value_column_name
-`value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
-
-#### version_column_name
-`version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
+-   `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
+-   `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
+-   `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
+-   `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}
 
@@ -128,21 +119,20 @@ default
     ...
 ```
 
-:::warning
-Patterns must be strictly ordered:
+!!! warning "Attention"
+    Patterns must be strictly ordered:
 
-1. Patterns without `function` or `retention`.
-1. Patterns with both `function` and `retention`.
-1. Pattern `default`.
-:::
+      1. Patterns without `function` or `retention`.
+      1. Patterns with both `function` and `retention`.
+      1. Pattern `default`.
 
 When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
 Fields for `pattern` and `default` sections:
 
--   `rule_type` - a rule's type. It's applied only to a particular metrics. The engine use it to separate plain and tagged metrics. Optional parameter. Default value: `all`.
-It's unnecessary when performance is not critical, or only one metrics type is used, e.g. plain metrics. By default only one type of rules set is created. Otherwise, if any of special types is defined, two different sets are created. One for plain metrics (root.branch.leaf) and one for tagged metrics (root.branch.leaf;tag1=value1).
-The default rules are ended up in both sets.
+-   `rule_type` - a rule's type. It's applied only to a particular metrics. The engine use it to separate plain and tagged metrics. Optional parameter. Default value: `all`.  
+It's unnecessary when performance is not critical, or only one metrics type is used, e.g. plain metrics. By default only one type of rules set is created. Otherwise, if any of special types is defined, two different sets are created. One for plain metrics (root.branch.leaf) and one for tagged metrics (root.branch.leaf;tag1=value1).  
+The default rules are ended up in both sets.  
 Valid values:
     -   `all` (default) - a universal rule, used when `rule_type` is omitted.
     -   `plain` - a rule for plain metrics. The field `regexp` is processed as regular expression.
@@ -151,7 +141,7 @@ Valid values:
 -   `regexp` – A pattern for the metric name (a regular or DSL).
 -   `age` – The minimum age of the data in seconds.
 -   `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
--   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`. Accepted functions: min / max / any / avg. The average is calculated imprecisely, like the average of the averages.
+-   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`. Accepted functions: min / max / any / avg. The average is calculated imprecisely, like the average of the averages. 
 
 ### Configuration Example without rules types {#configuration-example}
 
@@ -262,6 +252,8 @@ Valid values:
 </graphite_rollup>
 ```
 
-:::warning
-Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
-:::
+
+!!! warning "Warning"
+    Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
+
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

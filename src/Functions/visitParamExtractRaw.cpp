@@ -62,7 +62,7 @@ using FunctionVisitParamExtractRaw = FunctionsStringSearchToString<ExtractParamT
 struct NameSimpleJSONExtractRaw    { static constexpr auto name = "simpleJSONExtractRaw"; };
 using FunctionSimpleJSONExtractRaw = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameSimpleJSONExtractRaw>;
 
-REGISTER_FUNCTION(VisitParamExtractRaw)
+void registerFunctionVisitParamExtractRaw(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisitParamExtractRaw>();
     factory.registerFunction<FunctionSimpleJSONExtractRaw>();

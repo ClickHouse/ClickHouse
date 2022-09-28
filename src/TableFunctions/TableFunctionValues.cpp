@@ -11,7 +11,7 @@
 
 #include <TableFunctions/TableFunctionValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -140,7 +140,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
+    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

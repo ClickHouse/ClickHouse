@@ -32,7 +32,7 @@ using FunctionLog = FunctionMathUnary<UnaryFunctionVectorized<LogName, log>>;
 
 }
 
-REGISTER_FUNCTION(Log)
+void registerFunctionLog(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLog>(FunctionFactory::CaseInsensitive);
     factory.registerAlias("ln", "log", FunctionFactory::CaseInsensitive);

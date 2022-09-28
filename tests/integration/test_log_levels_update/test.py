@@ -3,7 +3,7 @@ import re
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="log_quries_probability")
 node = cluster.add_instance("node", with_zookeeper=False)
 
 config = """<clickhouse>

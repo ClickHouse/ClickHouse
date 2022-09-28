@@ -730,7 +730,7 @@ using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>
 
 }
 
-REGISTER_FUNCTION(FormatDateTime)
+void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatDateTime>();
     factory.registerFunction<FunctionFROM_UNIXTIME>();

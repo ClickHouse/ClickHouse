@@ -1,11 +1,11 @@
 ---
-sidebar_position: 52
-sidebar_label: Encoding
+toc_priority: 52
+toc_title: Encoding
 ---
 
-# Encoding Functions
+# Encoding Functions {#encoding-functions}
 
-## char
+## char {#char}
 
 Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
@@ -71,7 +71,7 @@ Result:
 └───────┘
 ```
 
-## hex
+## hex {#hex}
 
 Returns a string containing the argument’s hexadecimal representation.
 
@@ -164,15 +164,14 @@ Result:
 ```
 
 
-## unhex
+## unhex {#unhexstr}
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
 
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
-:::note    
-If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
-:::
+!!! note "Note"
+    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
 
 Alias: `UNHEX`.
 
@@ -222,7 +221,7 @@ Result:
 └──────┘
 ```
 
-## bin
+## bin {#bin}
 
 Returns a string containing the argument’s binary representation.
 
@@ -315,7 +314,7 @@ Result:
 ```
 
 
-## unbin
+## unbin {#unbinstr}
 
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
 
@@ -327,11 +326,10 @@ unbin(arg)
 
 Alias: `UNBIN`.
 
-For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
 
-:::note    
-If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
-:::
+!!! note "Note"
+    If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
 
 Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). 
 
@@ -375,23 +373,23 @@ Result:
 └─────┘
 ```
 
-## UUIDStringToNum(str)
+## UUIDStringToNum(str) {#uuidstringtonumstr}
 
 Accepts a string containing 36 characters in the format `123e4567-e89b-12d3-a456-426655440000`, and returns it as a set of bytes in a FixedString(16).
 
-## UUIDNumToString(str)
+## UUIDNumToString(str) {#uuidnumtostringstr}
 
 Accepts a FixedString(16) value. Returns a string containing 36 characters in text format.
 
-## bitmaskToList(num)
+## bitmaskToList(num) {#bitmasktolistnum}
 
 Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
 
-## bitmaskToArray(num)
+## bitmaskToArray(num) {#bitmasktoarraynum}
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
 
-## bitPositionsToArray(num)
+## bitPositionsToArray(num) {#bitpositionstoarraynum}
 
 Accepts an integer and converts it to an unsigned integer. Returns an array of `UInt64` numbers containing the list of positions of bits of `arg` that equal `1`, in ascending order.
 

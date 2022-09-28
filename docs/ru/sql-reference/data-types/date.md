@@ -1,6 +1,6 @@
 ---
-sidebar_position: 47
-sidebar_label: Date
+toc_priority: 47
+toc_title: Date
 ---
 
 # Date {#data-type-date}

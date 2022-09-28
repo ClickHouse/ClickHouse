@@ -1,9 +1,9 @@
 ---
-sidebar_position: 50
-sidebar_label: Special
+toc_folder_title: Special
+toc_priority: 31
 ---
 
-# Special Table Engines
+# Special Table Engines {#special-table-engines}
 
 There are three main categories of table engines:
 

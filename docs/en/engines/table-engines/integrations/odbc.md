@@ -1,9 +1,9 @@
 ---
-sidebar_position: 2
-sidebar_label: ODBC
+toc_priority: 2
+toc_title: ODBC
 ---
 
-# ODBC
+# ODBC {#table-engine-odbc}
 
 Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 

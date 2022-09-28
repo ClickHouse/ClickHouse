@@ -26,7 +26,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const Names & column_names_,
-    const Names & virtual_column_names_,
     const BackoffSettings & backoff_settings_,
     size_t preferred_block_size_bytes_,
     bool do_not_steal_tasks_)
@@ -35,7 +34,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     , data{data_}
     , storage_snapshot{storage_snapshot_}
     , column_names{column_names_}
-    , virtual_column_names{virtual_column_names_}
     , do_not_steal_tasks{do_not_steal_tasks_}
     , predict_block_size_bytes{preferred_block_size_bytes_ > 0}
     , prewhere_info{prewhere_info_}
@@ -137,15 +135,13 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t min_marks_to_read, size_t
         }
     }
 
-    const auto & per_part = per_part_params[part_idx];
-
-    auto curr_task_size_predictor = !per_part.size_predictor ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part.size_predictor); /// make a copy
+    auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
+        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
 
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
-        per_part.column_name_set, per_part.task_columns,
-        prewhere_info && prewhere_info->remove_prewhere_column, std::move(curr_task_size_predictor));
+        per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
+        prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
 Block MergeTreeReadPool::getHeader() const
@@ -215,19 +211,20 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
 
         auto task_columns = getReadTaskColumns(
             data, storage_snapshot, part.data_part,
-            column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
+            column_names, prewhere_info, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);
 
-        auto & per_part = per_part_params.emplace_back();
-
-        per_part.size_predictor = std::move(size_predictor);
+        per_part_size_predictor.emplace_back(std::move(size_predictor));
 
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
         const auto & required_column_names = task_columns.columns.getNames();
-        per_part.column_name_set = {required_column_names.begin(), required_column_names.end()};
-        per_part.task_columns = std::move(task_columns);
+        per_part_column_name_set.emplace_back(required_column_names.begin(), required_column_names.end());
+
+        per_part_pre_columns.push_back(std::move(task_columns.pre_columns));
+        per_part_columns.push_back(std::move(task_columns.columns));
+        per_part_should_reorder.push_back(task_columns.should_reorder);
 
         parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
     }
@@ -264,7 +261,7 @@ void MergeTreeReadPool::fillPerThreadInfo(
         {
             PartInfo part_info{parts[i], per_part_sum_marks[i], i};
             if (parts[i].data_part->isStoredOnDisk())
-                parts_per_disk[parts[i].data_part->data_part_storage->getDiskName()].push_back(std::move(part_info));
+                parts_per_disk[parts[i].data_part->volume->getDisk()->getName()].push_back(std::move(part_info));
             else
                 parts_per_disk[""].push_back(std::move(part_info));
         }

@@ -1,7 +1,8 @@
 ---
 title: "Синтаксис запросов SELECT"
-sidebar_label: SELECT
-sidebar_position: 32
+toc_folder_title: SELECT
+toc_priority: 32
+toc_title: "Обзор"
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}
@@ -19,12 +20,12 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
+[INTO OUTFILE filename [COMPRESSION type] ] 
 [FORMAT format]
 ```
 

@@ -18,7 +18,7 @@ void SerializationEnum<Type>::serializeText(const IColumn & column, size_t row_n
 template <typename Type>
 void SerializationEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+    writeEscapedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -69,13 +69,13 @@ void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer 
 template <typename Type>
 void SerializationEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr, settings);
+    writeJSONString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);
 }
 
 template <typename Type>
 void SerializationEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+    writeXMLStringForTextElement(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>

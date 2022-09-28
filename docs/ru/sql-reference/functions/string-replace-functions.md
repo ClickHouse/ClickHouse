@@ -1,6 +1,6 @@
 ---
-sidebar_position: 42
-sidebar_label: "Функции поиска и замены в строках"
+toc_priority: 42
+toc_title: "Функции поиска и замены в строках"
 ---
 
 # Функции поиска и замены в строках {#funktsii-poiska-i-zameny-v-strokakh}
@@ -83,34 +83,3 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 └─────────────────────┘
 ```
 
-## translate(s, from, to)
-
-Данная функция заменяет символы в строке ‘s’ в соответствии с поэлементным отображением определяемым строками ‘from’ и ‘to’. ‘from’ и ‘to’ должны быть корректными константными ASCII строками одного размера. Не ASCII символы в оригинальной строке не изменяются.
-
-Example:
-
-``` sql
-SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
-```
-
-``` text
-┌─res───────────┐
-│ HELLO, WORLD! │
-└───────────────┘
-```
-
-## translateUTF8(string, from, to)
-
-Аналогично предыдущей функции, но работает со строками, состоящими из UTF-8 символов. ‘from’ и ‘to’ должны быть корректными константными UTF-8 строками одного размера.
-
-Example:
-
-``` sql
-SELECT translateUTF8('Hélló, Wórld¡', 'óé¡', 'oe!') AS res
-```
-
-``` text
-┌─res───────────┐
-│ Hello, World! │
-└───────────────┘
-```

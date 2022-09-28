@@ -37,7 +37,7 @@ using FunctionTanh = FunctionMathUnary<UnaryFunctionVectorized<TanhName, tanh>>;
 
 }
 
-REGISTER_FUNCTION(Tanh)
+void registerFunctionTanh(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTanh>(FunctionFactory::CaseInsensitive);
 }

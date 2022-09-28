@@ -14,15 +14,6 @@
     -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
     -   `MUTATE_PART` — изменение куска.
     -   `MOVE_PART` — перемещение куска между дисками.
--   `merge_reason` ([Enum8](../../sql-reference/data-types/enum.md)) — Причина события с типом `MERGE_PARTS`. Может принимать одно из следующих значений:
-    -   `NOT_A_MERGE` — событие имеет тип иной, чем `MERGE_PARTS`.
-    -   `REGULAR_MERGE` — обычное слияние.
-    -   `TTL_DELETE_MERGE` — очистка истекших данных.
-    -   `TTL_RECOMPRESS_MERGE` — переупаковка куска.
--   `merge_algorithm` ([Enum8](../../sql-reference/data-types/enum.md)) — Алгоритм слияния для события с типом `MERGE_PARTS`. Может принимать одно из следующих значений:
-    -   `UNDECIDED`
-    -   `HORIZONTAL`
-    -   `VERTICAL`
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата события.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время события.
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время события с точностью до микросекунд.
@@ -55,8 +46,6 @@ Row 1:
 ──────
 query_id:                      983ad9c7-28d5-4ae1-844e-603116b7de31
 event_type:                    NewPart
-merge_reason:                  NotAMerge
-merge_algorithm:               Undecided
 event_date:                    2021-02-02
 event_time:                    2021-02-02 11:14:28
 event_time_microseconds:                    2021-02-02 11:14:28.861919

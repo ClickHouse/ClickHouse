@@ -10,11 +10,6 @@
 #include <Columns/ColumnCompressed.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
-#if USE_EMBEDDED_COMPILER
-#include <DataTypes/Native.h>
-#include <llvm/IR/IRBuilder.h>
-#endif
-
 
 namespace DB
 {
@@ -245,56 +240,6 @@ ColumnPtr ColumnNullable::index(const IColumn & indexes, size_t limit) const
     ColumnPtr indexed_null_map = getNullMapColumn().index(indexes, limit);
     return ColumnNullable::create(indexed_data, indexed_null_map);
 }
-
-#if USE_EMBEDDED_COMPILER
-
-bool ColumnNullable::isComparatorCompilable() const
-{
-    return nested_column->isComparatorCompilable();
-}
-
-llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs,
-                                            llvm::Value * nan_direction_hint) const
-{
-    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-    auto * head = b.GetInsertBlock();
-
-    llvm::Value * lhs_unwrapped_value = b.CreateExtractValue(lhs, {0});
-    llvm::Value * lhs_is_null_value = b.CreateExtractValue(lhs, {1});
-
-    llvm::Value * rhs_unwrapped_value = b.CreateExtractValue(rhs, {0});
-    llvm::Value * rhs_is_null_value = b.CreateExtractValue(rhs, {1});
-
-    llvm::Value * lhs_or_rhs_are_null = b.CreateOr(lhs_is_null_value, rhs_is_null_value);
-
-    auto * lhs_or_rhs_are_null_block = llvm::BasicBlock::Create(head->getContext(), "lhs_or_rhs_are_null_block", head->getParent());
-    auto * lhs_rhs_are_not_null_block = llvm::BasicBlock::Create(head->getContext(), "lhs_and_rhs_are_not_null_block", head->getParent());
-    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
-
-    b.CreateCondBr(lhs_or_rhs_are_null, lhs_or_rhs_are_null_block, lhs_rhs_are_not_null_block);
-
-    b.SetInsertPoint(lhs_or_rhs_are_null_block);
-    auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
-    llvm::Value * lhs_and_rhs_are_null = b.CreateAnd(lhs_is_null_value, rhs_is_null_value);
-    llvm::Value * lhs_is_null_result = b.CreateSelect(lhs_is_null_value, nan_direction_hint, b.CreateNeg(nan_direction_hint));
-    llvm::Value * lhs_or_rhs_are_null_block_result = b.CreateSelect(lhs_and_rhs_are_null, lhs_equals_rhs_result, lhs_is_null_result);
-    b.CreateBr(join_block);
-
-    b.SetInsertPoint(lhs_rhs_are_not_null_block);
-    llvm::Value * lhs_rhs_are_not_null_block_result
-        = nested_column->compileComparator(builder, lhs_unwrapped_value, rhs_unwrapped_value, nan_direction_hint);
-    b.CreateBr(join_block);
-
-    b.SetInsertPoint(join_block);
-
-    auto * result = b.CreatePHI(b.getInt8Ty(), 2);
-    result->addIncoming(lhs_or_rhs_are_null_block_result, lhs_or_rhs_are_null_block);
-    result->addIncoming(lhs_rhs_are_not_null_block_result, lhs_rhs_are_not_null_block);
-
-    return result;
-}
-
-#endif
 
 int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator) const
 {
@@ -705,35 +650,27 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullMapImpl(const NullMap & map)
+void ColumnNullable::applyNullMapImpl(const ColumnUInt8 & map)
 {
-    NullMap & arr = getNullMapData();
+    NullMap & arr1 = getNullMapData();
+    const NullMap & arr2 = map.getData();
 
-    if (arr.size() != map.size())
+    if (arr1.size() != arr2.size())
         throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
-    for (size_t i = 0, size = arr.size(); i < size; ++i)
-        arr[i] |= negative ^ map[i];
+    for (size_t i = 0, size = arr1.size(); i < size; ++i)
+        arr1[i] |= negative ^ arr2[i];
 }
 
-void ColumnNullable::applyNullMap(const NullMap & map)
+
+void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
 {
     applyNullMapImpl<false>(map);
 }
 
-void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
-{
-    applyNullMapImpl<false>(map.getData());
-}
-
-void ColumnNullable::applyNegatedNullMap(const NullMap & map)
-{
-    applyNullMapImpl<true>(map);
-}
-
 void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
 {
-    applyNullMapImpl<true>(map.getData());
+    applyNullMapImpl<true>(map);
 }
 
 
@@ -781,20 +718,6 @@ ColumnPtr makeNullable(const ColumnPtr & column)
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
-}
-
-ColumnPtr makeNullableSafe(const ColumnPtr & column)
-{
-    if (isColumnNullable(*column))
-        return column;
-
-    if (isColumnConst(*column))
-        return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
-
-    if (column->canBeInsideNullable())
-        return makeNullable(column);
-
-    return column;
 }
 
 }

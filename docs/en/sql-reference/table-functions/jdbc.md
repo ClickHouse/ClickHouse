@@ -1,9 +1,9 @@
 ---
-sidebar_position: 43
-sidebar_label: jdbc
+toc_priority: 43
+toc_title: jdbc
 ---
 
-# jdbc
+# jdbc {#table-function-jdbc}
 
 `jdbc(datasource, schema, table)` - returns table that is connected via JDBC driver.
 

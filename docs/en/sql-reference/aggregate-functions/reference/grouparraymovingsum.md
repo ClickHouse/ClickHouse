@@ -1,8 +1,8 @@
 ---
-sidebar_position: 113
+toc_priority: 113
 ---
 
-# groupArrayMovingSum
+# groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
 Calculates the moving sum of input values.
 

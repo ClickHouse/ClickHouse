@@ -1,6 +1,6 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Functions/likePatternToRegexp.h>
 #include <Poco/Net/SocketAddress.h>
@@ -110,23 +110,17 @@ namespace
     }
 
     /// Returns the host name by its address.
-    Strings getHostsByAddress(const IPAddress & address)
+    String getHostByAddress(const IPAddress & address)
     {
-        auto hosts = DNSResolver::instance().reverseResolve(address);
+        String host = DNSResolver::instance().reverseResolve(address);
 
-        if (hosts.empty())
-            throw Exception(ErrorCodes::DNS_ERROR, "{} could not be resolved", address.toString());
+        /// Check that PTR record is resolved back to client address
+        if (!isAddressOfHost(address, host))
+            throw Exception("Host " + String(host) + " isn't resolved back to " + address.toString(), ErrorCodes::DNS_ERROR);
 
-
-        for (const auto & host : hosts)
-        {
-            /// Check that PTR record is resolved back to client address
-            if (!isAddressOfHost(address, host))
-                throw Exception(ErrorCodes::DNS_ERROR, "Host {} isn't resolved back to {}", host, address.toString());
-        }
-
-        return hosts;
+        return host;
     }
+
 
     void parseLikePatternIfIPSubnet(const String & pattern, IPSubnet & subnet, IPAddress::Family address_family)
     {
@@ -526,29 +520,20 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             return true;
 
     /// Check `name_regexps`.
-    std::optional<Strings> resolved_hosts;
+    std::optional<String> resolved_host;
     auto check_name_regexp = [&](const String & name_regexp_)
     {
         try
         {
             if (boost::iequals(name_regexp_, "localhost"))
                 return is_client_local();
-            if (!resolved_hosts)
-            {
-                resolved_hosts = getHostsByAddress(client_address);
-            }
-
-            for (const auto & host : resolved_hosts.value())
-            {
-                Poco::RegularExpression re(name_regexp_);
-                Poco::RegularExpression::Match match;
-                if (re.match(host, match) != 0)
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            if (!resolved_host)
+                resolved_host = getHostByAddress(client_v6);
+            if (resolved_host->empty())
+                return false;
+            Poco::RegularExpression re(name_regexp_);
+            Poco::RegularExpression::Match match;
+            return re.match(*resolved_host, match) != 0;
         }
         catch (const Exception & e)
         {

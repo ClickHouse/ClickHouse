@@ -7,9 +7,10 @@
 #include <memory>
 #include <optional>
 
+#include <base/shared_ptr_helper.h>
+
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
 
 namespace DB
@@ -17,19 +18,10 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorageCluster
+class StorageHDFSCluster : public shared_ptr_helper<StorageHDFSCluster>, public IStorage
 {
+    friend struct shared_ptr_helper<StorageHDFSCluster>;
 public:
-    StorageHDFSCluster(
-        ContextPtr context_,
-        String cluster_name_,
-        const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & compression_method_);
-
     std::string getName() const override { return "HDFSCluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
@@ -40,20 +32,21 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    ClusterPtr getCluster(ContextPtr context) const override;
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const override;
+protected:
+    StorageHDFSCluster(
+        String cluster_name_,
+        const String & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & compression_method_);
 
 private:
     String cluster_name;
     String uri;
     String format_name;
     String compression_method;
-
-    mutable ClusterPtr cluster;
-    mutable std::shared_ptr<HDFSSource::DisclosedGlobIterator> iterator;
-    mutable std::shared_ptr<HDFSSource::IteratorWrapper> callback;
-
-    void createIteratorAndCallback(ContextPtr context) const;
 };
 
 

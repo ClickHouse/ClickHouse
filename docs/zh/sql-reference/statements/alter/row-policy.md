@@ -1,6 +1,6 @@
 ---
-sidebar_position: 47
-sidebar_label: 行策略
+toc_priority: 47
+toc_title: 行策略
 ---
 
 # 操作行策略 {#alter-row-policy-statement}

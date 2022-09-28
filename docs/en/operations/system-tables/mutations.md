@@ -1,4 +1,4 @@
-# mutations
+# system.mutations {#system_tables-mutations}
 
 The table contains information about [mutations](../../sql-reference/statements/alter/index.md#mutations) of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
@@ -8,7 +8,7 @@ Columns:
 
 -   `table` ([String](../../sql-reference/data-types/string.md)) — The name of the table to which the mutation was applied.
 
--   `mutation_id` ([String](../../sql-reference/data-types/string.md)) — The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_clickhouse_keeper>/mutations/` directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table.
+-   `mutation_id` ([String](../../sql-reference/data-types/string.md)) — The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For non-replicated tables the IDs correspond to file names in the data directory of the table.
 
 -   `command` ([String](../../sql-reference/data-types/string.md)) — The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 
@@ -28,9 +28,8 @@ Columns:
     -   `1` if the mutation is completed,
     -   `0` if the mutation is still in process.
 
-:::note
-Even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not completed yet because of a long-running `INSERT` query, that will create a new data part needed to be mutated.
-:::
+!!! info "Note"
+    Even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not completed yet because of a long-running `INSERT` query, that will create a new data part needed to be mutated.
 
 If there were problems with mutating some data parts, the following columns contain additional information:
 

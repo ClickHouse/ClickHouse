@@ -17,7 +17,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
+    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , data_part(std::move(data_part_))
@@ -46,9 +46,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-            .withExtendedObjects()
-            .withSystemColumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
@@ -69,7 +67,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     reader = data_part->getReader(columns_for_reader, storage_snapshot->metadata,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
-        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings, {}, {});
+        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }
 
 Chunk MergeTreeSequentialSource::generate()

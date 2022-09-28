@@ -51,7 +51,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(CurrentUser)
+void registerFunctionCurrentUser(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCurrentUser>();
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::CaseInsensitive);

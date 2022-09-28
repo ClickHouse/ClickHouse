@@ -86,7 +86,7 @@ private:
             database->attachTable(
                 context,
                 table_name,
-                std::make_shared<StorageMemory>(
+                StorageMemory::create(
                     StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);

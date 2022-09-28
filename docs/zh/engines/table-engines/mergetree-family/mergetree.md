@@ -62,8 +62,6 @@ ORDER BY expr
 
 - `PARTITION BY` — [分区键](custom-partitioning-key.md) ，可选项。
 
-     大多数情况下，不需要分使用区键。即使需要使用，也不需要使用比月更细粒度的分区键。分区不会加快查询（这与 ORDER BY 表达式不同）。永远也别使用过细粒度的分区键。不要使用客户端指定分区标识符或分区字段名称来对数据进行分区（而是将分区字段标识或名称作为 ORDER BY 表达式的第一列来指定分区）。
-
      要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../../engines/table-engines/mergetree-family/mergetree.md) 类型的列。分区名的格式会是 `"YYYYMM"` 。
 
 - `PRIMARY KEY` - 如果要 [选择与排序键不同的主键](#choosing-a-primary-key-that-differs-from-the-sorting-key)，在这里指定，可选项。
@@ -120,7 +118,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 <details markdown="1">
 <summary>已弃用的建表方法</summary>
 
-    :::attention "注意"
+!!! attention "注意"
     不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
     CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -188,24 +186,24 @@ ClickHouse 会为每个数据片段创建一个索引文件来存储这些标记
 
 ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键的行。
 
-您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
+您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](https://clickhouse.com/docs/zh/operations/settings/settings/#allow-nullable-key)，[NULLS_LAST](https://clickhouse.com/docs/zh/sql-reference/statements/select/order-by/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
 
 ### 主键的选择 {#zhu-jian-de-xuan-ze}
 
 主键中列的数量并没有明确的限制。依据数据结构，您可以在主键包含多些或少些列。这样可以：
 
-  - 改善索引的性能。
+- 改善索引的性能。
 
-  - 如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
+    如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
 
   - 查询会使用 `c` 列作为条件
   - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这样的情况很普遍。换言之，就是加入另一列后，可以让您的查询略过很长的数据范围。
 
-  - 改善数据压缩。
+- 改善数据压缩。
 
     ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
 
-  - 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
+- 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
 
     在这种情况下，指定与主键不同的 *排序键* 也是有意义的。
 
@@ -229,6 +227,10 @@ Clickhouse可以做到指定一个跟排序键不一样的主键，此时排序�
 
 对于 `SELECT` 查询，ClickHouse 分析是否可以使用索引。如果 `WHERE/PREWHERE` 子句具有下面这些表达式（作为完整WHERE条件的一部分或全部）则可以使用索引：进行相等/不相等的比较；对主键列或分区列进行`IN`运算、有固定前缀的`LIKE`运算(如name like 'test%')、函数运算(部分函数适用)，还有对上述表达式进行逻辑运算。
 
+ <!-- It is too hard for me to translate this section as the original text completely. So I did it with my own understanding. If you have good idea, please help me. -->
+<!-- It is hard for me to translate this section too, but I think change the sentence struct is helpful for understanding. So I change the phraseology-->
+
+<!--I try to translate it in Chinese,don't worry. -->
 
 因此，在索引键的一个或多个区间上快速地执行查询是可能的。下面例子中，指定标签；指定标签和日期范围；指定标签和日期；指定多个标签和日期范围等执行查询，都会非常快。
 
@@ -326,7 +328,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     支持的数据类型：`Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`。
 
-    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions)
+    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md)
 
 ``` sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -343,20 +345,20 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | 函数 (操作符) / 索引                                         | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 | ------------------------------------------------------------ | ----------- | ------ | ---------- | ---------- | ------------ |
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith) | ✗           | ✗      | ✔          | ✔          | ✗            |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany) | ✗           | ✗      | ✔          | ✗          | ✗            |
-| [in](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notIn](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [empty](../../../sql-reference/functions/array-functions#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [notEmpty](../../../sql-reference/functions/array-functions#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | hasToken                                                     | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 常量参数小于 ngram 大小的函数不能使用 `ngrambf_v1` 进行查询优化。
@@ -524,7 +526,7 @@ ClickHouse 在数据片段合并时会删除掉过期的数据。
 
 当ClickHouse发现数据过期时, 它将会执行一个计划外的合并。要控制这类合并的频率, 您可以设置 `merge_with_ttl_timeout`。如果该值被设置的太低, 它将引发大量计划外的合并，这可能会消耗大量资源。
 
-如果在两次合并的时间间隔中执行 `SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在 `SELECT` 之前使用 [OPTIMIZE](../../../engines/table-engines/mergetree-family/mergetree.md#misc_operations-optimize) 。
+如果在合并的过程中执行 `SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在 `SELECT` 之前使用 [OPTIMIZE](../../../engines/table-engines/mergetree-family/mergetree.md#misc_operations-optimize) 。
 
 ## 使用多个块设备进行数据存储 {#table_engine-mergetree-multiple-volumes}
 

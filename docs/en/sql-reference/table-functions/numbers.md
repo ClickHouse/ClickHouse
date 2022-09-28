@@ -1,9 +1,9 @@
 ---
-sidebar_position: 39
-sidebar_label: numbers
+toc_priority: 39
+toc_title: numbers
 ---
 
-# numbers
+# numbers {#numbers}
 
 `numbers(N)` – Returns a table with the single ‘number’ column (UInt64) that contains integers from 0 to N-1.
 `numbers(N, M)` - Returns a table with the single ‘number’ column (UInt64) that contains integers from N to (N + M - 1).

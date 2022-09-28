@@ -118,7 +118,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(Synonyms)
+void registerFunctionSynonyms(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSynonyms>(FunctionFactory::CaseInsensitive);
 }

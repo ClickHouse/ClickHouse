@@ -11,8 +11,8 @@ $CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "DROP DATABASE IF EXISTS test
 $CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "DROP DATABASE IF EXISTS test_01192_renamed"
 $CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "DROP DATABASE IF EXISTS test_01192_atomic"
 
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE test_01192 UUID '00001192-0000-4000-8000-000000000001' ENGINE=Ordinary" 2>&1| grep -F "does not support" > /dev/null && echo "ok"
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE test_01192 UUID '00001192-0000-4000-8000-000000000001'"
+$CLICKHOUSE_CLIENT --default_database_engine=Ordinary -q "CREATE DATABASE test_01192 UUID '00001192-0000-4000-8000-000000000001'" 2>&1| grep -F "does not support" > /dev/null && echo "ok"
+$CLICKHOUSE_CLIENT --default_database_engine=Atomic -q "CREATE DATABASE test_01192 UUID '00001192-0000-4000-8000-000000000001'"
 
 # 2. check metadata
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE DATABASE test_01192"
@@ -35,14 +35,14 @@ $CLICKHOUSE_CLIENT -q "SHOW CREATE DATABASE test_01192_renamed"
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_renamed.mt"
 
 # 5. check moving tables from Ordinary to Atomic (can be used to "alter" database engine)
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE test_01192 ENGINE=Ordinary"
+$CLICKHOUSE_CLIENT --default_database_engine=Ordinary -q "CREATE DATABASE test_01192"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.mt AS test_01192_renamed.mt ENGINE=MergeTree ORDER BY n"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.rmt AS test_01192_renamed.mt ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '1') ORDER BY n"
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW test_01192.mv TO test_01192.rmt AS SELECT * FROM test_01192.mt"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_01192.mt SELECT number FROM numbers(10)" && echo "inserted"
 
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE test_01192_atomic"
+$CLICKHOUSE_CLIENT --default_database_engine=Atomic -q "CREATE DATABASE test_01192_atomic"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE test_01192_renamed"
 # it's blocking
 $CLICKHOUSE_CLIENT -q "RENAME TABLE test_01192.mt TO test_01192_atomic.mt, test_01192.rmt TO test_01192_atomic.rmt, test_01192.mv TO test_01192_atomic.mv" && echo "renamed"

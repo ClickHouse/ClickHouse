@@ -65,12 +65,9 @@ public:
         size_t size() const;
         size_t byteSize() const;
         size_t allocatedBytes() const;
-        void get(size_t n, Field & res) const;
 
         bool isFinalized() const;
         const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
-        const DataTypePtr & getLeastCommonTypeBase() const { return least_common_type.getBase(); }
-        size_t getNumberOfDimensions() const { return least_common_type.getNumberOfDimensions(); }
 
         /// Checks the consistency of column's parts stored in @data.
         void checkTypes() const;
@@ -85,16 +82,12 @@ public:
         void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
         void popBack(size_t n);
 
-        Subcolumn cut(size_t start, size_t length) const;
-
         /// Converts all column's parts to the common type and
         /// creates a single column that stores all values.
         void finalize();
 
         /// Returns last inserted field.
         Field getLastField() const;
-
-        FieldInfo getFieldInfo() const;
 
         /// Recreates subcolumn with default scalar values and keeps sizes of arrays.
         /// Used to create columns of type Nested with consistent array sizes.
@@ -106,16 +99,13 @@ public:
         const IColumn & getFinalizedColumn() const;
         const ColumnPtr & getFinalizedColumnPtr() const;
 
-        const std::vector<WrappedPtr> & getData() const { return data; }
-        size_t getNumberOfDefaultsInPrefix() const { return num_of_defaults_in_prefix; }
-
         friend class ColumnObject;
 
     private:
         class LeastCommonType
         {
         public:
-            LeastCommonType();
+            LeastCommonType() = default;
             explicit LeastCommonType(DataTypePtr type_);
 
             const DataTypePtr & get() const { return type; }
@@ -146,24 +136,22 @@ public:
         /// least common type and we count number of defaults in prefix,
         /// which will be converted to the default type of final common type.
         size_t num_of_defaults_in_prefix = 0;
-
-        size_t num_rows = 0;
     };
 
-    using Subcolumns = SubcolumnsTree<Subcolumn>;
+    using SubcolumnsTree = SubcolumnsTree<Subcolumn>;
 
 private:
     /// If true then all subcolumns are nullable.
     const bool is_nullable;
 
-    Subcolumns subcolumns;
+    SubcolumnsTree subcolumns;
     size_t num_rows;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
 
     explicit ColumnObject(bool is_nullable_);
-    ColumnObject(Subcolumns && subcolumns_, bool is_nullable_);
+    ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_);
 
     /// Checks that all subcolumns have consistent sizes.
     void checkConsistency() const;
@@ -185,13 +173,8 @@ public:
     /// It cares about consistency of sizes of Nested arrays.
     void addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size);
 
-    /// Finds a subcolumn from the same Nested type as @entry and inserts
-    /// an array with default values with consistent sizes as in Nested type.
-    bool tryInsertDefaultFromNested(const Subcolumns::NodePtr & entry) const;
-    bool tryInsertManyDefaultsFromNested(const Subcolumns::NodePtr & entry) const;
-
-    const Subcolumns & getSubcolumns() const { return subcolumns; }
-    Subcolumns & getSubcolumns() { return subcolumns; }
+    const SubcolumnsTree & getSubcolumns() const { return subcolumns; }
+    SubcolumnsTree & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
     /// Finalizes all subcolumns.
@@ -204,24 +187,21 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Object; }
 
     size_t size() const override;
+    MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
     void insert(const Field & field) override;
     void insertDefault() override;
-    void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
-    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-    ColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumnPtr cloneResized(size_t new_size) const override;
 
     /// All other methods throw exception.
 
+    ColumnPtr decompress() const override { throwMustBeConcrete(); }
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
@@ -231,7 +211,10 @@ public:
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
     void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
+    ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeConcrete(); }
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
+    ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeConcrete(); }
+    ColumnPtr index(const IColumn &, size_t) const override { throwMustBeConcrete(); }
     int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeConcrete(); }
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
@@ -249,13 +232,6 @@ private:
     {
         throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::LOGICAL_ERROR);
     }
-
-    template <typename Func>
-    MutableColumnPtr applyForSubcolumns(Func && func) const;
-
-    /// For given subcolumn return subcolumn from the same Nested type.
-    /// It's used to get shared sized of Nested to insert correct default values.
-    const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
 };
 
 }

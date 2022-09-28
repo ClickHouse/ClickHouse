@@ -1,9 +1,9 @@
 ---
-sidebar_position: 47
-sidebar_label: generateRandom
+toc_priority: 47
+toc_title: generateRandom
 ---
 
-# generateRandom
+# generateRandom {#generaterandom}
 
 Generates random data with given schema.
 Allows to populate test tables with data.
@@ -25,7 +25,7 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 A table object with requested schema.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ``` sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;

@@ -2,8 +2,6 @@
 
 #if USE_HDFS
 
-#include <Storages/HDFS/StorageHDFSCluster.h>
-
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,19 +10,16 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <QueryPipeline/narrowPipe.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
-
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-
+#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/HDFS/StorageHDFSCluster.h>
 
 #include <memory>
 
@@ -33,7 +28,6 @@ namespace DB
 {
 
 StorageHDFSCluster::StorageHDFSCluster(
-    ContextPtr context_,
     String cluster_name_,
     const String & uri_,
     const StorageID & table_id_,
@@ -41,25 +35,14 @@ StorageHDFSCluster::StorageHDFSCluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & compression_method_)
-    : IStorageCluster(table_id_)
+    : IStorage(table_id_)
     , cluster_name(cluster_name_)
     , uri(uri_)
     , format_name(format_name_)
     , compression_method(compression_method_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
-    checkHDFSURL(uri_);
-
     StorageInMemoryMetadata storage_metadata;
-
-    if (columns_.empty())
-    {
-        auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
-        storage_metadata.setColumns(columns);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
+    storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 }
@@ -74,7 +57,13 @@ Pipe StorageHDFSCluster::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    createIteratorAndCallback(context);
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+
+    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
+    auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iterator]() mutable -> String
+    {
+        return iterator->next();
+    });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -93,7 +82,7 @@ Pipe StorageHDFSCluster::read(
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, node.cluster, node.cluster_secret,
                 "HDFSClusterInititiator",
                 node.compression,
                 node.secure
@@ -104,7 +93,7 @@ Pipe StorageHDFSCluster::read(
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
-                queryToString(query_info.original_query),
+                queryToString(query_info.query),
                 header,
                 context,
                 /*throttler=*/nullptr,
@@ -131,29 +120,6 @@ QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
 
     /// Follower just reads the data.
     return QueryProcessingStage::Enum::FetchColumns;
-}
-
-
-void StorageHDFSCluster::createIteratorAndCallback(ContextPtr context) const
-{
-    cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-
-    iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
-    callback = std::make_shared<HDFSSource::IteratorWrapper>([iter = this->iterator]() mutable -> String { return iter->next(); });
-}
-
-
-RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ContextPtr context) const
-{
-    createIteratorAndCallback(context);
-    return RemoteQueryExecutor::Extension{.task_iterator = callback};
-}
-
-
-ClusterPtr StorageHDFSCluster::getCluster(ContextPtr context) const
-{
-    createIteratorAndCallback(context);
-    return cluster;
 }
 
 

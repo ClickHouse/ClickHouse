@@ -24,7 +24,7 @@ public:
 
     static Block transformHeader(
             Block header,
-            const ActionsDAG * expression,
+            const ActionsDAG & expression,
             const String & filter_column_name,
             bool remove_filter_column);
 
@@ -32,6 +32,7 @@ public:
 
     Status prepare() override;
 
+protected:
     void transform(Chunk & chunk) override;
 
 private:

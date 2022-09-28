@@ -20,7 +20,7 @@ namespace
     using FunctionMin2 = FunctionMathBinaryFloat64<BinaryFunctionVectorized<Min2Name, min>>;
 }
 
-REGISTER_FUNCTION(Min2)
+void registerFunctionMin2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMin2>(FunctionFactory::CaseInsensitive);
 }

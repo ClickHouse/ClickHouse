@@ -15,7 +15,7 @@
 ```
 ┌─name─────────────────────┬─is_aggregate─┬─case_insensitive─┬─alias_to─┐
 │ sumburConsistentHash     │            0 │                0 │          │
-│ kostikConsistentHash     │            0 │                0 │          │
+│ yandexConsistentHash     │            0 │                0 │          │
 │ demangle                 │            0 │                0 │          │
 │ addressToLine            │            0 │                0 │          │
 │ JSONExtractRaw           │            0 │                0 │          │

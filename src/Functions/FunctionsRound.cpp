@@ -5,7 +5,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(Round)
+void registerFunctionsRound(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRound>("round", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionRoundBankers>("roundBankers", FunctionFactory::CaseSensitive);

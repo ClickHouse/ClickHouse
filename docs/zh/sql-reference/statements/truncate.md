@@ -1,6 +1,6 @@
 ---
-sidebar_position: 52
-sidebar_label: TRUNCATE
+toc_priority: 52
+toc_title: TRUNCATE
 ---
 
 # TRUNCATE 语句 {#truncate-statement}

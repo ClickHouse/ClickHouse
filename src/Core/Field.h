@@ -54,7 +54,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
+using FieldMap = std::map<String, Field, std::less<String>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -240,8 +240,7 @@ template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
-requires std::is_enum_v<T>
-struct NearestFieldTypeImpl<T>
+struct NearestFieldTypeImpl<T, std::enable_if_t<std::is_enum_v<T>>>
 {
     using Type = NearestFieldType<std::underlying_type_t<T>>;
 };
@@ -346,7 +345,7 @@ public:
     }
 
     /// Create a string inplace.
-    Field(std::string_view str) { create(str.data(), str.size()); } /// NOLINT
+    Field(const std::string_view & str) { create(str.data(), str.size()); } /// NOLINT
     Field(const String & str) { create(std::string_view{str}); } /// NOLINT
     Field(String && str) { create(std::move(str)); } /// NOLINT
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
@@ -403,7 +402,7 @@ public:
         return *this;
     }
 
-    Field & operator= (std::string_view str);
+    Field & operator= (const std::string_view & str);
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
     Field & operator= (String && str);
     Field & operator= (const char * str) { return *this = std::string_view{str}; }
@@ -631,7 +630,7 @@ public:
     }
 
     String dump() const;
-    static Field restoreFromDump(std::string_view dump_);
+    static Field restoreFromDump(const std::string_view & dump_);
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
@@ -670,8 +669,7 @@ private:
     }
 
     template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void assignString(const CharT * data, size_t size)
+    std::enable_if_t<sizeof(CharT) == 1> assignString(const CharT * data, size_t size)
     {
         assert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
@@ -706,8 +704,7 @@ private:
     }
 
     template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void create(const CharT * data, size_t size)
+    std::enable_if_t<sizeof(CharT) == 1> create(const CharT * data, size_t size)
     {
         new (&storage) String(reinterpret_cast<const char *>(data), size);
         which = Types::String;
@@ -929,7 +926,7 @@ Field::operator=(T && rhs)
     return *this;
 }
 
-inline Field & Field::operator=(std::string_view str)
+inline Field & Field::operator=(const std::string_view & str)
 {
     if (which != Types::String)
     {
@@ -1010,8 +1007,6 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
-
-String fieldTypeToString(Field::Types::Which type);
 
 }
 
