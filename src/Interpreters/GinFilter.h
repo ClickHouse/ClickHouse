@@ -31,7 +31,7 @@ public:
 
     explicit GinFilter(const GinFilterParameters& params);
 
-    static void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store);
+    void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store);
 
     void addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd);
 
@@ -52,19 +52,20 @@ public:
 
     const String &getQueryString() const { return query_string; }
 
-#ifndef NDEBUG
-    void dump() const;
-#endif
-
-    void addTerm(const char* data, size_t len) { terms.push_back(String(data, len));}
+    void addTerm(const char* data, size_t len)
+    {
+        if (len > FST::MAX_TERM_LENGTH)
+            return;
+        terms.push_back(String(data, len));
+    }
 
     const std::vector<String>& getTerms() const { return terms;}
-
-    bool needsFilter() const;
 
     bool match(const PostingsCachePtr& postings_cache) const;
 
     static String getName();
+
+    static constexpr auto FilterName = "inverted";
 private:
     [[maybe_unused]] size_t ngrams;
 

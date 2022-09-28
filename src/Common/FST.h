@@ -24,6 +24,8 @@ namespace FST
     class State;
     using StatePtr = std::shared_ptr<State>;
 
+    /// Arc represents a transition from one state to another
+    /// It includes the target state to which the arc points and its output.
     struct Arc
     {
         Arc() = default;
@@ -36,6 +38,8 @@ namespace FST
 
     bool operator==(const Arc & arc1, const Arc & arc2);
 
+    /// ArcsAsBitmap implements a 256-bit bitmap for all arcs of a state. Each bit represents
+    /// an arc's presence and the index value of the bit represents the corresponding label
     class ArcsAsBitmap
     {
     public:
@@ -46,11 +50,13 @@ namespace FST
     private:
         friend class State;
         friend class FiniteStateTransducer;
-        /// data holds a 256-bit bitmap for all arcs of a node. Ita 256 bits correspond to 256
+        /// data holds a 256-bit bitmap for all arcs of a state. Ita 256 bits correspond to 256
         /// possible label values.
         UInt256 data{ 0 };
     };
 
+    /// State implements the State in Finite State Transducer
+    /// Each state contains all its arcs and a flag indicating if it is final state
     class State
     {
     public:
@@ -117,6 +123,9 @@ namespace FST
 
     inline constexpr size_t MAX_TERM_LENGTH = 256;
 
+    /// FSTBuilder is used to build Finite State Transducer by adding words incrementally.
+    /// Note that all the words have to be added in sorted order in order to achieve minimized result.
+    /// In the end, the caller should call build() to serialize minimized FST to WriteBuffer
     class FSTBuilder
     {
     public:
@@ -144,6 +153,8 @@ namespace FST
         UInt64 previous_state_index = 0;
     };
 
+    //FiniteStateTransducer is constructed by using minimized FST blob(which is loaded from index storage)
+    // It is used to retrieve output by given term
     class FiniteStateTransducer
     {
     public:

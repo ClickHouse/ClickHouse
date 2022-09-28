@@ -1,14 +1,16 @@
-af	gin
+af	inverted
 101	Alick a01
 111	Alick b01
-af	gin
+af	inverted
 101	Alick a01
 106	Alick a06
 111	Alick b01
 116	Alick b06
-af	gin
+af	inverted
 101	Alick a01
 111	Alick b01
 201	rick c01
-af	gin
+af	inverted
 102	clickhouse你好
+af	inverted
+BC614E,05397FB1,6969696969898240,CF3304

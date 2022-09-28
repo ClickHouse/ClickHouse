@@ -144,23 +144,9 @@ bool GinFilter::match(const PostingsCachePtr& postings_cache) const
     return false;
 }
 
-bool GinFilter::needsFilter() const
-{
-    if (getTerms().empty())
-        return false;
-
-    for (const auto & term: getTerms())
-    {
-        if (term.size() > FST::MAX_TERM_LENGTH)
-            return false;
-    }
-
-    return true;
-}
-
 bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore &cache_store) const
 {
-    if (!filter.needsFilter())
+    if (filter.getTerms().empty())
         return true;
 
     PostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
@@ -176,7 +162,7 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore &cache_
 
 String GinFilter::getName()
 {
-    return "gin";
+    return FilterName;
 }
 
 }
