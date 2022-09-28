@@ -2,18 +2,18 @@
 
 #if USE_AWS_S3
 
-#include <Storages/StorageHudi.h>
-#include <Common/logger_useful.h>
+#    include <Storages/StorageHudi.h>
+#    include <Common/logger_useful.h>
 
-#include <IO/S3Common.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
+#    include <IO/S3Common.h>
+#    include <Storages/StorageFactory.h>
+#    include <Storages/checkAndGetLiteralArgument.h>
 
-#include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
+#    include <aws/core/auth/AWSCredentials.h>
+#    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/ListObjectsV2Request.h>
 
-#include <QueryPipeline/Pipe.h>
+#    include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -84,7 +84,7 @@ Pipe StorageHudi::read(
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
-{   
+{
     StorageS3::updateS3Configuration(context, base_configuration);
     return s3engine->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 }
@@ -134,12 +134,7 @@ std::vector<std::string> StorageHudi::getKeysFromS3()
 std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys)
 {
     // filter only .parquet files
-    std::erase_if(
-        keys,
-        [](const std::string & s)
-        {
-            return std::filesystem::path(s).extension() != ".parquet";
-        });
+    std::erase_if(keys, [](const std::string & s) { return std::filesystem::path(s).extension() != ".parquet"; });
 
     // for each partition path take only latest parquet file
 

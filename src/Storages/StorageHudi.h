@@ -4,8 +4,8 @@
 
 #if USE_AWS_S3
 
-#include <Storages/IStorage.h>
-#include <Storages/StorageS3.h>
+#    include <Storages/IStorage.h>
+#    include <Storages/StorageS3.h>
 
 namespace Poco
 {

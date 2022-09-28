@@ -4,11 +4,11 @@
 
 #if USE_AWS_S3
 
-#include <Storages/IStorage.h>
-#include <Storages/StorageS3.h>
+#    include <Storages/IStorage.h>
+#    include <Storages/StorageS3.h>
 
-#include <unordered_map>
-#include <base/JSON.h>
+#    include <unordered_map>
+#    include <base/JSON.h>
 
 namespace Poco
 {
@@ -52,7 +52,7 @@ private:
     std::vector<String> getJsonLogFiles();
 
     std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
-    
+
     void handleJSON(const JSON & json);
 
     StorageS3::S3Configuration base_configuration;
