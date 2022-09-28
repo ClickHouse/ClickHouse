@@ -846,6 +846,7 @@ bool Client::processWithFuzzing(const String & full_query)
         {
             server_exception.reset();
             client_exception.reset();
+            fuzzer.notifyQueryFailed(query);
             have_error = false;
         }
     }
