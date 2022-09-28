@@ -449,9 +449,8 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const override { return getSettings()->force_select_final && supportsFinal();  }
-
-    bool forceQueryWithFinal() const override {
+    bool forceQueryWithFinal() const override
+    {
         return getSettings()->force_select_final && supportsFinal();
     }
     /// Snapshot for MergeTree contains the current set of data parts
