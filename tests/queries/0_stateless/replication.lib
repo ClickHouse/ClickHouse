@@ -56,10 +56,16 @@ function check_replication_consistency()
             break
         fi
     done
-    time_left=$((300 - num_tries))
 
     # Touch all data to check that it's readable (and trigger PartCheckThread if needed)
-    $CLICKHOUSE_CLIENT -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null ||:
+    while ! $CLICKHOUSE_CLIENT -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
+        sleep 1;
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq 250 ]; then
+            break
+        fi
+    done
+    time_left=$((300 - num_tries))
 
     # Do not check anything if all replicas are readonly,
     # because is this case all replicas are probably lost (it may happen and it's not a bug)
