@@ -627,7 +627,7 @@ bool Client::processWithFuzzing(const String & full_query)
     }
     else if (const auto * create = orig_ast->as<ASTCreateQuery>())
     {
-        if (create->columns_list)
+        if (QueryFuzzer::isSuitableForFuzzing(*create))
             this_query_runs = create_query_fuzzer_runs;
         else
             this_query_runs = 1;
@@ -821,18 +821,18 @@ bool Client::processWithFuzzing(const String & full_query)
         }
     }
 
-    for (const auto & insert_query : queries_for_fuzzed_tables)
+    for (const auto & query : queries_for_fuzzed_tables)
     {
         std::cout << std::endl;
         WriteBufferFromOStream ast_buf(std::cout, 4096);
-        formatAST(*insert_query, ast_buf, false /*highlight*/);
+        formatAST(*query, ast_buf, false /*highlight*/);
         ast_buf.next();
         std::cout << std::endl << std::endl;
 
         try
         {
-            query_to_execute = insert_query->formatForErrorMessage();
-            if (auto res = processFuzzingStep(query_to_execute, insert_query))
+            query_to_execute = query->formatForErrorMessage();
+            if (auto res = processFuzzingStep(query_to_execute, query))
                 return *res;
         }
         catch (...)

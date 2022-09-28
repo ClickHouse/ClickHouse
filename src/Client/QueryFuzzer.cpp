@@ -448,6 +448,11 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
     }
 }
 
+bool QueryFuzzer::isSuitableForFuzzing(const ASTCreateQuery & create)
+{
+    return create.columns_list && create.columns_list->columns;
+}
+
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -485,6 +490,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 
     IAST::Hash hash;
     sip_hash.get128(hash);
+
+    /// Save only tables with unique definition.
     if (created_tables_hashes.insert(hash).second)
         original_table_name_to_fuzzed[original_name].push_back(new_name);
 }
@@ -502,7 +509,7 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
-    /// Do not replace Array with not Array to often.
+    /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
     const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
     if (type_array && fuzz_rand() % 5 != 0)
         return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
@@ -560,14 +567,17 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         }
     }
 
-    size_t tmp = fuzz_rand() % 10;
+    size_t tmp = fuzz_rand() % 8;
+    if (tmp == 0)
+        return std::make_shared<DataTypeArray>(type);
+
     if (tmp <= 1 && type->canBeInsideNullable())
         return std::make_shared<DataTypeNullable>(type);
 
-    if (tmp <= 3 && type->canBeInsideLowCardinality())
+    if (tmp <= 2 && type->canBeInsideLowCardinality())
         return std::make_shared<DataTypeLowCardinality>(type);
 
-    if (tmp == 4)
+    if (tmp <= 3)
         return getRandomType();
 
     return type;
@@ -594,7 +604,7 @@ DataTypePtr QueryFuzzer::getRandomType()
     if (type_id == TypeIndex::DECIMAL) \
         return std::make_shared<DataTypeDecimal<DECIMAL>>( \
             DataTypeDecimal<DECIMAL>::maxPrecision(), \
-            fuzz_rand() % DataTypeDecimal<DECIMAL>::maxPrecision() + 1);
+            (fuzz_rand() % DataTypeDecimal<DECIMAL>::maxPrecision()) + 1);
 
     DISPATCH(Decimal32)
     DISPATCH(Decimal64)
@@ -667,7 +677,7 @@ ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)
     {
         /// Parse query from scratch for each table instead of clone,
         /// to store proper pointers to inlined data,
-        /// which are not copies during clone.
+        /// which are not copied during clone.
         auto & query = queries.emplace_back(tryParseInsertQuery(full_query));
         query->as<ASTInsertQuery>()->setTable(fuzzed_name);
     }
@@ -681,15 +691,19 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
         return {};
 
     auto table_name = drop_query.getTable();
-    auto it = original_table_name_to_fuzzed.find(table_name);
-    if (it == original_table_name_to_fuzzed.end())
+    auto it = index_of_fuzzed_table.find(table_name);
+    if (it == index_of_fuzzed_table.end())
         return {};
 
     ASTs queries;
-    for (const auto & fuzzed_name : it->second)
+    /// Drop all created tables, not only unique ones.
+    for (size_t i = 0; i < it->second; ++i)
     {
+        auto fuzzed_name = table_name + "__fuzz_" + toString(i);
         auto & query = queries.emplace_back(drop_query.clone());
         query->as<ASTDropQuery>()->setTable(fuzzed_name);
+        /// Just in case add IF EXISTS to avoid exceptions.
+        query->as<ASTDropQuery>()->if_exists = true;
     }
 
     return queries;
