@@ -91,6 +91,8 @@ struct QueryFuzzer
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+
+    static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 };
 
 }
