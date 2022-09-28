@@ -80,3 +80,6 @@ Customers | project FirstName,LastName,Occupation,Education,Age | where Age > 30
 
 print '-- Test Filter using multi where --';
 Customers | project FirstName,LastName,Occupation,Education,Age | where Age > 30 | where Occupation == 'Professional';
+
+print '-- Complex query with unknown function --';
+hits | where CounterID == 62 and EventDate >= '2013-07-14' and EventDate <= '2013-07-15' and IsRefresh == 0 and DontCountHits == 0 | summarize count() by d=bin(poopoo(EventTime), 1m) | order by d | limit 10; -- { clientError UNKNOWN_FUNCTION }

@@ -38,9 +38,11 @@ print '-- parse_ipv6(fe80::85d:e82c:9446:7994)';
 print parse_ipv6('fe80::85d:e82c:9446:7994');
 print '-- parse_ipv4(\'127.0.0.1\')';
 print parse_ipv4('127.0.0.1');
-
 print '-- parse_ipv4(\'192.1.168.1\') < parse_ipv4(\'192.1.168.2\')';
 print parse_ipv4('192.1.168.1') < parse_ipv4('192.1.168.2');
+print '-- parse_ipv4(arrayStringConcat([\'127\', \'0\', \'0\', \'1\'], \'.\'))';
+print parse_ipv4(arrayStringConcat(['127', '0', '0', '1'], '.')); -- { clientError UNKNOWN_FUNCTION }
+
 print '-- parse_ipv4_mask(\'127.0.0.1\', 24) == 2130706432';
 print parse_ipv4_mask('127.0.0.1', 24) == 2130706432;
 print '-- parse_ipv4_mask(\'abc\', 31)';
