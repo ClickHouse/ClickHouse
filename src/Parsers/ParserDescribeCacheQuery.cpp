@@ -11,11 +11,12 @@ bool ParserDescribeCacheQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     ParserKeyword p_describe("DESCRIBE");
     ParserKeyword p_desc("DESC");
-    ParserKeyword p_cache("FILESYSTEM CACHE");
+    ParserKeyword p_filesystem("FILESYSTEM");
+    ParserKeyword p_cache("CACHE");
     ParserLiteral p_cache_name;
 
     if ((!p_describe.ignore(pos, expected) && !p_desc.ignore(pos, expected))
-        || !p_cache.ignore(pos, expected))
+        || !p_filesystem.ignore(pos, expected) || !p_cache.ignore(pos, expected))
         return false;
 
     auto query = std::make_shared<ASTDescribeCacheQuery>();
