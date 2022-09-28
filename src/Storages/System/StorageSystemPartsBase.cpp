@@ -220,7 +220,7 @@ StoragesInfo StoragesInfoStream::next()
         info.storage = storages.at(std::make_pair(info.database, info.table));
 
         /// For table not to be dropped and set of columns to remain constant.
-        info.table_lock = info.storage->lockForShare(query_id, settings.lock_acquire_timeout);
+        info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
 
         if (info.table_lock == nullptr)
         {
