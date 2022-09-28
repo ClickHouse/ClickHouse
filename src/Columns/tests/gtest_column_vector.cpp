@@ -141,7 +141,7 @@ static void testIndex()
             size_t index_rows = rng() % MAX_ROWS + 1;
 
             test_case(rows, index_rows, 0);
-            test_case(rows, index_rows, 0.5 * index_rows);
+            test_case(rows, index_rows, index_rows / 2);
         }
     }
     catch (const Exception & e)
