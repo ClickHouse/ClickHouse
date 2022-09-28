@@ -14,7 +14,7 @@ bool ParserKQLProject :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     Tokens tokens(expr.c_str(), expr.c_str()+expr.size());
     IParser::Pos new_pos(tokens, pos.max_depth);
 
-    if (!ParserNotEmptyExpressionList(true).parse(new_pos, select_expression_list, expected))
+    if (!ParserNotEmptyExpressionList(false).parse(new_pos, select_expression_list, expected))
         return false;
 
     node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
