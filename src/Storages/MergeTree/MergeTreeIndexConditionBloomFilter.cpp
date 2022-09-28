@@ -242,11 +242,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
         DataTypePtr const_type;
         if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
         {
-            if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Int64 ||
-                const_value.getType() == Field::Types::Float64)
+            if (const_value.getType() == Field::Types::UInt64)
             {
-                /// Zero in all types is represented in memory the same way as in UInt64.
-                out.function = const_value.reinterpret<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Int64)
+            {
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -613,7 +623,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (which.isTuple() && function->name == "tuple")
         {
-            const Tuple & tuple = get<const Tuple &>(value_field);
+            const Tuple & tuple = value_field.get<const Tuple &>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
             const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 

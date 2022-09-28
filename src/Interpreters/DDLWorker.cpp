@@ -19,6 +19,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/setThreadName.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -515,6 +516,11 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
     chassert(!task.completely_processed);
 
+    /// Setup tracing context on current thread for current DDL
+    OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__ ,
+        task.entry.tracing_context,
+        this->context->getOpenTelemetrySpanLog());
+
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
 
@@ -890,7 +896,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
-            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, "finished");
+            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, zkutil::RemoveException{"finished"});
 
             /// And then we remove node_path and node_path/finished in a single transaction
             Coordination::Requests ops;
