@@ -72,9 +72,10 @@ public:
         : TemporaryDataOnDiskScope(std::move(parent_), 0)
     {}
 
-    TemporaryFileStream & createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t reserve_size = 0);
+    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
+    TemporaryFileStream & createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size = 0);
 
-    std::vector<TemporaryFileStream *> getStreams();
+    std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
 
     const StatAtomic & getStat() const { return stat; }
