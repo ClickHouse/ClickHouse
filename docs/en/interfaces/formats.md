@@ -1030,7 +1030,7 @@ Let's say we have table `test` with two columns:
 ┌─object_name─┬─number─┐
 │ first_obj   │      1 │
 │ second_obj  │      2 │
-│ trhird_obj  │      3 │
+│ third_obj   │      3 │
 └─────────────┴────────┘
 ```
 Let's output it in `JSONObjectEachRow` format and use `format_json_object_each_row_column_for_object_name` setting:
@@ -1044,7 +1044,7 @@ The output:
 {
 	"first_obj": {"number": 1},
 	"second_obj": {"number": 2},
-	"trhird_obj": {"number": 3}
+	"third_obj": {"number": 3}
 }
 ```
 
@@ -1059,7 +1059,7 @@ select * from file('data.json', JSONObjectEachRow, 'object_name String, number U
 ┌─object_name─┬─number─┐
 │ first_obj   │      1 │
 │ second_obj  │      2 │
-│ trhird_obj  │      3 │
+│ third_obj   │      3 │
 └─────────────┴────────┘
 ```
 
