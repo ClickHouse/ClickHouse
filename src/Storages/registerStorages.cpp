@@ -3,7 +3,7 @@
 
 #include "config.h"
 #include "config_core.h"
-#include "config_formats.h"
+#include "config.h"
 
 namespace DB
 {
