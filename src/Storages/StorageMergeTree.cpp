@@ -53,7 +53,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
-    extern const int SERIALIZATION_ERROR;
 }
 
 namespace ActionLocks
@@ -1528,59 +1527,32 @@ StorageMergeTree::MutableDataPartsVector createNewEmptyDataParts(MergeTreeData &
 void captureTmpDirName(MergeTreeData & data, FutureNewEmptyParts & new_parts)
 {
     for (auto & new_part : new_parts)
-    {
-        auto maybe_guard = data.tryGetTemporaryPartDirectoryHolder(new_part.getDirName());
-        if (!maybe_guard)
-            throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Temporary part {} already added", new_part.getDirName());
-
-        new_part.tmp_dir_guard = std::move(*maybe_guard);
-    }
+        new_part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(new_part.getDirName());
 }
 
-void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector & old_parts, MutableDataPartsVector & new_parts, Transaction & transaction)
+void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector &, MutableDataPartsVector & new_parts, Transaction & transaction)
 {
-    auto part_lock = lockParts();
-
-    /// Check that all old parts are Active still
-    {
-        DataPartsVector changed_parts;
-
-        for (const auto & part: old_parts)
-            if (part->getState() != DataPartState::Active)
-                changed_parts.push_back(part);
-
-        if (!changed_parts.empty())
-            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
-                            "Race with concurrent query that modifies parts. {} parts have changed the status, first is {}. Try again later.",
-                            changed_parts.size(), changed_parts.front()->getNameWithState());
-    }
-
     DataPartsVector covered_parts;
 
     for (auto & part: new_parts)
     {
-        bool no_covering_parts = renameTempPartAndReplaceUnlocked(part, transaction, part_lock, &covered_parts);
-        bool has_covering_parts = !no_covering_parts;
-        if (has_covering_parts)
-            throw Exception("Part " + part->name + " has covering part. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction);
+
+        if (covered_parts_by_one_part.size() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} expected to cover not more then 1 part. {} covered parts have found. This is a bug.",
+                            part->name, covered_parts_by_one_part.size());
+
+        std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
     }
 
-    if (covered_parts.size() != old_parts.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Going to delete {} (first is  {}) parts instead of {} (first is {}) by creating new {} (first is {}) parts. This is a bug.",
-                        covered_parts.size(), covered_parts.front()->getNameWithState(),
-                        old_parts.size(), old_parts.front()->getNameWithState(),
-                        new_parts.size(), new_parts.front()->getNameWithState()
-                        );
+    LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
+             covered_parts.size(), new_parts.size(), transaction.getTID());
 
-    LOG_INFO(log, "Remove {} parts by covering them with empty {} parts.", covered_parts.size(), new_parts.size());
-
-    /// Do commit at the same locked scope where new parts was checked
-    transaction.commit(&part_lock);
+    transaction.commit();
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
-    for (auto & covered_part: covered_parts)
-        covered_part->remove_time.store(0, std::memory_order_relaxed);
+    for (auto & part: covered_parts)
+        part->remove_time.store(0, std::memory_order_relaxed);
 
     if (deduplication_log)
         for (const auto & part: covered_parts)
@@ -1598,11 +1570,13 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     auto txn = query_context->getCurrentTransaction();
     MergeTreeData::Transaction transaction(*this, txn.get());
     {
+        auto operation_data_parts_lock = lockOperationsWithParts();
+
         auto parts = getVisibleDataPartsVector(query_context);
 
         auto new_parts = initCoverageWithNewEmptyParts(parts, format_version);
 
-        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
+        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}, ",
                  new_parts.size(), parts.size(),
                  fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames(parts), ", "));
 
@@ -1635,6 +1609,8 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
     auto txn = query_context->getCurrentTransaction();
     MergeTreeData::Transaction transaction(*this, txn.get());
     {
+        auto operation_data_parts_lock = lockOperationsWithParts();
+
         auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         if (!part)
             throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
@@ -1685,6 +1661,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     auto txn = query_context->getCurrentTransaction();
     MergeTreeData::Transaction transaction(*this, txn.get());
     {
+        auto operation_data_parts_lock = lockOperationsWithParts();
+
         DataPartsVector parts;
         {
             if (partition_ast && partition_ast->all)
