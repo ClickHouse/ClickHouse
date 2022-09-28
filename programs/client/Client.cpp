@@ -805,6 +805,7 @@ bool Client::processWithFuzzing(const String & full_query)
             // so that it doesn't influence the exit code.
             server_exception.reset();
             client_exception.reset();
+            fuzzer.notifyQueryFailed(ast_to_process);
             have_error = false;
         }
         else if (ast_to_process->formatForErrorMessage().size() > 500)

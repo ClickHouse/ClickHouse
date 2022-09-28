@@ -60,7 +60,7 @@ struct QueryFuzzer
     std::unordered_set<const IAST *> debug_visited_nodes;
     ASTPtr * debug_top_ast = nullptr;
 
-    std::unordered_map<std::string, std::vector<std::string>> original_table_name_to_fuzzed;
+    std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
     std::set<IAST::Hash> created_tables_hashes;
 
@@ -76,6 +76,7 @@ struct QueryFuzzer
     DataTypePtr getRandomType();
     ASTs getInsertQueriesForFuzzedTables(const String & full_query);
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
+    void notifyQueryFailed(ASTPtr ast);
     void replaceWithColumnLike(ASTPtr & ast);
     void replaceWithTableLike(ASTPtr & ast);
     void fuzzOrderByElement(ASTOrderByElement * elem);
