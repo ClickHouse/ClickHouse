@@ -719,6 +719,9 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
         query->as<ASTDropQuery>()->if_exists = true;
     }
 
+    index_of_fuzzed_table.erase(it);
+    original_table_name_to_fuzzed.erase(table_name);
+
     return queries;
 }
 
