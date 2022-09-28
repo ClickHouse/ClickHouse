@@ -186,7 +186,14 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         {
             "print extract_json( '$.a' , '{\"a\":123, \"b\":\"{\"c\":456}\"}' , typeof(long))",
             "SELECT accurateCastOrNull(JSON_VALUE('{\"a\":123, \"b\":\"{\"c\":456}\"}', '$.a'), 'Int64')"
-
+        },
+        {
+            "print bin(datetime(1970-05-11 13:45:07.456345672), 1ms)",
+            "SELECT toDateTime64(toInt64(toFloat64(parseDateTime64BestEffortOrNull('1970-05-11 13:45:07.456345672', 9, 'UTC')) / 0.001) * 0.001, 9, 'UTC')"
+        },
+        {
+            "print bin(datetime(1970-05-11 13:45:07.456345672), 1microseconds)",
+            "SELECT toDateTime64(toInt64(toFloat64(parseDateTime64BestEffortOrNull('1970-05-11 13:45:07.456345672', 9, 'UTC')) / 0.000001) * 0.000001, 9, 'UTC')"
         },
         {
             "print parse_command_line('echo \"hello world!\" print$?', 'windows')",
@@ -207,7 +214,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         {
             "print result=parse_csv('aa,b,cc')",
             "SELECT if(CAST(position('aa,b,cc', '\\n'), 'UInt8'), splitByChar(',', substring('aa,b,cc', 1, position('aa,b,cc', '\\n') - 1)), splitByChar(',', substring('aa,b,cc', 1, length('aa,b,cc')))) AS result"
-
         },
         {
             "print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z')",
