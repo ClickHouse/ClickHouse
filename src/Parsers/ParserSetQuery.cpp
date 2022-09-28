@@ -75,7 +75,7 @@ protected:
 };
 
 /// Parse `param_name = value`
-/// Compared to the usual setting, parameter can be 
+/// Compared to the usual setting, parameter can be
 /// Literal, Array and Tuple of literals, Identifier, Map
 bool ParserSetQuery::parseNameValuePairParameter(ParserSetQuery::Parameter & change, IParser::Pos & pos, Expected & expected)
 {
