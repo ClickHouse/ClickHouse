@@ -22,6 +22,8 @@ class TableExpressionData
 public:
     using ColumnNameToColumnIdentifier = std::unordered_map<std::string, ColumnIdentifier>;
 
+    using ColumnIdentifierToColumnName = std::unordered_map<std::string, ColumnIdentifier>;
+
     /// Return true if column with name exists, false otherwise
     bool hasColumn(const std::string & column_name) const
     {
@@ -39,6 +41,7 @@ public:
         columns_names.insert(column.name);
         columns.push_back(column);
         column_name_to_column_identifier.emplace(column.name, column_identifier);
+        column_identifier_to_column_name.emplace(column_identifier, column.name);
     }
 
     /** Add column if it does not exists in table expression data.
@@ -52,6 +55,7 @@ public:
         columns_names.insert(column.name);
         columns.push_back(column);
         column_name_to_column_identifier.emplace(column.name, column_identifier);
+        column_identifier_to_column_name.emplace(column_identifier, column.name);
     }
 
     /// Add alias column name
@@ -78,14 +82,20 @@ public:
         return columns;
     }
 
-    /// Get column name to identifier map
+    /// Get column name to column identifier map
     const ColumnNameToColumnIdentifier & getColumnNameToIdentifier() const
     {
         return column_name_to_column_identifier;
     }
 
+    /// Get column identifier to column name map
+    const ColumnNameToColumnIdentifier & getColumnIdentifierToColumnName() const
+    {
+        return column_identifier_to_column_name;
+    }
+
     /** Get column identifier for column name.
-      * Exception is thrown if there are no identifier for column name.
+      * Exception is thrown if there are no column identifier for column name.
       */
     const ColumnIdentifier & getColumnIdentifierOrThrow(const std::string & column_name) const
     {
@@ -99,12 +109,38 @@ public:
     }
 
     /** Get column identifier for column name.
-      * Null is returned if there are no identifier for column name.
+      * Null is returned if there are no column identifier for column name.
       */
     const ColumnIdentifier * getColumnIdentifierOrNull(const std::string & column_name) const
     {
         auto it = column_name_to_column_identifier.find(column_name);
         if (it == column_name_to_column_identifier.end())
+            return nullptr;
+
+        return &it->second;
+    }
+
+    /** Get column name for column identifier.
+      * Exception is thrown if there are no column name for column identifier.
+      */
+    const std::string & getColumnNameOrThrow(const ColumnIdentifier & column_identifier) const
+    {
+        auto it = column_identifier_to_column_name.find(column_identifier);
+        if (it == column_identifier_to_column_name.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column name for identifier {} does not exists",
+                column_identifier);
+
+        return it->second;
+    }
+
+    /** Get column name for column identifier.
+      * Null is returned if there are no column name for column identifier.
+      */
+    const std::string * getColumnNameOrNull(const ColumnIdentifier & column_identifier) const
+    {
+        auto it = column_identifier_to_column_name.find(column_identifier);
+        if (it == column_identifier_to_column_name.end())
             return nullptr;
 
         return &it->second;
@@ -137,6 +173,9 @@ private:
 
     /// Valid for table, table function, query table expression nodes
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
+
+    /// Valid for table, table function, query table expression nodes
+    ColumnIdentifierToColumnName column_identifier_to_column_name;
 
     /// Cached value if table expression receives data from remote server
     bool is_remote = false;

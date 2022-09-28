@@ -165,6 +165,8 @@ private:
 
     std::string right_storage_name;
 
+    bool is_join_with_constant = false;
+
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
@@ -278,6 +280,16 @@ public:
 
     size_t rightKeyInclusion(const String & name) const;
     NameSet requiredRightKeys() const;
+
+    bool isJoinWithConstant() const
+    {
+        return is_join_with_constant;
+    }
+
+    void setIsJoinWithConstant(bool is_join_with_constant_value)
+    {
+        is_join_with_constant = is_join_with_constant_value;
+    }
 
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;

@@ -4,6 +4,8 @@
 #include <Core/ColumnsWithTypeAndName.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/IJoin.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -169,6 +171,23 @@ JoinClausesAndActions buildJoinClausesAndActions(
     const ColumnsWithTypeAndName & left_table_expression_columns,
     const ColumnsWithTypeAndName & right_table_expression_columns,
     const QueryTreeNodePtr & join_node,
+    const PlannerContextPtr & planner_context);
+
+/** Try extract boolean constant from JOIN expression.
+  * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
+  * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1 != 1;
+  *
+  * join_node - join query tree node.
+  */
+std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join_node);
+
+/** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
+  * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
+  * For example JOIN with Dictionary enigne, or JOIN with JOIN engine.
+  */
+std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
+    const QueryTreeNodePtr & right_table_expression,
+    const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context);
 
 }
