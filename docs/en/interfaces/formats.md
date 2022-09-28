@@ -1020,7 +1020,7 @@ Example:
 }
 ```
 
-To use object name as column value you can use special setting [format_json_object_each_row_column_for_object_name](../operations/settings/settings.md#format_json_object_each_row_column_for_object_name).
+To use object name as column value you can use special setting [format_json_object_each_row_column_for_object_name](../operations/settings/settings.md#format_json_object_each_row_column_for_object_name). Value of this setting is set to the name of a column, that is used as JSON key for a row in resulting object.
 Examples:
 
 For output:
