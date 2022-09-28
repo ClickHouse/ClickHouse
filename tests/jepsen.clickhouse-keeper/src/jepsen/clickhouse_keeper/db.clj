@@ -26,7 +26,6 @@
                    ["-i" k])
                  (if-not (:strict-host-key-checking conn-spec)
                    ["-o StrictHostKeyChecking=no"])
-                 ["-o PubkeyAcceptedKeyTypes=+ssh-rsa"]
                  sources
                  [dest]))
   nil)

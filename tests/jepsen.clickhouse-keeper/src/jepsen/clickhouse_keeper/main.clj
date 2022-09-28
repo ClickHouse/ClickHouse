@@ -89,8 +89,6 @@
       scp/remote
       retry/remote))
 
-(ns jepsen.clickhouse-keeper.main)
-
 (ns jepsen.clickhouse-keeper.main
   (:require [clojure.tools.logging :refer :all]
             [jepsen.clickhouse-keeper.utils :refer :all]
