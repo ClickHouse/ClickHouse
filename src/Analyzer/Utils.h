@@ -16,7 +16,23 @@ bool isNameOfInFunction(const std::string & function_name);
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression);
 
-/// Extract table, table function query, union from join tree
+/// Extract table, table function, query, union from join tree
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
+
+/** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree
+  * Example: SELECT * FROM t1 INNER JOIN t2 INNER JOIN t3.
+  * Result table expressions stack:
+  * 1. t1 INNER JOIN t2 INNER JOIN t3
+  * 2. t3
+  * 3. t1 INNER JOIN t2
+  * 4. t2
+  * 5. t1
+  */
+QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
+
+/** Get column source for JOIN node with USING.
+  * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING (id);
+  */
+QueryTreeNodePtr getColumnSourceForJoinNodeWithUsing(const QueryTreeNodePtr & join_node);
 
 }

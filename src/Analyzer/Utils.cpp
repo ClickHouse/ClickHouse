@@ -228,4 +228,95 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
     return result;
 }
 
+namespace
+{
+
+void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, QueryTreeNodes & result)
+{
+    auto node_type = join_tree_node->getNodeType();
+
+    switch (node_type)
+    {
+        case QueryTreeNodeType::TABLE:
+            [[fallthrough]];
+        case QueryTreeNodeType::QUERY:
+            [[fallthrough]];
+        case QueryTreeNodeType::UNION:
+            [[fallthrough]];
+        case QueryTreeNodeType::TABLE_FUNCTION:
+        {
+            result.push_back(join_tree_node);
+            break;
+        }
+        case QueryTreeNodeType::ARRAY_JOIN:
+        {
+            auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
+            buildTableExpressionsStackImpl(array_join_node.getTableExpression(), result);
+            result.push_back(join_tree_node);
+            break;
+        }
+        case QueryTreeNodeType::JOIN:
+        {
+            auto & join_node = join_tree_node->as<JoinNode &>();
+            buildTableExpressionsStackImpl(join_node.getLeftTableExpression(), result);
+            buildTableExpressionsStackImpl(join_node.getRightTableExpression(), result);
+            result.push_back(join_tree_node);
+            break;
+        }
+        default:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual "
+                "{}",
+                join_tree_node->getNodeTypeName());
+        }
+    }
+}
+}
+
+QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node)
+{
+    QueryTreeNodes result;
+    buildTableExpressionsStackImpl(join_tree_node, result);
+
+    return result;
+}
+
+QueryTreeNodePtr getColumnSourceForJoinNodeWithUsing(const QueryTreeNodePtr & join_node)
+{
+    QueryTreeNodePtr column_source_node = join_node;
+
+    while (true)
+    {
+        auto column_source_node_type = column_source_node->getNodeType();
+        if (column_source_node_type == QueryTreeNodeType::TABLE ||
+            column_source_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+            column_source_node_type == QueryTreeNodeType::QUERY ||
+            column_source_node_type == QueryTreeNodeType::UNION)
+        {
+            break;
+        }
+        else if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN)
+        {
+            auto & array_join_node = column_source_node->as<ArrayJoinNode &>();
+            column_source_node = array_join_node.getTableExpression();
+            continue;
+        }
+        else if (column_source_node_type == QueryTreeNodeType::JOIN)
+        {
+            auto & join_node_typed = column_source_node->as<JoinNode &>();
+            column_source_node = isRight(join_node_typed.getKind()) ? join_node_typed.getRightTableExpression() : join_node_typed.getLeftTableExpression();
+            continue;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
+                column_source_node->getNodeTypeName());
+        }
+    }
+
+    return column_source_node;
+}
+
 }
