@@ -122,6 +122,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
     {
+        /// Replace SELECT * FROM (EXPLAIN SELECT ...) with SELECT * FROM viewExplain(EXPLAIN SELECT ...)
         result_node = buildSelectFromTableFunction(makeASTFunction("viewExplain", explain_node));
     }
     else

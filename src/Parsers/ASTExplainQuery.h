@@ -7,11 +7,6 @@ namespace DB
 {
 
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /// AST, EXPLAIN or other query with meaning of explanation query instead of execution
 class ASTExplainQuery : public ASTQueryWithOutput
 {
@@ -29,13 +24,14 @@ public:
 
     explicit ASTExplainQuery(ExplainKind kind_) : kind(kind_) {}
 
-    String getID(char delim) const override { return "Explain" + (delim + formatString(kind)); }
+    String getID(char delim) const override { return "Explain" + (delim + toString(kind)); }
     ExplainKind getKind() const { return kind; }
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTExplainQuery>(*this);
         res->children.clear();
-        res->children.push_back(children[0]->clone());
+        if (!children.empty())
+            res->children.push_back(children[0]->clone());
         cloneOutputOptions(*res);
         return res;
     }
@@ -72,7 +68,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << formatString(kind) << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
 
         if (ast_settings)
         {
@@ -107,8 +103,7 @@ private:
     ASTPtr table_function;
     ASTPtr table_override;
 
-    /// format as it appears in the query text
-    static String formatString(ExplainKind kind)
+    static String toString(ExplainKind kind)
     {
         switch (kind)
         {
@@ -123,46 +118,6 @@ private:
 
         __builtin_unreachable();
     }
-
-public:
-    static String kindToString(ExplainKind kind)
-    {
-        switch (kind)
-        {
-            case ParsedAST: return "AST";
-            case AnalyzedSyntax: return "SYNTAX";
-            case QueryTree: return "QUERY TREE";
-            case QueryPlan: return "PLAN";
-            case QueryPipeline: return "PIPELINE";
-            case QueryEstimates: return "ESTIMATE";
-            case TableOverride: return "TABLE OVERRIDE";
-            case CurrentTransaction: return "CURRENT TRANSACTION";
-        }
-
-        __builtin_unreachable();
-    }
-
-    static ExplainKind kindFromString(const String & kind)
-    {
-        if (kind == "ast" || kind == "AST")
-            return ExplainKind::ParsedAST;
-        if (kind == "syntax" || kind == "SYNTAX")
-            return ExplainKind::AnalyzedSyntax;
-        if (kind == "query tree" || kind == "QUERY TREE")
-            return ExplainKind::QueryTree;
-        if (kind == "plan" || kind == "PLAN")
-            return ExplainKind::QueryPlan;
-        if (kind == "pipeline" || kind == "PIPELINE")
-            return ExplainKind::QueryPipeline;
-        if (kind == "estimate" || kind == "ESTIMATE")
-            return ExplainKind::QueryEstimates;
-        if (kind == "table override" || kind == "TABLE OVERRIDE")
-            return ExplainKind::TableOverride;
-        if (kind == "current transaction" || kind == "CURRENT TRANSACTION")
-            return ExplainKind::CurrentTransaction;
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal explain kind '{}'", kind);
-    }
 };
-
 
 }
