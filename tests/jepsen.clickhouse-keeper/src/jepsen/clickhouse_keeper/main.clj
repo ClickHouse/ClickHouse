@@ -15,10 +15,14 @@
   (connect [this conn-spec]
     (if (:dummy conn-spec)
       (assoc this :conn-spec conn-spec)
-      (try+ (let [c (doto (SSHClient. (doto (DefaultConfig.) (.setVerifyHostKeyCertificates false)))
-                      (.addHostKeyVerifier (PromiscuousVerifier.))
-                      (.connect (:host conn-spec) (:port conn-spec))
-                      (auth! conn-spec))]
+      (try+ (let [c (as-> (SSHClient.) client
+                      (do
+                        (if (:strict-host-key-checking conn-spec)
+                          (.loadKnownHosts client)
+                          (.addHostKeyVerifier client (PromiscuousVerifier.)))
+                        (.connect client (:host conn-spec) (:port conn-spec))
+                        (auth! client conn-spec)
+                        client))]
               (assoc this
                      :conn-spec conn-spec
                      :client c
