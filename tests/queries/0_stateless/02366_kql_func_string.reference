@@ -305,3 +305,22 @@ asd
 Number was: 1
 -- has_any_index()
 0	1	-1	-1
+-- parse_version()
+1000000020000000300000040
+1000000020000000000000000
+1000000020000000300000004
+1000000020000000000000000
+1000000020000000300000000
+1000000000000000000000000
+-- parse_json()
+[1,2,3]
+[{"a":123.5,"b":"{\\"c\\":456}"}]
+['echo','"hello','world!"','print$?']
+-- reverse()
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Latoya	Shen	Professional	Graduate Degree	25
+321
+43.321
+-- parse_csv()
+['aa','b','cc']
+['record1','a','b','c']
