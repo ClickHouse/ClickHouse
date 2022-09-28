@@ -468,9 +468,21 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 
     if (create.storage && create.storage->engine)
     {
+        /// Replace ReplicatedMergeTree to ordinary MergeTree
+        /// to avoid inconsistency of metadata in zookeeper.
         auto & engine_name = create.storage->engine->name;
         if (startsWith(engine_name, "Replicated"))
+        {
             engine_name = engine_name.substr(strlen("Replicated"));
+            if (auto & arguments = create.storage->engine->arguments)
+            {
+                auto & children = arguments->children;
+                if (children.size() <= 2)
+                    arguments.reset();
+                else
+                    children.erase(children.begin(), children.begin() + 2);
+            }
+        }
     }
 
     auto full_name = create.getTable();
@@ -493,7 +505,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 
     /// Save only tables with unique definition.
     if (created_tables_hashes.insert(hash).second)
-        original_table_name_to_fuzzed[original_name].push_back(new_name);
+        original_table_name_to_fuzzed[original_name].insert(new_name);
 }
 
 void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
@@ -640,8 +652,9 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     auto it = original_table_name_to_fuzzed.find(table_id.getTableName());
     if (it != original_table_name_to_fuzzed.end() && !it->second.empty())
     {
-        const auto & new_table_name = it->second[fuzz_rand() % it->second.size()];
-        StorageID new_table_id(table_id.database_name, new_table_name);
+        auto new_table_name = it->second.begin();
+        std::advance(new_table_name, fuzz_rand() % it->second.size());
+        StorageID new_table_id(table_id.database_name, *new_table_name);
         table.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_table_id);
     }
 }
@@ -707,6 +720,25 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
     }
 
     return queries;
+}
+
+void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
+{
+    auto remove_fuzzed_table = [this](const auto & table_name)
+    {
+        auto pos = table_name.find("__fuzz_");
+        if (pos != std::string::npos)
+        {
+            auto original_name = table_name.substr(0, pos);
+            original_table_name_to_fuzzed[original_name].erase(table_name);
+        }
+    };
+
+    if (const auto * create = ast->as<ASTCreateQuery>())
+        remove_fuzzed_table(create->getTable());
+
+    if (const auto * insert = ast->as<ASTInsertQuery>())
+        remove_fuzzed_table(insert->getTable());
 }
 
 void QueryFuzzer::fuzz(ASTs & asts)
