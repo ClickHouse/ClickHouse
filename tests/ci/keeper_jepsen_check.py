@@ -14,7 +14,7 @@ from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-from pr_info import FakePRInfo
+from pr_info import PRInfo
 from compress_files import compress_fast
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
@@ -22,6 +22,7 @@ from version_helper import get_version_from_repo
 from tee_popen import TeePopen
 from ssh import SSHKey
 from build_download_helper import get_build_name_for_check
+from rerun_helper import RerunHelper
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 DESIRED_INSTANCE_COUNT = 3
@@ -145,11 +146,25 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    pr_info = FakePRInfo()
-    pr_info.number = 41845
-    pr_info.sha = "26a5e3588a5839c5a475a6c52c23c73bcee51bfc"
+    pr_info = PRInfo()
+
+    logging.info(
+        "Start at PR number %s, commit sha %s labels %s",
+        pr_info.number,
+        pr_info.sha,
+        pr_info.labels,
+    )
+
+    if pr_info.number != 0 and "jepsen-test" not in pr_info.labels:
+        logging.info("Not jepsen test label in labels list, skipping")
+        sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
+
+    rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
