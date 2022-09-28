@@ -613,11 +613,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     if (!disk)
     {
         disk = reservation->getDisk();
-        LOG_INFO(log, "Disk for fetch is not provided, getting disk from reservation {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
-    }
-    else
-    {
-        LOG_INFO(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TRACE(
+            log,
+            "Disk for fetch is not provided, getting disk from reservation {} with type {}",
+            disk->getName(),
+            toString(disk->getDataSourceDescription().type));
     }
 
     UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
