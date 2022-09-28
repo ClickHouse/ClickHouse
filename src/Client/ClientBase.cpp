@@ -6,6 +6,8 @@
 #include <map>
 #include <unordered_map>
 
+#include "config.h"
+
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
@@ -17,7 +19,6 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
-#include "config.h"
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -25,6 +26,7 @@
 #include <Formats/FormatFactory.h>
 
 #include "config_version.h"
+
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>

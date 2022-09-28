@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
-#include "config.h"
 #include <base/defines.h>
 #include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>

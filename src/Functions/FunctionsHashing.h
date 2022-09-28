@@ -8,7 +8,6 @@
 #include <wyhash.h>
 
 #include "config.h"
-#include "config.h"
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>

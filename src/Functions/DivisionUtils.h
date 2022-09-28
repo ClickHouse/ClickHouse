@@ -7,7 +7,6 @@
 #include <DataTypes/NumberTraits.h>
 
 #include "config.h"
-#include "config.h"
 
 
 namespace DB
