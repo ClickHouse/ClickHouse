@@ -5564,7 +5564,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     auto * select_query = query_ptr->as<ASTSelectQuery>();
     auto * original_select_query = original_query_ptr->as<ASTSelectQuery>();
 
-    if (!original_select_query || select_query)
+    if (!original_select_query || !select_query)
         return std::nullopt;
 
     // Currently projections don't support final yet.
