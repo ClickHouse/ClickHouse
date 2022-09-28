@@ -7,7 +7,7 @@
 #include <Functions/checkHyperscanRegexp.h>
 #include "Regexps.h"
 
-#include "config_functions.h"
+#include "config.h"
 #include "config.h"
 
 #if USE_VECTORSCAN

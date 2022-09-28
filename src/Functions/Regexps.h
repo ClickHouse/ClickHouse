@@ -16,7 +16,7 @@
 #include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>
 
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_VECTORSCAN
 #    include <hs.h>
