@@ -134,7 +134,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     }
     else
     {
-        std::unordered_set<String> names_set;
+        std::unordered_set<std::string_view> names_set;
         for (const auto & name : column_names)
         {
             if (names_set.contains(name))
@@ -253,7 +253,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             /// We reached eof.
             break;
 
-        std::unordered_set<String> names_set; /// We should check for duplicate column names in current row
+        std::unordered_set<std::string_view> names_set; /// We should check for duplicate column names in current row
         for (auto & [name, new_type] : new_names_and_types)
         {
             if (names_set.contains(name))
