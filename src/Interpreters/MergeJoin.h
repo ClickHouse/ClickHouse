@@ -2,7 +2,7 @@
 
 #include <shared_mutex>
 
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
@@ -45,6 +45,7 @@ private:
     struct NotProcessed : public ExtraBlock
     {
         size_t left_position;
+        size_t left_key_tail;
         size_t right_position;
         size_t right_block;
     };
@@ -69,7 +70,7 @@ private:
         size_t operator()(const Block & block) const { return block.bytes(); }
     };
 
-    using Cache = LRUCache<size_t, Block, std::hash<size_t>, BlockByteWeight>;
+    using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
     mutable std::shared_mutex rwlock;
     std::shared_ptr<TableJoin> table_join;
@@ -123,7 +124,8 @@ private:
 
     template <bool is_all>
     ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
-                             size_t left_position, size_t right_position, size_t right_block_number);
+                             size_t left_position, size_t left_key_tail, size_t right_position,
+                             size_t right_block_number);
 
     void mergeRightBlocks();
 

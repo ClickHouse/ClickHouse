@@ -120,7 +120,7 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     ch_helper = ClickHouseHelper()
 
     report_url = upload_results(

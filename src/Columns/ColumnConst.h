@@ -81,11 +81,6 @@ public:
         return data->getDataAt(0);
     }
 
-    StringRef getDataAtWithTerminatingZero(size_t) const override
-    {
-        return data->getDataAtWithTerminatingZero(0);
-    }
-
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
@@ -240,6 +235,12 @@ public:
         callback(data);
     }
 
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(data);
+        data->forEachSubcolumnRecursively(callback);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (const auto * rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
@@ -269,7 +270,7 @@ public:
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
-    StringRef getRawData() const override { return data->getRawData(); }
+    std::string_view getRawData() const override { return data->getRawData(); }
 
     /// Not part of the common interface.
 
@@ -281,7 +282,7 @@ public:
 
     /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
-    T getValue() const { return getField().safeGet<T>(); }
+    T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
 };

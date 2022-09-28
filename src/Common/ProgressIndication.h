@@ -55,7 +55,7 @@ public:
     void setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update = false);
 
     /// How much seconds passed since query execution start.
-    double elapsedSeconds() const { return watch.elapsedSeconds(); }
+    double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
 
     void addThreadIdToList(String const & host, UInt64 thread_id);
 
@@ -74,6 +74,8 @@ private:
 
     MemoryUsage getMemoryUsage() const;
 
+    UInt64 getElapsedNanoseconds() const;
+
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.
     bool show_progress_bar = false;
@@ -86,7 +88,7 @@ private:
     /// This information is stored here.
     Progress progress;
 
-    /// Track query execution time.
+    /// Track query execution time on client.
     Stopwatch watch;
 
     bool write_progress_on_update = false;

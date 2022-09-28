@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/comparison-functions
 sidebar_position: 36
 sidebar_label: "Функции сравнения"
 ---

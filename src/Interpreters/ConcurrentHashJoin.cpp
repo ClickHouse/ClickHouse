@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Parsers/DumpASTNode.h>

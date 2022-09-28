@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/type-conversion-functions
 sidebar_position: 38
 sidebar_label: "Функции преобразования типов"
 ---
@@ -209,7 +210,7 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+┌──────value─┬─toTypeName(toDate32('1955-01-01'))─┐
 │ 1955-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
 ```
@@ -217,23 +218,23 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 2. Значение выходит за границы диапазона:
 
 ``` sql
-SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
-│ 1925-01-01 │ Date32                             │
+┌──────value─┬─toTypeName(toDate32('1899-01-01'))─┐
+│ 1900-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
 ```
 
 3. С аргументом типа `Date`:
 
 ``` sql
-SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+┌──────value─┬─toTypeName(toDate32(toDate('1899-01-01')))─┐
 │ 1970-01-01 │ Date32                                     │
 └────────────┴────────────────────────────────────────────┘
 ```
@@ -247,14 +248,14 @@ SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
 Запрос:
 
 ``` sql
-SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+SELECT toDate32OrZero('1899-01-01'), toDate32OrZero('');
 ```
 
 Результат:
 
 ``` text
-┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
-│                   1925-01-01 │         1925-01-01 │
+┌─toDate32OrZero('1899-01-01')─┬─toDate32OrZero('')─┐
+│                   1900-01-01 │         1900-01-01 │
 └──────────────────────────────┴────────────────────┘
 ```
 
@@ -684,9 +685,10 @@ x::t
 
 -   Преобразованное значение.
 
-    :::note "Примечание"
-    Если входное значение выходит за границы нового типа, то результат переполняется. Например, `CAST(-1, 'UInt8')` возвращает `255`.
-    :::
+:::note "Примечание"
+Если входное значение выходит за границы нового типа, то результат переполняется. Например, `CAST(-1, 'UInt8')` возвращает `255`.
+:::
+
 **Примеры**
 
 Запрос:
@@ -1140,17 +1142,29 @@ FORMAT PrettyCompactMonoBlock;
 └────────────────────────────┴────────────────────────────────┘
 ```
 
-## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
+## parseDateTime64BestEffortUS {#parsedatetime64besteffortus}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности.
+
+## parseDateTime64BestEffortOrNull {#parsedatetime64besteffortornull}
 
 Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL`, если формат даты не может быть обработан.
 
 ## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
 
-Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
+
+## parseDateTime64BestEffortUSOrNull {#parsedatetime64besteffortusornull}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности и возвращает `NULL`, если формат даты не может быть обработан.
+
+## parseDateTime64BestEffortUSOrZero {#parsedatetime64besteffortusorzero}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности и возвращает нулевую дату и время, если формат даты не может быть обработан.
 
 ## toLowCardinality {#tolowcardinality}
 
-Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+Преобразует входные данные в версию [LowCardinality](../data-types/lowcardinality.md) того же типа данных.
 
 Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
 
@@ -1197,6 +1211,7 @@ SELECT toLowCardinality('1');
 
 :::info "Примечание"
     Возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
+:::
 
 **Синтаксис**
 

@@ -1,4 +1,5 @@
 ---
+slug: /ru/development/developer-instruction
 sidebar_position: 61
 sidebar_label: "Инструкция для разработчиков"
 ---

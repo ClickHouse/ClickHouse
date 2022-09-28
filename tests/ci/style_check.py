@@ -166,7 +166,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/style-test")
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "

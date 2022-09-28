@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/create/
 sidebar_label: CREATE
 sidebar_position: 34
 ---

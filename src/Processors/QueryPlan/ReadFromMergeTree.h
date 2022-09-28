@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -116,8 +117,14 @@ public:
 
     void addFilter(ActionsDAGPtr expression, std::string column_name)
     {
-        added_filter = std::move(expression);
-        added_filter_column_name = std::move(column_name);
+        added_filter_dags.push_back(expression);
+        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
+    }
+
+    void addFilterNodes(const ActionDAGNodes & filter_nodes)
+    {
+        for (const auto & node : filter_nodes.nodes)
+            added_filter_nodes.nodes.push_back(node);
     }
 
     StorageID getStorageID() const { return data.getStorageID(); }
@@ -128,8 +135,7 @@ public:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         const PrewhereInfoPtr & prewhere_info,
-        const ActionsDAGPtr & added_filter,
-        const std::string & added_filter_column_name,
+        const ActionDAGNodes & added_filter_nodes,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -145,10 +151,18 @@ public:
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
-    void setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> read_in_order_optimizer);
-    void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
+    void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
 private:
+    int getSortDirection() const
+    {
+        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
+        if (order_info)
+            return order_info->direction;
+
+        return 1;
+    }
+
     const MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
@@ -160,8 +174,8 @@ private:
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
 
-    ActionsDAGPtr added_filter;
-    std::string added_filter_column_name;
+    std::vector<ActionsDAGPtr> added_filter_dags;
+    ActionDAGNodes added_filter_nodes;
 
     StorageSnapshotPtr storage_snapshot;
     StorageMetadataPtr metadata_for_reading;

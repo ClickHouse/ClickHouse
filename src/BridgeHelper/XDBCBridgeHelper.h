@@ -9,6 +9,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -86,6 +87,7 @@ protected:
     {
         auto uri = createBaseURI();
         uri.setPath(MAIN_HANDLER);
+        uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
         return uri;
     }
 
@@ -163,6 +165,7 @@ protected:
     {
         auto uri = createBaseURI();
         uri.setPath(COL_INFO_HANDLER);
+        uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
         return uri;
     }
 
@@ -184,6 +187,7 @@ protected:
 
             auto uri = createBaseURI();
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
+            uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
@@ -204,6 +208,7 @@ protected:
 
             auto uri = createBaseURI();
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
+            uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);

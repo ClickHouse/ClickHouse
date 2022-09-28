@@ -106,7 +106,7 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     report_url = upload_results(
         s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME

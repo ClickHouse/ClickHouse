@@ -164,7 +164,7 @@ def gen_versions(
     # The order is important, PR number is used as cache during the build
     versions = [str(pr_info.number), pr_commit_version]
     result_version = pr_commit_version
-    if pr_info.number == 0:
+    if pr_info.number == 0 and pr_info.base_ref == "master":
         # First get the latest for cache
         versions.insert(0, "latest")
 
@@ -460,7 +460,7 @@ def main():
     with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     s3_path_prefix = (
         str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(" ", "_")

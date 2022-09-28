@@ -21,6 +21,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 
@@ -33,7 +34,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -333,7 +333,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// Get path and name from engine arguments
             ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
             if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
-                zookeeper_path = safeGet<String>(ast_zk_path->value);
+                zookeeper_path = ast_zk_path->value.safeGet<String>();
             else
                 throw Exception(
                     "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -342,7 +342,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
             ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
             if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
-                replica_name = safeGet<String>(ast_replica_name->value);
+                replica_name = ast_replica_name->value.safeGet<String>();
             else
                 throw Exception(
                     "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::BAD_ARGUMENTS);
@@ -566,9 +566,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
+        auto partition_key = metadata.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer().visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
+            args.columns, partition_key, minmax_columns, primary_key_asts, args.getContext()));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.getContext());
@@ -648,13 +650,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
+        auto partition_key = metadata.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer().visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
+            args.columns, partition_key, minmax_columns, primary_key_asts, args.getContext()));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
-            storage_settings->index_granularity = safeGet<UInt64>(ast->value);
+            storage_settings->index_granularity = ast->value.safeGet<UInt64>();
         else
             throw Exception(
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -679,19 +683,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        auto storage_policy = args.getContext()->getStoragePolicy(storage_settings->storage_policy);
-
-        for (const auto & disk : storage_policy->getDisks())
-        {
-            /// TODO: implement it the main issue in DataPartsExchange (not able to send directories metadata)
-            if (storage_settings->allow_remote_fs_zero_copy_replication
-                && disk->supportZeroCopyReplication() && metadata.hasProjections())
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections are not supported when zero-copy replication is enabled for table. "
-                                "Currently disk '{}' supports zero copy replication", disk->getName());
-            }
-        }
-
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,

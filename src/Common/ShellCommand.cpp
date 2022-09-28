@@ -76,7 +76,7 @@ ShellCommand::~ShellCommand()
 
         int retcode = kill(pid, SIGTERM);
         if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
+            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString());
     }
     else
     {
@@ -201,8 +201,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         // by the child process, which might not expect this.
         sigset_t mask;
         sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask);
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe)
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
 
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
