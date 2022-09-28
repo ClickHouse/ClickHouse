@@ -316,6 +316,36 @@ StorageKeeperMap::StorageKeeperMap(
 
     for (size_t i = 0; i < 1000; ++i)
     {
+        std::string stored_metadata_string;
+        auto exists = client->tryGet(metadata_path, stored_metadata_string);
+
+        if (exists)
+        {
+            // this requires same name for columns
+            // maybe we can do a smarter comparison for columns and primary key expression
+            if (stored_metadata_string != metadata_string)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Path {} is already used but the stored table definition doesn't match. Stored metadata: {}",
+                    root_path,
+                    stored_metadata_string);
+
+            auto code = client->tryCreate(table_path, "", zkutil::CreateMode::Persistent);
+
+            // tables_path was removed with drop
+            if (code == Coordination::Error::ZNONODE)
+            {
+                LOG_INFO(log, "Metadata nodes were removed by another server, will retry");
+                continue;
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                throw zkutil::KeeperException(code, "Failed to create table on path {} because a table with same UUID already exists", root_path);
+            }
+
+            return;
+        }
+
         if (client->exists(dropped_path))
         {
             LOG_INFO(log, "Removing leftover nodes");
@@ -342,45 +372,29 @@ StorageKeeperMap::StorageKeeperMap(
             }
         }
 
-        std::string stored_metadata_string;
-        auto exists = client->tryGet(metadata_path, stored_metadata_string);
+        Coordination::Requests create_requests
+        {
+            zkutil::makeCreateRequest(metadata_path, metadata_string, zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest(data_path, metadata_string, zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest(tables_path, "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest(table_path, "", zkutil::CreateMode::Persistent),
+        };
 
-        if (exists)
+        Coordination::Responses create_responses;
+        auto code = client->tryMulti(create_requests, create_responses);
+        if (code == Coordination::Error::ZNODEEXISTS)
         {
-            // this requires same name for columns
-            // maybe we can do a smarter comparison for columns and primary key expression
-            if (stored_metadata_string != metadata_string)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Path {} is already used but the stored table definition doesn't match. Stored metadata: {}",
-                    root_path,
-                    stored_metadata_string);
+            LOG_INFO(log, "It looks like a table on path {} was created by another server at the same moment, will retry", root_path);
+            continue;
         }
-        else
+        else if (code != Coordination::Error::ZOK)
         {
-            auto code = client->tryCreate(metadata_path, metadata_string, zkutil::CreateMode::Persistent);
-            if (code == Coordination::Error::ZNODEEXISTS)
-                continue;
-            else if (code != Coordination::Error::ZOK)
-                throw Coordination::Exception(code, metadata_path);
+            zkutil::KeeperMultiException::check(code, create_requests, create_responses);
         }
 
-        client->createIfNotExists(tables_path, "");
 
-        auto code = client->tryCreate(table_path, "", zkutil::CreateMode::Persistent);
-
-        if (code == Coordination::Error::ZOK)
-        {
-            // metadata now should be guaranteed to exist because we added our UUID to the tables_path
-            client->createIfNotExists(data_path, "");
-            table_is_valid = true;
-            return;
-        }
-
-        if (code == Coordination::Error::ZNONODE)
-            LOG_INFO(log, "Metadata nodes were deleted in background, will retry");
-        else
-            throw Coordination::Exception(code, table_path);
+        table_is_valid = true;
+        return;
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create metadata for table, because it is removed concurrently or because of wrong root_path ({})", root_path);
@@ -494,9 +508,18 @@ void StorageKeeperMap::drop()
     checkTable<true>();
     auto client = getClient();
 
-    client->remove(table_path);
+    // we allow ZNONODE in case we got hardware error on previous drop
+    if (auto code = client->tryRemove(table_path); code == Coordination::Error::ZNOTEMPTY)
+    {
+        throw zkutil::KeeperException(
+            code, "{} contains children which shouldn't happen. Please DETACH the table if you want to delete it", table_path);
+    }
 
-    if (!client->getChildren(tables_path).empty())
+    std::vector<std::string> children;
+    // if the tables_path is not found, some other table removed it
+    // if there are children, some other tables are still using this path as storage
+    if (auto code = client->tryGetChildren(tables_path, children);
+        code != Coordination::Error::ZOK || !children.empty())
         return;
 
     Coordination::Requests ops;
