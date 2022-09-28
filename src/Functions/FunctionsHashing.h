@@ -423,9 +423,8 @@ struct JavaHashImpl
 
     static ReturnType apply(int64_t x)
     {
-        int64_t copy = x;
-        copy = copy >> 32;
-        return static_cast<int32_t>(x ^ (copy & 0x00000000FFFFFFFF));
+        return static_cast<ReturnType>(
+            static_cast<uint32_t>(x) ^ static_cast<uint32_t>(static_cast<uint64_t>(x) >> 32)));
     }
 
     template <class T, typename std::enable_if<std::is_same_v<T, int8_t>
