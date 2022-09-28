@@ -22,7 +22,7 @@ ALTER TABLE table_in_memory DROP PARTITION 0;
 
 SELECT count() FROM table_in_memory;
 SELECT name, part_type, rows, active from system.parts
-WHERE table='table_in_memory' AND database=currentDatabase();
+WHERE table='table_in_memory' AND database=currentDatabase() AND active;
 
 SELECT 'detach table';
 DETACH TABLE table_in_memory;

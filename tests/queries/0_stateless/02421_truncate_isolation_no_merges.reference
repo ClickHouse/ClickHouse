@@ -1,7 +1,7 @@
 concurrent_drop_after
-tx71	3
+tx11	3
 concurrent_drop_before
-tx71	3
+tx21	3
 UNKNOWN_TABLE
 concurrent_insert
 2
@@ -20,22 +20,9 @@ all_1_1_0	1
 all_2_2_1	0
 all_3_3_0	1
 read_from_snapshot
-tx61	3
-tx61	3
-tx62	0
-tx61	3
-0
-concurrent_delete
-tx41	41	3
-tx41	41	3
-SERIALIZATION_ERROR
-tx42	42	1
-2
-4
-concurrent_delete_rollback
 tx51	3
 tx51	3
-tx52	1
+tx52	0
 tx51	3
 0
 concurrent_drop_part_after
@@ -50,3 +37,15 @@ NewPart	all_2_2_0
 NewPart	all_2_2_1
 NewPart	all_3_3_0
 NewPart	all_3_3_1
+concurrent_truncate_notx_after
+tx71	3
+tx71	0
+0
+concurrent_truncate_notx_before
+tx81	3
+NO_SUCH_DATA_PART
+INVALID_TRANSACTION
+INVALID_TRANSACTION
+0
+concurrent_rollback_truncate
+3

@@ -220,6 +220,9 @@ public:
     using DataPartsLock = std::unique_lock<std::mutex>;
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
+    using OperationDataPartsLock = std::unique_lock<std::mutex>;
+    OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
+
     MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartType choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -270,6 +273,8 @@ public:
                 tryLogCurrentException("~MergeTreeData::Transaction");
             }
         }
+
+        TransactionID getTID() const;
 
     private:
         friend class MergeTreeData;
@@ -1029,7 +1034,6 @@ public:
 
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name);
-    std::optional<scope_guard> tryGetTemporaryPartDirectoryHolder(const String & part_dir_name);
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1111,6 +1115,10 @@ protected:
     DataPartsIndexes data_parts_indexes;
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
+
+    /// Mutex for critical sections which alter set of parts
+    /// It is like truncate, drop/detach partition
+    mutable std::mutex operation_with_data_parts_mutex;
 
     /// Current description of columns of data type Object.
     /// It changes only when set of parts is changed and is
@@ -1222,15 +1230,20 @@ protected:
         DataPartsLock & data_parts_lock) const;
 
     DataPartsVector getCoveredOutdatedParts(
-        const MergeTreePartInfo & part_info,
+        const DataPartPtr & part,
         DataPartsLock & data_parts_lock) const;
 
-    void getPartHierarchy(
+    struct PartHierarchy
+    {
+        DataPartPtr duplicate_part;
+        DataPartPtr covering_part;
+        DataPartsVector covered_parts;
+        DataPartPtr intersected_part;
+    };
+
+    PartHierarchy getPartHierarchy(
         const MergeTreePartInfo & part_info,
-        const String & part_name,
         DataPartState state,
-        DataPartPtr & out_covering_part,
-        DataPartsVector & covered_part,
         DataPartsLock & /* data_parts_lock */) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
@@ -1302,8 +1315,9 @@ protected:
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
 private:
-    /// Checking that candidate part doesn't break invariants: correct partition and doesn't exist already
-    void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
+    /// Checking that candidate part doesn't break invariants: correct partition
+    void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
+    void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction
