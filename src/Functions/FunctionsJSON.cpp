@@ -824,7 +824,7 @@ struct JSONExtractTree
     class LowCardinalityFixedStringNode : public Node
     {
     public:
-        LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) {}
+        explicit LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) {}
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
             auto str = element.getString();
