@@ -11,7 +11,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 };
 
 namespace FST
@@ -273,7 +273,7 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
     auto current_word_len = current_word.size();
 
     if (current_word_len > MAX_TERM_LENGTH)
-        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too long term ({}) passed to FST builder.", current_word_len);
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Too long term ({}) passed to FST builder.", current_word_len);
 
     size_t prefix_length_plus1 = getCommonPrefix(current_word, previous_word) + 1;
 
