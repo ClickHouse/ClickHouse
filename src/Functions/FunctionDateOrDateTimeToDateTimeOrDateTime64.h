@@ -28,15 +28,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        this->checkArguments(arguments, /*is_result_type_date_or_date32*/ true);
+        this->checkArguments(arguments, /*is_result_type_date_or_date32*/ false);
 
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 
+        std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+
         /// If the time zone is specified but empty, throw an exception.
         /// only validate the time_zone part if the number of arguments is 2.
-        if ((which.isDateTime() || which.isDateTime64()) && arguments.size() == 2
-            && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0).empty())
+        if (arguments.size() == 2 && time_zone.empty())
             throw Exception(
                 "Function " + this->getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -49,10 +50,10 @@ public:
                 if (const auto * dt64 =  checkAndGetDataType<DataTypeDateTime64>(arguments[0].type.get()))
                     scale = dt64->getScale();
             }
-            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            return std::make_shared<DataTypeDateTime64>(scale, time_zone);
         }
         else
-            return std::make_shared<DataTypeDateTime>();
+            return std::make_shared<DataTypeDateTime>(time_zone);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

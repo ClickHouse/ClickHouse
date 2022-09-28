@@ -102,7 +102,7 @@ protected:
                     "Function " + getName() + " supports 1 or 2 arguments. The optional 2nd argument must be "
                     "a constant string with a timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date_or_date32)
+            if (isDateOrDate32(arguments[0].type) && is_result_type_date_or_date32)
                 throw Exception(
                     "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime or DateTime64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
