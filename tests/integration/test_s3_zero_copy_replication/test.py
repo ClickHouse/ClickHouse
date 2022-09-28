@@ -414,6 +414,7 @@ def wait_mutations(node, table, seconds):
     )
     assert mutations == "0\n"
 
+
 def wait_for_clean_old_parts(node, table, seconds):
     time.sleep(1)
     while seconds > 0:
@@ -428,6 +429,7 @@ def wait_for_clean_old_parts(node, table, seconds):
         f"SELECT count() FROM system.parts WHERE table='{table}' AND active=0"
     )
     assert parts == "0\n"
+
 
 def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
@@ -637,6 +639,7 @@ def test_s3_zero_copy_concurrent_merge(cluster):
     for node in (node1, node2):
         assert node.query("select sum(id) from concurrent_merge").strip() == "1600"
 
+
 def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
@@ -645,7 +648,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     node2.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
 
     node1.query(
-            """
+        """
         CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
@@ -653,10 +656,10 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
         SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
-        )
+    )
 
     node2.query(
-            """
+        """
         CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
@@ -664,14 +667,14 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
         SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
-        )
+    )
 
     node1.query(
-            """
+        """
         INSERT INTO zero_copy_mutation
         SELECT * FROM generateRandom('id UInt64, value1 String, value2 String, value3 String') limit 1000000
         """
-        )
+    )
 
     wait_for_active_parts(node2, 4, "zero_copy_mutation")
 
@@ -679,14 +682,14 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     check_objects_exisis(cluster, objects1)
 
     node1.query(
-            """
+        """
         ALTER TABLE zero_copy_mutation
         ADD COLUMN valueX String MATERIALIZED value1
         """
     )
 
     node1.query(
-            """
+        """
         ALTER TABLE zero_copy_mutation
         MATERIALIZE COLUMN valueX
         """
@@ -700,10 +703,10 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     nodeX = node1
     nodeY = node2
 
-    assert node1.count_metadata_furcation_refs('s31') == 0
-    assert node2.count_metadata_furcation_refs('s31') == 0
+    assert node1.count_metadata_furcation_refs("s31") == 0
+    assert node2.count_metadata_furcation_refs("s31") == 0
 
-    if node2.count_metadata_furcation_refs('s31'):
+    if node2.count_metadata_furcation_refs("s31"):
         nodeX = node2
         nodeY = node1
 
