@@ -3,6 +3,9 @@ import time
 import os
 
 import pytest
+
+pytestmark = pytest.mark.skip
+
 from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 
