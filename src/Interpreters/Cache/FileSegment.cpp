@@ -1198,6 +1198,7 @@ String FileSegment::getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment
     info << "current write offset: " << getCurrentWriteOffsetUnlocked(segment_lock) << ", ";
     info << "first non-downloaded offset: " << getFirstNonDownloadedOffsetUnlocked(segment_lock) << ", ";
     info << "caller id: " << getCallerId() << ", ";
+    info << "internal: " << isInternal() << ", ";
     info << "detached: " << is_detached << ", ";
     info << "persistent: " << is_persistent;
 
@@ -1238,8 +1239,10 @@ void FileSegment::assertCorrectness() const
 void FileSegment::assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const
 {
     auto current_downloader = getDownloaderUnlocked(segment_lock);
-    chassert(current_downloader.empty() == (download_state != FileSegment::State::DOWNLOADING));
-    chassert(!current_downloader.empty() == (download_state == FileSegment::State::DOWNLOADING));
+    if (current_downloader.empty())
+        assert(download_state != State::DOWNLOADING);
+    else
+        assert(download_state == State::DOWNLOADING || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
     chassert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(getPathInLocalCache()) > 0);
 }
 
