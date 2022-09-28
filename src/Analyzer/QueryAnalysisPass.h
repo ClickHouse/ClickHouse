@@ -40,6 +40,7 @@ namespace DB
   * No aggregate functions in WHERE, PREWHERE, GROUP BY and inside another aggregate functions.
   * GROUP BY modifiers CUBE, ROLLUP, GROUPING SETS and WITH TOTALS.
   * Table expression modifiers are disabled for subqueries in JOIN TREE.
+  * For JOIN, ARRAY JOIN subqueries and table functions must have alias (Can be changed using joined_subquery_requires_alias setting).
   *
   * 10. Special functions handling:
   * Function `untuple` is handled properly.

@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
+    extern const int ALIAS_REQUIRED;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -879,6 +880,8 @@ private:
 
     void evaluateScalarSubquery(QueryTreeNodePtr & query_tree_node, size_t subquery_depth);
 
+    void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+
     static void validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
@@ -1118,6 +1121,26 @@ void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node, size_t subqu
         query_node->performConstantFolding(std::move(constant_value));
     else if (union_node)
         union_node->performConstantFolding(std::move(constant_value));
+}
+
+void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+{
+    if (!context->getSettingsRef().joined_subquery_requires_alias)
+        return;
+
+    bool table_expression_has_alias = table_expression_node->hasAlias();
+    if (table_expression_has_alias)
+        return;
+
+    auto table_expression_node_type = table_expression_node->getNodeType();
+    if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+        table_expression_node_type == QueryTreeNodeType::QUERY ||
+        table_expression_node_type == QueryTreeNodeType::UNION)
+        throw Exception(ErrorCodes::ALIAS_REQUIRED,
+            "JOIN {} no alias for subquery or table function {}. In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
+            join_node->formatASTForErrorMessage(),
+            table_expression_node->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
 }
 
 void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
@@ -4415,6 +4438,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         {
             auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
             resolveQueryJoinTreeNode(array_join_node.getTableExpression(), scope, expressions_visitor);
+            validateJoinTableExpressionWithoutAlias(join_tree_node, array_join_node.getTableExpression(), scope);
 
             /// Wrap array join expressions into column nodes, where array join expression is inner expression.
 
@@ -4467,7 +4491,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             auto & join_node = join_tree_node->as<JoinNode &>();
 
             resolveQueryJoinTreeNode(join_node.getLeftTableExpression(), scope, expressions_visitor);
+            validateJoinTableExpressionWithoutAlias(join_tree_node, join_node.getLeftTableExpression(), scope);
+
             resolveQueryJoinTreeNode(join_node.getRightTableExpression(), scope, expressions_visitor);
+            validateJoinTableExpressionWithoutAlias(join_tree_node, join_node.getRightTableExpression(), scope);
 
             if (join_node.isUsingJoinExpression())
             {
