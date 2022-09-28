@@ -296,11 +296,11 @@ Notice how only a portion of the data was properly decrypted, and the rest is gi
 
 ## tryDecrypt
 
-Similar to `decrypt`, but returns NULL if decryption fail because of using wrong key.
+Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.
 
 **Examples**
 
-Let's create a table with `user_id` is unique user id, `encrypted` is an encrypted string field, `iv` is intitial vector for decrypt/encrypt. Assume that users know their id and the key to decrypt the encrypted field:
+Let's create a table where `user_id` is the unique user id, `encrypted` is an encrypted string field, `iv` is an initial vector for decrypt/encrypt. Assume that users know their id and the key to decrypt the encrypted field:
 
 ```sql
 CREATE TABLE decrypt_null (
@@ -320,28 +320,7 @@ INSERT INTO decrypt_null VALUES
     ('2022-09-02 00:00:01', 3, encrypt('aes-256-gcm', 'value3', 'keykeykeykeykeykeykeykeykeykey03', 'iv3'), 'iv3');
 ```
 
-Query with `decrypt`:
-
-```sql
-SELECT
-    dt,
-    user_id,
-    decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) AS value
-FROM decrypt_null
-ORDER BY user_id ASC
-```
-
-Result:
-
-```
-0 rows in set. Elapsed: 0.329 sec.
-
-Received exception from server (version 22.10.1):
-Code: 454. DB::Exception: Received from localhost:24071. DB::Exception: Failed to decrypt. OpenSSL error code: 0: while executing 'FUNCTION decrypt('aes-256-gcm' :: 4, encrypted :: 2, 'keykeykeykeykeykeykeykeykeykey02' :: 5, iv :: 3) -> decrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) String : 6'. (OPENSSL_ERROR)
-
-```
-
-Query with `tryDecrypt`:
+Query:
 
 ```sql
 SELECT
