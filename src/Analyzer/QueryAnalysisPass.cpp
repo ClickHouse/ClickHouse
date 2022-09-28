@@ -885,6 +885,8 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
+    static void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
+
     /// Resolve identifier functions
 
     QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier);
@@ -1239,6 +1241,47 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 
     if (parent_window_node_typed.hasOrderBy())
         window_node_typed.getOrderByNode() = parent_window_node_typed.getOrderBy().clone();
+}
+
+/** Replace nodes in node list with positional arguments.
+  *
+  * Example: SELECT id, value FROM test_table GROUP BY 1, 2;
+  * Example: SELECT id, value FROM test_table ORDER BY 1, 2;
+  * Example: SELECT id, value FROM test_table LIMIT 5 BY 1, 2;
+  */
+void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
+{
+    auto & node_list_typed = node_list->as<ListNode &>();
+
+    for (auto & node : node_list_typed.getNodes())
+    {
+        auto * constant_node = node->as<ConstantNode>();
+        if (!constant_node)
+            continue;
+
+        if (!isNativeNumber(removeNullable(constant_node->getResultType())))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Positional argument must be constant with numeric type. Actual {}. In scope {}",
+                constant_node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        Field converted = convertFieldToType(constant_node->getValue(), DataTypeUInt64());
+        if (converted.isNull())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Positional argument numeric constant expression is not representable as UInt64. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+
+        UInt64 positional_argument_number = converted.safeGet<UInt64>();
+        if (positional_argument_number == 0 || positional_argument_number > projection_nodes.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
+                positional_argument_number,
+                projection_nodes.size(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        --positional_argument_number;
+        node = projection_nodes[positional_argument_number];
+    }
 }
 
 /// Resolve identifier functions implementation
@@ -4816,10 +4859,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (query_node_typed.isGroupByWithGroupingSets())
         {
             for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
+            {
+                if (settings.enable_positional_arguments)
+                    replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
+
                 resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            }
         }
         else
         {
+            if (settings.enable_positional_arguments)
+                replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
+
             resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         }
     }
@@ -4831,7 +4882,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveWindowNodeList(query_node_typed.getWindowNode(), scope);
 
     if (query_node_typed.hasOrderBy())
+    {
+        if (settings.enable_positional_arguments)
+            replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
+
         resolveSortColumnsNodeList(query_node_typed.getOrderByNode(), scope);
+    }
 
     if (query_node_typed.hasInterpolate())
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
@@ -4849,7 +4905,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasLimitBy())
+    {
+        if (settings.enable_positional_arguments)
+            replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
+
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    }
 
     if (query_node_typed.hasLimit())
     {
@@ -4949,6 +5010,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
     collectWindowFunctionNodes(query_node, window_function_nodes);
+
+    if (query_node_typed.hasGroupBy())
+        assertNoAggregateFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
 
     for (auto & aggregate_function_node : aggregate_function_nodes)
     {
