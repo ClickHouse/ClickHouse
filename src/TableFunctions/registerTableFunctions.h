@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {

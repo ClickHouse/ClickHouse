@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 
 #include "config.h"
-#include "config_core.h"
+#include "config.h"
 #include "config.h"
 
 namespace DB

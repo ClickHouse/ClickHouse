@@ -57,7 +57,7 @@
 #include <csignal>
 #include <algorithm>
 
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {
