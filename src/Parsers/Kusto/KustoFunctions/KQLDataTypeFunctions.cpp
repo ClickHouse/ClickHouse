@@ -46,7 +46,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
                 break;
         }
         --pos;
-        datetime_str = std::format("'{}'", String(start->begin, pos->end));
+        datetime_str = std::format("{}::String", String(start->begin, pos->end));
     }
     out = std::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
     ++pos;
