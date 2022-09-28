@@ -19,7 +19,7 @@
 #include <Storages/ColumnsDescription.h>
 
 
-#include "config_core.h"
+#include "config.h"
 
 #include <boost/container/flat_set.hpp>
 #include <functional>

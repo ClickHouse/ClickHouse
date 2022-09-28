@@ -88,7 +88,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
 
-#include "config_core.h"
+#include "config.h"
 #include "config_version.h"
 
 #if defined(OS_LINUX)
