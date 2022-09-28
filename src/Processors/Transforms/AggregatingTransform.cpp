@@ -600,7 +600,7 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        auto & tmp_data = params->aggregator.getTemporaryData();
+        const auto & tmp_data = params->aggregator.getTemporaryData();
 
         Pipe pipe;
         {

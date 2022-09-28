@@ -107,12 +107,7 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
 
-    const IDisk & getNestedDisk() const
-    {
-        if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate.get()))
-            return decorator->getNestedDisk();
-        return *delegate;
-    }
+    virtual DiskPtr getNestedDisk() const;
 
 protected:
     Executor & getExecutor() override;

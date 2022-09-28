@@ -47,7 +47,7 @@ public:
     void consume(Chunk chunk) override
     {
         Block block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        tmp_stream.write(std::move(block));
+        tmp_stream.write(block);
     }
 
     Chunk generate() override
@@ -55,7 +55,11 @@ public:
         if (!tmp_stream.isWriteFinished())
         {
             auto stat = tmp_stream.finishWriting();
-            updateWriteStat(stat);
+
+            ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, stat.compressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
                 tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
@@ -70,15 +74,6 @@ public:
     }
 
 private:
-    void updateWriteStat(const TemporaryFileStream::Stat & stat)
-    {
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
-
-        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, stat.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
-    }
-
     TemporaryFileStream & tmp_stream;
 
     Poco::Logger * log;
@@ -174,8 +169,9 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
-        size_t size = sum_bytes_in_blocks + min_free_disk_space;
-        auto & tmp_stream = tmp_data->createStream(header_without_constants, CurrentMetrics::TemporaryFilesForSort, size);
+        /// If there's less free disk space than reserve_size, an exception will be thrown
+        size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
+        auto & tmp_stream = tmp_data->createStream(header_without_constants, CurrentMetrics::TemporaryFilesForSort, reserve_size);
 
         merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, tmp_stream, log);

@@ -763,15 +763,16 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Temporary disk is null");
 
         /// Check that underlying disk is local (can be wrapped in decorator)
-        const IDisk * disk_ptr = disk.get();
-        if (auto disk_decorator = dynamic_cast<const DiskDecorator *>(disk_ptr))
-            disk_ptr = &disk_decorator->getNestedDisk();
+        DiskPtr disk_ptr = disk;
+        if (const auto * disk_decorator = dynamic_cast<const DiskDecorator *>(disk_ptr.get()))
+            disk_ptr = disk_decorator->getNestedDisk();
 
-        if (dynamic_cast<const DiskLocal *>(disk_ptr) == nullptr)
+        if (dynamic_cast<const DiskLocal *>(disk_ptr.get()) == nullptr)
         {
+            const auto * disk_raw_ptr = disk_ptr.get();
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                 "Disk '{}' ({}) is not local and can't be used for temporary files",
-                disk_ptr->getName(), typeid(*disk_ptr).name());
+                disk_ptr->getName(), typeid(*disk_raw_ptr).name());
         }
     }
 

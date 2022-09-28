@@ -41,13 +41,12 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(int compressed_delta, int unco
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t reserve_size)
+TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size)
 {
-    DiskPtr disk = nullptr;
-    ReservationPtr reservation = nullptr;
-    if (reserve_size > 0)
+    DiskPtr disk;
+    if (max_file_size > 0)
     {
-        reservation = volume->reserve(reserve_size);
+        auto reservation = volume->reserve(max_file_size);
         if (!reservation)
             throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
         disk = reservation->getDisk();
@@ -65,11 +64,12 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, Cu
 }
 
 
-std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams()
+std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams() const
 {
     std::vector<TemporaryFileStream *> res;
     std::lock_guard lock(mutex);
-    for (auto & stream : streams)
+    res.reserve(streams.size());
+    for (const auto & stream : streams)
         res.push_back(stream.get());
     return res;
 }

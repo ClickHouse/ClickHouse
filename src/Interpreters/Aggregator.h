@@ -1074,7 +1074,7 @@ public:
 
     bool hasTemporaryData() const { return tmp_data && !tmp_data->empty(); }
 
-    TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
+    const TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -1133,7 +1133,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// For external aggregation.
-    mutable TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskPtr tmp_data;
 
     size_t min_bytes_for_prefetch = 0;
 
