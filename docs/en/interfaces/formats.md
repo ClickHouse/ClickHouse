@@ -1024,29 +1024,42 @@ To use object name as column value you can use special setting [format_json_obje
 Examples:
 
 For output:
+
+Let's say we have table `test` with two columns:
+```
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ trhird_obj  │      3 │
+└─────────────┴────────┘
+```
+Let's output it in `JSONObjectEachRow` format and use `format_json_object_each_row_column_for_object_name` setting:
+
 ```sql
-insert into function file('data.json', JSONObjectEachRow) select 'obj' as object_name, number from numbers(3) settings format_json_object_each_row_column_for_object_name='object_name'
+select * from test settings format_json_object_each_row_column_for_object_name='object_name'
 ```
 
-File "data.json" will contain:
+The output:
 ```json
 {
-	"obj": {"number":"0"},
-	"obj": {"number":"1"},
-	"obj": {"number":"2"}
+	"first_obj": {"number": 1},
+	"second_obj": {"number": 2},
+	"trhird_obj": {"number": 3}
 }
 ```
 
 For input:
+
+Let's say we stored output from previous example in a file with name `data.json`:
 ```sql
-select * from file('data.json', JSONObjectEachRow, 'obj String, number UInt64') settings format_json_object_each_row_column_for_object_name='object_name'
+select * from file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') settings format_json_object_each_row_column_for_object_name='object_name'
 ```
 
 ```
 ┌─object_name─┬─number─┐
-│ obj         │      0 │
-│ obj         │      1 │
-│ obj         │      2 │
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ trhird_obj  │      3 │
 └─────────────┴────────┘
 ```
 
