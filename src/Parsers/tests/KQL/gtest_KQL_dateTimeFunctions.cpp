@@ -52,7 +52,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print unixtime_seconds_todatetime(1546300899)",
-            "SELECT multiIf((toTypeName(1546300899) = 'String') OR (toTypeName(1546300899) = 'UUID') OR (toTypeName(1546300899) = 'DateTime64(3)'), 'Only Accepted arguments are float , int and double', toString(toDateTime64(1546300899, 9, 'UTC')))"
+            "SELECT toDateTime64(1546300899, 9, 'UTC')"
         },
         {
             "print dayofweek(datetime(2015-12-20))",
@@ -64,11 +64,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print now(1d)",
-            "SELECT now64(9, 'UTC') + 86400."
+            "SELECT now64(9, 'UTC') + 86400"
         },
         {
             "print ago(2d)",
-            "SELECT now64(9, 'UTC') - 172800."
+            "SELECT now64(9, 'UTC') - 172800"
         },  
         {
             "print endofday(datetime(2017-01-01 10:10:17), -1)",
@@ -200,7 +200,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print totimespan(-1d)",
-            "SELECT -86400."
+            "SELECT -86400"
         },
         {
             "print totimespan('abc')",

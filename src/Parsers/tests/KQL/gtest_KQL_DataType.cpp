@@ -61,9 +61,5 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DataType, ParserTest,
         {
             "print timespan('12.23:12:23');",
             "SELECT CAST('1120343', 'Float64')"
-        },
-        {
-            "print timespan(12.23:12:23)",
-            "SELECT CAST('1120343', 'Float64')"
         }
 })));
