@@ -354,6 +354,42 @@ def test_alter_drop_detached_part(started_cluster, engine):
     dummy_node.query("DROP DATABASE testdb SYNC")
 
 
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_partition(started_cluster, engine):
+    main_node.query(
+        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard1', 'replica2');"
+    )
+    snapshotting_node.query(
+        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard2', 'replica1');"
+    )
+
+    table = f"alter_drop_partition.alter_drop_{engine}"
+    main_node.query(
+        f"CREATE TABLE {table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
+    )
+    main_node.query(f"INSERT INTO {table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO {table} VALUES (456)")
+    snapshotting_node.query(f"INSERT INTO {table} VALUES (789)")
+    main_node.query(
+        f"ALTER TABLE {table} ON CLUSTER alter_drop_partition DROP PARTITION ID 'all'",
+        settings={"replication_alter_partitions_sync": 2},
+    )
+    assert (
+        main_node.query(
+            f"SELECT CounterID FROM clusterAllReplicas('alter_drop_partition', {table})"
+        )
+        == ""
+    )
+    assert dummy_node.query(f"SELECT CounterID FROM {table}") == ""
+    main_node.query("DROP DATABASE alter_drop_partition")
+    dummy_node.query("DROP DATABASE alter_drop_partition")
+    snapshotting_node.query("DROP DATABASE alter_drop_partition")
+
+
 def test_alter_fetch(started_cluster):
     main_node.query(
         "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
@@ -788,24 +824,23 @@ def test_startup_without_zk(started_cluster):
     main_node.query(
         "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
     )
-    main_node.query(
-        "CREATE TABLE startup.rmt (n int) ENGINE=ReplicatedMergeTree order by n"
-    )
-
+    # main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=ReplicatedMergeTree order by n")
+    main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=MergeTree order by n")
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
-        main_node.restart_clickhouse(stop_start_wait_sec=60)
+        main_node.restart_clickhouse(stop_start_wait_sec=30)
         assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
 
-    # we need to wait until the table is not readonly
-    main_node.query_with_retry("INSERT INTO startup.rmt VALUES(42)")
-
-    main_node.query_with_retry("CREATE TABLE startup.m (n int) ENGINE=Memory")
+    for _ in range(10):
+        try:
+            main_node.query("CREATE TABLE startup.m (n int) ENGINE=Memory")
+            break
+        except:
+            time.sleep(1)
 
     main_node.query("EXCHANGE TABLES startup.rmt AND startup.m")
     assert main_node.query("SELECT (*,).1 FROM startup.m") == "42\n"
-
     main_node.query("DROP DATABASE startup SYNC")
 
 

@@ -24,6 +24,8 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
+
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const String & s = get<const String &>(field);
@@ -85,8 +87,17 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
     size_t initial_size = data.size();
-    size_t max_bytes = limit * n;
-    data.resize(initial_size + max_bytes);
+    size_t max_bytes;
+    size_t new_data_size;
+
+    if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    if (unlikely(max_bytes > MAX_STRINGS_SIZE))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large sizes of FixedString to deserialize: {}", max_bytes);
+    if (unlikely(__builtin_add_overflow(initial_size, max_bytes, &new_data_size)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+
+    data.resize(new_data_size);
     size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
 
     if (read_bytes % n != 0)

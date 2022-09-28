@@ -35,6 +35,10 @@ struct FieldInfo
 
     /// Number of dimension in array. 0 if field is scalar.
     size_t num_dimensions;
+
+    /// If true then this field is an array of variadic dimension field
+    /// and we need to normalize the dimension
+    bool need_fold_dimension;
 };
 
 FieldInfo getFieldInfo(const Field & field);
@@ -207,6 +211,7 @@ public:
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumnRecursively(ColumnCallback callback) override;
     void insert(const Field & field) override;
     void insertDefault() override;
     void insertFrom(const IColumn & src, size_t n) override;

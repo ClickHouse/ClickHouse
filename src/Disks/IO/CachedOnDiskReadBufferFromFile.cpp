@@ -139,9 +139,11 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
 }
 
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
-CachedOnDiskReadBufferFromFile::getCacheReadBuffer(size_t offset) const
+CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segment) const
 {
-    auto path = cache->getPathInLocalCache(cache_key, offset, is_persistent);
+    /// Use is_persistent flag from in-memory state of the filesegment,
+    /// because it is consistent with what is written on disk.
+    auto path = file_segment.getPathInLocalCache();
 
     ReadSettings local_read_settings{settings};
     /// Do not allow to use asynchronous version of LocalFSReadMethod.
@@ -220,7 +222,8 @@ CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegmentPtr & file_segm
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & file_segment)
 {
-    auto range = file_segment->range();
+    size_t wait_download_max_tries = settings.filesystem_cache_max_wait_sec;
+    size_t wait_download_tries = 0;
 
     auto download_state = file_segment->state();
     LOG_TEST(log, "getReadBufferForFileSegment: {}", file_segment->getInfoForLog());
@@ -230,7 +233,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
         if (download_state == FileSegment::State::DOWNLOADED)
         {
             read_type = ReadType::CACHED;
-            return getCacheReadBuffer(range.left);
+            return getCacheReadBuffer(*file_segment);
         }
         else
         {
@@ -268,16 +271,25 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                     ///                     file_offset_of_buffer_end
 
                     read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(range.left);
+                    return getCacheReadBuffer(*file_segment);
                 }
 
-                download_state = file_segment->wait();
+                if (wait_download_tries++ < wait_download_max_tries)
+                {
+                    download_state = file_segment->wait();
+                }
+                else
+                {
+                    LOG_DEBUG(log, "Retries to wait for file segment download exceeded ({})", wait_download_tries);
+                    download_state = FileSegment::State::SKIP_CACHE;
+                }
+
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
             {
                 read_type = ReadType::CACHED;
-                return getCacheReadBuffer(range.left);
+                return getCacheReadBuffer(*file_segment);
             }
             case FileSegment::State::EMPTY:
             case FileSegment::State::PARTIALLY_DOWNLOADED:
@@ -293,7 +305,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                     ///                     file_offset_of_buffer_end
 
                     read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(range.left);
+                    return getCacheReadBuffer(*file_segment);
                 }
 
                 auto downloader_id = file_segment->getOrSetDownloader();
@@ -319,7 +331,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
 
                         read_type = ReadType::CACHED;
                         file_segment->resetDownloader();
-                        return getCacheReadBuffer(range.left);
+                        return getCacheReadBuffer(*file_segment);
                     }
 
                     if (download_offset < file_offset_of_buffer_end)
@@ -334,7 +346,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
 
                         assert(file_offset_of_buffer_end > file_segment->getDownloadOffset());
                         bytes_to_predownload = file_offset_of_buffer_end - file_segment->getDownloadOffset();
-                        assert(bytes_to_predownload < range.size());
+                        assert(bytes_to_predownload < file_segment->range().size());
                     }
 
                     download_offset = file_segment->getDownloadOffset();
@@ -356,7 +368,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                 if (can_start_from_cache)
                 {
                     read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(range.left);
+                    return getCacheReadBuffer(*file_segment);
                 }
                 else
                 {

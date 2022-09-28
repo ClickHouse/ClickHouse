@@ -40,8 +40,6 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
-
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -847,7 +845,7 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
         auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
-        if (num_consumers > max_consumers)
+        if (!args.getLocalContext()->getSettingsRef().kafka_disable_num_consumers_limit && num_consumers > max_consumers)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of consumers can not be bigger than {}. "
                             "A single consumer can read any number of partitions. Extra consumers are relatively expensive, "

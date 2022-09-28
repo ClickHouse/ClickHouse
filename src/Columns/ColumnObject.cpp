@@ -154,13 +154,15 @@ FieldInfo getFieldInfo(const Field & field)
 {
     FieldVisitorToScalarType to_scalar_type_visitor;
     applyVisitor(to_scalar_type_visitor, field);
+    FieldVisitorToNumberOfDimensions to_number_dimension_visitor;
 
     return
     {
         to_scalar_type_visitor.getScalarType(),
         to_scalar_type_visitor.haveNulls(),
         to_scalar_type_visitor.needConvertField(),
-        applyVisitor(FieldVisitorToNumberOfDimensions(), field),
+        applyVisitor(to_number_dimension_visitor, field),
+        to_number_dimension_visitor.need_fold_dimension
     };
 }
 
@@ -666,6 +668,18 @@ void ColumnObject::forEachSubcolumn(ColumnCallback callback)
     for (auto & entry : subcolumns)
         for (auto & part : entry->data.data)
             callback(part);
+}
+
+void ColumnObject::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    for (auto & entry : subcolumns)
+    {
+        for (auto & part : entry->data.data)
+        {
+            callback(part);
+            part->forEachSubcolumnRecursively(callback);
+        }
+    }
 }
 
 void ColumnObject::insert(const Field & field)

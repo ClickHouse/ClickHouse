@@ -115,6 +115,15 @@ public:
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
+    void forEachSubcolumnRecursively(IColumn::ColumnCallback callback) override
+    {
+        callback(column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (auto rhs_concrete = typeid_cast<const ColumnUnique *>(&rhs))
@@ -136,15 +145,16 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
+    /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
-        auto& nested = *getNestedColumn();
+        const IColumn & nested = *getNestedColumn();
 
         for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
+            if (!nested.isNullAt(i) && nested.getDataAt(i) == value)
                 return i;
 
         return {};

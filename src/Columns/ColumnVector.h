@@ -332,9 +332,9 @@ public:
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
-    std::string_view getRawData() const override
+    StringRef getRawData() const override
     {
-        return {reinterpret_cast<const char*>(data.data()), byteSize()};
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override

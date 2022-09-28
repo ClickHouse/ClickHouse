@@ -1,4 +1,4 @@
--- Tags: disabled
+-- Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings
 
 -- { echo }
 

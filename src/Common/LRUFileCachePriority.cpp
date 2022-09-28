@@ -24,7 +24,9 @@ IFileCachePriority::WriteIterator LRUFileCachePriority::add(const Key & key, siz
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
-                entry.key.toString(), entry.offset, entry.size);
+                entry.key.toString(),
+                entry.offset,
+                entry.size);
     }
 #endif
 
@@ -33,8 +35,6 @@ IFileCachePriority::WriteIterator LRUFileCachePriority::add(const Key & key, siz
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
-
-    LOG_DEBUG(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }
@@ -53,8 +53,6 @@ void LRUFileCachePriority::removeAll(std::lock_guard<std::mutex> &)
 {
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, cache_size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, queue.size());
-
-    LOG_DEBUG(log, "Removed all entries from LRU queue");
 
     queue.clear();
     cache_size = 0;
@@ -87,8 +85,6 @@ void LRUFileCachePriority::LRUFileCacheIterator::removeAndGetNext(std::lock_guar
 
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, queue_iter->size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
-
-    LOG_DEBUG(cache_priority->log, "Removed entry from LRU queue, key: {}, offset: {}", queue_iter->key.toString(), queue_iter->offset);
 
     queue_iter = cache_priority->queue.erase(queue_iter);
 }

@@ -73,11 +73,6 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return true;
 }
 
-std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
-{
-    return std::unique_lock{exec_mutex};
-}
-
 void BackgroundSchedulePoolTaskInfo::execute()
 {
     Stopwatch watch;
