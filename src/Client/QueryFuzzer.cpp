@@ -523,11 +523,11 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
     /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
     const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
-    if (type_array && fuzz_rand() % 5 != 0)
+    if (type_array && fuzz_rand() % 4 != 0)
         return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
 
     const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
-    if (type_tuple && fuzz_rand() % 5 != 0)
+    if (type_tuple && fuzz_rand() % 4 != 0)
     {
         DataTypes elements;
         for (const auto & element : type_tuple->getElements())
@@ -539,7 +539,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     }
 
     const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
-    if (type_map && fuzz_rand() % 5 != 0)
+    if (type_map && fuzz_rand() % 4 != 0)
     {
         auto key_type = fuzzDataType(type_map->getKeyType());
         auto value_type = fuzzDataType(type_map->getValueType());
