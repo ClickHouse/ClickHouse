@@ -74,7 +74,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "print time(1tick)",
-            "SELECT CAST('1e-10', 'Float64')"
+            "SELECT CAST('1e-07', 'Float64')"
         }
 
 })));
