@@ -109,7 +109,7 @@ protected:
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock;
 
-                table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
+                table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
 
                 if (table_lock == nullptr)
                 {

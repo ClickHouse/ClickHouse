@@ -299,7 +299,7 @@ protected:
                         continue;
                     }
 
-                    lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
 
                     if (lock == nullptr)
                     {

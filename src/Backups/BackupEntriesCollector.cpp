@@ -525,7 +525,7 @@ void BackupEntriesCollector::lockTablesForReading()
         auto storage = table_info.storage;
         if (storage)
         {
-            table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+            table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
             if (table_info.table_lock == nullptr)
             {
                 // Table was dropped while acquiring the lock
