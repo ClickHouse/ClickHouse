@@ -143,7 +143,7 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
             break;
 
         case WildcardsPos::left:
-            left_wildcards ="%";
+            left_wildcards = "%";
             break;
 
         case WildcardsPos::right:
@@ -151,7 +151,7 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
             break;
 
         case WildcardsPos::both:
-            left_wildcards ="%";
+            left_wildcards = "%";
             right_wildcards = "%";
             break;
     }
@@ -162,7 +162,7 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
             break;
 
         case WildcardsPos::left:
-            left_space =" ";
+            left_space = " ";
             break;
 
         case WildcardsPos::right:
@@ -170,7 +170,7 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
             break;
 
         case WildcardsPos::both:
-            left_space =" ";
+            left_space = " ";
             right_space = " ";
             break;
     }
@@ -178,11 +178,11 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
     ++token_pos;
 
     if (!tokens.empty() && ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
-        new_expr = ch_op +"(" + tokens.back() +", '"+left_wildcards + left_space + String(token_pos->begin + 1,token_pos->end - 1) + right_space + right_wildcards + "')";
+        new_expr = ch_op + "(" + tokens.back() + ", '" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1) + right_space + right_wildcards + "')";
     else if (!tokens.empty() && ((token_pos)->type == TokenType::BareWord))
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
-        new_expr = ch_op +"(" + tokens.back() +", concat('" + left_wildcards + left_space + "', " + tmp_arg +", '"+ right_space + right_wildcards + "'))";
+        new_expr = ch_op + "(" + tokens.back() +", concat('" + left_wildcards + left_space + "', " + tmp_arg +", '"+ right_space + right_wildcards + "'))";
     }
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
@@ -198,7 +198,7 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
     {
         KQLOperatorValue op_value = KQLOperatorValue::none;
 
-        auto token =  String(pos->begin,pos->end);
+        auto token =  String(pos->begin, pos->end);
 
         String op = token;
         if (token == "!")
@@ -213,8 +213,8 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
             ++pos;
             if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
             {
-                if (String(pos->begin,pos->end) == "regex")
-                    op +=" regex";
+                if (String(pos->begin, pos->end) == "regex")
+                    op += " regex";
                 else
                     --pos;
             }
@@ -227,8 +227,8 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
         ++pos;
         if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
         {
-            if (String(pos->begin,pos->end) == "~")
-                op +="~";
+            if (String(pos->begin, pos->end) == "~")
+                op += "~";
             else
                 --pos;
         }
@@ -249,6 +249,9 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
             tokens.push_back(op);
         else
         {
+            if (tokens.empty())
+                throw Exception("Syntax error near " + op , ErrorCodes::SYNTAX_ERROR);
+
             auto last_op = tokens.back();
             auto last_pos = pos;
 
@@ -308,11 +311,11 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
                 break;
 
             case KQLOperatorValue::has_all:
-                new_expr = genHasAnyAllOpExpr(tokens,pos,"has_all", "hasTokenCaseInsensitive");
+                new_expr = genHasAnyAllOpExpr(tokens, pos, "has_all", "hasTokenCaseInsensitive");
                 break;
 
             case KQLOperatorValue::has_any:
-                new_expr = genHasAnyAllOpExpr(tokens,pos,"has_any", "hasTokenCaseInsensitive");
+                new_expr = genHasAnyAllOpExpr(tokens, pos, "has_any", "hasTokenCaseInsensitive");
                 break;
 
             case KQLOperatorValue::has_cs:
@@ -380,11 +383,11 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
                 break;
 
             case KQLOperatorValue::in_cs:
-                new_expr = genInOpExpr(pos,op,"in");
+                new_expr = genInOpExpr(pos, op, "in");
                 break;
 
             case KQLOperatorValue::not_in_cs:
-                new_expr = genInOpExpr(pos,op,"not in");
+                new_expr = genInOpExpr(pos, op, "not in");
                 break;
 
             case KQLOperatorValue::in:
