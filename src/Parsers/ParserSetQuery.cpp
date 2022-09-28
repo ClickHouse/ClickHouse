@@ -4,6 +4,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
@@ -18,22 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-static NameToNameMap::value_type convertToQueryParameter(SettingChange change)
-{
-    auto name = change.name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
-    if (name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
-
-    auto value = applyVisitor(FieldVisitorToString(), change.value);
-    /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
-    if (value.starts_with('\''))
-    {
-        ReadBufferFromOwnString buf(value);
-        readQuoted(value, buf);
-    }
-    return {name, value};
 }
 
 
@@ -89,6 +74,116 @@ protected:
     }
 };
 
+/// Parse `param_name = value`
+/// Compared to the usual setting, parameter can be 
+/// Literal, Array and Tuple of literals, Identifier, Map
+bool ParserSetQuery::parseNameValuePairParameter(ParserSetQuery::Parameter & change, IParser::Pos & pos, Expected & expected)
+{
+    ParserLiteral literal_p;
+    ParserArrayOfLiterals array_p;
+    ParserTupleOfLiterals tuple_p;
+    ParserCompoundIdentifier identifier_p;
+    ParserToken s_eq(TokenType::Equals);
+
+    ASTPtr name, value;
+    String name_str, value_str;
+
+    if (!identifier_p.parse(pos, name, expected))
+        return false;
+
+    if (!s_eq.ignore(pos, expected))
+        return false;
+
+    tryGetIdentifierNameInto(name, name_str);
+
+    if (!name_str.starts_with(QUERY_PARAMETER_NAME_PREFIX))
+        return false;
+
+    name_str = name_str.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+    if (name_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+    if (literal_p.parse(pos, value, expected)
+        || array_p.parse(pos, value, expected)
+        || tuple_p.parse(pos, value, expected))
+    {
+
+        value_str = applyVisitor(FieldVisitorToString(), value->as<ASTLiteral>()->value);
+
+        /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
+        if (value_str.starts_with('\''))
+        {
+            ReadBufferFromOwnString buf(value_str);
+            readQuoted(value_str, buf);
+        }
+    }
+    else if (identifier_p.parse(pos, value, expected))
+    {
+        tryGetIdentifierNameInto(value, value_str);
+    }
+    else
+    {
+        ParserToken l_br_p(TokenType::OpeningCurlyBrace);
+        ParserToken r_br_p(TokenType::ClosingCurlyBrace);
+        ParserToken comma_p(TokenType::Comma);
+        ParserToken colon_p(TokenType::Colon);
+
+        if (!l_br_p.ignore(pos, expected))
+            return false;
+
+        int depth = 1;
+
+        value_str = '{';
+
+        while (depth > 0)
+        {
+            if (r_br_p.ignore(pos, expected))
+            {
+                value_str += '}';
+                --depth;
+                continue;
+            }
+
+            if (value_str.back() != '{')
+            {
+                if (!comma_p.ignore(pos, expected))
+                    return false;
+
+                value_str += ',';
+            }
+
+            ASTPtr key;
+            ASTPtr val;
+
+            if (!literal_p.parse(pos, key, expected))
+                return false;
+
+            if (!colon_p.ignore(pos, expected))
+                return false;
+
+            value_str += applyVisitor(FieldVisitorToString(), key->as<ASTLiteral>()->value);
+            value_str += ":";
+
+            if (l_br_p.ignore(pos, expected))
+            {
+                value_str += '{';
+                ++depth;
+                continue;
+            }
+
+            if (!literal_p.parse(pos, val, expected)
+                && !array_p.parse(pos, val, expected)
+                && !tuple_p.parse(pos, val, expected))
+                return false;
+
+            value_str += applyVisitor(FieldVisitorToString(), val->as<ASTLiteral>()->value);
+        }
+    }
+
+    change = {std::move(name_str), std::move(value_str)};
+    return true;
+}
+
 /// Parse `name = value`.
 bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
@@ -143,16 +238,22 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if ((!changes.empty() || !query_parameters.empty()) && !s_comma.ignore(pos))
             break;
 
-        /// Either a setting or a parameter for prepared statement (if name starts with QUERY_PARAMETER_NAME_PREFIX)
-        SettingChange current;
+        auto old_pos = pos;
+        Parameter parameter;
 
-        if (!parseNameValuePair(current, pos, expected))
-            return false;
+        if (parseNameValuePairParameter(parameter, pos, expected))
+        {
+            query_parameters.emplace(std::move(parameter));
+            continue;
+        }
 
-        if (current.name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
-            query_parameters.emplace(convertToQueryParameter(std::move(current)));
+        SettingChange setting;
+        pos = old_pos;
+
+        if (parseNameValuePair(setting, pos, expected))
+            changes.push_back(std::move(setting));
         else
-            changes.push_back(std::move(current));
+            return false;
     }
 
     auto query = std::make_shared<ASTSetQuery>();
