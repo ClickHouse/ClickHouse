@@ -87,8 +87,6 @@ public:
 
 private:
     void Init();
-    static void updateS3Configuration(ContextPtr, StorageS3::S3Configuration &);
-
     static String generateQueryFromKeys(std::vector<String> && keys);
 
     StorageS3::S3Configuration base_configuration;

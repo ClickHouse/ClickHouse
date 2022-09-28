@@ -39,7 +39,7 @@ StorageHudi::StorageHudi(
     , table_path(uri_.key)
 {
     StorageInMemoryMetadata storage_metadata;
-    updateS3Configuration(context_, base_configuration);
+    StorageS3::updateS3Configuration(context_, base_configuration);
 
     auto keys = getKeysFromS3();
 
@@ -84,57 +84,9 @@ Pipe StorageHudi::read(
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
-{
-    updateS3Configuration(context, base_configuration);
-
+{   
+    StorageS3::updateS3Configuration(context, base_configuration);
     return s3engine->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-}
-
-void StorageHudi::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
-{
-    auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
-
-    bool need_update_configuration = settings != S3Settings{};
-    if (need_update_configuration)
-    {
-        if (upd.rw_settings != settings.rw_settings)
-            upd.rw_settings = settings.rw_settings;
-    }
-
-    upd.rw_settings.updateFromSettingsIfEmpty(ctx->getSettings());
-
-    if (upd.client && (!upd.access_key_id.empty() || settings.auth_settings == upd.auth_settings))
-        return;
-
-    Aws::Auth::AWSCredentials credentials(upd.access_key_id, upd.secret_access_key);
-    HeaderCollection headers;
-    if (upd.access_key_id.empty())
-    {
-        credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
-        headers = settings.auth_settings.headers;
-    }
-
-    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        settings.auth_settings.region,
-        ctx->getRemoteHostFilter(),
-        ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
-        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
-         /* for_disk_s3 = */ false);
-
-    client_configuration.endpointOverride = upd.uri.endpoint;
-    client_configuration.maxConnections = upd.rw_settings.max_connections;
-
-    upd.client = S3::ClientFactory::instance().create(
-        client_configuration,
-        upd.uri.is_virtual_hosted_style,
-        credentials.GetAWSAccessKeyId(),
-        credentials.GetAWSSecretKey(),
-        settings.auth_settings.server_side_encryption_customer_key_base64,
-        std::move(headers),
-        settings.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        settings.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
-
-    upd.auth_settings = std::move(settings.auth_settings);
 }
 
 std::vector<std::string> StorageHudi::getKeysFromS3()
@@ -186,7 +138,7 @@ std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys)
         keys,
         [](const std::string & s)
         {
-            return std::filesystem::path(s).extension() != "parquet";
+            return std::filesystem::path(s).extension() != ".parquet";
         });
 
     // for each partition path take only latest parquet file

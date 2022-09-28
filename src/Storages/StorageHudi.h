@@ -45,13 +45,9 @@ public:
         unsigned num_streams) override;
 
 private:
-    static void updateS3Configuration(ContextPtr, StorageS3::S3Configuration &);
-
-private:
     std::vector<std::string> getKeysFromS3();
     static std::string generateQueryFromKeys(std::vector<std::string> && keys);
 
-private:
     StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
