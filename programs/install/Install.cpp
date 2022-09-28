@@ -929,7 +929,7 @@ namespace
         if (!user.empty())
         {
             /// sudo respects limits in /etc/security/limits.conf e.g. open files,
-            /// that's why we are using is instead of the 'clickhouse su' tool.
+            /// that's why we are using it instead of the 'clickhouse su' tool.
             command = fmt::format("sudo -u '{}' {}", user, command);
         }
 
