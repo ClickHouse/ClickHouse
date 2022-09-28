@@ -20,30 +20,21 @@ namespace ErrorCodes
 void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
-
-
-    if (function && function->arguments && function->arguments->children.size() == 2)
+    if (function && function->arguments && function->arguments->children.size() == 1)
     {
-        const auto * kind_literal = function->arguments->children[0]->as<ASTLiteral>();
-        if (!kind_literal)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires `kind` argument to be a string literal, got: '{}'",
-                getName(), queryToString(function->arguments->children[0]));
+        const auto & query_arg = function->arguments->children[0];
 
-        auto kind = ASTExplainQuery::kindFromString(kind_literal->value.safeGet<String>());
-        std::shared_ptr<ASTExplainQuery> explain_query = std::make_shared<ASTExplainQuery>(kind);
+        if (!query_arg->as<ASTExplainQuery>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function '{}' requires a explain query argument, got '{}'",
+                getName(), queryToString(query_arg));
 
-        const auto * select_query = function->arguments->children[1]->as<ASTSelectWithUnionQuery>();
-        if (!select_query)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires `query` argument to be a select query, got: '{}'",
-                getName(), queryToString(function->arguments->children[1]));
-
-        explain_query->setExplainedQuery(select_query->clone());
-
-        query = std::move(explain_query);
+        query = query_arg;
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires `kind` and `query` arguments", getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table function '{}' cannot be called directly, use `SELECT * FROM (EXPLAIN ...)` syntax", getName());
     }
 }
 
