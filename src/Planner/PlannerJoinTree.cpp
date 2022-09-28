@@ -6,6 +6,7 @@
 #include <Functions/CastOverloadResolver.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
@@ -156,8 +157,21 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
     JoinClausesAndActions join_clauses_and_actions;
+    JoinKind join_kind = join_node.getKind();
 
-    if (join_node.isOnJoinExpression())
+    auto join_constant = tryExtractConstantFromJoinNode(join_tree_node);
+    if (join_constant)
+    {
+        /** If there is JOIN with always true constant, we transform it to cross.
+          * If there is JOIN with always false constant, we do not process JOIN keys.
+          * It is expected by join algorithm to handle such case.
+          *
+          * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
+          */
+        if (*join_constant)
+            join_kind = JoinKind::Cross;
+    }
+    else if (join_node.isOnJoinExpression())
     {
         join_clauses_and_actions = buildJoinClausesAndActions(left_plan_output_columns,
             right_plan_output_columns,
@@ -250,7 +264,6 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         join_cast_plan_output_nodes(right_plan, right_plan_column_name_to_cast_type);
 
     const auto & query_context = planner_context->getQueryContext();
-    JoinKind join_kind = join_node.getKind();
     bool join_use_nulls = query_context->getSettingsRef().join_use_nulls;
     auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
 
@@ -287,12 +300,14 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         }
     }
 
-    auto table_join = std::make_shared<TableJoin>();
+    auto table_join = std::make_shared<TableJoin>(query_context->getSettings(), query_context->getTemporaryVolume());
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
-    if (join_node.getKind() == JoinKind::Comma)
+    table_join->getTableJoin().kind = join_kind;
+
+    if (join_kind == JoinKind::Comma)
         table_join->getTableJoin().kind = JoinKind::Cross;
 
-    table_join->getTableJoin().strictness = join_node.getStrictness();
+    table_join->setIsJoinWithConstant(join_constant != std::nullopt);
 
     if (join_node.isOnJoinExpression())
     {
@@ -420,26 +435,45 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             table_join->addJoinedColumn(column_from_joined_table);
     }
 
-    size_t max_block_size = query_context->getSettingsRef().max_block_size;
-    size_t max_streams = query_context->getSettingsRef().max_threads;
-
-    JoinPtr join_ptr = std::make_shared<HashJoin>(table_join, right_plan.getCurrentDataStream().header, false /*any_take_last_row*/);
-    QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
-        left_plan.getCurrentDataStream(),
-        right_plan.getCurrentDataStream(),
-        join_ptr,
-        max_block_size,
-        max_streams,
-        false /*optimize_read_in_order*/);
-
-    join_step->setStepDescription(fmt::format("JOIN {}", JoinPipelineType::FillRightFirst));
-
-    std::vector<QueryPlanPtr> plans;
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
+    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), right_plan.getCurrentDataStream().header, planner_context);
 
     auto result_plan = QueryPlan();
-    result_plan.unitePlans(std::move(join_step), {std::move(plans)});
+
+    if (join_algorithm->isFilled())
+    {
+        size_t max_block_size = query_context->getSettingsRef().max_block_size;
+
+        auto filled_join_step = std::make_unique<FilledJoinStep>(
+            left_plan.getCurrentDataStream(),
+            join_algorithm,
+            max_block_size);
+
+        filled_join_step->setStepDescription("Filled JOIN");
+        left_plan.addStep(std::move(filled_join_step));
+
+        result_plan = std::move(left_plan);
+    }
+    else
+    {
+        size_t max_block_size = query_context->getSettingsRef().max_block_size;
+        size_t max_streams = query_context->getSettingsRef().max_threads;
+
+        auto join_step = std::make_unique<JoinStep>(
+            left_plan.getCurrentDataStream(),
+            right_plan.getCurrentDataStream(),
+            std::move(join_algorithm),
+            max_block_size,
+            max_streams,
+            false /*optimize_read_in_order*/);
+
+        join_step->setStepDescription(fmt::format("JOIN {}", JoinPipelineType::FillRightFirst));
+
+        std::vector<QueryPlanPtr> plans;
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
+
+        result_plan.unitePlans(std::move(join_step), {std::move(plans)});
+    }
 
     auto drop_unused_columns_after_join_actions_dag = std::make_shared<ActionsDAG>(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs updated_outputs;
