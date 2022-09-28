@@ -128,8 +128,10 @@ def parse_env_variables(
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
+    ARM_V80COMPAT_SUFFIX = "-aarch64-v80compat"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
+    AMD64_SSE2_SUFFIX = "-amd64sse2"
 
     result = []
     result.append("OUTPUT_DIR=/output")
@@ -139,8 +141,10 @@ def parse_env_variables(
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
+    is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
+    is_amd64_sse2 = compiler.endswith(AMD64_SSE2_SUFFIX)
 
     if is_cross_darwin:
         cc = compiler[: -len(DARWIN_SUFFIX)]
@@ -176,6 +180,13 @@ def parse_env_variables(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
         )
         result.append("DEB_ARCH=arm64")
+    elif is_cross_arm_v80compat:
+        cc = compiler[: -len(ARM_V80COMPAT_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
+        )
+        cmake_flags.append("-DNO_ARMV81_OR_HIGHER=1")
+        result.append("DEB_ARCH=arm64")
     elif is_cross_freebsd:
         cc = compiler[: -len(FREEBSD_SUFFIX)]
         cmake_flags.append(
@@ -186,6 +197,10 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
         )
+    elif is_amd64_sse2:
+        cc = compiler[: -len(AMD64_SSE2_SUFFIX)]
+        result.append("DEB_ARCH=amd64")
+        cmake_flags.append("-DNO_SSE3_OR_HIGHER=1")
     else:
         cc = compiler
         result.append("DEB_ARCH=amd64")
@@ -333,16 +348,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-15",  # For TSAN builds, see #39450
-            "clang-14",
-            "clang-14-darwin",
-            "clang-14-darwin-aarch64",
-            "clang-14-aarch64",
-            "clang-14-ppc64le",
-            "clang-14-freebsd",
+            "clang-15",
+            "clang-15-darwin",
+            "clang-15-darwin-aarch64",
+            "clang-15-aarch64",
+            "clang-15-aarch64-v80compat",
+            "clang-15-ppc64le",
+            "clang-15-amd64sse2",
+            "clang-15-freebsd",
             "gcc-11",
         ),
-        default="clang-14",
+        default="clang-15",
         help="a compiler to use",
     )
     parser.add_argument(

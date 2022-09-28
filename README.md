@@ -15,4 +15,5 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Upcoming events
-* [**v22.8 Release Webinar**](https://clickhouse.com/company/events/v22-8-release-webinar) Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
+* [**v22.9 Release Webinar**](https://clickhouse.com/company/events/v22-9-release-webinar) Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
+* [**ClickHouse for Analytics @ Barracuda Networks**](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/288140358/) Join us for this in person meetup hosted by our friends at Barracuda in Bay Area.

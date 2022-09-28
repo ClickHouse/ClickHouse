@@ -20,6 +20,10 @@ description: |
   debugging symbols for clickhouse-common-static
     This package contains the debugging symbols for clickhouse-common.
 
+deb:
+  fields:
+    Source: clickhouse
+
 contents:
 - src: root/usr/lib/debug/usr/bin/clickhouse.debug
   dst: /usr/lib/debug/usr/bin/clickhouse.debug
