@@ -8,6 +8,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -366,7 +367,7 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & cu
         return false;
     if (maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK))
         return true;
-    if (maybe_database_mark.empty())
+    if (!maybe_database_mark.empty())
         return false;
 
     /// Old versions did not have REPLICATED_DATABASE_MARK. Check specific nodes exist and add mark.
@@ -642,6 +643,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
     entry.setSettingsIfRequired(query_context);
+    entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -811,7 +813,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
                 /// Yep, I hate inner tables of materialized views.
                 auto mv_drop_inner_table_context = make_query_context();
-                table->dropInnerTableIfAny(sync, mv_drop_inner_table_context);
+                table->dropInnerTableIfAny(/* sync */ true, mv_drop_inner_table_context);
                 mv_drop_inner_table_context->getZooKeeperMetadataTransaction()->commit();
             }
 
@@ -1257,6 +1259,26 @@ void DatabaseReplicated::createTableRestoredFromBackup(
                             "Couldn't restore table {}.{} on other node or sync it (elapsed {})",
                             backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), to_string(elapsed));
     }
+}
+
+bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const
+{
+    if (query_context->getClientInfo().is_replicated_database_internal)
+        return false;
+
+    /// Some ALTERs are not replicated on database level
+    if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
+    {
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
+    }
+
+    /// DROP DATABASE is not replicated
+    if (const auto * drop = query_ptr->as<const ASTDropQuery>())
+    {
+        return drop->table.get();
+    }
+
+    return true;
 }
 
 }

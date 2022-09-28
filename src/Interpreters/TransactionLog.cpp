@@ -405,7 +405,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         String csn_path_created;
         try
         {
-            if (unlikely(fault_probability_before_commit))
+            if (unlikely(fault_probability_before_commit > 0.0))
             {
                 std::bernoulli_distribution fault(fault_probability_before_commit);
                 if (fault(thread_local_rng))
@@ -415,7 +415,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             /// Commit point
             csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
 
-            if (unlikely(fault_probability_after_commit))
+            if (unlikely(fault_probability_after_commit > 0.0))
             {
                 std::bernoulli_distribution fault(fault_probability_after_commit);
                 if (fault(thread_local_rng))

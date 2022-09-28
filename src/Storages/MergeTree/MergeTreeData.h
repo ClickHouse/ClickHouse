@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
@@ -150,6 +151,7 @@ public:
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
+    constexpr static auto MOVING_DIR_NAME = "moving";
 
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
@@ -166,20 +168,6 @@ public:
     };
 
     STRONG_TYPEDEF(String, PartitionID)
-
-    /// Alter conversions which should be applied on-fly for part. Build from of
-    /// the most recent mutation commands for part. Now we have only rename_map
-    /// here (from ALTER_RENAME) command, because for all other type of alters
-    /// we can deduce conversions for part from difference between
-    /// part->getColumns() and storage->getColumns().
-    struct AlterConversions
-    {
-        /// Rename map new_name -> old_name
-        std::unordered_map<String, String> rename_map;
-
-        bool isColumnRenamed(const String & new_name) const { return rename_map.contains(new_name); }
-        String getColumnOldName(const String & new_name) const { return rename_map.at(new_name); }
-    };
 
     struct LessDataPart
     {
@@ -290,8 +278,9 @@ public:
         DataParts precommitted_parts;
         std::vector<DataPartStorageBuilderPtr> part_builders;
         DataParts locked_parts;
+        bool has_in_memory_parts = false;
 
-        void clear() { precommitted_parts.clear(); }
+        void clear();
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
@@ -982,7 +971,7 @@ public:
 
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
-    virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed);
+    virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
     virtual String getTableSharedID() const { return ""; }
 
@@ -1045,6 +1034,8 @@ protected:
 
     /// True if at least one part was created/removed with transaction.
     mutable std::atomic_bool transactions_enabled = false;
+
+    std::atomic_bool data_parts_loading_finished = false;
 
     /// Work with data parts
 
@@ -1243,7 +1234,7 @@ protected:
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
     /// Makes backup entries to backup the parts of this table.
-    static BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup);
+    BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1253,6 +1244,9 @@ protected:
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
+
+    void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
+    void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
@@ -1340,9 +1334,6 @@ private:
         DataPartsVector & broken_parts_to_detach,
         DataPartsVector & duplicate_parts_to_remove,
         MutableDataPartsVector & parts_from_wal);
-
-    void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
-    void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
