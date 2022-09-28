@@ -225,7 +225,7 @@ namespace JSONUtils
                 if (!type)
                     continue;
 
-                if (isObject(type))
+                if (settings.json.try_infer_objects && isObject(type))
                     return std::make_shared<DataTypeObject>("json", true);
 
                 value_types.push_back(type);
@@ -240,7 +240,11 @@ namespace JSONUtils
                 are_types_equal &= value_types[i]->equals(*value_types[0]);
 
             if (!are_types_equal)
+            {
+                if (!settings.json.try_infer_objects)
+                    return nullptr;
                 return std::make_shared<DataTypeObject>("json", true);
+            }
 
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_types[0]);
         }

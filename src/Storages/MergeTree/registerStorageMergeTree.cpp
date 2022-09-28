@@ -683,8 +683,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        auto storage_policy = args.getContext()->getStoragePolicy(storage_settings->storage_policy);
-
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
