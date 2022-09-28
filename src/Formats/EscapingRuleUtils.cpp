@@ -18,6 +18,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <Parsers/TokenIterator.h>
 
 
@@ -453,23 +454,51 @@ void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & secon
     second = std::move(types[1]);
 }
 
-DataTypePtr tryInferDateOrDateTime(const std::string_view & field, const FormatSettings & settings)
+bool tryInferDate(const std::string_view & field)
 {
-    if (settings.try_infer_dates)
+    ReadBufferFromString buf(field);
+    DayNum tmp;
+    return tryReadDateText(tmp, buf) && buf.eof();
+}
+
+bool tryInferDateTime(const std::string_view & field, const FormatSettings & settings)
+{
+    ReadBufferFromString buf(field);
+    Float64 tmp_float;
+    /// Check if it's just a number, and if so, don't try to infer DateTime from it,
+    /// because we can interpret this number as a timestamp and it will lead to
+    /// inferring DateTime instead of simple Int64/Float64 in some cases.
+    if (tryReadFloatText(tmp_float, buf) && buf.eof())
+        return false;
+
+    buf.seek(0, SEEK_SET); /// Return position to the beginning
+    DateTime64 tmp;
+    switch (settings.date_time_input_format)
     {
-        ReadBufferFromString buf(field);
-        DayNum tmp;
-        if (tryReadDateText(tmp, buf) && buf.eof())
-            return makeNullable(std::make_shared<DataTypeDate>());
+        case FormatSettings::DateTimeInputFormat::Basic:
+            if (tryReadDateTime64Text(tmp, 9, buf) && buf.eof())
+                return true;
+            break;
+        case FormatSettings::DateTimeInputFormat::BestEffort:
+            if (tryParseDateTime64BestEffort(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
+                return true;
+            break;
+        case FormatSettings::DateTimeInputFormat::BestEffortUS:
+            if (tryParseDateTime64BestEffortUS(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
+                return true;
+            break;
     }
 
-    if (settings.try_infer_datetimes)
-    {
-        ReadBufferFromString buf(field);
-        DateTime64 tmp;
-        if (tryReadDateTime64Text(tmp, 9, buf) && buf.eof())
-            return makeNullable(std::make_shared<DataTypeDateTime64>(9));
-    }
+    return false;
+}
+
+DataTypePtr tryInferDateOrDateTime(const std::string_view & field, const FormatSettings & settings)
+{
+    if (settings.try_infer_dates && tryInferDate(field))
+        return makeNullable(std::make_shared<DataTypeDate>());
+
+    if (settings.try_infer_datetimes && tryInferDateTime(field, settings))
+        return makeNullable(std::make_shared<DataTypeDateTime64>(9));
 
     return nullptr;
 }
