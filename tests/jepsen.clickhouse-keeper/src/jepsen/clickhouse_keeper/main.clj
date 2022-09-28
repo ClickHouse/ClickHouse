@@ -4,6 +4,7 @@
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (net.schmizz.sshj SSHClient
                             DefaultConfig)
+           (net.schmizz.sshj.transport.verification PromiscuousVerifier)
            (java.util.concurrent Semaphore)))
 
 (defrecord SSHJRemote [concurrency-limit
@@ -15,7 +16,7 @@
     (if (:dummy conn-spec)
       (assoc this :conn-spec conn-spec)
       (try+ (let [c (doto (SSHClient. (doto (DefaultConfig.) (.setVerifyHostKeyCertificates false)))
-                      (.loadKnownHosts)
+                      (.addHostKeyVerifier (PromiscuousVerifier.))
                       (.connect (:host conn-spec) (:port conn-spec))
                       (auth! conn-spec))]
               (assoc this
