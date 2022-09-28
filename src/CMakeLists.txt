@@ -18,13 +18,11 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-set (CONFIG_VERSION "${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h")
-
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
-configure_file (Common/config_version.h.in ${CONFIG_VERSION})
+configure_file (Common/config_version.h.in ${CONFIG_INCLUDE_PATH}/config_version.h)
 configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 if (USE_DEBUG_HELPERS)
@@ -152,7 +150,6 @@ else()
 endif ()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
-list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION})
 
 list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/FunctionsLogical.cpp Functions/indexHint.cpp)
 list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/FunctionsLogical.h Functions/indexHint.h)

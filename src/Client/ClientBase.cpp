@@ -24,7 +24,7 @@
 #include <Core/Protocol.h>
 #include <Formats/FormatFactory.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>

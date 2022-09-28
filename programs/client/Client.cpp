@@ -15,7 +15,7 @@
 
 #include <base/find_symbols.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
