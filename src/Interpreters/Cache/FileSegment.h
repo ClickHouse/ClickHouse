@@ -209,9 +209,6 @@ public:
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
 
-    /// Complete file segment with a certain state.
-    void completeWithState(State state);
-
     void completeWithoutState();
 
     /// Complete file segment's part which was last written.
@@ -239,12 +236,14 @@ private:
     void resetDownloadingStateUnlocked(std::unique_lock<std::mutex> & segment_lock);
 
     void setDownloadState(State state);
+    void setDownloadStateUnlocked(State state, std::unique_lock<std::mutex> & segment_lock);
 
     void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
 
     bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     bool isDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    bool isBackgroundDownloadFailedOrCancelledUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     bool isDetached(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_detached; }
     void detachAssumeStateFinalized(std::unique_lock<std::mutex> & segment_lock);

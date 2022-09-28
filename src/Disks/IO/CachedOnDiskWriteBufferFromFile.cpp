@@ -96,7 +96,7 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
     bool reserved = file_segment->reserve(size);
     if (!reserved)
     {
-        file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        assert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         appendFilesystemCacheLog(*file_segment);
 
         LOG_DEBUG(

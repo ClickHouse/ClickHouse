@@ -338,7 +338,6 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                     }
                     else if (file_segment->isBackgroundDownloadFailedOrCancelled())
                     {
-                        file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                         continue;
                     }
 
@@ -539,8 +538,6 @@ void CachedOnDiskReadBufferFromFile::prepareForSkipCache(FileSegment & file_segm
 {
     LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
 
-    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-
     swap(*implementation_buffer);
     resetWorkingBuffer();
 
@@ -650,9 +647,6 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 else
                 {
                     LOG_TEST(log, "Bypassing cache because writeCache method failed");
-                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                    file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-
                     continue_predownload = false;
                 }
             }
@@ -675,7 +669,11 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 /// TODO: allow seek more than once with seek avoiding.
 
                 bytes_to_predownload = 0;
-                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                assert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+
+                file_segment->resetDownloader();
+                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+
                 prepareForSkipCache(*file_segment);
 
                 LOG_TRACE(
@@ -987,18 +985,19 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 }
                 else
                 {
-                    chassert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                    assert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
                 }
             }
             else
             {
+                assert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 LOG_TRACE(log, "No space left in cache, will continue without cache download");
-                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
 
             if (!success)
             {
+                file_segment->resetDownloader();
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 download_current_segment = false;
             }
@@ -1026,7 +1025,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
-    if (download_current_segment && file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+    if (download_current_segment)
         file_segment->completePartAndResetDownloader();
 
     chassert(!file_segment->isDownloader());

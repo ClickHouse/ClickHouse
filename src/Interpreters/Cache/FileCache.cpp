@@ -1147,6 +1147,16 @@ void FileCache::reduceSizeToDownloaded(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
+    assert(file_segment->downloaded_size <= file_segment->reserved_size);
+    assert(cell->queue_iterator->size() == file_segment->reserved_size);
+    assert(cell->queue_iterator->size() >= file_segment->downloaded_size);
+
+    if (file_segment->reserved_size > file_segment->downloaded_size)
+    {
+        int64_t extra_size = file_segment->reserved_size - file_segment->downloaded_size;
+        cell->queue_iterator->incrementSize(-extra_size, cache_lock);
+    }
+
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 
