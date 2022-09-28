@@ -17,7 +17,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
-#include <Common/config.h>
+#include "config.h"
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>

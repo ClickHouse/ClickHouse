@@ -13,7 +13,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <base/getThreadId.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>

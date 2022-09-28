@@ -23,7 +23,7 @@
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/config.h>
+#include "config.h"
 #include <Common/config_version.h>
 
 #include <filesystem>

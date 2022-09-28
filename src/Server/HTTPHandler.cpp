@@ -32,7 +32,7 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
