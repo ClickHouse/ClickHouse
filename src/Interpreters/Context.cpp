@@ -1129,7 +1129,17 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 {
     if (const auto * function = table_expression->as<ASTFunction>())
     {
-        if (TableFunctionFactory::instance().isTableFunctionName(function->name))
+        if (DatabaseCatalog::instance().isTableExist({getCurrentDatabase(), function->name}, getQueryContext()))
+        {
+            StoragePtr res = DatabaseCatalog::instance().getTable({getCurrentDatabase(), function->name}, getQueryContext());
+            if (res.get()->isView() && res->as<StorageView>()->isParameterizedView())
+                return res;
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a parameterized view `{}`", function->name);
+            }
+        }
+        else
         {
             auto hash = table_expression->getTreeHash();
             String key = toString(hash.first) + '_' + toString(hash.second);
@@ -1163,17 +1173,6 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
             }
             return res;
         }
-        else if (DatabaseCatalog::instance().isTableExist({getCurrentDatabase(), function->name}, getQueryContext()))
-        {
-            StoragePtr res = DatabaseCatalog::instance().getTable({getCurrentDatabase(), function->name}, getQueryContext());
-            if (res.get()->isView() && res->as<StorageView>()->isParameterizedView())
-                return res;
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a parameterized view `{}`", function->name);
-            }
-        }
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function or incorrect parameterized view:  `{}`", function->name);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to fetch function from query");
 }
