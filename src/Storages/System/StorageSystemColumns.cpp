@@ -20,10 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_DROPPED;
-}
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
