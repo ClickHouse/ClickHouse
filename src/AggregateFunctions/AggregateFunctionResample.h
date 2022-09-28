@@ -91,6 +91,21 @@ public:
         return nested_function->isState();
     }
 
+    bool isVersioned() const override
+    {
+        return nested_function->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_function->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_function->getDefaultVersion();
+    }
+
     bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
@@ -134,7 +149,13 @@ public:
             nested_function->destroy(place + i * size_of_data);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        for (size_t i = 0; i < total; ++i)
+            nested_function->destroyUpToState(place + i * size_of_data);
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Key key;
 

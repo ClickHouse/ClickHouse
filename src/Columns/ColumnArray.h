@@ -156,6 +156,14 @@ public:
         callback(data);
     }
 
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(offsets);
+        offsets->forEachSubcolumnRecursively(callback);
+        callback(data);
+        data->forEachSubcolumnRecursively(callback);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))

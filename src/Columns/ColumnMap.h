@@ -88,6 +88,7 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumnRecursively(ColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
