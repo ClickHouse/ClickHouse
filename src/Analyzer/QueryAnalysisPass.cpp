@@ -193,7 +193,6 @@ namespace ErrorCodes
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
-  * TODO: JOIN support SELF JOIN with MergeTree. JOIN support matchers.
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
   * TODO: Support group_by_use_nulls
   */
@@ -2449,8 +2448,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     assert(matcher_node_typed.isUnqualified());
 
-    QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
-
     /** There can be edge case if matcher is inside lambda expression.
       * Try to find parent query expression using parent scopes.
       */
@@ -2475,14 +2472,94 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    auto table_expressions = extractTableExpressions(scope_query_node->getJoinTree());
+    /** For unqualifited matcher resolve we build table expressions stack from JOIN tree and then process it.
+      * For table, table function, query, union table expressions add matched columns into table expressions columns stack.
+      * For array join continue processing.
+      * For join node combine last left and right table expressions columns on stack together. It is important that if JOIN has USING
+      * we must add USING columns before combining left and right table expressions columns. Columns from left and right table
+      * expressions that have same names as columns in USING clause must be skipped.
+      */
 
-    for (auto & table_expression : table_expressions)
+    auto table_expressions_stack = buildTableExpressionsStack(scope_query_node->getJoinTree());
+    std::vector<QueryTreeNodesWithNames> table_expressions_column_nodes_with_names_stack;
+
+    for (auto & table_expression : table_expressions_stack)
     {
+        QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
+
+        if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
+            continue;
+
+        bool table_expression_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression.get());
+
+        auto * join_node = table_expression->as<JoinNode>();
+
+        if (join_node)
+        {
+            size_t table_expressions_column_nodes_with_names_stack_size = table_expressions_column_nodes_with_names_stack.size();
+            if (table_expressions_column_nodes_with_names_stack_size != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expected 2 table expressions on stack before JOIN processing. Actual {}",
+                    table_expressions_column_nodes_with_names_stack_size);
+
+            auto right_table_expression_columns = std::move(table_expressions_column_nodes_with_names_stack.back());
+            table_expressions_column_nodes_with_names_stack.pop_back();
+
+            auto left_table_expression_columns = std::move(table_expressions_column_nodes_with_names_stack.back());
+            table_expressions_column_nodes_with_names_stack.pop_back();
+
+            std::unordered_set<std::string> column_names_to_skip;
+
+            if (!table_expression_in_resolve_process && join_node->isUsingJoinExpression())
+            {
+                auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
+
+                for (auto & join_using_node : join_using_list.getNodes())
+                {
+                    auto & column_node = join_using_node->as<ColumnNode &>();
+                    const auto & column_name = column_node.getColumnName();
+
+                    if (!matcher_node_typed.isMatchingColumn(column_name))
+                        continue;
+
+                    column_names_to_skip.insert(column_name);
+
+                    QueryTreeNodePtr column_source = getColumnSourceForJoinNodeWithUsing(table_expression);
+                    auto matched_column_node = std::make_shared<ColumnNode>(column_node.getColumn(), column_source);
+                    matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), column_name);
+                }
+            }
+
+            for (auto && left_table_column : left_table_expression_columns)
+            {
+                if (column_names_to_skip.contains(left_table_column.second))
+                    continue;
+
+                matched_expression_nodes_with_column_names.push_back(std::move(left_table_column));
+            }
+
+            for (auto && right_table_column : right_table_expression_columns)
+            {
+                if (column_names_to_skip.contains(right_table_column.second))
+                    continue;
+
+                matched_expression_nodes_with_column_names.push_back(std::move(right_table_column));
+            }
+
+            table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
+            continue;
+        }
+
         auto * table_node = table_expression->as<TableNode>();
         auto * table_function_node = table_expression->as<TableFunctionNode>();
         auto * query_node = table_expression->as<QueryNode>();
         auto * union_node = table_expression->as<UnionNode>();
+
+        if (table_expression_in_resolve_process)
+        {
+            table_expressions_column_nodes_with_names_stack.emplace_back();
+            continue;
+        }
 
         NamesAndTypes table_expression_columns;
 
@@ -2535,9 +2612,18 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         }
 
         matcherQualifyColumnsForProjectionNamesIfNeeded(matched_expression_nodes_with_column_names, table_expression, scope);
+        table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
     }
 
-    return matched_expression_nodes_with_column_names;
+    QueryTreeNodesWithNames result;
+
+    for (auto & table_expression_column_nodes_with_names : table_expressions_column_nodes_with_names_stack)
+    {
+        for (auto && table_expression_column_node_with_name : table_expression_column_nodes_with_names)
+            result.push_back(std::move(table_expression_column_node_with_name));
+    }
+
+    return result;
 }
 
 
@@ -4444,10 +4530,6 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
             for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
             {
-                if (array_join_expression->getNodeType() == QueryTreeNodeType::MATCHER)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "ARRAY JOIN matcher is not supported");
-
                 auto array_join_expression_alias = array_join_expression->getAlias();
                 if (!array_join_expression_alias.empty() && scope.alias_name_to_expression_node.contains(array_join_expression_alias))
                     throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
