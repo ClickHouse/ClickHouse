@@ -16,6 +16,7 @@
 #include <base/DayNum.h>
 #include <base/strong_typedef.h>
 #include <base/EnumReflection.h>
+#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -431,16 +432,6 @@ public:
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
 
-    template <typename T>
-    T & reinterpret();
-
-    template <typename T>
-    const T & reinterpret() const
-    {
-        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
-        return mutable_this->reinterpret<T>();
-    }
-
     template <typename T> bool tryGet(T & result)
     {
         const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
@@ -558,7 +549,7 @@ public:
             case Types::Float64:
             {
                 // Compare as UInt64 so that NaNs compare as equal.
-                return reinterpret<UInt64>() == rhs.reinterpret<UInt64>();
+                return bit_cast<UInt64>(get<Float64>()) == bit_cast<UInt64>(rhs.get<Float64>());
             }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::String:  return get<String>()  == rhs.get<String>();
@@ -856,30 +847,6 @@ auto & Field::safeGet()
 
 
 template <typename T>
-T & Field::reinterpret()
-{
-    assert(which != Types::String); // See specialization for char
-    using ValueType = std::decay_t<T>;
-    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
-    return *ptr;
-}
-
-// Specialize reinterpreting to char (used in ColumnUnique) to make sure Strings are reinterpreted correctly
-// inline to avoid multiple definitions
-template <>
-inline char & Field::reinterpret<char>()
-{
-    if (which == Types::String)
-    {
-        // For String we want to return a pointer to the data, not the start of the class
-        // as the layout of std::string depends on the STD version and options
-        char * ptr = reinterpret_cast<String *>(&storage)->data();
-        return *ptr;
-    }
-    return *reinterpret_cast<char *>(&storage);
-}
-
-template <typename T>
 T get(const Field & field)
 {
     return field.template get<T>();
@@ -902,6 +869,7 @@ T safeGet(Field & field)
 {
     return field.template safeGet<T>();
 }
+
 
 template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
