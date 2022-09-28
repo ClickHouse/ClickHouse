@@ -53,7 +53,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
 
 #ifndef NDEBUG
     const auto & offsets_data = getOffsetsData();
-    const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
+    const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<UInt64>());
     if (it != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");
 #endif
@@ -750,14 +750,6 @@ void ColumnSparse::forEachSubcolumn(ColumnCallback callback)
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(ColumnCallback callback)
-{
-    callback(values);
-    values->forEachSubcolumnRecursively(callback);
-    callback(offsets);
-    offsets->forEachSubcolumnRecursively(callback);
-}
-
 const IColumn::Offsets & ColumnSparse::getOffsetsData() const
 {
     return assert_cast<const ColumnUInt64 &>(*offsets).getData();
@@ -778,14 +770,6 @@ size_t ColumnSparse::getValueIndex(size_t n) const
         return 0;
 
     return it - offsets_data.begin() + 1;
-}
-
-ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
-{
-    const auto & offsets_data = getOffsetsData();
-    const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
-    size_t current_offset = it - offsets_data.begin();
-    return Iterator(offsets_data, _size, current_offset, n);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

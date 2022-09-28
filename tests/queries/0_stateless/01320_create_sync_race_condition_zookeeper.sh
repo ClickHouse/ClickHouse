@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS test_01320"
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query "CREATE DATABASE test_01320 ENGINE=Ordinary"   # Different bahaviour of DROP with Atomic
+$CLICKHOUSE_CLIENT --query "CREATE DATABASE test_01320 ENGINE=Ordinary"   # Different bahaviour of DROP with Atomic
 
 function thread1()
 {

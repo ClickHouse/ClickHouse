@@ -8,11 +8,8 @@ SET join_algorithm = 'partial_merge';
 {% for block_size in [10, 11, 128, 129, 65505, 65506, 70000] -%}
 {% for join_block_size in range(block_size - 2, block_size + 2) -%}
 
-DROP TABLE IF EXISTS left;
-DROP TABLE IF EXISTS right;
-
-CREATE TABLE left ( key UInt32, value String ) ENGINE = Memory;
-CREATE TABLE right (  key UInt32, value String ) ENGINE = Memory;
+CREATE OR REPLACE TABLE left ( key UInt32, value String ) ENGINE = Memory;
+CREATE OR REPLACE TABLE right (  key UInt32, value String ) ENGINE = Memory;
 
 INSERT INTO left SELECT number, toString(number) FROM numbers({{ block_size * 2 + 1 }});
 INSERT INTO right SELECT number, toString(number) FROM numbers({{ block_size * 2 + 5 }});

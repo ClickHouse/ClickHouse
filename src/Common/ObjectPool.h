@@ -94,7 +94,7 @@ public:
     template <typename Factory>
     Pointer get(const Key & key, Factory && f)
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
 
         auto it = container.find(key);
         if (container.end() == it)

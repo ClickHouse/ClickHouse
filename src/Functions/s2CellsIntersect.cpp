@@ -115,7 +115,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(S2CellsIntersect)
+void registerFunctionS2CellsIntersect(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionS2CellsIntersect>();
 }

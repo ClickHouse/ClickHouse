@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/columns
----
-# columns
+# system.columns {#system-columns}
 
 Contains information about columns in all the tables.
 

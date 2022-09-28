@@ -21,7 +21,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -43,7 +43,7 @@ UserDefinedSQLObjectsLoader::UserDefinedSQLObjectsLoader()
     : log(&Poco::Logger::get("UserDefinedSQLObjectsLoader"))
 {}
 
-void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, std::string_view name, const String & path)
+void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, const std::string_view & name, const String & path)
 {
     auto name_ref = StringRef(name.data(), name.size());
     LOG_DEBUG(log, "Loading user defined object {} from file {}", backQuote(name_ref), path);
@@ -86,33 +86,28 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
     if (unlikely(!enable_persistence))
         return;
 
-    LOG_DEBUG(log, "Loading user defined objects");
+    LOG_DEBUG(log, "loading user defined objects");
 
-    String dir_path = context->getUserDefinedPath();
+    String dir_path = context->getPath() + "user_defined/";
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
     {
-        if (it->isDirectory())
+        if (it->isLink())
             continue;
 
-        const std::string & file_name = it.name();
+        const auto & file_name = it.name();
 
         /// For '.svn', '.gitignore' directory and similar.
         if (file_name.at(0) == '.')
             continue;
 
-        if (!startsWith(file_name, "function_") || !endsWith(file_name, ".sql"))
-            continue;
-
-        std::string_view object_name = file_name;
-
-        object_name.remove_prefix(strlen("function_"));
-        object_name.remove_suffix(strlen(".sql"));
-
-        if (object_name.empty())
-            continue;
-
-        loadUserDefinedObject(context, UserDefinedSQLObjectType::Function, object_name, dir_path + it.name());
+        if (!it->isDirectory() && endsWith(file_name, ".sql"))
+        {
+            std::string_view object_name = file_name;
+            object_name.remove_suffix(strlen(".sql"));
+            object_name.remove_prefix(strlen("function_"));
+            loadUserDefinedObject(context, UserDefinedSQLObjectType::Function, object_name, dir_path + it.name());
+        }
     }
 }
 
@@ -121,7 +116,7 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
     if (unlikely(!enable_persistence))
         return;
 
-    String dir_path = context->getUserDefinedPath();
+    String dir_path = context->getPath() + "user_defined/";
     String file_path;
 
     switch (object_type)
@@ -157,7 +152,7 @@ void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQ
     if (unlikely(!enable_persistence))
         return;
 
-    String dir_path = context->getUserDefinedPath();
+    String dir_path = context->getPath() + "user_defined/";
     LOG_DEBUG(log, "Removing file for user defined object {} from {}", backQuote(object_name), dir_path);
 
     std::filesystem::path file_path;

@@ -56,7 +56,7 @@ private:
     /// The name of the nested function, including combinators (i.e. *If)
     ///
     /// getName() from the nested_function cannot be used because in case of *If combinator
-    /// with Nullable argument nested_function will point to the function without combinator.
+    /// with Nullable argument nested_function will point to the function w/o combinator.
     /// (I.e. sumIf(Nullable, 1) -> sum()), and distributed query processing will fail.
     ///
     /// And nested_function cannot point to the function with *If since
@@ -119,13 +119,7 @@ public:
         }
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t) const override
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const UInt8 * null_map = column->getNullMapData().data();
@@ -148,31 +142,25 @@ public:
         /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
         /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
 
-        auto final_nulls = std::make_unique<UInt8[]>(row_end);
+        auto final_nulls = std::make_unique<UInt8[]>(batch_size);
 
         if (filter_null_map)
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
                 final_nulls[i] = (!!null_map[i]) | (!filter_values[i]) | (!!filter_null_map[i]);
         else
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
                 final_nulls[i] = (!!null_map[i]) | (!filter_values[i]);
 
         if constexpr (result_is_nullable)
         {
-            if (!memoryIsByte(final_nulls.get(), row_begin, row_end, 1))
+            if (!memoryIsByte(final_nulls.get(), batch_size, 1))
                 this->setFlag(place);
             else
                 return; /// No work to do.
         }
 
         this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin,
-            row_end,
-            this->nestedPlace(place),
-            columns_param,
-            final_nulls.get(),
-            arena,
-            -1);
+            batch_size, this->nestedPlace(place), columns_param, final_nulls.get(), arena, -1);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -237,7 +225,7 @@ public:
             throw Exception("Logical error: single argument is passed to AggregateFunctionIfNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
         if (number_of_arguments > MAX_ARGS)
-            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(MAX_ARGS),
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
@@ -275,71 +263,6 @@ public:
         {
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
-        }
-    }
-
-    void addBatchSinglePlace(
-        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena, ssize_t) const final
-    {
-        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique<UInt8[]>(row_end);
-        const size_t filter_column_num = number_of_arguments - 1;
-
-        if (is_nullable[filter_column_num])
-        {
-            const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(columns[filter_column_num]);
-            const IColumn & filter_column = nullable_column->getNestedColumn();
-            const UInt8 * filter_null_map = nullable_column->getNullMapColumn().getData().data();
-            const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(filter_column).getData().data();
-
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                final_null_flags[i] = (null_is_skipped && filter_null_map[i]) || !filter_values[i];
-            }
-        }
-        else
-        {
-            const IColumn * filter_column = columns[filter_column_num];
-            const UInt8 * filter_values = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
-            for (size_t i = row_begin; i < row_end; i++)
-                final_null_flags[i] = !filter_values[i];
-        }
-
-        const IColumn * nested_columns[number_of_arguments];
-        for (size_t arg = 0; arg < number_of_arguments; arg++)
-        {
-            if (is_nullable[arg])
-            {
-                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
-                if (null_is_skipped && (arg != filter_column_num))
-                {
-                    const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
-                    const UInt8 * col_null_map = nullmap_column.getData().data();
-                    for (size_t r = row_begin; r < row_end; r++)
-                    {
-                        final_null_flags[r] |= col_null_map[r];
-                    }
-                }
-                nested_columns[arg] = &nullable_col.getNestedColumn();
-            }
-            else
-                nested_columns[arg] = columns[arg];
-        }
-
-        bool at_least_one = false;
-        for (size_t i = row_begin; i < row_end; i++)
-        {
-            if (!final_null_flags[i])
-            {
-                at_least_one = true;
-                break;
-            }
-        }
-
-        if (at_least_one)
-        {
-            this->setFlag(place);
-            this->nested_function->addBatchSinglePlaceNotNull(
-                row_begin, row_end, this->nestedPlace(place), nested_columns, final_null_flags.get(), arena, -1);
         }
     }
 
@@ -436,7 +359,7 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>;
 
-    static constexpr size_t MAX_ARGS = 8;
+    enum { MAX_ARGS = 8 };
     size_t number_of_arguments = 0;
     std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
 };

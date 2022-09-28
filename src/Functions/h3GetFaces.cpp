@@ -106,7 +106,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3GetFaces)
+void registerFunctionH3GetFaces(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3GetFaces>();
 }

@@ -3,7 +3,7 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
-#include <Formats/JSONUtils.h>
+
 
 namespace DB
 {
@@ -16,11 +16,7 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
         bool with_names_,
         bool with_types_,
         bool yield_strings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_, params_)
-    , settings(settings_)
-    , with_names(with_names_)
-    , with_types(with_types_)
-    , yield_strings(yield_strings_)
+        : IRowOutputFormat(header_, out_, params_), settings(settings_), with_names(with_names_), with_types(with_types_), yield_strings(yield_strings_)
 {
 }
 
@@ -41,7 +37,7 @@ void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const
 
 void JSONCompactEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    writeCString(", ", *ostr);
+    writeCString(", ", out);
 }
 
 
@@ -53,12 +49,12 @@ void JSONCompactEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONCompactEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("]\n", *ostr);
+    writeCString("]\n", out);
 }
 
 void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    writeChar('\n', *ostr);
+    writeChar('\n', out);
     size_t columns_size = columns.size();
     writeRowStartDelimiter();
     for (size_t i = 0; i < columns_size; ++i)
@@ -73,7 +69,6 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
 
 void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & values)
 {
-    JSONUtils::makeNamesValidJSONStrings(values, settings, settings.json.validate_utf8);
     writeRowStartDelimiter();
     for (size_t i = 0; i < values.size(); ++i)
     {
@@ -91,10 +86,10 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8));
+        writeLine(header.getNames());
 
     if (with_types)
-        writeLine(JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8));
+        writeLine(header.getDataTypeNames());
 }
 
 void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)

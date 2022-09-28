@@ -1,13 +1,13 @@
 ---
-slug: /en/sql-reference/data-types/multiword-types
-sidebar_position: 61
-sidebar_label: Multiword Type Names
-title: "Multiword Types"
+toc_priority: 61
+toc_title: Multiword Type Names
 ---
+
+# Multiword Types {#multiword-types}
 
 When creating tables, you can use data types with a name consisting of several words. This is implemented for better SQL compatibility.
 
-## Multiword Types Support
+## Multiword Types Support {#multiword-types-support}
 
 | Multiword types                  | Simple types                                                 |
 |----------------------------------|--------------------------------------------------------------|

@@ -259,7 +259,7 @@ public:
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function '{}' needs at least 2 arguments, at most 3 arguments; passed {}.",
-                name, arguments.size());
+                arguments.size());
 
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
@@ -449,7 +449,7 @@ public:
 class SplitByRegexpImpl
 {
 private:
-    Regexps::RegexpPtr re;
+    Regexps::Pool::Pointer re;
     OptimizedRegularExpression::MatchVec matches;
 
     Pos pos;
@@ -478,7 +478,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN);
 
         if (!col->getValue<String>().empty())
-            re = std::make_shared<Regexps::Regexp>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            re = Regexps::get<false, false>(col->getValue<String>());
 
     }
 
@@ -533,7 +533,7 @@ public:
 class ExtractAllImpl
 {
 private:
-    Regexps::RegexpPtr re;
+    Regexps::Pool::Pointer re;
     OptimizedRegularExpression::MatchVec matches;
     size_t capture;
 
@@ -561,7 +561,7 @@ public:
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        re = std::make_shared<Regexps::Regexp>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+        re = Regexps::get<false, false>(col->getValue<String>());
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);
