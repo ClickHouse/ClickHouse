@@ -1,5 +1,5 @@
 include(configure_config.cmake)
-configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
+configure_file(config_functions.h.in ${CONFIG_INCLUDE_PATH}/config_functions.h)
 
 add_subdirectory(divide)
 
