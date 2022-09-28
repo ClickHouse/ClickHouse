@@ -10,6 +10,14 @@ CREATE TABLE Customers
 
 INSERT INTO Customers VALUES ('Theodore','Diaz','Skilled Manual','Bachelors',28), ('Stephanie','Cox','Management abcd defg','Bachelors',33),('Peter','Nara','Skilled Manual','Graduate Degree',26),('Latoya','Shen','Professional','Graduate Degree',25),('Apple','','Skilled Manual','Bachelors',28),(NULL,'why','Professional','Partial College',38);
 
+DROP TABLE IF EXISTS Versions;
+CREATE TABLE Versions
+(    
+    Version String
+) ENGINE = Memory;
+INSERT INTO Versions VALUES ('1.2.3.4'),('1.2'),('1.2.3'),('1');
+
+
 set dialect='kusto';
 print '-- test String Functions --';
 
@@ -228,3 +236,18 @@ print '-- replace_regex';
 print replace_regex(strcat('Number is ', '1'), 'is (\d+)', 'was: \1');
 print '-- has_any_index()';
 print has_any_index('this is an example', dynamic(['this', 'example'])), has_any_index("this is an example", dynamic(['not', 'example'])), has_any_index("this is an example", dynamic(['not', 'found'])), has_any_index("this is an example", dynamic([]));
+print '-- parse_version()';
+print parse_version('1.2.3.40');
+print parse_version('1.2');
+Versions |project  parse_version(Version);
+print '-- parse_json()';
+print parse_json( dynamic([1, 2, 3]));
+print parse_json('{"a":123.5, "b":"{\\"c\\":456}"}')
+print '-- parse_command_line()';
+print parse_command_line('echo \"hello world!\" print$?', 'windows');
+print '-- reverse()';
+Customers |where Education contains 'degree' | order by reverse(FirstName);print reverse(123);
+print reverse(123.34);
+print '-- parse_csv()';
+print result=parse_csv('aa,b,cc');
+print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z');

@@ -180,12 +180,16 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
             "SELECT [1, 2, 3]"
         },
         {
+            "print parse_json('{\"a\":123.5, \"b\":\"{\\\"c\\\":456}\"}')",
+            "SELECT if(isValidJSON('{\"a\":123.5, \"b\":\"{\"c\":456}\"}'), JSON_QUERY('{\"a\":123.5, \"b\":\"{\"c\":456}\"}', '$'), toJSONString('{\"a\":123.5, \"b\":\"{\"c\":456}\"}'))"
+        },
+        {
             "print extract_json( '$.a' , '{\"a\":123, \"b\":\"{\"c\":456}\"}' , typeof(long))",
             "SELECT accurateCastOrNull(JSON_VALUE('{\"a\":123, \"b\":\"{\"c\":456}\"}', '$.a'), 'Int64')"
 
         },
         {
-            "print parse_command_line('echo \"hello world!\" print$?', \"Windows\")",
+            "print parse_command_line('echo \"hello world!\" print$?', 'windows')",
             "SELECT splitByChar(' ', 'echo \"hello world!\" print$?')"
         },
         {
