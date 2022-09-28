@@ -2,25 +2,25 @@
 
 #if USE_AWS_S3
 
-#include <Storages/StorageDelta.h>
-#include <Common/logger_useful.h>
+#    include <Storages/StorageDelta.h>
+#    include <Common/logger_useful.h>
 
-#include <IO/ReadBufferFromS3.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
-#include <IO/S3Common.h>
+#    include <IO/ReadBufferFromS3.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/ReadSettings.h>
+#    include <IO/S3Common.h>
 
-#include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
+#    include <Storages/StorageFactory.h>
+#    include <Storages/checkAndGetLiteralArgument.h>
 
-#include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
+#    include <aws/core/auth/AWSCredentials.h>
+#    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/ListObjectsV2Request.h>
 
-#include <QueryPipeline/Pipe.h>
+#    include <QueryPipeline/Pipe.h>
 
-#include <fmt/ranges.h>
-#include <fmt/format.h>
+#    include <fmt/format.h>
+#    include <fmt/ranges.h>
 
 namespace DB
 {
@@ -73,16 +73,17 @@ void JsonMetadataGetter::Init()
         auto buf = createS3ReadBuffer(key);
 
         while (!buf->eof())
-        {   
+        {
             // may be some invalid characters before json
             char c;
-            while ( buf->peek(c) && c != '{') buf->ignore();
-            if (buf->eof()) 
+            while (buf->peek(c) && c != '{')
+                buf->ignore();
+            if (buf->eof())
                 break;
 
             String json_str;
             readJSONObjectPossiblyInvalid(json_str, *buf);
-            
+
             if (json_str.empty())
                 continue;
 
@@ -148,7 +149,8 @@ std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String 
         ReadSettings{});
 }
 
-void JsonMetadataGetter::handleJSON(const JSON & json) {
+void JsonMetadataGetter::handleJSON(const JSON & json)
+{
     if (json.has("add"))
     {
         auto path = json["add"]["path"].getString();
@@ -195,8 +197,7 @@ StorageDelta::StorageDelta(
 
     if (columns_.empty())
     {
-        columns_
-            = StorageS3::getTableStructureFromData(format_name_, s3_uri, access_key_, secret_access_key_, "", false, {}, context_);
+        columns_ = StorageS3::getTableStructureFromData(format_name_, s3_uri, access_key_, secret_access_key_, "", false, {}, context_);
         storage_metadata.setColumns(columns_);
     }
     else
@@ -248,15 +249,18 @@ void registerStorageDelta(StorageFactory & factory)
         {
             auto & engine_args = args.engine_args;
             if (engine_args.empty() || engine_args.size() < 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage DeltaLake requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Storage DeltaLake requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
 
-            
+
             String table_url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
             String access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
             String secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
-            
+
             String format = "Parquet";
-            if (engine_args.size() == 4) {
+            if (engine_args.size() == 4)
+            {
                 format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
             }
 
