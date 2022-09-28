@@ -58,6 +58,7 @@
                 <max_size>2147483648</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <enable_filesystem_query_cache_limit>1</enable_filesystem_query_cache_limit>
             </s3_cache>
             <s3_cache_2>
                 <type>cache</type>
@@ -66,6 +67,7 @@
                 <max_size>2Gi</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
                 <max_file_segment_size>100Mi</max_file_segment_size>
+                <enable_filesystem_query_cache_limit>1</enable_filesystem_query_cache_limit>
             </s3_cache_2>
             <s3_cache_3>
                 <type>cache</type>
@@ -76,6 +78,7 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <enable_filesystem_query_cache_limit>1</enable_filesystem_query_cache_limit>
             </s3_cache_3>
             <s3_cache_4>
                 <type>cache</type>
@@ -92,6 +95,7 @@
                 <path>s3_cache_5/</path>
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <enable_filesystem_query_cache_limit>1</enable_filesystem_query_cache_limit>
             </s3_cache_5>
             <s3_cache_small>
                 <type>cache</type>
