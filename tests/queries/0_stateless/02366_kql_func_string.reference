@@ -242,6 +242,13 @@ PINEAPPLE
 20
 
 20
+\N
+\N
+\N
+\N
+\N
+45.6
+45.6
 
 -- extract_all (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractallfunction); TODO: captureGroups not supported yet
 [['T','h','e'],['p','ric','e'],['P','INEAPPL','E'],['i','c','e'],['c','rea','m']]
@@ -298,11 +305,3 @@ asd
 Number was: 1
 -- has_any_index()
 0	1	-1	-1
--- type convention of extract
-\N
-\N
-\N
-\N
-\N
-45.6
-45.6

@@ -82,3 +82,6 @@ Management abcd defg	1
 245	2
 -- make_list_with_nulls --
 ['Theodore','Stephanie','Peter','Latoya','Joshua','Edward','Dalton','Christine','Cameron','Angel','Apple',NULL]
+Skilled Manual	['Theodore','Peter','Edward','Christine','Apple']
+Professional	['Latoya','Joshua','Dalton','Cameron','Angel',NULL]
+Management abcd defg	['Stephanie']

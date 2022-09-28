@@ -86,7 +86,8 @@ EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/10
 EventLog | summarize count=count() by time_label=bin(Created/1000, 1s);
 
 print '-- make_list_with_nulls --';
-Customers | summarize t = make_list_with_nulls(FirstName)
+Customers | summarize t = make_list_with_nulls(FirstName);
+Customers | summarize f_list = make_list_with_nulls(FirstName) by Occupation;
 
 -- TODO:
 -- arg_max()
