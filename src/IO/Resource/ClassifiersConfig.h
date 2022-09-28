@@ -28,7 +28,7 @@ class ClassifiersConfig
 {
 public:
     ClassifiersConfig() = default;
-    ClassifiersConfig(const Poco::Util::AbstractConfiguration & config);
+    explicit ClassifiersConfig(const Poco::Util::AbstractConfiguration & config);
 
     const ClassifierDescription & get(const String & classifier_name);
 

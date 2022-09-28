@@ -78,7 +78,7 @@ StaticResourceManager::Classifier::Classifier(const StaticResourceManager & mana
             const Resource & resource = resource_iter->second;
             if (auto node_iter = resource.nodes.find(path); node_iter != resource.nodes.end())
             {
-                if (auto queue = dynamic_cast<ISchedulerQueue *>(node_iter->second.get()))
+                if (auto * queue = dynamic_cast<ISchedulerQueue *>(node_iter->second.get()))
                     resources.emplace(resource_name, ResourceLink{.queue = queue});
                 else
                     throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unable to access non-queue node at path '{}' for resource '{}'", path, resource_name);
@@ -119,7 +119,7 @@ void StaticResourceManager::updateConfiguration(const Poco::Util::AbstractConfig
     }
 
     // Initialize classifiers
-    classifiers.reset(new ClassifiersConfig(config));
+    classifiers = std::make_unique<ClassifiersConfig>(config);
 
     // Run scheduler thread
     scheduler.start();
