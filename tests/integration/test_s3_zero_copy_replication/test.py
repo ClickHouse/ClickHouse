@@ -8,11 +8,12 @@ from helpers.cluster import ClickHouseCluster
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
+cluster = ClickHouseCluster(__file__)
+
 
 @pytest.fixture(scope="module")
-def cluster():
+def started_cluster():
     try:
-        cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/s3.xml"],
@@ -96,7 +97,7 @@ def wait_for_active_parts(node, num_expected_parts, table_name, timeout=30):
 # Result of `get_large_objects_count` can be changed in other tests, so run this case at the beginning
 @pytest.mark.order(0)
 @pytest.mark.parametrize("policy", ["s3"])
-def test_s3_zero_copy_replication(cluster, policy):
+def test_s3_zero_copy_replication(started_cluster, policy):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -153,7 +154,7 @@ def test_s3_zero_copy_replication(cluster, policy):
 
 
 @pytest.mark.skip(reason="Test is flaky (and never was stable)")
-def test_s3_zero_copy_on_hybrid_storage(cluster):
+def test_s3_zero_copy_on_hybrid_storage(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -268,7 +269,9 @@ def insert_large_data(node, table):
         ("tiered_copy", True, 3),
     ],
 )
-def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data, iterations):
+def test_s3_zero_copy_with_ttl_move(
+    started_cluster, storage_policy, large_data, iterations
+):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -333,7 +336,7 @@ def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data, iterati
         (True, 3),
     ],
 )
-def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
+def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -414,6 +417,7 @@ def wait_mutations(node, table, seconds):
     )
     assert mutations == "0\n"
 
+
 def wait_for_clean_old_parts(node, table, seconds):
     time.sleep(1)
     while seconds > 0:
@@ -428,6 +432,7 @@ def wait_for_clean_old_parts(node, table, seconds):
         f"SELECT count() FROM system.parts WHERE table='{table}' AND active=0"
     )
     assert parts == "0\n"
+
 
 def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
@@ -488,11 +493,11 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
 
 
-def test_s3_zero_copy_unfreeze_alter(cluster):
+def test_s3_zero_copy_unfreeze_alter(started_cluster):
     s3_zero_copy_unfreeze_base(cluster, "ALTER TABLE unfreeze_test UNFREEZE WITH NAME")
 
 
-def test_s3_zero_copy_unfreeze_system(cluster):
+def test_s3_zero_copy_unfreeze_system(started_cluster):
     s3_zero_copy_unfreeze_base(cluster, "SYSTEM UNFREEZE WITH NAME")
 
 
@@ -581,17 +586,17 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     check_objects_not_exisis(cluster, objects1)
 
 
-def test_s3_zero_copy_drop_detached_alter(cluster):
+def test_s3_zero_copy_drop_detached_alter(started_cluster):
     s3_zero_copy_drop_detached(
         cluster, "ALTER TABLE drop_detached_test UNFREEZE WITH NAME"
     )
 
 
-def test_s3_zero_copy_drop_detached_system(cluster):
+def test_s3_zero_copy_drop_detached_system(started_cluster):
     s3_zero_copy_drop_detached(cluster, "SYSTEM UNFREEZE WITH NAME")
 
 
-def test_s3_zero_copy_concurrent_merge(cluster):
+def test_s3_zero_copy_concurrent_merge(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -637,7 +642,8 @@ def test_s3_zero_copy_concurrent_merge(cluster):
     for node in (node1, node2):
         assert node.query("select sum(id) from concurrent_merge").strip() == "1600"
 
-def test_s3_zero_copy_keeps_data_after_mutation(cluster):
+
+def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -645,7 +651,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     node2.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
 
     node1.query(
-            """
+        """
         CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
@@ -653,10 +659,10 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
         SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
-        )
+    )
 
     node2.query(
-            """
+        """
         CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
@@ -664,14 +670,14 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
         SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
-        )
+    )
 
     node1.query(
-            """
+        """
         INSERT INTO zero_copy_mutation
         SELECT * FROM generateRandom('id UInt64, value1 String, value2 String, value3 String') limit 1000000
         """
-        )
+    )
 
     wait_for_active_parts(node2, 4, "zero_copy_mutation")
 
@@ -679,14 +685,14 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     check_objects_exisis(cluster, objects1)
 
     node1.query(
-            """
+        """
         ALTER TABLE zero_copy_mutation
         ADD COLUMN valueX String MATERIALIZED value1
         """
     )
 
     node1.query(
-            """
+        """
         ALTER TABLE zero_copy_mutation
         MATERIALIZE COLUMN valueX
         """
@@ -695,17 +701,13 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     wait_mutations(node1, "zero_copy_mutation", 10)
     wait_mutations(node2, "zero_copy_mutation", 10)
 
-    # If bug present at least one node has metadata with incorrect ref_count values
-    # But it may be any node depends on mutation execution order
+    # If bug present at least one node has metadata with incorrect ref_count values.
+    # But it may be any node depends on mutation execution order.
+    # We can try to find one, but this required knowledge about internal metadata structure.
+    # It can be change in future, so we do not find this node here.
+    # And with the bug test may be success sometimes.
     nodeX = node1
     nodeY = node2
-
-    assert node1.count_metadata_furcation_refs('s31') == 0
-    assert node2.count_metadata_furcation_refs('s31') == 0
-
-    if node2.count_metadata_furcation_refs('s31'):
-        nodeX = node2
-        nodeY = node1
 
     objectsY = nodeY.get_table_objects("zero_copy_mutation")
     check_objects_exisis(cluster, objectsY)
