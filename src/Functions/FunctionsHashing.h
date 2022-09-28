@@ -7,7 +7,7 @@
 #include <MurmurHash3.h>
 #include <wyhash.h>
 
-#include "config_functions.h"
+#include "config.h"
 #include "config_core.h"
 
 #include <Common/SipHash.h>
