@@ -1508,7 +1508,7 @@ bool MutateTask::prepare()
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+        auto [part, lock] = ctx->data->cloneAndLoadDataPart(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
         ctx->temporary_directory_lock = std::move(lock);
         promise.set_value(std::move(part));
         return false;
@@ -1621,7 +1621,7 @@ bool MutateTask::prepare()
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
             /// new_data_part is not used here, another part is created instead (see the comment above)
             ctx->temporary_directory_lock = {};
-            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+            auto [part, lock] = ctx->data->cloneAndLoadDataPart(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
             ctx->temporary_directory_lock = std::move(lock);
             promise.set_value(std::move(part));
             return false;
