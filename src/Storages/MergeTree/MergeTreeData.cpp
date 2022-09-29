@@ -6144,6 +6144,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (format_version != src_data->format_version)
         throw Exception("Tables have different format_version", ErrorCodes::BAD_ARGUMENTS);
 
+    if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
+        throw Exception("Tables have different primary key", ErrorCodes::BAD_ARGUMENTS);
+
     return *src_data;
 }
 
@@ -6160,7 +6163,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeTransactionPtr & txn,
     HardlinkedFiles * hardlinked_files,
-    bool copy_instead_of_hardlink)
+    bool copy_instead_of_hardlink,
+    const NameSet & files_to_copy_instead_of_hardlinks)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
     bool does_storage_policy_allow_same_disk = false;
@@ -6204,7 +6208,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
+    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 
@@ -6215,7 +6219,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
         for (auto it = src_part->data_part_storage->iterate(); it->isValid(); it->next())
         {
-            if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+            if (!files_to_copy_instead_of_hardlinks.contains(it->name())
+                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+                && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
                 hardlinked_files->hardlinks_from_source_part.insert(it->name());
         }
     }
@@ -6390,7 +6396,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             part->data_part_storage->getPartDirectory(),
             /*make_source_readonly*/ true,
             callback,
-            /*copy_instead_of_hardlink*/ false);
+            /*copy_instead_of_hardlink*/ false,
+            {});
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
