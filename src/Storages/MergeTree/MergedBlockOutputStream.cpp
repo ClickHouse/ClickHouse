@@ -80,7 +80,7 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
     writer.finish(sync);
 
     auto disk = part->volume->getDisk();
-    for (const auto & file_name: files_to_remove_after_finish)
+    for (const auto & file_name : files_to_remove_after_finish)
         disk->removeFile(part->getFullRelativePath() + file_name);
 
     for (auto & file : written_files)

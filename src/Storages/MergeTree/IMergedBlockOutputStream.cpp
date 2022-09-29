@@ -76,10 +76,18 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     }
 
     /// Remove files on disk and checksums
-    for (const String & removed_file : remove_files)
+    for (auto itr = remove_files.begin(); itr != remove_files.end();)
     {
-        if (checksums.files.count(removed_file))
-            checksums.files.erase(removed_file);
+        if (checksums.files.contains(*itr))
+        {
+            checksums.files.erase(*itr);
+            ++itr;
+        }
+        else /// If we have no file in checksums it doesn't exist on disk
+        {
+            LOG_TRACE(storage.log, "Files {} doesn't exist in checksums so it doesn't exist on disk, will not try to remove it", *itr);
+            itr = remove_files.erase(itr);
+        }
     }
 
     /// Remove columns from columns array
