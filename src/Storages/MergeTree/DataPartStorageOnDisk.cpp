@@ -742,12 +742,14 @@ DataPartStoragePtr DataPartStorageOnDisk::freeze(
     const std::string & dir_path,
     bool make_source_readonly,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    bool copy_instead_of_hardlink) const
+    bool copy_instead_of_hardlink,
+    const NameSet & files_to_copy_instead_of_hardlinks) const
+
 {
     auto disk = volume->getDisk();
     disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink);
+    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
