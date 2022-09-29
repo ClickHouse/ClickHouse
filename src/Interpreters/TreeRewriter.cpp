@@ -1159,9 +1159,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze);
 
-    if (settings.legacy_column_name_of_tuple_literal)
-        markTupleLiteralsAsLegacy(query);
-
     /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
 
@@ -1169,6 +1166,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Only apply AST optimization for initial queries without explicit disability.
     if (is_initiator && !select_options.ignore_ast_optimizations)
         TreeOptimizer::optimizeSelect(query, result, tables_with_columns, getContext());
+
+    /// Should after optimize
+    if (settings.legacy_column_name_of_tuple_literal)
+        markTupleLiteralsAsLegacy(query);
 
     if (tables_with_columns.size() > 1)
     {

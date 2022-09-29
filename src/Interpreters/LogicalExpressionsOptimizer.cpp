@@ -111,6 +111,9 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
         to_visit.pop_back();
 
+        if (visited_nodes.contains(to_node))
+            continue;
+
         bool found_chain = false;
 
         auto * function = to_node->as<ASTFunction>();
@@ -151,8 +154,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
             {
                 auto res = or_parent_map.insert(std::make_pair(function, ParentNodes{from_node}));
                 if (!res.second)
-                    throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
-                        ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted", ErrorCodes::LOGICAL_ERROR);
             }
         }
         else
