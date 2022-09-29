@@ -225,7 +225,7 @@ public:
     template <typename TIter>
     MultiGetResponse get(TIter start, TIter end)
     {
-        return multiRead<Coordination::GetResponse>(
+        return multiRead<Coordination::GetResponse, false>(
             start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncGet(path); });
     }
 
@@ -253,7 +253,7 @@ public:
     template <typename TIter>
     MultiGetResponse tryGet(TIter start, TIter end)
     {
-        return tryMultiRead<Coordination::GetResponse>(
+        return multiRead<Coordination::GetResponse, true>(
             start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncTryGet(path); });
     }
 
@@ -290,7 +290,7 @@ public:
     MultiGetChildrenResponse
     getChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
-        return multiRead<Coordination::ListResponse>(
+        return multiRead<Coordination::ListResponse, false>(
             start,
             end,
             [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
@@ -323,7 +323,7 @@ public:
     MultiGetChildrenResponse
     tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
-        return tryMultiRead<Coordination::ListResponse>(
+        return multiRead<Coordination::ListResponse, true>(
             start,
             end,
             [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
@@ -495,7 +495,7 @@ private:
     template <typename TResponse>
     using AsyncFunction = std::function<std::future<TResponse>(const std::string &)>;
 
-    template <typename TResponse, typename TIter>
+    template <typename TResponse, bool try_multi, typename TIter>
     MultiReadResponses<TResponse> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
     {
         if (getApiVersion() >= DB::KeeperApiVersion::WITH_MULTI_READ)
@@ -504,36 +504,17 @@ private:
             for (auto it = start; it != end; ++it)
                 requests.push_back(request_factory(*it));
 
-            auto responses = multi(requests);
-            return MultiReadResponses<TResponse>{std::move(responses)};
-        }
-
-        auto responses_size = std::distance(start, end);
-        std::vector<std::future<TResponse>> future_responses;
-
-        if (responses_size == 0)
-            return MultiReadResponses<TResponse>(std::move(future_responses));
-
-        future_responses.reserve(responses_size);
-
-        for (auto it = start; it != end; ++it)
-            future_responses.push_back(async_fun(*it));
-
-        return MultiReadResponses<TResponse>{std::move(future_responses)};
-    }
-
-    template <typename TResponse, typename TIter>
-    MultiReadResponses<TResponse> tryMultiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
-    {
-        if (getApiVersion() >= DB::KeeperApiVersion::WITH_MULTI_READ)
-        {
-            Coordination::Requests requests;
-            for (auto it = start; it != end; ++it)
-                requests.push_back(request_factory(*it));
-
-            Coordination::Responses responses;
-            tryMulti(requests, responses);
-            return MultiReadResponses<TResponse>{std::move(responses)};
+            if constexpr (try_multi)
+            {
+                Coordination::Responses responses;
+                tryMulti(requests, responses);
+                return MultiReadResponses<TResponse>{std::move(responses)};
+            }
+            else
+            {
+                auto responses = multi(requests);
+                return MultiReadResponses<TResponse>{std::move(responses)};
+            }
         }
 
         auto responses_size = std::distance(start, end);
