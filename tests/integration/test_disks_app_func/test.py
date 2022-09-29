@@ -118,7 +118,7 @@ def test_disks_app_func_cp(started_cluster):
     )
 
     assert "path1" in out
-    
+
     source.exec_in_container(
         [
             "/usr/bin/clickhouse",
