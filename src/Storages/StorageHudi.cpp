@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int S3_ERROR;
 }
@@ -29,6 +30,7 @@ StorageHudi::StorageHudi(
     const String & access_key_,
     const String & secret_access_key_,
     const StorageID & table_id_,
+    const String & format_,
     ColumnsDescription columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -43,7 +45,7 @@ StorageHudi::StorageHudi(
 
     auto keys = getKeysFromS3();
 
-    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys));
+    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys), format_);
 
     LOG_DEBUG(log, "New uri: {}", new_uri);
     LOG_DEBUG(log, "Table path: {}", table_path);
@@ -51,8 +53,7 @@ StorageHudi::StorageHudi(
 
     if (columns_.empty())
     {
-        columns_
-            = StorageS3::getTableStructureFromData(String("Parquet"), s3_uri, access_key_, secret_access_key_, "", false, {}, context_);
+        columns_ = StorageS3::getTableStructureFromData(format_, s3_uri, access_key_, secret_access_key_, "", false, {}, context_);
         storage_metadata.setColumns(columns_);
     }
     else
@@ -67,7 +68,7 @@ StorageHudi::StorageHudi(
         access_key_,
         secret_access_key_,
         table_id_,
-        String("Parquet"), // format name
+        format_,
         base_configuration.rw_settings,
         columns_,
         constraints_,
@@ -131,12 +132,15 @@ std::vector<std::string> StorageHudi::getKeysFromS3()
     return keys;
 }
 
-std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys)
+std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys, String format)
 {
-    // filter only .parquet files
-    std::erase_if(keys, [](const std::string & s) { return std::filesystem::path(s).extension() != ".parquet"; });
+    // make format lowercase
+    std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) { return std::tolower(c); });
 
-    // for each partition path take only latest parquet file
+    // filter only files with specific format
+    std::erase_if(keys, [&format](const std::string & s) { return std::filesystem::path(s).extension() != "." + format; });
+
+    // for each partition path take only latest file
 
     std::unordered_map<std::string, std::pair<std::string, uint64_t>> latest_parquets;
 
@@ -198,23 +202,30 @@ void registerStorageHudi(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             auto & engine_args = args.engine_args;
-            if (engine_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
-
-            auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
-
-            configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
+            if (engine_args.empty() || engine_args.size() < 3)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Storage Hudi requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
 
 
-            S3::URI s3_uri(Poco::URI(configuration.url));
+            String table_url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+            String access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
+            String secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
+
+            String format = "Parquet";
+            if (engine_args.size() == 4)
+            {
+                format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
+            }
+
+            auto s3_uri = S3::URI(Poco::URI(table_url));
 
             return std::make_shared<StorageHudi>(
                 s3_uri,
-                configuration.auth_settings.access_key_id,
-                configuration.auth_settings.secret_access_key,
+                access_key_id,
+                secret_access_key,
                 args.table_id,
+                format,
                 args.columns,
                 args.constraints,
                 args.comment,
