@@ -12,7 +12,6 @@ namespace DB
 class MultiIfToIfPass : public IQueryTreePass
 {
 public:
-
     String getName() override { return "MultiIfToIf"; }
 
     String getDescription() override { return "Optimize multiIf to if for single argument."; }
