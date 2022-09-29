@@ -33,22 +33,22 @@ public:
     ~EachCallOnce() override = default;
     void beforeOperation() override
     {
-        if (failed == suceeded)
+        if (failed == succeeded)
         {
             ++failed;
             throw zkutil::KeeperException("Fault injection", Coordination::Error::ZOPERATIONTIMEOUT);
         }
-        ++suceeded;
+        ++succeeded;
     }
     void afterOperation() override { }
     void reset() override
     {
-        suceeded = 0;
+        succeeded = 0;
         failed = 0;
     }
 
 private:
-    size_t suceeded = 0;
+    size_t succeeded = 0;
     size_t failed = 0;
 };
 

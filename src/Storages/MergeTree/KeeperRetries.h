@@ -69,7 +69,7 @@ public:
             if (retries_info.log)
                 LOG_DEBUG(
                     retries_info.log,
-                    "{}/{}: suceeded after: interations={} total_retries={}",
+                    "{}/{}: succeeded after: iterations={} total_retries={}",
                     retries_info.name,
                     name,
                     iteration_count,
