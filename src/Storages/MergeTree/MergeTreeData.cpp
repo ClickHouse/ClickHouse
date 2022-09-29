@@ -91,6 +91,18 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include <fmt/format.h>
+
+template <>
+struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
+{
+    template <typename FormatCtx>
+    auto format(const DB::DataPartPtr & part, FormatCtx & ctx) const
+    {
+        return fmt::formatter<std::string>::format(part->name, ctx);
+    }
+};
+
 
 namespace fs = std::filesystem;
 
@@ -1915,6 +1927,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
+        LOG_DEBUG(log, "Removing {} parts from filesystem: {} (concurrently)", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
             pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
@@ -1922,7 +1935,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
-                LOG_DEBUG(log, "Removing part from filesystem {} (concurrently)", part->name);
                 part->remove();
                 if (part_names_succeed)
                 {
@@ -1934,11 +1946,11 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
         pool.wait();
     }
-    else
+    else if (!parts_to_remove.empty())
     {
+        LOG_DEBUG(log, "Removing {} parts from filesystem: {}", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
-            LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
             part->remove();
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
