@@ -1342,7 +1342,7 @@ FileCache::QueryContextPtr FileCache::getOrSetQueryContext(
     if (context)
         return context;
 
-    auto query_context = std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache);
+    auto query_context = std::make_shared<QueryContext>(settings.max_loaded_filesystem_cache_size_in_query, settings.skip_download_if_exceeds_query_cache);
     auto query_iter = query_map.emplace(query_id, query_context).first;
     return query_iter->second;
 }
@@ -1351,10 +1351,10 @@ FileCache::QueryContextHolder FileCache::getQueryContextHolder(const String & qu
 {
     std::lock_guard cache_lock(mutex);
 
-    if (!enable_filesystem_query_cache_limit || settings.max_query_cache_size == 0)
+    if (!enable_filesystem_query_cache_limit || settings.max_loaded_filesystem_cache_size_in_query == 0)
         return {};
 
-    /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
+    /// if enable_filesystem_query_cache_limit is true, and max_loaded_filesystem_cache_size_in_query large than zero,
     /// we create context query for current query.
     auto context = getOrSetQueryContext(query_id, settings, cache_lock);
     return QueryContextHolder(query_id, this, context);
