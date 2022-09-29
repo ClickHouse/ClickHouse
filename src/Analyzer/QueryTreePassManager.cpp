@@ -6,6 +6,7 @@
 #include <Analyzer/IfChainToMultiIfPass.h>
 #include <Analyzer/OrderByTupleEliminationPass.h>
 #include <Analyzer/NormalizeCountVariantsPass.h>
+#include <Analyzer/CountDistinctPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -19,6 +20,34 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+/** ClickHouse query tree pass manager
+  *
+  * TODO: Support _shard_num into shardNum() rewriting.
+  * TODO: Support logical expressions optimizer.
+  * TODO: Support fuse sum count optimize_fuse_sum_count_avg, optimize_syntax_fuse_functions.
+  * TODO: Support setting aggregate_functions_null_for_empty.
+  * TODO: Support setting optimize_functions_to_subcolumns.
+  * TODO: Support setting optimize_arithmetic_operations_in_aggregate_functions.
+  * TODO: Support setting convert_query_to_cnf.
+  * TODO: Support setting optimize_using_constraints.
+  * TODO: Support setting optimize_substitute_columns.
+  * TODO: Support GROUP BY injective function elimination.
+  * TODO: Support GROUP BY functions of other keys elimination.
+  * TODO: Support setting optimize_move_functions_out_of_any.
+  * TODO: Support setting optimize_rewrite_sum_if_to_count_if.
+  * TODO: Support settings.optimize_aggregators_of_group_by_keys.
+  * TODO: Support setting optimize_duplicate_order_by_and_distinct.
+  * TODO: Support setting optimize_redundant_functions_in_order_by.
+  * TODO: Support setting optimize_monotonous_functions_in_order_by.
+  * TODO: Support setting optimize_if_transform_strings_to_enum.
+  * TODO: Remove duplicate elements from ORDER BY clause.
+  * TODO: Remove duplicated elements from LIMIT BY clause.
+  * TODO: Remove duplicated elements from USING clause.
+  * TODO: Support settings.optimize_syntax_fuse_functions.
+  * TODO: Support settings.optimize_or_like_chain.
+  * TODO: Support function name normalizer.
+  */
 
 QueryTreePassManager::QueryTreePassManager(ContextPtr context_) : WithContext(context_) {}
 
@@ -87,6 +116,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     const auto & settings = context->getSettingsRef();
 
     manager.addPass(std::make_shared<QueryAnalysisPass>());
+
+    if (settings.count_distinct_optimization)
+        manager.addPass(std::make_shared<CountDistinctPass>());
 
     if (settings.optimize_normalize_count_variants)
         manager.addPass(std::make_shared<NormalizeCountVariantsPass>());
