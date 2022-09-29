@@ -55,6 +55,8 @@ bool isSupportedAlterType(int type)
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
+    OpenTelemetry::SpanHolder span(__FUNCTION__);
+
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
 
@@ -87,6 +89,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         query->cluster = context->getMacros()->expand(query->cluster);
         cluster = context->getCluster(query->cluster);
     }
+
+    span.addAttribute("clickhouse.cluster", query->cluster);
 
     /// TODO: support per-cluster grant
     context->checkAccess(AccessType::CLUSTER);
@@ -164,6 +168,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
+    entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker.enqueueQuery(entry);
 
     return getDistributedDDLStatus(node_path, entry, context);
