@@ -1408,31 +1408,23 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             ops = std::move(new_ops);
         }
 
-        try
-        {
-            Coordination::Responses responses;
-            Coordination::Error e = zookeeper->tryMulti(ops, responses);
-            if (e == Coordination::Error::ZOK)
-                return transaction.commit();
+        Coordination::Responses responses;
+        Coordination::Error e = zookeeper->tryMulti(ops, responses);
+        if (e == Coordination::Error::ZOK)
+            return transaction.commit();
 
-            if (e == Coordination::Error::ZNODEEXISTS)
+        if (e == Coordination::Error::ZNODEEXISTS)
+        {
+            size_t num_check_ops = 2 * absent_part_paths_on_replicas.size();
+            size_t failed_op_index = zkutil::getFailedOpIndex(e, responses);
+            if (failed_op_index < num_check_ops)
             {
-                size_t num_check_ops = 2 * absent_part_paths_on_replicas.size();
-                size_t failed_op_index = zkutil::getFailedOpIndex(e, responses);
-                if (failed_op_index < num_check_ops)
-                {
-                    LOG_INFO(log, "The part {} on a replica suddenly appeared, will recheck checksums", ops[failed_op_index]->getPath());
-                    continue;
-                }
+                LOG_INFO(log, "The part {} on a replica suddenly appeared, will recheck checksums", ops[failed_op_index]->getPath());
+                continue;
             }
+        }
 
-            throw zkutil::KeeperException(e);
-        }
-        catch (const std::exception &)
-        {
-            unlockSharedData(*part);
-            throw;
-        }
+        throw zkutil::KeeperException(e);
     }
 }
 
@@ -7451,8 +7443,9 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     /// can be called only during table initialization
     std::lock_guard lock(table_shared_id_mutex);
 
+    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
-    if (table_shared_id == UUIDHelpers::Nil)
+    if (maybe_has_metadata_in_zookeeper && table_shared_id == UUIDHelpers::Nil)
         createTableSharedID();
 
     return toString(table_shared_id);
@@ -8152,7 +8145,6 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     }
     catch (const Exception & ex)
     {
-        unlockSharedData(*new_data_part);
         LOG_WARNING(log, "Cannot commit empty part {} with error {}", lost_part_name, ex.displayText());
         return false;
     }
