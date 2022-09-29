@@ -39,9 +39,9 @@ public:
         /// If the time zone is specified but empty, throw an exception.
         /// only validate the time_zone part if the number of arguments is 2.
         if (arguments.size() == 2 && time_zone.empty())
-            throw Exception(
-                "Function " + this->getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports a 2nd argument (optional) that must be a valid time zone",
+                this->getName());
 
         if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
         {
@@ -83,8 +83,9 @@ public:
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
         else
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + this->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), this->getName());
     }
 
 };
