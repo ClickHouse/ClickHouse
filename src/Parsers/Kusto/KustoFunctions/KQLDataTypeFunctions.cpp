@@ -36,6 +36,17 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
         datetime_str = std::format("'{}'", String(pos->begin + 1, pos->end - 1));
     else if (pos->type == TokenType::StringLiteral)
         datetime_str = String(pos->begin, pos->end);
+    else if (pos->type == TokenType::BareWord)
+    {
+        datetime_str = String(pos->begin, pos->end);
+        if(Poco::toUpper(datetime_str) == "NULL")
+            out = "NULL";
+        else
+            out = std::format("parseDateTime64BestEffortOrNull({}::String,9,'UTC')", datetime_str);
+        
+        ++pos;
+        return true;
+    }
     else
     {
         auto start = pos;
@@ -46,7 +57,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
                 break;
         }
         --pos;
-        datetime_str = std::format("{}::String", String(start->begin, pos->end));
+        datetime_str = std::format("'{}'", String(start->begin, pos->end));
     }
     out = std::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
     ++pos;
