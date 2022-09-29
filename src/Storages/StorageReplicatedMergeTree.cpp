@@ -5256,10 +5256,9 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path) cons
 }
 
 
-template<typename KeeperPtr>
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id,
-    const KeeperPtr & zookeeper,
+    const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_block_id_path,
     const String & zookeeper_path_prefix) const
 {
@@ -5288,12 +5287,17 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     }
 
     /// todo: temporary, just to compile for now
-    if constexpr (std::is_same_v<KeeperPtr, KeeperAccessPtr>)
-        return createEphemeralLockInZooKeeper(
-            fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *(zookeeper->getKeeper()), zookeeper_block_id_path);
-    else
-        return createEphemeralLockInZooKeeper(
-            fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *zookeeper, zookeeper_block_id_path);
+    return createEphemeralLockInZooKeeper(
+        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *zookeeper, zookeeper_block_id_path);
+}
+
+std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
+    const String & partition_id,
+    const KeeperAccessPtr & zookeeper,
+    const String & zookeeper_block_id_path,
+    const String & zookeeper_path_prefix) const
+{
+    return allocateBlockNumber(partition_id, zookeeper->getKeeper(), zookeeper_block_id_path, zookeeper_path_prefix);
 }
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
