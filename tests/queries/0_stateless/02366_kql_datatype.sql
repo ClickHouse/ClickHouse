@@ -38,6 +38,7 @@ print time(1d);
 print time(-1d);
 print time(6nanoseconds);
 print time(6tick);
+print time(2);
 print '-- guid'
 print guid(74be27de-1e4e-49d9-b579-fe0b331d3642);
 print guid(null);
