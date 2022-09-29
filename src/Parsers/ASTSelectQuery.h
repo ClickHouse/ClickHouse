@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Core/Names.h>
+#include <Interpreters/QueryParameterVisitor.h>
 
 namespace DB
 {

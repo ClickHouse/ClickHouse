@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/SelectUnionMode.h>
+#include <Interpreters/QueryParameterVisitor.h>
 
 namespace DB
 {
