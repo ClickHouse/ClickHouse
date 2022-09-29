@@ -5,12 +5,189 @@ sidebar_position: 2
 description: Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009
 ---
 
-# New York Taxi Data 
+# New York Taxi Data
 
-This dataset can be obtained in two ways:
+The New York taxi data consists of 3+ billion taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009. The dataset can be obtained in a few ways:
 
--   import from raw data
--   download of prepared partitions
+- insert the data directly into ClickHouse Cloud from S3
+- import from raw data
+- download of prepared partitions
+
+## Retrieve the Data from S3
+
+Let's grab a small subset of the data for getting familiar with it. The data is in TSV files in AWS S3, which is easily streamed into
+ClickHouse Cloud using the `s3` table function. Start by creating a table for the taxi rides:
+
+```sql
+CREATE TABLE trips (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime)
+```
+
+The following command streams three files from an S3 bucket into the `trips` table (the `{0..2}` syntax is a wildcard for the values 0, 1, and 2):
+
+```sql
+INSERT INTO trips
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM url(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+    'TabSeparatedWithNames'
+)
+```
+
+Let's see how many rows were inserted:
+
+```sql
+SELECT count()
+FROM trips
+```
+
+Each TSV file has about 1M rows, and the three files have 3,000,317 rows. Let's look at a few rows:
+
+```sql
+SELECT *
+FROM trips
+LIMIT 10
+```
+
+Notice there are columns for the pickup and dropoff dates, geo coordinates, fare details, New York neighborhoods, and more:
+
+```response
+┌────trip_id─┬─────pickup_datetime─┬────dropoff_datetime─┬───pickup_longitude─┬────pickup_latitude─┬──dropoff_longitude─┬───dropoff_latitude─┬─passenger_count─┬─trip_distance─┬─fare_amount─┬─extra─┬─tip_amount─┬─tolls_amount─┬─total_amount─┬─payment_type─┬─pickup_ntaname─────────────────────────────┬─dropoff_ntaname────────────────────────────┐
+│ 1200864931 │ 2015-07-01 00:00:13 │ 2015-07-01 00:14:41 │ -73.99046325683594 │ 40.746116638183594 │ -73.97918701171875 │  40.78467559814453 │               5 │          3.54 │        13.5 │   0.5 │          1 │            0 │         15.8 │ CSH          │ Midtown-Midtown South                      │ Upper West Side                            │
+│ 1200018648 │ 2015-07-01 00:00:16 │ 2015-07-01 00:02:57 │ -73.78358459472656 │ 40.648677825927734 │ -73.80242919921875 │  40.64767837524414 │               1 │          1.45 │           6 │   0.5 │          0 │            0 │          7.3 │ CRE          │ Airport                                    │ Airport                                    │
+│ 1201452450 │ 2015-07-01 00:00:20 │ 2015-07-01 00:11:07 │ -73.98579406738281 │  40.72777557373047 │ -74.00482177734375 │  40.73748779296875 │               5 │          1.56 │         8.5 │   0.5 │       1.96 │            0 │        11.76 │ CSH          │ East Village                               │ West Village                               │
+│ 1202368372 │ 2015-07-01 00:00:40 │ 2015-07-01 00:05:46 │ -74.00206756591797 │  40.73833084106445 │ -74.00658416748047 │  40.74875259399414 │               2 │             1 │           6 │   0.5 │          0 │            0 │          7.3 │ CRE          │ West Village                               │ Hudson Yards-Chelsea-Flatiron-Union Square │
+│ 1200831168 │ 2015-07-01 00:01:06 │ 2015-07-01 00:09:23 │ -73.98748016357422 │  40.74344253540039 │ -74.00575256347656 │ 40.716793060302734 │               1 │           2.3 │           9 │   0.5 │          2 │            0 │         12.3 │ CSH          │ Hudson Yards-Chelsea-Flatiron-Union Square │ SoHo-TriBeCa-Civic Center-Little Italy     │
+│ 1201362116 │ 2015-07-01 00:01:07 │ 2015-07-01 00:03:31 │  -73.9926986694336 │  40.75826644897461 │ -73.98628997802734 │  40.76075744628906 │               1 │           0.6 │           4 │   0.5 │          0 │            0 │          5.3 │ CRE          │ Clinton                                    │ Midtown-Midtown South                      │
+│ 1200639419 │ 2015-07-01 00:01:13 │ 2015-07-01 00:03:56 │ -74.00382995605469 │ 40.741981506347656 │ -73.99711608886719 │ 40.742271423339844 │               1 │          0.49 │           4 │   0.5 │          0 │            0 │          5.3 │ CRE          │ Hudson Yards-Chelsea-Flatiron-Union Square │ Hudson Yards-Chelsea-Flatiron-Union Square │
+│ 1201181622 │ 2015-07-01 00:01:17 │ 2015-07-01 00:05:12 │  -73.9512710571289 │  40.78261947631836 │ -73.95230865478516 │  40.77476119995117 │               4 │          0.97 │           5 │   0.5 │          1 │            0 │          7.3 │ CSH          │ Upper East Side-Carnegie Hill              │ Yorkville                                  │
+│ 1200978273 │ 2015-07-01 00:01:28 │ 2015-07-01 00:09:46 │ -74.00822448730469 │  40.72113037109375 │ -74.00422668457031 │  40.70782470703125 │               1 │          1.71 │         8.5 │   0.5 │       1.96 │            0 │        11.76 │ CSH          │ SoHo-TriBeCa-Civic Center-Little Italy     │ Battery Park City-Lower Manhattan          │
+│ 1203283366 │ 2015-07-01 00:01:47 │ 2015-07-01 00:24:26 │ -73.98199462890625 │  40.77289962768555 │ -73.91968536376953 │ 40.766082763671875 │               3 │          5.26 │        19.5 │   0.5 │        5.2 │            0 │           26 │ CSH          │ Lincoln Square                             │ Astoria                                    │
+└────────────┴─────────────────────┴─────────────────────┴────────────────────┴────────────────────┴────────────────────┴────────────────────┴─────────────────┴───────────────┴─────────────┴───────┴────────────┴──────────────┴──────────────┴──────────────┴────────────────────────────────────────────┴────────────────────────────────────────────┘
+```
+
+Let's run a few queries. This query shows us the top 10 neighborhoods that have the most frequent pickups:
+
+``` sql
+SELECT
+   pickup_ntaname,
+   count(*) AS count
+FROM trips
+GROUP BY pickup_ntaname
+ORDER BY count DESC
+LIMIT 10
+```
+
+The result is:
+
+```response
+┌─pickup_ntaname─────────────────────────────┬──count─┐
+│ Midtown-Midtown South                      │ 526864 │
+│ Hudson Yards-Chelsea-Flatiron-Union Square │ 288797 │
+│ West Village                               │ 210436 │
+│ Turtle Bay-East Midtown                    │ 197111 │
+│ Upper East Side-Carnegie Hill              │ 184327 │
+│ Airport                                    │ 151343 │
+│ SoHo-TriBeCa-Civic Center-Little Italy     │ 144967 │
+│ Murray Hill-Kips Bay                       │ 138599 │
+│ Upper West Side                            │ 135469 │
+│ Clinton                                    │ 130002 │
+└────────────────────────────────────────────┴────────┘
+```
+
+This query shows the average fare based on the number of passengers:
+
+``` sql
+SELECT
+   passenger_count,
+   avg(total_amount)
+FROM trips
+GROUP BY passenger_count
+```
+
+```response
+┌─passenger_count─┬──avg(total_amount)─┐
+│               0 │ 25.226335263065018 │
+│               1 │ 15.961279340656672 │
+│               2 │ 17.146174183960667 │
+│               3 │  17.65380033178517 │
+│               4 │ 17.248804201047456 │
+│               5 │ 16.353501285179135 │
+│               6 │ 15.995094439202836 │
+│               7 │ 62.077143805367605 │
+│               8 │ 26.120000791549682 │
+│               9 │ 10.300000190734863 │
+└─────────────────┴────────────────────┘
+```
+
+Here's a correlation between the number of passengers and the distance of the trip:
+
+``` sql
+SELECT
+   passenger_count,
+   toYear(pickup_datetime) AS year,
+   round(trip_distance) AS distance,
+   count(*)
+FROM trips
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC
+```
+
+The first part of the result is:
+
+```response
+┌─passenger_count─┬─year─┬─distance─┬─count()─┐
+│               1 │ 2015 │        1 │  748644 │
+│               1 │ 2015 │        2 │  521602 │
+│               1 │ 2015 │        3 │  225077 │
+│               2 │ 2015 │        1 │  144990 │
+│               1 │ 2015 │        4 │  134782 │
+│               1 │ 2015 │        0 │  127284 │
+│               2 │ 2015 │        2 │  106411 │
+│               1 │ 2015 │        5 │   72725 │
+│               5 │ 2015 │        1 │   59343 │
+│               1 │ 2015 │        6 │   53447 │
+│               2 │ 2015 │        3 │   48019 │
+│               3 │ 2015 │        1 │   44865 │
+│               6 │ 2015 │        1 │   39409 │
+```
+
 
 ## How to Import the Raw Data {#how-to-import-the-raw-data}
 
@@ -292,7 +469,7 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
-:::info    
+:::info
 If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
 :::
 
@@ -390,5 +567,3 @@ We ran queries using a client located in a different datacenter than where the c
 | 1, AWS c5n.9xlarge    | 0.130 | 0.584 | 0.777 | 1.811 |
 | 3, AWS c5n.9xlarge    | 0.057 | 0.231 | 0.285 | 0.641 |
 | 140, E5-2650v2        | 0.028 | 0.043 | 0.051 | 0.072 |
-
-[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
