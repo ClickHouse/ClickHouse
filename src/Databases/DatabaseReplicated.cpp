@@ -871,8 +871,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     std::move(table_name_to_metadata.begin(), table_name_to_metadata.end(), std::back_inserter(table_name_to_metadata_sorted));
     std::sort(table_name_to_metadata_sorted.begin(), table_name_to_metadata_sorted.end(), [](const NameToMetadata & lhs, const NameToMetadata & rhs) -> bool
     {
-        const bool is_materialized_view_lhs = lhs.second.find("MATERIALIZED") != std::string::npos;
-        const bool is_materialized_view_rhs = rhs.second.find("MATERIALIZED") != std::string::npos;
+        const bool is_materialized_view_lhs = lhs.second.find("MATERIALIZED VIEW") != std::string::npos;
+        const bool is_materialized_view_rhs = rhs.second.find("MATERIALIZED VIEW") != std::string::npos;
         return is_materialized_view_lhs < is_materialized_view_rhs;
     });
 
