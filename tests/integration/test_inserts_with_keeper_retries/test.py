@@ -32,7 +32,7 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
         settings = {
             "insert_quorum": "2",
             "insert_quorum_parallel": "0",
-            "insert_part_commit_max_retries": "10",
+            "insert_keeper_max_retries": "10",
         }
         node1.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
@@ -83,7 +83,7 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
         settings = {
             "insert_quorum": "2",
             "insert_quorum_parallel": "0",
-            "insert_part_commit_max_retries": "10",
+            "insert_keeper_max_retries": "20",
         }
         node1.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"

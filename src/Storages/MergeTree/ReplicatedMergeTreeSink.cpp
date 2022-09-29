@@ -152,14 +152,27 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-    const auto& settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
     keeper_retries_info = RetriesInfo(
-        settings.insert_part_commit_max_retries,
-        settings.insert_part_commit_retry_initial_backoff_ms,
-        settings.insert_part_commit_retry_max_backoff_ms);
+        "ReplicatedMergeTreeSink::consume",
+        log,
+        settings.insert_keeper_max_retries,
+        settings.insert_keeper_retry_initial_backoff_ms,
+        settings.insert_keeper_retry_max_backoff_ms);
 
-    auto zookeeper = std::make_shared<KeeperAccess>(storage.getZooKeeper());
-    // assertSessionIsNotExpired(zookeeper);
+    KeeperAccessPtr zookeeper;
+    if (0 == settings.insert_keeper_fault_injection_mode)
+        zookeeper = std::make_shared<KeeperAccess>(storage.getZooKeeper(), "ReplicatedMergeTreeSink::consume", log);
+    else if (1 == settings.insert_keeper_fault_injection_mode)
+        zookeeper = std::make_shared<KeeperAccess>(
+            storage.getZooKeeper(), std::make_unique<EachCallOnce>(), "ReplicatedMergeTreeSink::consume", log);
+    else
+        zookeeper = std::make_shared<KeeperAccess>(
+            storage.getZooKeeper(),
+            Rand::create(
+                settings.insert_keeper_fault_injection_seed, double(settings.insert_keeper_fault_injection_bernoulli_distribution_param)),
+            "ReplicatedMergeTreeSink::consume",
+            log);
 
     /** If write is with quorum, then we check that the required number of replicas is now live,
       *  and also that for all previous parts for which quorum is required, this quorum is reached.
@@ -167,7 +180,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
       * TODO Too complex logic, you can do better.
       */
     size_t replicas_num = 0;
-    RetriesControl quorum_retries_ctl(keeper_retries_info);
+    RetriesControl quorum_retries_ctl("checkQuorumPrecondition", keeper_retries_info);
     while (quorum_retries_ctl.canTry())
     {
         zookeeper->setKeeper(storage.getZooKeeper());
@@ -347,7 +360,8 @@ void ReplicatedMergeTreeSink::commitPart(
 
     bool is_already_existing_part = false;
 
-    RetriesControl retries_ctl(keeper_retries_info);
+    zookeeper->resetFaultInjection();
+    RetriesControl retries_ctl("commitPart", keeper_retries_info);
     while (retries_ctl.canTry())
     {
         /// create new zookeeper session if zookeeper session is expired
@@ -659,7 +673,8 @@ void ReplicatedMergeTreeSink::commitPart(
 
     if (isQuorumEnabled())
     {
-        RetriesControl quorum_retries_ctl(keeper_retries_info);
+        zookeeper->resetFaultInjection();
+        RetriesControl quorum_retries_ctl("waitForQuorum", keeper_retries_info);
         while (quorum_retries_ctl.canTry())
         {
             try
