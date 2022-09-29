@@ -9,7 +9,7 @@ namespace DB
   * Example: SELECT multiIf(x, 1, 0);
   * Result: SELECT if(x, 1, 0);
   */
-class MultiIfToIfPass : public IQueryTreePass
+class MultiIfToIfPass final : public IQueryTreePass
 {
 public:
     String getName() override { return "MultiIfToIf"; }
