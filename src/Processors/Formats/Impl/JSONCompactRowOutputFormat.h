@@ -31,6 +31,9 @@ private:
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
 
+    bool supportTotals() const override { return true; }
+    bool supportExtremes() const override { return true; }
+
     void writeBeforeTotals() override;
     void writeAfterTotals() override;
 

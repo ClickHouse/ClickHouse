@@ -8,6 +8,7 @@
 #include <Poco/Util/Application.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
+#include <Common/EventNotifier.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -30,6 +31,9 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ThreadPoolReader.h>
+#include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -52,7 +56,6 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
@@ -143,7 +146,7 @@ namespace ErrorCodes
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
-struct ContextSharedPart
+struct ContextSharedPart : boost::noncopyable
 {
     Poco::Logger * log = &Poco::Logger::get("Context");
 
@@ -153,7 +156,6 @@ struct ContextSharedPart
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_user_defined_executable_functions_mutex;
-    mutable std::mutex external_models_mutex;
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
@@ -191,9 +193,7 @@ struct ContextSharedPart
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
-    mutable std::unique_ptr<ExternalModelsLoader> external_models_loader;
 
-    ExternalLoaderXMLConfigRepository * external_models_config_repository = nullptr;
     scope_guard models_repository_guard;
 
     ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository = nullptr;
@@ -215,6 +215,7 @@ struct ContextSharedPart
     std::unique_ptr<AccessControl> access_control;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -229,6 +230,12 @@ struct ContextSharedPart
     mutable std::unique_ptr<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::unique_ptr<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::unique_ptr<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+
+    mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
+    mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
+    mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
+
+    mutable std::unique_ptr<ThreadPool> threadpool_writer;
 
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
@@ -313,15 +320,76 @@ struct ContextSharedPart
 
     ~ContextSharedPart()
     {
-        /// Wait for thread pool for background writes,
+        /// Wait for thread pool for background reads and writes,
         /// since it may use per-user MemoryTracker which will be destroyed here.
-        try
+        if (asynchronous_remote_fs_reader)
         {
-            IObjectStorage::getThreadPoolWriter().wait();
+            try
+            {
+                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
+                asynchronous_remote_fs_reader->wait();
+                asynchronous_remote_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
-        catch (...)
+
+        if (asynchronous_local_fs_reader)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            try
+            {
+                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                asynchronous_local_fs_reader->wait();
+                asynchronous_local_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (synchronous_local_fs_reader)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                synchronous_local_fs_reader->wait();
+                synchronous_local_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (threadpool_writer)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing threadpool writer");
+                threadpool_writer->wait();
+                threadpool_writer.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (load_marks_threadpool)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing marks loader");
+                load_marks_threadpool->wait();
+                load_marks_threadpool.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
         try
@@ -350,8 +418,6 @@ struct ContextSharedPart
             external_dictionaries_loader->enablePeriodicUpdates(false);
         if (external_user_defined_executable_functions_loader)
             external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
-        if (external_models_loader)
-            external_models_loader->enablePeriodicUpdates(false);
 
         Session::shutdownNamedSessions();
 
@@ -382,7 +448,6 @@ struct ContextSharedPart
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
-        std::unique_ptr<ExternalModelsLoader> delete_external_models_loader;
         std::unique_ptr<BackgroundSchedulePool> delete_buffer_flush_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_distributed_schedule_pool;
@@ -421,7 +486,6 @@ struct ContextSharedPart
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
-            delete_external_models_loader = std::move(external_models_loader);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
@@ -449,7 +513,6 @@ struct ContextSharedPart
         delete_embedded_dictionaries.reset();
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
-        delete_external_models_loader.reset();
         delete_ddl_worker.reset();
         delete_buffer_flush_schedule_pool.reset();
         delete_schedule_pool.reset();
@@ -510,6 +573,7 @@ void Context::initGlobal()
     assert(!global_context_instance);
     global_context_instance = shared_from_this();
     DatabaseCatalog::init(shared_from_this());
+    EventNotifier::init();
 }
 
 SharedContextHolder Context::createShared()
@@ -1467,48 +1531,6 @@ ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedEx
     return *shared->external_user_defined_executable_functions_loader;
 }
 
-const ExternalModelsLoader & Context::getExternalModelsLoader() const
-{
-    return const_cast<Context *>(this)->getExternalModelsLoader();
-}
-
-ExternalModelsLoader & Context::getExternalModelsLoader()
-{
-    std::lock_guard lock(shared->external_models_mutex);
-    return getExternalModelsLoaderUnlocked();
-}
-
-ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked()
-{
-    if (!shared->external_models_loader)
-        shared->external_models_loader =
-            std::make_unique<ExternalModelsLoader>(getGlobalContext());
-    return *shared->external_models_loader;
-}
-
-void Context::loadOrReloadModels(const Poco::Util::AbstractConfiguration & config)
-{
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "models_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
-
-    std::lock_guard lock(shared->external_models_mutex);
-
-    auto & external_models_loader = getExternalModelsLoaderUnlocked();
-
-    if (shared->external_models_config_repository)
-    {
-        shared->external_models_config_repository->updatePatterns(patterns);
-        external_models_loader.reloadConfig(shared->external_models_config_repository->getName());
-        return;
-    }
-
-    auto app_path = getPath();
-    auto config_path = getConfigRef().getString("config-file", "config.xml");
-    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
-    shared->external_models_config_repository = repository.get();
-    shared->models_repository_guard = external_models_loader.addConfigRepository(std::move(repository));
-}
-
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard lock(shared->embedded_dictionaries_mutex);
@@ -1688,6 +1710,17 @@ void Context::dropMarkCache() const
         shared->mark_cache->reset();
 }
 
+ThreadPool & Context::getLoadMarksThreadpool() const
+{
+    auto lock = getLock();
+    if (!shared->load_marks_threadpool)
+    {
+        constexpr size_t pool_size = 50;
+        constexpr size_t queue_size = 1000000;
+        shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+    }
+    return *shared->load_marks_threadpool;
+}
 
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
 {
@@ -2828,7 +2861,7 @@ OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, 
 }
 
 
-time_t Context::getUptimeSeconds() const
+double Context::getUptimeSeconds() const
 {
     auto lock = getLock();
     return shared->uptime_watch.elapsedSeconds();
@@ -2974,7 +3007,7 @@ const IHostContextPtr & Context::getHostContext() const
 }
 
 
-std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
+std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
 {
     auto lock = getLock();
 
@@ -3407,6 +3440,66 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
+IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
+{
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+
+    switch (type)
+    {
+        case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
+        {
+            if (!shared->asynchronous_remote_fs_reader)
+            {
+                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 100);
+                auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
+
+                shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
+            }
+
+            return *shared->asynchronous_remote_fs_reader;
+        }
+        case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
+        {
+            if (!shared->asynchronous_local_fs_reader)
+            {
+                auto pool_size = config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
+                auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
+
+                shared->asynchronous_local_fs_reader = std::make_unique<ThreadPoolReader>(pool_size, queue_size);
+            }
+
+            return *shared->asynchronous_local_fs_reader;
+        }
+        case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
+        {
+            if (!shared->synchronous_local_fs_reader)
+            {
+                shared->synchronous_local_fs_reader = std::make_unique<SynchronousReader>();
+            }
+
+            return *shared->synchronous_local_fs_reader;
+        }
+    }
+}
+
+ThreadPool & Context::getThreadPoolWriter() const
+{
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+
+    if (!shared->threadpool_writer)
+    {
+        auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
+        auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
+
+        shared->threadpool_writer = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+    }
+
+    return *shared->threadpool_writer;
+}
 
 ReadSettings Context::getReadSettings() const
 {
@@ -3428,6 +3521,8 @@ ReadSettings Context::getReadSettings() const
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
+
+    res.load_marks_asynchronously = settings.load_marks_asynchronously;
 
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;

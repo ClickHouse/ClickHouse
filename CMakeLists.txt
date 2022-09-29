@@ -18,7 +18,7 @@ include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
-include (cmake/git_status.cmake)
+include (cmake/git.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -143,6 +143,8 @@ include (cmake/add_warning.cmake)
 if (COMPILER_CLANG)
     # generate ranges for fast "addr2line" search
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        # NOTE: that clang has a bug because of it does not emit .debug_aranges
+        # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 

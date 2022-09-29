@@ -35,6 +35,32 @@
 
 #    include <fstream>
 
+namespace ProfileEvents
+{
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
+}
+
+namespace DB
+{
+
+bool S3Exception::isRetryableError() const
+{
+    /// Looks like these list is quite conservative, add more codes if you wish
+    static const std::unordered_set<Aws::S3::S3Errors> unretryable_errors = {
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        Aws::S3::S3Errors::ACCESS_DENIED,
+        Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
+        Aws::S3::S3Errors::INVALID_SIGNATURE,
+        Aws::S3::S3Errors::NO_SUCH_UPLOAD,
+        Aws::S3::S3Errors::NO_SUCH_BUCKET,
+    };
+
+    return !unretryable_errors.contains(code);
+}
+
+}
+
 namespace
 {
 
@@ -45,12 +71,14 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
 
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
+    /// We map levels to our own logger 1 to 1 except WARN+ levels. In most cases we failover such errors with retries
+    /// and don't want to see them as Errors in our logs.
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
     {
-        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::error, Poco::Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::error, Poco::Message::PRIO_ERROR}},
-        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::warning, Poco::Message::PRIO_WARNING}},
+        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
         {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
@@ -792,8 +820,12 @@ namespace S3
     }
 
 
-    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
+        ProfileEvents::increment(ProfileEvents::S3HeadObject);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
@@ -815,9 +847,9 @@ namespace S3
         return {};
     }
 
-    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
-        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error).size;
+        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error, for_disk_s3).size;
     }
 }
 
