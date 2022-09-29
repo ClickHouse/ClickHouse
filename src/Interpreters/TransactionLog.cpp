@@ -5,7 +5,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include <Common/ZooKeeper/Types.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
@@ -114,58 +113,6 @@ String TransactionLog::serializeTID(const TransactionID & tid)
     return buf.str();
 }
 
-template <bool with_multiread>
-std::vector<std::pair<TIDHash, TransactionLog::CSNEntry>>
-TransactionLog::getLoaded(Strings::const_iterator beg, Strings::const_iterator end)
-{
-    using FutureGetResponses = std::vector<std::future<Coordination::GetResponse>>;
-    using ResponsesType = std::conditional_t<with_multiread, Coordination::Responses, FutureGetResponses>;
-
-    size_t entries_count = std::distance(beg, end);
-    ResponsesType entries_data;
-    entries_data.reserve(entries_count);
-
-    if constexpr (with_multiread)
-    {
-        Coordination::Requests requests;
-        requests.reserve(entries_count);
-        for (auto it = beg; it != end; ++it)
-            requests.emplace_back(zkutil::makeGetRequest(fs::path(zookeeper_path_log) / *it));
-
-        entries_data = TSA_READ_ONE_THREAD(zookeeper)->multi(requests);
-    }
-    else
-    {
-        for (auto it = beg; it != end; ++it)
-            entries_data.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
-    }
-
-    auto it = beg;
-    std::vector<std::pair<TIDHash, CSNEntry>> loaded;
-    loaded.reserve(entries_count);
-    for (size_t i = 0; i < entries_count; ++i, ++it)
-    {
-        auto res = [&]
-        {
-            if constexpr (with_multiread)
-                return std::move(dynamic_cast<Coordination::GetResponse &>(*entries_data[i]));
-            else
-                return entries_data[i].get();
-        }();
-
-        CSN csn = deserializeCSN(*it);
-        TransactionID tid = deserializeTID(res.data);
-        loaded.emplace_back(tid.getHash(), CSNEntry{csn, tid});
-        LOG_TEST(log, "Got entry {} -> {}", tid, csn);
-    }
-
-    return loaded;
-}
-
-template std::vector<std::pair<TIDHash, TransactionLog::CSNEntry>>
-TransactionLog::getLoaded<true>(Strings::const_iterator beg, Strings::const_iterator end);
-template std::vector<std::pair<TIDHash, TransactionLog::CSNEntry>>
-TransactionLog::getLoaded<false>(Strings::const_iterator beg, Strings::const_iterator end);
 
 void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_iterator end)
 {
@@ -175,9 +122,23 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
 
     String last_entry = *std::prev(end);
     LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path_log, *beg, last_entry);
+    std::vector<std::string> entry_paths;
+    entry_paths.reserve(entries_count);
+    for (auto it = beg; it != end; ++it)
+        entry_paths.emplace_back(fs::path(zookeeper_path_log) / *it);
 
-    auto loaded = TSA_READ_ONE_THREAD(zookeeper)->getApiVersion() >= KeeperApiVersion::WITH_MULTI_READ ? getLoaded<true>(beg, end)
-                                                                                                       : getLoaded<false>(beg, end);
+    auto entries = TSA_READ_ONE_THREAD(zookeeper)->get(entry_paths);
+    std::vector<std::pair<TIDHash, CSNEntry>> loaded;
+    loaded.reserve(entries_count);
+    auto it = beg;
+    for (size_t i = 0; i < entries_count; ++i, ++it)
+    {
+        auto res = entries[i];
+        CSN csn = deserializeCSN(*it);
+        TransactionID tid = deserializeTID(res.data);
+        loaded.emplace_back(tid.getHash(), CSNEntry{csn, tid});
+        LOG_TEST(log, "Got entry {} -> {}", tid, csn);
+    }
 
     NOEXCEPT_SCOPE_STRICT({
         std::lock_guard lock{mutex};

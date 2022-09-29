@@ -991,6 +991,24 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     return future;
 }
 
+std::future<Coordination::ListResponse>
+ZooKeeper::asyncTryGetChildren(const std::string & path, Coordination::ListRequestType list_request_type)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const Coordination::ListResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->list(path, list_request_type, std::move(callback), {});
+    return future;
+}
+
 std::future<Coordination::RemoveResponse> ZooKeeper::asyncRemove(const std::string & path, int32_t version)
 {
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
