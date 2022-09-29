@@ -4,14 +4,15 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <base/CachedFn.h>
 #include <base/demangle.h>
 
 #include <atomic>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <map>
 
 #include <Common/config.h>
 
@@ -462,20 +463,36 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     return toStringStatic(frame_pointers_copy, offset, size);
 }
 
-static CachedFn<&toStringImpl> & cacheInstance()
+using StackTraceRepresentation = std::tuple<StackTrace::FramePointers, size_t, size_t>;
+using StackTraceCache = std::map<StackTraceRepresentation, std::string>;
+
+static StackTraceCache & cacheInstance()
 {
-    static CachedFn<&toStringImpl> cache;
+    static StackTraceCache cache;
     return cache;
 }
+
+static std::mutex stacktrace_cache_mutex;
 
 std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    return cacheInstance()(frame_pointers, offset, size);
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+    std::lock_guard lock{stacktrace_cache_mutex};
+
+    StackTraceRepresentation key{frame_pointers, offset, size};
+    auto & cache = cacheInstance();
+    if (cache.contains(key))
+        return cache[key];
+
+    auto result = toStringImpl(frame_pointers, offset, size);
+    cache[key] = result;
+    return result;
 }
 
 void StackTrace::dropCache()
 {
-    cacheInstance().drop();
+    std::lock_guard lock{stacktrace_cache_mutex};
+    cacheInstance().clear();
 }
