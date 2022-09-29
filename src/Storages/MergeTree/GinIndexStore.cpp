@@ -176,6 +176,9 @@ UInt32 GinIndexStore::getNextSegmentID()
 
 UInt32 GinIndexStore::getSegmentNum()
 {
+    if (cached_segment_num)
+        return cached_segment_num;
+
     String sid_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
     if (!storage->exists(sid_file_name))
         return 0;
@@ -190,7 +193,9 @@ UInt32 GinIndexStore::getSegmentNum()
         size_type->getDefaultSerialization()->deserializeBinary(field_rows, *istr);
         result = field_rows.get<UInt32>();
     }
-    return result - 1;
+
+    cached_segment_num = result - 1;
+    return cached_segment_num;
 }
 
 bool GinIndexStore::needToWrite() const
@@ -308,10 +313,9 @@ void GinIndexStoreDeserializer::readSegments()
         return;
 
     GinIndexSegments segments (segment_num);
-    if (segment_file_stream == nullptr)
-    {
-        initFileStreams();
-    }
+
+    assert(segment_file_stream != nullptr);
+
     segment_file_stream->read(reinterpret_cast<char*>(segments.data()), segment_num * sizeof(GinIndexSegment));
     for (size_t i = 0; i < segment_num; ++i)
     {

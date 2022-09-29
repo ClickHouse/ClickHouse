@@ -157,6 +157,8 @@ private:
     DataPartStoragePtr storage;
     DataPartStorageBuilderPtr data_part_storage_builder;
 
+    UInt32 cached_segment_num = 0;
+
     std::mutex gin_index_store_mutex;
 
     /// Terms dictionaries which are loaded from .gin_dict files
