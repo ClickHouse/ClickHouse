@@ -25,7 +25,7 @@ private:
     IServer & server [[maybe_unused]];
     Poco::Logger * log;
     std::string conf_name;
-    std::list<TCPServerConnectionFactory::Ptr> stack;
+    std::vector<TCPServerConnectionFactory::Ptr> stack;
     AllowedClientHosts allowed_client_hosts;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
@@ -85,6 +85,7 @@ public:
     }
 
     size_t size() { return stack.size(); }
+    bool empty() { return stack.empty(); }
 };
 
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <list>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -19,11 +18,11 @@ class TCPProtocolStackHandler : public Poco::Net::TCPServerConnection
 private:
     IServer & server;
     TCPServer & tcp_server;
-    std::list<TCPServerConnectionFactory::Ptr> stack;
+    std::vector<TCPServerConnectionFactory::Ptr> stack;
     std::string conf_name;
 
 public:
-    TCPProtocolStackHandler(IServer & server_, TCPServer & tcp_server_, const StreamSocket & socket, const std::list<TCPServerConnectionFactory::Ptr> & stack_, const std::string & conf_name_)
+    TCPProtocolStackHandler(IServer & server_, TCPServer & tcp_server_, const StreamSocket & socket, const std::vector<TCPServerConnectionFactory::Ptr> & stack_, const std::string & conf_name_)
         : TCPServerConnection(socket), server(server_), tcp_server(tcp_server_), stack(stack_), conf_name(conf_name_)
     {}
 

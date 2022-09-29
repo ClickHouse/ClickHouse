@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/SharedPtr.h>
-#include "Server/TCPProtocolStackData.h"
+#include <Server/TCPProtocolStackData.h>
 
 namespace Poco
 {
