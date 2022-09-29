@@ -320,7 +320,16 @@ void MergeTreeRangeReader::ReadResult::clear()
     num_rows_to_skip_in_last_granule += rows_per_granule.back();
     rows_per_granule.assign(rows_per_granule.size(), 0);
     total_rows_per_granule = 0;
+    if (filter)
+        filter_bytes_map.erase(&filter->getData());
     filter_holder = nullptr;
+    filter = nullptr;
+}
+void MergeTreeRangeReader::ReadResult::clearFilter()
+{
+    if (!filter)
+        return;
+    filter_bytes_map.erase(&filter->getData());
     filter = nullptr;
 }
 

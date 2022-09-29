@@ -198,8 +198,8 @@ public:
         void optimize(bool can_read_incomplete_granules, bool allow_filter_columns);
         /// Remove all rows from granules.
         void clear();
+        void clearFilter();
 
-        void clearFilter() { filter = nullptr; }
         void setFilterConstTrue();
         void setFilterConstFalse();
 
