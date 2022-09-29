@@ -1722,12 +1722,6 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
-
-Оценивает внешнюю модель.
-
-Принимает на вход имя и аргументы модели. Возвращает Float64.
-
 ## throwIf(x\[, message\[, error_code\]\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.

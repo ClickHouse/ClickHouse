@@ -367,7 +367,7 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & cu
         return false;
     if (maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK))
         return true;
-    if (maybe_database_mark.empty())
+    if (!maybe_database_mark.empty())
         return false;
 
     /// Old versions did not have REPLICATED_DATABASE_MARK. Check specific nodes exist and add mark.
