@@ -1928,62 +1928,62 @@ void Server::createServers(
             std::string prefix = conf_name + ".";
             std::unordered_set<std::string> pset {conf_name};
 
-            if (config.has(prefix + "port"))
+            if (!config.has(prefix + "port"))
+                continue;
+
+            std::string description {"<undefined> protocol"};
+            if (config.has(prefix + "description"))
+                description = config.getString(prefix + "description");
+            std::string port_name = prefix + "port";
+            bool is_secure = false;
+            auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+
+            while (true)
             {
-                std::string description {"<undefined> protocol"};
-                if (config.has(prefix + "description"))
-                    description = config.getString(prefix + "description");
-                std::string port_name = prefix + "port";
-                bool is_secure = false;
-                auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
-
-                while (true)
+                // if there is no "type" - it's a reference to another protocol and this is just an endpoint
+                if (config.has(prefix + "type"))
                 {
-                    // if there is no "type" - it's a reference to another protocol and this is just an endpoint
-                    if (config.has(prefix + "type"))
+                    std::string type = config.getString(prefix + "type");
+                    if (type == "tls")
                     {
-                        std::string type = config.getString(prefix + "type");
-                        if (type == "tls")
-                        {
-                            if (is_secure)
-                                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
-                            is_secure = true;
-                        }
-
-                        stack->append(create_factory(type, conf_name));
+                        if (is_secure)
+                            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
+                        is_secure = true;
                     }
 
-                    if (!config.has(prefix + "impl"))
-                        break;
-
-                    conf_name = "protocols." + config.getString(prefix + "impl");
-                    prefix = conf_name + ".";
-
-                    if (!pset.insert(conf_name).second)
-                        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+                    stack->append(create_factory(type, conf_name));
                 }
 
-                if (!stack || stack->size() == 0)
-                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
+                if (!config.has(prefix + "impl"))
+                    break;
 
-                createServer(config, host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
-                {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(config, socket, host, port, is_secure);
-                    socket.setReceiveTimeout(settings.receive_timeout);
-                    socket.setSendTimeout(settings.send_timeout);
+                conf_name = "protocols." + config.getString(prefix + "impl");
+                prefix = conf_name + ".";
 
-                    return ProtocolServerAdapter(
-                        host,
-                        port_name.c_str(),
-                        description + ": " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            stack.release(),
-                            server_pool,
-                            socket,
-                            new Poco::Net::TCPServerParams));
-                });
+                if (!pset.insert(conf_name).second)
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
             }
+
+            if (stack->empty())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
+
+            createServer(config, host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, host, port, is_secure);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+
+                return ProtocolServerAdapter(
+                    host,
+                    port_name.c_str(),
+                    description + ": " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        stack.release(),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
+            });
         }
     }
 
