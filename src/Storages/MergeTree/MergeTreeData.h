@@ -940,6 +940,7 @@ protected:
     friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataWriter;
     friend class MergeTask;
+    friend class IMergedBlockOutputStream; // for access to log
 
     bool require_part_metadata;
 
