@@ -437,9 +437,7 @@ void ZooKeeperErrorResponse::writeImpl(WriteBuffer & out) const
 
 void ZooKeeperMultiRequest::checkOperationType(OperationType type)
 {
-    if (operation_type.has_value() && *operation_type != type)
-        throw Exception("Illegal mixing of read and write operations in multi request", Error::ZBADARGUMENTS);
-
+    chassert(!operation_type.has_value() || *operation_type == type);
     operation_type = type;
 }
 
