@@ -140,11 +140,11 @@ struct ToStartOfDayImpl
         auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
         return date_time < 0xffffffff ? date_time : time_zone.toDate(0xffffffff);
     }
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toDate(t.whole), 0};
     }
-    static inline Int64 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d)) * DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale);
     }
@@ -173,11 +173,11 @@ struct ToMondayImpl
     {
         return time_zone.toFirstDayNumOfWeek(DayNum(d));
     }
-    static inline Int64 execute_extended_result(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
     }
-    static inline Int32 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
     }
@@ -204,11 +204,11 @@ struct ToStartOfMonthImpl
     {
         return time_zone.toFirstDayNumOfMonth(DayNum(d));
     }
-    static inline Int64 execute_extended_result(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
     }
-    static inline Int32 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
     }
@@ -245,11 +245,11 @@ struct ToLastDayOfMonthImpl
         /// 0xFFF9 is Int value for 2149-05-31 -- the last day where we can actually find LastDayOfMonth. This will also be the return value.
         return time_zone.toLastDayNumOfMonth(DayNum(std::min(d, UInt16(0xFFF9))));
     }
-    static inline Int64 execute_extended_result(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
     }
-    static inline Int32 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
     }
@@ -276,11 +276,11 @@ struct ToStartOfQuarterImpl
     {
         return time_zone.toFirstDayNumOfQuarter(DayNum(d));
     }
-    static inline Int64 execute_extended_result(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t));
     }
-    static inline Int32 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
     }
@@ -307,11 +307,11 @@ struct ToStartOfYearImpl
     {
         return time_zone.toFirstDayNumOfYear(DayNum(d));
     }
-    static inline Int64 execute_extended_result(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t));
     }
-    static inline Int32 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
     }
@@ -368,11 +368,11 @@ struct ToStartOfMinuteImpl
     {
         return dateIsNotSupported(name);
     }
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfMinute(t.whole), 0};
     }
-    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
         return date32IsNotSupported(name);
     }
@@ -566,11 +566,11 @@ struct ToStartOfFiveMinutesImpl
     {
         return dateIsNotSupported(name);
     }
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfFiveMinutes(t.whole), 0};
     }
-    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
         return date32IsNotSupported(name);
     }
@@ -598,11 +598,11 @@ struct ToStartOfTenMinutesImpl
     {
         return dateIsNotSupported(name);
     }
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfTenMinutes(t.whole), 0};
     }
-    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
         return date32IsNotSupported(name);
     }
@@ -630,11 +630,11 @@ struct ToStartOfFifteenMinutesImpl
     {
         return dateIsNotSupported(name);
     }
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfFifteenMinutes(t.whole), 0};
     }
-    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
         return date32IsNotSupported(name);
     }
@@ -667,12 +667,12 @@ struct TimeSlotImpl
         return dateIsNotSupported(name);
     }
 
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
        return {time_zone.toStartOfMinuteInterval(t.whole, 30), 0};
     }
 
-    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
         return date32IsNotSupported(name);
     }
@@ -707,12 +707,12 @@ struct ToStartOfHourImpl
         return dateIsNotSupported(name);
     }
 
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute_extended_result(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfHour(t.whole), 0};
     }
 
-    static inline Int64 execute_extended_result(Int32, const DateLUTImpl &)
+    static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
         return date32IsNotSupported(name);
     }
@@ -1007,11 +1007,11 @@ struct ToStartOfISOYearImpl
     {
         return time_zone.toFirstDayNumOfISOYear(DayNum(d));
     }
-    static inline Int64 execute_extended_result(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(time_zone.toDayNum(t));
     }
-    static inline Int32 execute_extended_result(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
     }
@@ -1320,7 +1320,7 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
             if constexpr (is_extended_result)
-                vec_to[i] = transform.execute_extended_result(vec_from[i], time_zone);
+                vec_to[i] = transform.executeExtendedResult(vec_from[i], time_zone);
             else
                 vec_to[i] = transform.execute(vec_from[i], time_zone);
     }

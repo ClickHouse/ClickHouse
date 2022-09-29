@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeToDateTimeOrDateTime64 : public IFunctionDateOrDateTime<Transform>, WithContext
+class FunctionDateOrDateTimeToDateTimeOrDateTime64 : public IFunctionDateOrDateTime<Transform>
 {
 public:
     const bool enable_extended_results_for_datetime_functions = false;
@@ -21,8 +21,7 @@ public:
     }
 
     explicit FunctionDateOrDateTimeToDateTimeOrDateTime64(ContextPtr context_)
-        : WithContext(context_)
-        , enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
     {
     }
 
@@ -31,6 +30,7 @@ public:
         this->checkArguments(arguments, /*is_result_type_date_or_date32*/ false);
 
         const IDataType * from_type = arguments[0].type.get();
+
         WhichDataType which(from_type);
 
         std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);

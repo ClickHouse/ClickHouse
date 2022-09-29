@@ -82,11 +82,11 @@ struct ToStartOfWeekImpl
     {
         return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
     }
-    static inline Int64 execute_extended_result(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
-    static inline Int32 execute_extended_result(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
@@ -139,7 +139,7 @@ struct WeekTransformer
 
         for (size_t i = 0; i < size; ++i)
             if constexpr (is_extended_result)
-                vec_to[i] = transform.execute_extended_result(vec_from[i], week_mode, time_zone);
+                vec_to[i] = transform.executeExtendedResult(vec_from[i], week_mode, time_zone);
             else
                 vec_to[i] = transform.execute(vec_from[i], week_mode, time_zone);
     }

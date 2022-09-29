@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>, WithContext
+class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>
 {
 public:
     const bool enable_extended_results_for_datetime_functions = false;
@@ -21,8 +21,7 @@ public:
     }
 
     explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_)
-        : WithContext(context_)
-        , enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
     {
     }
 
