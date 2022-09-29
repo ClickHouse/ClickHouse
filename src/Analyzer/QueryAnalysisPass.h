@@ -45,6 +45,7 @@ namespace DB
   * 10. Special functions handling:
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
+  * For functions `dictGet` and its variations and for function `joinGet` identifier as first argument is handled properly.
   *
   * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function
   * based on group by kind and group by keys positions.
