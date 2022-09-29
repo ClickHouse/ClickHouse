@@ -12,11 +12,15 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include "Interpreters/ReplaceQueryParameterVisitor.h"
 
+#include "Parsers/ASTIdentifier.h"
+#include "Parsers/ASTQueryParameter.h"
+#include "Parsers/IAST_fwd.h"
 #include "Parsers/ParserSelectQuery.h"
 #include "Parsers/formatAST.h"
 #include "Parsers/parseQuery.h"
 
 #include "Processors/Executors/PullingPipelineExecutor.h"
+#include "base/types.h"
 
 
 
@@ -46,6 +50,38 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    void getParameters(ASTPtr & ast, std::vector<String> & names) const {
+        if (ast->as<ASTQueryParameter>())
+        {   
+            const auto & ast_param = ast->as<ASTQueryParameter &>();
+            names.emplace_back(ast_param.name);
+        }
+        else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
+        {
+            return;
+            // TODO: cant get private members of ASTIdentifier
+
+            // auto ast_identifier = dynamic_pointer_cast<ASTIdentifier>(ast);
+            // if (ast_identifier->children.empty())
+            //     return;
+
+            // auto & name_parts = ast_identifier->name_parts;
+            // for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
+            // {
+            //     if (name_parts[i].empty())
+            //     {
+            //         const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
+            //         name_parts[i] = getParamValue(ast_param.name);
+            //     }
+            // }   
+        }
+        else
+        {
+            for (auto & child : ast->children)
+                getParameters(child, names);
+        }
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
         // Check and get query
@@ -68,7 +104,20 @@ public:
         ContextMutablePtr new_context;
         new_context = Context::createCopy(context);
 
-        // TODO new_context->setQueryParameters(const NameToNameMap &parameters) 
+        // set qery params
+        std::vector<String> names;
+        getParameters(parsed_query, names);
+
+        for (size_t i = 1; i != arguments.size(); ++i) {
+            if (i >= names.size())
+                throw Exception("Not enough parameters",
+                    ErrorCodes::LOGICAL_ERROR);
+
+            const ColumnConst * argument_column = checkAndGetColumnConst<ColumnString>(arguments[i].column.get());
+            String param = argument_column->getValue<String>();
+
+            new_context->setQueryParameter(names[i - 1], param);
+        }
 
         //replacing parameters in parsed query
         ReplaceQueryParameterVisitor visitor(new_context->getQueryParameters());
@@ -81,7 +130,7 @@ public:
 
         Block block;
         while (executor.pull(block)) {}
-        
+    
         if (block.rows() != 1)
             throw Exception("correlated subquery returned " + toString(block.rows()) + " rows, not 1",
                 ErrorCodes::LOGICAL_ERROR);
@@ -89,7 +138,6 @@ public:
         if (block.columns() != 1)
             throw Exception("correlated subquery returned " + toString(block.columns()) + " columns, not 1",
                 ErrorCodes::LOGICAL_ERROR);                
-        
         
     }
 
