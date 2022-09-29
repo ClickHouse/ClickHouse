@@ -226,7 +226,7 @@ namespace
         void writeInt(NumberType value)
         {
             auto casted = castNumber<Int64>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeInt(field_tag, casted);
         }
 
@@ -234,7 +234,7 @@ namespace
         void writeSInt(NumberType value)
         {
             auto casted = castNumber<Int64>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeSInt(field_tag, casted);
         }
 
@@ -242,7 +242,7 @@ namespace
         void writeUInt(NumberType value)
         {
             auto casted = castNumber<UInt64>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeUInt(field_tag, casted);
         }
 
@@ -250,7 +250,7 @@ namespace
         void writeFixed(NumberType value)
         {
             auto casted = castNumber<FieldType>(value);
-            if (casted || !skip_zero_or_empty)
+            if (casted != 0 || !skip_zero_or_empty)
                 writer->writeFixed(field_tag, casted);
         }
 

@@ -244,7 +244,7 @@ private:
 
     static inline LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<UInt32>(d + daynum_offset_epoch));
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch));
     }
 
     inline LUTIndex toLUTIndex(Time t) const

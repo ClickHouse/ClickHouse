@@ -130,7 +130,7 @@ public:
     /// Path to directory with objects cache
     virtual const std::string & getCacheBasePath() const;
 
-    static AsynchronousReaderPtr getThreadPoolReader();
+    static IAsynchronousReader & getThreadPoolReader();
 
     static ThreadPool & getThreadPoolWriter();
 
