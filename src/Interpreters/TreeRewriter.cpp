@@ -203,73 +203,8 @@ struct CustomizeAggregateFunctionsMoveSuffixData
     }
 };
 
-struct FuseSumCountAggregates
-{
-    std::vector<ASTFunction *> sums {};
-    std::vector<ASTFunction *> counts {};
-    std::vector<ASTFunction *> avgs {};
-
-    void addFuncNode(ASTFunction * func)
-    {
-        if (func->name == "sum")
-            sums.push_back(func);
-        else if (func->name == "count")
-            counts.push_back(func);
-        else
-        {
-            assert(func->name == "avg");
-            avgs.push_back(func);
-        }
-    }
-
-    bool canBeFused() const
-    {
-        // Need at least two different kinds of functions to fuse.
-        if (sums.empty() && counts.empty())
-            return false;
-        if (sums.empty() && avgs.empty())
-            return false;
-        if (counts.empty() && avgs.empty())
-            return false;
-        return true;
-    }
-};
-
-struct FuseSumCountAggregatesVisitorData
-{
-    using TypeToVisit = ASTFunction;
-
-    std::unordered_map<String, FuseSumCountAggregates> fuse_map;
-
-    void visit(ASTFunction & func, ASTPtr &)
-    {
-        if (func.name == "sum" || func.name == "avg" || func.name == "count")
-        {
-            if (func.arguments->children.empty())
-                return;
-
-            // Probably we can extend it to match count() for non-nullable argument
-            // to sum/avg with any other argument. Now we require strict match.
-            const auto argument = func.arguments->children.at(0)->getColumnName();
-            auto it = fuse_map.find(argument);
-            if (it != fuse_map.end())
-            {
-                it->second.addFuncNode(&func);
-            }
-            else
-            {
-                FuseSumCountAggregates funcs{};
-                funcs.addFuncNode(&func);
-                fuse_map[argument] = funcs;
-            }
-        }
-    }
-};
-
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
-using FuseSumCountAggregatesVisitor = InDepthNodeVisitor<OneTypeMatcher<FuseSumCountAggregatesVisitorData>, true>;
-
 
 struct ExistsExpressionData
 {
@@ -339,52 +274,6 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     /// This may happen after expansion of COLUMNS('regexp').
     if (select_query.select()->children.empty())
         throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
-}
-
-// Replaces one avg/sum/count function with an appropriate expression with
-// sumCount().
-void replaceWithSumCount(String column_name, ASTFunction & func)
-{
-    auto func_base = makeASTFunction("sumCount", std::make_shared<ASTIdentifier>(column_name));
-    auto exp_list = std::make_shared<ASTExpressionList>();
-    if (func.name == "sum" || func.name == "count")
-    {
-        /// Rewrite "sum" to sumCount().1, rewrite "count" to sumCount().2
-        UInt8 idx = (func.name == "sum" ? 1 : 2);
-        func.name = "tupleElement";
-        exp_list->children.push_back(func_base);
-        exp_list->children.push_back(std::make_shared<ASTLiteral>(idx));
-    }
-    else
-    {
-        /// Rewrite "avg" to sumCount().1 / sumCount().2
-        auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
-        auto new_arg2 = makeASTFunction("CAST",
-            makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(static_cast<UInt8>(2))),
-            std::make_shared<ASTLiteral>("Float64"));
-
-        func.name = "divide";
-        exp_list->children.push_back(new_arg1);
-        exp_list->children.push_back(new_arg2);
-    }
-    func.arguments = exp_list;
-    func.children.push_back(func.arguments);
-}
-
-void fuseSumCountAggregates(std::unordered_map<String, FuseSumCountAggregates> & fuse_map)
-{
-    for (auto & it : fuse_map)
-    {
-        if (it.second.canBeFused())
-        {
-            for (auto & func: it.second.sums)
-                replaceWithSumCount(it.first, *func);
-            for (auto & func: it.second.avgs)
-                replaceWithSumCount(it.first, *func);
-            for (auto & func: it.second.counts)
-                replaceWithSumCount(it.first, *func);
-        }
-    }
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -1229,27 +1118,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
 
-    /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
-    if (settings.optimize_normalize_count_variants)
-        TreeOptimizer::optimizeCountConstantAndSumOne(query);
-
-    if (tables_with_columns.size() > 1)
-    {
-        const auto & right_table = tables_with_columns[1];
-        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
-        cols_from_joined = right_table.columns;
-        /// query can use materialized or aliased columns from right joined table,
-        /// we want to request it for right table
-        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-
-        result.analyzed_join->deduplicateAndQualifyColumnNames(
-            source_columns_set, right_table.table.getQualifiedNamePrefix());
-    }
-
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
-
-    /// Optimizes logical expressions.
-    LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
 
     NameSet all_source_columns_set = source_columns_set;
     if (table_join)
@@ -1277,6 +1146,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         }
     }
 
+    instantiate(query, settings);
+
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     /// Remove unneeded columns according to 'required_result_columns'.
@@ -1294,11 +1165,23 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
+    bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
+    /// Only apply AST optimization for initial queries without explicit disability.
+    if (is_initiator && !select_options.ignore_ast_optimizations)
+        TreeOptimizer::optimizeSelect(query, result, tables_with_columns, getContext());
 
-    /// Only apply AST optimization for initial queries.
-    if (getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !select_options.ignore_ast_optimizations)
-        TreeOptimizer::apply(query, result, tables_with_columns, getContext());
+    if (tables_with_columns.size() > 1)
+    {
+        const auto & right_table = tables_with_columns[1];
+        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
+        cols_from_joined = right_table.columns;
+        /// query can use materialized or aliased columns from right joined table,
+        /// we want to request it for right table
+        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+
+        result.analyzed_join->deduplicateAndQualifyColumnNames(
+            source_columns_set, right_table.table.getQualifiedNamePrefix());
+    }
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
@@ -1317,7 +1200,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
-    bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
     if (settings.optimize_respect_aliases && result.storage_snapshot && is_initiator)
     {
         std::unordered_set<IAST *> excluded_nodes;
@@ -1379,6 +1261,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
 
+    instantiate(query, settings);
+
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext());
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
@@ -1387,7 +1271,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
+    TreeOptimizer::optimizeExpression(query, result, getContext());
 
     if (allow_aggregations)
     {
@@ -1407,8 +1291,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     return std::make_shared<const TreeRewriterResult>(result);
 }
 
-void TreeRewriter::normalize(
-    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
+void TreeRewriter::instantiate(ASTPtr & query, const Settings & settings)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
     {
@@ -1421,12 +1304,6 @@ void TreeRewriter::normalize(
 
     CustomizeCountIfDistinctVisitor::Data data_count_if_distinct{settings.count_distinct_implementation.toString() + "If"};
     CustomizeCountIfDistinctVisitor(data_count_if_distinct).visit(query);
-
-    CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
-    CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
-
-    ExistsExpressionVisitor::Data exists;
-    ExistsExpressionVisitor(exists).visit(query);
 
     if (settings.transform_null_in)
     {
@@ -1443,23 +1320,28 @@ void TreeRewriter::normalize(
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
     }
 
-    // Try to fuse sum/avg/count with identical arguments to one sumCount call,
-    // if we have at least two different functions. E.g. we will replace sum(x)
-    // and count(x) with sumCount(x).1 and sumCount(x).2, and sumCount() will
-    // be calculated only once because of CSE.
-    if (settings.optimize_fuse_sum_count_avg && settings.optimize_syntax_fuse_functions)
-    {
-        FuseSumCountAggregatesVisitor::Data data;
-        FuseSumCountAggregatesVisitor(data).visit(query);
-        fuseSumCountAggregates(data.fuse_map);
-    }
-
     /// Rewrite all aggregate functions to add -OrNull suffix to them
     if (settings.aggregate_functions_null_for_empty)
     {
         CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
         CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
     }
+}
+
+void TreeRewriter::normalize(
+    ASTPtr & query,
+    Aliases & aliases,
+    const NameSet & source_columns_set,
+    bool ignore_alias,
+    const Settings & settings,
+    bool allow_self_aliases,
+    ContextPtr context_)
+{
+    CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
+    CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
+
+    ExistsExpressionVisitor::Data exists;
+    ExistsExpressionVisitor(exists).visit(query);
 
     /// Move -OrNull suffix ahead, this should execute after add -OrNull suffix
     CustomizeAggregateFunctionsMoveOrNullVisitor::Data data_or_null{"OrNull"};
@@ -1472,11 +1354,13 @@ void TreeRewriter::normalize(
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
     MarkTableIdentifiersVisitor(identifiers_data).visit(query);
 
+    bool is_initiator = context_->getClientInfo().distributed_depth == 0;
+
     /// Rewrite function names to their canonical ones.
-    /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
+    /// Notice: function name normalization is disabled when it's not initiator, because queries are either
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
-    if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
+    if (is_initiator && settings.normalize_function_names)
         FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.

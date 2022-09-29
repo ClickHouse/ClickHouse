@@ -131,7 +131,17 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_);
-};
+    /// Apply changes to query based on current context, such as UDF expansion.
+    static void instantiate(ASTPtr & query, const Settings & settings);
 
+    /// Turning query into canonical form.
+    static void normalize(
+        ASTPtr & query,
+        Aliases & aliases,
+        const NameSet & source_columns_set,
+        bool ignore_alias,
+        const Settings & settings,
+        bool allow_self_aliases,
+        ContextPtr context_);
+};
 }

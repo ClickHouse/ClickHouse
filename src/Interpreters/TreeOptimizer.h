@@ -16,15 +16,18 @@ struct TreeRewriterResult;
 class TreeOptimizer
 {
 public:
+    /// For any AST
+    static void optimizeExpression(
+        ASTPtr & query,
+        TreeRewriterResult & result,
+        ContextPtr context);
 
-    static void apply(
+    /// For ASTSelectQuery only
+    static void optimizeSelect(
         ASTPtr & query,
         TreeRewriterResult & result,
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
         ContextPtr context);
-
-    static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif);
-    static void optimizeCountConstantAndSumOne(ASTPtr & query);
 };
 
 }

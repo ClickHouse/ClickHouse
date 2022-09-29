@@ -19,7 +19,11 @@
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
+#include <Interpreters/FuseSumCountAggregatesVisitor.h>
+#include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
@@ -36,8 +40,6 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Storages/IStorage.h>
-
-#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
@@ -246,7 +248,7 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
     return data;
 }
 
-///eliminate functions of other GROUP BY keys
+/// Eliminate functions of other GROUP BY keys
 void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 {
     if (!select_query->groupBy())
@@ -777,9 +779,7 @@ void optimizeOrLikeChain(ASTPtr & query)
     ConvertFunctionOrLikeVisitor(data).visit(query);
 }
 
-}
-
-void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
+void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
 {
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
@@ -788,19 +788,40 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
+void optimizeCountConstantAndSumOne(ASTPtr & query)
 {
     RewriteCountVariantsVisitor::visit(query);
 }
 
-void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
-                          const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns, ContextPtr context)
+/// Try to fuse sum/avg/count with identical arguments to one sumCount call,
+/// if we have at least two different functions. E.g. we will replace sum(x)
+/// and count(x) with sumCount(x).1 and sumCount(x).2, and sumCount() will
+/// be calculated only once because of CSE.
+void optimizeFuseSumCountAvg(ASTPtr & query)
+{
+    FuseSumCountAggregatesVisitor::Data data;
+    FuseSumCountAggregatesVisitor(data).visit(query);
+    for (auto & it : data.fuse_map)
+    {
+        if (it.second.canBeFused())
+        {
+            for (auto & func: it.second.sums)
+                data.replaceWithSumCount(it.first, *func);
+            for (auto & func: it.second.avgs)
+                data.replaceWithSumCount(it.first, *func);
+            for (auto & func: it.second.counts)
+                data.replaceWithSumCount(it.first, *func);
+        }
+    }
+}
+
+}
+
+void TreeOptimizer::optimizeExpression(ASTPtr & query, TreeRewriterResult & result, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
 
-    auto * select_query = query->as<ASTSelectQuery>();
-    if (!select_query)
-        throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
+    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
     if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
         optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
@@ -808,6 +829,56 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
+
+    /// Move all operations out of any function
+    if (settings.optimize_move_functions_out_of_any)
+        optimizeAnyFunctions(query);
+
+    if (settings.optimize_normalize_count_variants)
+        optimizeCountConstantAndSumOne(query);
+
+    if (settings.optimize_multiif_to_if)
+        optimizeMultiIfToIf(query);
+
+    if (settings.optimize_rewrite_sum_if_to_count_if)
+        optimizeSumIfFunctions(query);
+
+    /// Remove injective functions inside uniq
+    if (settings.optimize_injective_functions_inside_uniq)
+        optimizeInjectiveFunctionsInsideUniq(query, context);
+
+    /// If function "if" has String-type arguments, transform them into enum
+    if (settings.optimize_if_transform_strings_to_enum)
+        transformIfStringsIntoEnum(query);
+
+    if (settings.optimize_syntax_fuse_functions)
+        optimizeFuseQuantileFunctions(query);
+
+    if (settings.optimize_or_like_chain
+        && settings.allow_hyperscan
+        && settings.max_hyperscan_regexp_length == 0
+        && settings.max_hyperscan_regexp_total_length == 0)
+    {
+        optimizeOrLikeChain(query);
+    }
+
+    if (settings.optimize_fuse_sum_count_avg && settings.optimize_syntax_fuse_functions)
+        optimizeFuseSumCountAvg(query);
+}
+
+void TreeOptimizer::optimizeSelect(
+    ASTPtr & query, TreeRewriterResult & result, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns, ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+
+    auto * select_query = query->as<ASTSelectQuery>();
+    if (!select_query)
+        throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
+
+    /// Optimizes logical expressions.
+    LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+
+    optimizeExpression(query, result, context);
 
     bool converted_to_cnf = false;
     if (settings.convert_query_to_cnf)
@@ -829,23 +900,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
         optimizeGroupByFunctionKeys(select_query);
-
-    /// Move all operations out of any function
-    if (settings.optimize_move_functions_out_of_any)
-        optimizeAnyFunctions(query);
-
-    if (settings.optimize_normalize_count_variants)
-        optimizeCountConstantAndSumOne(query);
-
-    if (settings.optimize_multiif_to_if)
-        optimizeMultiIfToIf(query);
-
-    if (settings.optimize_rewrite_sum_if_to_count_if)
-        optimizeSumIfFunctions(query);
-
-    /// Remove injective functions inside uniq
-    if (settings.optimize_injective_functions_inside_uniq)
-        optimizeInjectiveFunctionsInsideUniq(query, context);
 
     /// Eliminate min/max/any aggregators of functions of GROUP BY keys
     if (settings.optimize_aggregators_of_group_by_keys
@@ -880,26 +934,11 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// because they can produce duplicated columns.
     optimizeDuplicatesInOrderBy(select_query);
 
-    /// If function "if" has String-type arguments, transform them into enum
-    if (settings.optimize_if_transform_strings_to_enum)
-        transformIfStringsIntoEnum(query);
-
     /// Remove duplicated elements from LIMIT BY clause.
     optimizeLimitBy(select_query);
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
-
-    if (settings.optimize_syntax_fuse_functions)
-        optimizeFuseQuantileFunctions(query);
-
-    if (settings.optimize_or_like_chain
-        && settings.allow_hyperscan
-        && settings.max_hyperscan_regexp_length == 0
-        && settings.max_hyperscan_regexp_total_length == 0)
-    {
-        optimizeOrLikeChain(query);
-    }
 }
 
 }
