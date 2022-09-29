@@ -189,6 +189,11 @@ The first part of the result is:
 
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
+See https://github.com/toddwschneider/nyc-taxi-data and http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html for the description of a dataset and instructions for downloading.
+
+Downloading will result in about 227 GB of uncompressed data in CSV files. The download takes about an hour over a 1 Gbit connection (parallel downloading from s3.amazonaws.com recovers at least half of a 1 Gbit channel).
+Some of the files might not download fully. Check the file sizes and re-download any that seem doubtful.
+
 ``` bash
 $ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
