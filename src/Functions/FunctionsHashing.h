@@ -441,6 +441,8 @@ struct JavaHashImpl
                                                       && !std::is_same_v<T, int64_t>, T>::type * = nullptr>
     static ReturnType apply(T x)
     {
+        if (std::is_unsigned_v<T>)
+            throw Exception("Unsigned types are not supported", ErrorCodes::NOT_IMPLEMENTED);
         const size_t size = sizeof(T);
         const char * data = reinterpret_cast<const char *>(&x);
         return apply(data, size);

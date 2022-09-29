@@ -8,6 +8,10 @@
 122
 -539222985
 -539222986
+Code: 48. DB::Exception: Unsigned types are not supported: While processing javaHash(toUInt8(1)). (NOT_IMPLEMENTED)
+Code: 48. DB::Exception: Unsigned types are not supported: While processing javaHash(toUInt16(1)). (NOT_IMPLEMENTED)
+Code: 48. DB::Exception: Unsigned types are not supported: While processing javaHash(toUInt32(1)). (NOT_IMPLEMENTED)
+Code: 48. DB::Exception: Unsigned types are not supported: While processing javaHash(toUInt64(1)). (NOT_IMPLEMENTED)
 96354
 -676697544
 138768
