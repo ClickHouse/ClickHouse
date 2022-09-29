@@ -1,7 +1,10 @@
+configure_file(GitHash.cpp.in GitHash.generated.cpp)
+
 add_library (daemon
     BaseDaemon.cpp
     GraphiteWriter.cpp
     SentryWriter.cpp
+    GitHash.generated.cpp
 )
 
 if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
