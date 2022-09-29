@@ -667,20 +667,6 @@ struct TimeSlotImpl
         return dateIsNotSupported(name);
     }
 
-    /*
-    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
-    {
-       return {time_zone.toStartOfMinuteInterval(t.whole, 30), 0};
-    }
-
-    static inline Int64 executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
-    {
-    //    return {time_zone.toStartOfMinuteInterval(t.whole, 30), 0};
-       return t.whole / 1800 * 1800;
-    }
-
-    */
-
     static inline DecimalUtils::DecimalComponents<DateTime64>  executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
         if (likely(t.whole >= 0))
