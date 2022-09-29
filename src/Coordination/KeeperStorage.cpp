@@ -1601,6 +1601,9 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
 
 struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestProcessor
 {
+    using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
+    std::optional<OperationType> operation_type;
+
     bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
         for (const auto & concrete_request : concrete_requests)
@@ -1615,9 +1618,6 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
     {
         Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
         concrete_requests.reserve(request.requests.size());
-
-        using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
-        std::optional<OperationType> operation_type;
 
         const auto check_operation_type = [&](OperationType type)
         {
@@ -1662,6 +1662,8 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                         ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
             }
         }
+
+        assert(request.requests.empty() || operation_type.has_value());
     }
 
     std::vector<KeeperStorage::Delta>
@@ -1676,7 +1678,8 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
             if (!new_deltas.empty())
             {
-                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation))
+                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation);
+                    error && *operation_type == OperationType::Write)
                 {
                     storage.uncommitted_state.rollback(zxid);
                     response_errors.push_back(error->error);
@@ -1723,8 +1726,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->process(storage, zxid);
-            response.responses[i] = cur_response;
+            response.responses[i] = concrete_requests[i]->process(storage, zxid);
             storage.uncommitted_state.commit(zxid);
         }
 
@@ -1739,26 +1741,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->processLocal(storage, zxid);
-
-            response.responses[i] = cur_response;
-            if (cur_response->error != Coordination::Error::ZOK)
-            {
-                for (size_t j = 0; j <= i; ++j)
-                {
-                    auto response_error = response.responses[j]->error;
-                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
-                    response.responses[j]->error = response_error;
-                }
-
-                for (size_t j = i + 1; j < response.responses.size(); ++j)
-                {
-                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
-                    response.responses[j]->error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
-                }
-
-                return response_ptr;
-            }
+            response.responses[i] = concrete_requests[i]->processLocal(storage, zxid);
         }
 
         response.error = Coordination::Error::ZOK;
