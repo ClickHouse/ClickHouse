@@ -80,6 +80,8 @@ Management abcd defg	1
 245	2
 0	1
 245	2
+2015-10-12 00:00:00.000000000
+2016-10-12 00:00:00.000000000
 -- make_list_with_nulls --
 ['Theodore','Stephanie','Peter','Latoya','Joshua','Edward','Dalton','Christine','Cameron','Angel','Apple',NULL]
 Skilled Manual	['Theodore','Peter','Edward','Christine','Apple']

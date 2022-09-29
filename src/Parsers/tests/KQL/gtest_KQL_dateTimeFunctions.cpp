@@ -52,7 +52,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print unixtime_seconds_todatetime(1546300899)",
-            "SELECT toDateTime64(1546300899, 9, 'UTC')"
+            "SELECT if((toTypeName(1546300899) = 'Int64') OR (toTypeName(1546300899) = 'Int32') OR (toTypeName(1546300899) = 'Float64') OR (toTypeName(1546300899) = 'UInt32') OR (toTypeName(1546300899) = 'UInt64'), toDateTime64(1546300899, 9, 'UTC'), toDateTime64(throwIf(true, 'unixtime_seconds_todatetime only accepts Int , Long and double type of arguments'), 9, 'UTC'))"
         },
         {
             "print dayofweek(datetime(2015-12-20))",
@@ -136,7 +136,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print datetime(null)",
-            "SELECT parseDateTime64BestEffortOrNull('null', 9, 'UTC')"
+            "SELECT NULL"
         },
         {
             "print datetime('2014-05-25T08:20:03.123456Z')",
@@ -205,6 +205,14 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         {
             "print totimespan('abc')",
             "SELECT NULL"
+        },
+        {
+            "print time(2)",
+            "SELECT CAST('2', 'Float64')"
+        },
+        {
+            "hits | project bin(datetime(EventTime), 1m)",
+            "SELECT toDateTime64(toInt64(toFloat64(parseDateTime64BestEffortOrNull(CAST(EventTime, 'String'), 9, 'UTC')) / 60) * 60, 9, 'UTC')\nFROM hits"
         }
 
 })));   
