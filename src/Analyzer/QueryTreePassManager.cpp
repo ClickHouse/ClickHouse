@@ -5,6 +5,7 @@
 #include <Analyzer/IfConstantConditionPass.h>
 #include <Analyzer/IfChainToMultiIfPass.h>
 #include <Analyzer/OrderByTupleEliminationPass.h>
+#include <Analyzer/NormalizeCountVariantsPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -86,6 +87,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     const auto & settings = context->getSettingsRef();
 
     manager.addPass(std::make_shared<QueryAnalysisPass>());
+
+    if (settings.optimize_normalize_count_variants)
+        manager.addPass(std::make_shared<NormalizeCountVariantsPass>());
 
     if (settings.optimize_multiif_to_if)
         manager.addPass(std::make_shared<MultiIfToIfPass>());

@@ -11,7 +11,7 @@ namespace DB
   * Example: SELECT if(cond_1, then_1_value, if(cond_2, then_2_value, else_value));
   * Result: SELECT multiIf(cond_1, then_1_value, cond_2, then_2_value, else_value);
   */
-class IfChainToMultiIfPass : public IQueryTreePass
+class IfChainToMultiIfPass final : public IQueryTreePass
 {
 public:
     String getName() override { return "IfChainToMultiIfPass"; }

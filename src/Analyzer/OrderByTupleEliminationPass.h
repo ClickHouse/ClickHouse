@@ -9,7 +9,7 @@ namespace DB
   * Example: SELECT * FROM test_table ORDER BY (a, b);
   * Result: SELECT * FROM test_table ORDER BY a, b;
   */
-class OrderByTupleEliminationPass : public IQueryTreePass
+class OrderByTupleEliminationPass final : public IQueryTreePass
 {
 public:
     String getName() override { return "OrderByTupleElimination"; }
