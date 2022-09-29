@@ -697,9 +697,7 @@ bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
         throw Exception(fn_name + " accepts only long, int and double type of arguments " , ErrorCodes::BAD_ARGUMENTS);
         
     String expression = getConvertedArgument(fn_name, pos);
-
-    out = std::format("toDateTime64({0} , 9,'UTC')", expression);
-
+    out = std::format(" if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' ||  OR toTypeName({0}) = 'UInt32' ||  oTypeName({0}) = 'UInt64' , toDateTime64({0}, 9, 'UTC') , toDateTime64(throwIf(true, '{1} only accepts Int , Long and double type of arguments'),9,'UTC'))", expression, fn_name);
     return true;
 }
 
@@ -707,7 +705,7 @@ bool WeekOfYear::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
-        return false;
+        return false;w mm
     ++pos;
     const String time_str = getConvertedArgument(fn_name, pos);
     out = std::format("toWeek({},3,'UTC')", time_str);
