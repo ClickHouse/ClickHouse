@@ -142,12 +142,18 @@ struct FormatSettings
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
+        bool quote_64bit_floats = false;
         bool quote_denormals = true;
+        bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
+        bool read_numbers_as_strings = true;
         bool try_infer_numbers_from_strings = false;
+        bool validate_types_from_metadata = true;
+        bool validate_utf8 = false;
+        bool try_infer_objects = false;
     } json;
 
     struct
