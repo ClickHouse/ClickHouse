@@ -3107,13 +3107,14 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
 
         auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
-        auto rewritten_subquery = std::make_shared<QueryNode>();
-        rewritten_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        rewritten_subquery->getJoinTree() = exists_subquery_argument;
-        rewritten_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+        auto in_subquery = std::make_shared<QueryNode>();
+        in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        in_subquery->getJoinTree() = exists_subquery_argument;
+        in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+        in_subquery->resolveProjectionColumns({NameAndTypePair("1", constant_data_type)});
 
         function_node_ptr = std::make_shared<FunctionNode>("in");
-        function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), rewritten_subquery};
+        function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), in_subquery};
         node = function_node_ptr;
         function_name = "in";
 
