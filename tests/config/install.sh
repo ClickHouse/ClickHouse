@@ -118,9 +118,6 @@ fi
 
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
-    # Too verbose logging in S3 tests
-    rm -f $DEST_SERVER_PATH/config.d/logger_test.xml
-    ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 fi
 
 ARM="aarch64"
