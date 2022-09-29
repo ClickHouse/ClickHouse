@@ -68,6 +68,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/misc.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/grouping.h>
@@ -3056,13 +3057,40 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     }
 
     bool is_special_function_in = false;
+    bool is_special_function_dict_get_or_join_get = false;
+
     if (!lambda_expression_untyped)
     {
         is_special_function_in = isNameOfInFunction(function_name);
+        is_special_function_dict_get_or_join_get = functionIsJoinGet(function_name) || functionIsDictGet(function_name);
 
         /// Handle SELECT count(*) FROM test_table
         if (function_name == "count")
             function_node.getArguments().getNodes().clear();
+    }
+
+    /** Special functions dictGet and its variations and joinGet can be executed when first argument is identifier.
+      * Example: SELECT dictGet(identifier, 'value', toUInt64(0));
+      *
+      * Try to resolve identifier as expression identifier and if it is resolved use it.
+      * Example: WITH 'dict_name' AS identifier SELECT dictGet(identifier, 'value', toUInt64(0));
+      *
+      * Otherwise replace identifier with identifier full name constant.
+      * Validation that dictionary exists or table exists will be performed during function `getReturnType` method call.
+      */
+    if (is_special_function_dict_get_or_join_get &&
+        !function_node.getArguments().getNodes().empty() &&
+        function_node.getArguments().getNodes()[0]->getNodeType() == QueryTreeNodeType::IDENTIFIER)
+    {
+        auto & first_argument = function_node.getArguments().getNodes()[0];
+        auto & identifier_node = first_argument->as<IdentifierNode &>();
+        IdentifierLookup identifier_lookup{identifier_node.getIdentifier(), IdentifierLookupContext::EXPRESSION};
+        auto resolve_result = tryResolveIdentifier(identifier_lookup, scope);
+
+        if (resolve_result.isResolved())
+            first_argument = std::move(resolve_result.resolved_identifier);
+        else
+            first_argument = std::make_shared<ConstantNode>(identifier_node.getIdentifier().getFullName());
     }
 
     /// Resolve function arguments
