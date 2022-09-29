@@ -9,10 +9,6 @@
 namespace DB
 {
 
-/* Invoked via `SELECT * FROM (EXPLAIN <query>)`
- * Return result of EXPLAIN in a single string column.
- * Can be used to further processing of the result of EXPLAIN using SQL (e.g. in tests).
- */
 class TableFunctionExplain : public ITableFunction
 {
 public:
