@@ -683,7 +683,7 @@ public:
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
                 /// But it will be more convenient for user to perform conversion.
-                value = element.getDouble();
+                value = static_cast<NumberType>(element.getDouble());
             }
             else if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;

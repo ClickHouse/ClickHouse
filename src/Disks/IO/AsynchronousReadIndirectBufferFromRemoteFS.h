@@ -31,7 +31,7 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
-        AsynchronousReaderPtr reader_, const ReadSettings & settings_,
+        IAsynchronousReader & reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE);
 
@@ -64,7 +64,7 @@ private:
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    AsynchronousReaderPtr reader;
+    IAsynchronousReader & reader;
 
     Int32 priority;
 
