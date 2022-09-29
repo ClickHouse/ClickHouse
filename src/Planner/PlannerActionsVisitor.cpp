@@ -347,20 +347,23 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::makeSetForInFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
-    auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
     const auto & global_planner_context = planner_context->getGlobalPlannerContext();
     auto set_key = global_planner_context->createSetKey(in_second_argument);
     auto prepared_set = global_planner_context->getSetOrThrow(set_key);
 
-    auto column_set = ColumnSet::create(1, std::move(prepared_set));
-    auto column_set_const = ColumnConst::create(std::move(column_set), 1);
-
     ColumnWithTypeAndName column;
     column.name = set_key;
     column.type = std::make_shared<DataTypeSet>();
-    column.column = std::move(column_set_const);
+
+    bool set_is_created = prepared_set->isCreated();
+    auto column_set = ColumnSet::create(1, std::move(prepared_set));
+
+    if (set_is_created)
+        column.column = ColumnConst::create(std::move(column_set), 1);
+    else
+        column.column = std::move(column_set);
 
     actions_stack[0].addConstantIfNecessary(set_key, column);
 

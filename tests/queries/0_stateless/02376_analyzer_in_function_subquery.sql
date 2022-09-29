@@ -19,6 +19,14 @@ INSERT INTO test_table_for_in VALUES (0), (1);
 
 -- { echoOn }
 
+SELECT id, value FROM test_table WHERE 1 IN (SELECT 1);
+
+SELECT '--';
+
+SELECT id, value FROM test_table WHERE 0 IN (SELECT 1);
+
+SELECT '--';
+
 SELECT id, value FROM test_table WHERE id IN (SELECT 1);
 
 SELECT '--';

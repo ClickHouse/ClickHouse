@@ -3017,21 +3017,21 @@ void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const Qu
   */
 void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
-    FunctionNode & function_node = node->as<FunctionNode &>();
-    if (function_node.isResolved())
+    FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
+    if (function_node_ptr->isResolved())
         return;
 
-    const auto & function_name = function_node.getFunctionName();
+    auto function_name = function_node_ptr->getFunctionName();
 
     /// Resolve function parameters
 
-    resolveExpressionNodeList(function_node.getParametersNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    resolveExpressionNodeList(function_node_ptr->getParametersNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     /// Convert function parameters into constant parameters array
 
     Array parameters;
 
-    auto & parameters_nodes = function_node.getParameters().getNodes();
+    auto & parameters_nodes = function_node_ptr->getParameters().getNodes();
     parameters.reserve(parameters_nodes.size());
 
     for (auto & parameter_node : parameters_nodes)
@@ -3041,7 +3041,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         if (!constant_value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Parameter for function {} expected to have constant value. Actual {}. In scope {}",
-            function_node.getFunctionName(),
+            function_name,
             parameter_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
@@ -3050,23 +3050,25 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
 
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node.isWindowFunction())
+    if (!function_node_ptr->isWindowFunction())
     {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_node.getFunctionName()}, IdentifierLookupContext::FUNCTION}, scope);
+        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope);
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
     bool is_special_function_in = false;
     bool is_special_function_dict_get_or_join_get = false;
+    bool is_special_function_exists = false;
 
     if (!lambda_expression_untyped)
     {
         is_special_function_in = isNameOfInFunction(function_name);
         is_special_function_dict_get_or_join_get = functionIsJoinGet(function_name) || functionIsDictGet(function_name);
+        is_special_function_exists = function_name == "exists";
 
         /// Handle SELECT count(*) FROM test_table
         if (function_name == "count")
-            function_node.getArguments().getNodes().clear();
+            function_node_ptr->getArguments().getNodes().clear();
     }
 
     /** Special functions dictGet and its variations and joinGet can be executed when first argument is identifier.
@@ -3079,10 +3081,10 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
       * Validation that dictionary exists or table exists will be performed during function `getReturnType` method call.
       */
     if (is_special_function_dict_get_or_join_get &&
-        !function_node.getArguments().getNodes().empty() &&
-        function_node.getArguments().getNodes()[0]->getNodeType() == QueryTreeNodeType::IDENTIFIER)
+        !function_node_ptr->getArguments().getNodes().empty() &&
+        function_node_ptr->getArguments().getNodes()[0]->getNodeType() == QueryTreeNodeType::IDENTIFIER)
     {
-        auto & first_argument = function_node.getArguments().getNodes()[0];
+        auto & first_argument = function_node_ptr->getArguments().getNodes()[0];
         auto & identifier_node = first_argument->as<IdentifierNode &>();
         IdentifierLookup identifier_lookup{identifier_node.getIdentifier(), IdentifierLookupContext::EXPRESSION};
         auto resolve_result = tryResolveIdentifier(identifier_lookup, scope);
@@ -3095,7 +3097,30 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
 
     /// Resolve function arguments
 
-    resolveExpressionNodeList(function_node.getArgumentsNode(), scope, true /*allow_lambda_expression*/, is_special_function_in /*allow_table_expression*/);
+    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
+    resolveExpressionNodeList(function_node_ptr->getArgumentsNode(), scope, true /*allow_lambda_expression*/, allow_table_expressions /*allow_table_expression*/);
+
+    if (is_special_function_exists)
+    {
+        /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
+        auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+
+        auto constant_data_type = std::make_shared<DataTypeUInt64>();
+
+        auto rewritten_subquery = std::make_shared<QueryNode>();
+        rewritten_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        rewritten_subquery->getJoinTree() = exists_subquery_argument;
+        rewritten_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+        function_node_ptr = std::make_shared<FunctionNode>("in");
+        function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), rewritten_subquery};
+        node = function_node_ptr;
+        function_name = "in";
+
+        is_special_function_in = true;
+    }
+
+    auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
     if (is_special_function_in)

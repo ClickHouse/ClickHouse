@@ -46,6 +46,7 @@ namespace DB
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
   * For functions `dictGet` and its variations and for function `joinGet` identifier as first argument is handled properly.
+  * Function `exists` is converted into `in`.
   *
   * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function
   * based on group by kind and group by keys positions.
