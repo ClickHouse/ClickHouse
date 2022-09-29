@@ -12,9 +12,10 @@ namespace ErrorCodes
 template <typename Transform>
 class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>
 {
-public:
+private:
     const bool enable_extended_results_for_datetime_functions = false;
 
+public:
     static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionDateOrDateTimeToDateOrDate32>(context_);
@@ -54,10 +55,12 @@ public:
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDate32())
+        {
             if (enable_extended_results_for_datetime_functions)
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
             else
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
+        }
         else if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
