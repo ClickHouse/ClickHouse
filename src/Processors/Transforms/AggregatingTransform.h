@@ -9,9 +9,8 @@
 namespace DB
 {
 
-class AggregatedChunkInfo : public ChunkInfo
+struct AggregatedChunkInfo : public ChunkInfo
 {
-public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
 };

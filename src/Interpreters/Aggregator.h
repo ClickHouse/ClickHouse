@@ -1005,8 +1005,7 @@ public:
         {
         }
 
-        static Block
-        getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
+        static Block getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 
         Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
@@ -1019,7 +1018,7 @@ public:
         void explain(JSONBuilder::JSONMap & map) const;
     };
 
-    explicit Aggregator(const Block & header_, const Params & params_);
+    Aggregator(const Block & header_, const Params & params_);
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
