@@ -459,7 +459,7 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
 
     if (bytes == 0)
     {
-        LOG_TRACE(log, "Reserving 0 bytes on remote disk {}", backQuote(name));
+        LOG_TRACE(log, "Reserved 0 bytes on remote disk {}", backQuote(name));
         ++reservation_count;
         return {unreserved_space};
     }
@@ -468,7 +468,7 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
     {
         LOG_TRACE(
             log,
-            "Reserving {} on remote disk {}, having unreserved {}.",
+            "Reserved {} on remote disk {}, having unreserved {}.",
             ReadableSize(bytes),
             backQuote(name),
             ReadableSize(unreserved_space));

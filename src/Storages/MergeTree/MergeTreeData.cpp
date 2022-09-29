@@ -4908,15 +4908,13 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     DiskPtr selected_disk) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
-    LOG_TRACE(log, "Trying reserve {} bytes preffering TTL rules", expected_size);
     ReservationPtr reservation;
 
     auto move_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
 
     if (move_ttl_entry)
     {
-        LOG_TRACE(log, "Got move TTL entry, will try to reserver destination for move");
+        LOG_TRACE(log, "Trying to reserve {} to apply a TTL rule. Will try to reserve in the destination", ReadableSize(expected_size));
         SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry, is_insert);
         if (!destination_ptr)
         {
@@ -4937,11 +4935,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
         }
         else
         {
-            LOG_TRACE(log, "Reserving bytes on selected destination");
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
             {
-                LOG_TRACE(log, "Reservation successful");
                 return reservation;
             }
             else
@@ -4965,13 +4961,18 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     // Prefer selected_disk
     if (selected_disk)
     {
-        LOG_DEBUG(log, "Disk for reservation provided: {} (with type {})", selected_disk->getName(), toString(selected_disk->getDataSourceDescription().type));
+        LOG_TRACE(
+            log,
+            "Trying to reserve {} on the selected disk: {} (with type {})",
+            ReadableSize(expected_size),
+            selected_disk->getName(),
+            toString(selected_disk->getDataSourceDescription().type));
         reservation = selected_disk->reserve(expected_size);
     }
 
     if (!reservation)
     {
-        LOG_DEBUG(log, "No reservation, reserving using storage policy from min volume index {}", min_volume_index);
+        LOG_TRACE(log, "Trying to reserve {} using storage policy from min volume index {}", ReadableSize(expected_size), min_volume_index);
         reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
     }
 

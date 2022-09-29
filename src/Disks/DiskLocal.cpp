@@ -230,7 +230,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
 
     if (bytes == 0)
     {
-        LOG_TRACE(logger, "Reserving 0 bytes on local disk {}", backQuote(name));
+        LOG_TRACE(logger, "Reserved 0 bytes on local disk {}", backQuote(name));
         ++reservation_count;
         return {unreserved_space};
     }
@@ -239,7 +239,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
     {
         LOG_TRACE(
             logger,
-            "Reserving {} on local disk {}, having unreserved {}.",
+            "Reserved {} on local disk {}, having unreserved {}.",
             ReadableSize(bytes),
             backQuote(name),
             ReadableSize(unreserved_space));
