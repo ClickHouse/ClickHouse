@@ -110,6 +110,10 @@ def started_cluster():
             main_configs=["configs/defaultS3.xml"],
             user_configs=["configs/s3_max_redirects.xml"],
         )
+        cluster.add_instance(
+            "s3_non_default",
+            with_minio=True,
+        )
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -1689,3 +1693,22 @@ def test_schema_inference_cache(started_cluster):
 
     test("s3")
     test("url")
+
+
+def test_ast_auth_headers(started_cluster):
+    bucket = started_cluster.minio_restricted_bucket
+    instance = started_cluster.instances["s3_non_default"]  # type: ClickHouseInstance
+    filename = "test.csv"
+
+    result = instance.query_and_get_error(
+        f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
+    )
+
+    assert "Forbidden Error" in result
+    assert "S3_ERROR" in result
+
+    result = instance.query(
+        f"select * from s3('http://resolver:8080/{bucket}/{filename}', 'CSV', headers(Authorization=`Bearer TOKEN`))"
+    )
+
+    assert result.strip() == "1\t2\t3"

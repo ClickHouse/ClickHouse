@@ -2,6 +2,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+import time
 import os
 from kazoo.client import KazooClient, KazooState
 
@@ -79,9 +80,12 @@ def test_nodes_remove(started_cluster):
         assert zk_conn.exists("test_two_" + str(i)) is not None
         assert zk_conn.exists("test_two_" + str(100 + i)) is not None
 
-    with pytest.raises(Exception):
+    try:
         zk_conn3 = get_fake_zk(node3)
         zk_conn3.sync("/test_two_0")
+        time.sleep(0.1)
+    except Exception:
+        pass
 
     node3.stop_clickhouse()
 
@@ -91,6 +95,7 @@ def test_nodes_remove(started_cluster):
     )
 
     node1.query("SYSTEM RELOAD CONFIG")
+
     zk_conn = get_fake_zk(node1)
     zk_conn.sync("/test_two_0")
 
@@ -98,8 +103,11 @@ def test_nodes_remove(started_cluster):
         assert zk_conn.exists("test_two_" + str(i)) is not None
         assert zk_conn.exists("test_two_" + str(100 + i)) is not None
 
-    with pytest.raises(Exception):
+    try:
         zk_conn2 = get_fake_zk(node2)
         zk_conn2.sync("/test_two_0")
+        time.sleep(0.1)
+    except Exception:
+        pass
 
     node2.stop_clickhouse()
