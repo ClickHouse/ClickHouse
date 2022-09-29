@@ -257,6 +257,9 @@ struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
 
 struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
 {
+    ZooKeeperExistsRequest() = default;
+    explicit ZooKeeperExistsRequest(const ExistsRequest & base) : ExistsRequest(base) {}
+
     OpNum getOpNum() const override { return OpNum::Exists; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;

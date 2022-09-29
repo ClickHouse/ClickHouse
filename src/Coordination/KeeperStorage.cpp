@@ -1651,6 +1651,10 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     check_operation_type(OperationType::Read);
                     concrete_requests.push_back(std::make_shared<KeeperStorageGetRequestProcessor>(sub_zk_request));
                     break;
+                case Coordination::OpNum::Exists:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageExistsRequestProcessor>(sub_zk_request));
+                    break;
                 case Coordination::OpNum::List:
                 case Coordination::OpNum::FilteredList:
                 case Coordination::OpNum::SimpleList:
