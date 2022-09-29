@@ -217,6 +217,19 @@ public:
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
+    using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse>;
+    template <typename TIter>
+    MultiExistsResponse exists(TIter start, TIter end)
+    {
+        return multiRead<Coordination::ExistsResponse, true>(
+            start, end, zkutil::makeExistsRequest, [&](const auto & path) { return asyncExists(path); });
+    }
+
+    MultiExistsResponse exists(const std::vector<std::string> & paths)
+    {
+        return exists(paths.begin(), paths.end());
+    }
+
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 

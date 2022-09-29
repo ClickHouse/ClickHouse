@@ -38,4 +38,5 @@ Coordination::RequestPtr makeGetRequest(const std::string & path);
 Coordination::RequestPtr
 makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path);
+Coordination::RequestPtr makeExistsRequest(const std::string & path);
 }
