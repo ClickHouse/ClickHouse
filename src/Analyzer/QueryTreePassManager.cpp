@@ -3,6 +3,7 @@
 #include <Analyzer/QueryAnalysisPass.h>
 #include <Analyzer/MultiIfToIfPass.h>
 #include <Analyzer/IfConstantConditionPass.h>
+#include <Analyzer/IfChainToMultiIfPass.h>
 #include <Analyzer/OrderByTupleEliminationPass.h>
 
 #include <IO/WriteHelpers.h>
@@ -90,6 +91,10 @@ void addQueryTreePasses(QueryTreePassManager & manager)
         manager.addPass(std::make_shared<MultiIfToIfPass>());
 
     manager.addPass(std::make_shared<IfConstantConditionPass>());
+
+    if (settings.optimize_if_chain_to_multiif)
+        manager.addPass(std::make_shared<IfChainToMultiIfPass>());
+
     manager.addPass(std::make_shared<OrderByTupleEliminationPass>());
 }
 
