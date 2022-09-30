@@ -27,12 +27,6 @@ bool ParserKQLDateTypeTimespan :: parseImpl(Pos & pos,  [[maybe_unused]] ASTPtr 
     return true;
 }
 
-ParserKQLDateTypeTimespan::KQLTimespanUint ParserKQLDateTypeTimespan :: getTimespanUnit( const String & text)  
-{
-    bool res [[maybe_unused]] = parseConstKQLTimespan(text);
-    return  time_span_unit;
-}
-
 double ParserKQLDateTypeTimespan :: toSeconds()
 {
     switch (time_span_unit) 
