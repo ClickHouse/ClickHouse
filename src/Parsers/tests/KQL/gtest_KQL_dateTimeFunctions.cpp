@@ -208,7 +208,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print time(2)",
-            "SELECT CAST('2', 'Float64')"
+            "SELECT CAST('172800', 'Float64')"
         },
         {
             "hits | project bin(datetime(EventTime), 1m)",
