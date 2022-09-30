@@ -130,6 +130,7 @@ public:
     static jclass spark_row_interator_class;
     static jmethodID spark_row_interator_hasNext;
     static jmethodID spark_row_interator_next;
+    static jmethodID spark_row_iterator_nextBatch;
 
     // case 1: rows are batched (this is often directly converted from Block)
     static std::unique_ptr<Block> convertSparkRowInfoToCHColumn(SparkRowInfo & spark_row_info, Block & header);
@@ -143,13 +144,20 @@ public:
         JNIEnv * env = JNIUtils::getENV(&attached);
         while (env->CallBooleanMethod(java_iter, spark_row_interator_hasNext))
         {
-            jbyteArray row_data = static_cast<jbyteArray>(env->CallObjectMethod(java_iter, spark_row_interator_next));
+            jobject rows_buf = env->CallObjectMethod(java_iter, spark_row_iterator_nextBatch);
+            auto * rows_buf_ptr = static_cast<char*>(env->GetDirectBufferAddress(rows_buf));
+            int len = *(reinterpret_cast<int*>(rows_buf_ptr));
 
-            jsize len = env->GetArrayLength(row_data);
-            char * c_arr = new char[len];
-            env->GetByteArrayRegion(row_data, 0, len, reinterpret_cast<jbyte*>(c_arr));
-            appendSparkRowToCHColumn(helper, reinterpret_cast<int64_t>(c_arr), len);
-            delete[] c_arr;
+            // when len = -1, reach the buf's end.
+            while (len > 0)
+            {
+                rows_buf_ptr += 4;
+                appendSparkRowToCHColumn(helper, reinterpret_cast<int64_t>(rows_buf_ptr), len);
+                rows_buf_ptr += len;
+                len = *(reinterpret_cast<int*>(rows_buf_ptr));
+            }
+            // Try to release reference.
+            env->DeleteLocalRef(rows_buf);
         }
         return getWrittenBlock(helper);
     }

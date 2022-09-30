@@ -19,6 +19,7 @@ namespace local_engine
 jclass SparkRowToCHColumn::spark_row_interator_class = nullptr;
 jmethodID SparkRowToCHColumn::spark_row_interator_hasNext = nullptr;
 jmethodID SparkRowToCHColumn::spark_row_interator_next = nullptr;
+jmethodID SparkRowToCHColumn::spark_row_iterator_nextBatch = nullptr;
 
 int64_t getStringColumnTotalSize(int ordinal, SparkRowInfo & spark_row_info)
 {
