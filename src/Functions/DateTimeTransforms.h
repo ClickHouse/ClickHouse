@@ -38,17 +38,17 @@ namespace ErrorCodes
 
     static inline UInt32 dateIsNotSupported(const char * name)
     {
-        throw Exception("Illegal type Date of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", name);
     }
 
     static inline UInt32 dateTimeIsNotSupported(const char * name)
     {
-        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
 
     static inline Int64 date32IsNotSupported(const char * name)
     {
-        throw Exception("Illegal type Date32 of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date32 of argument for function {}", name);
     }
 
 /// This factor transformation will say that the function is monotone everywhere.
@@ -405,7 +405,7 @@ struct ToStartOfSecondImpl
 
     static inline UInt32 execute(UInt32, const DateLUTImpl &)
     {
-        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
@@ -452,7 +452,7 @@ struct ToStartOfMillisecondImpl
 
     static inline UInt32 execute(UInt32, const DateLUTImpl &)
     {
-        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
@@ -495,7 +495,7 @@ struct ToStartOfMicrosecondImpl
 
     static inline UInt32 execute(UInt32, const DateLUTImpl &)
     {
-        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
@@ -526,13 +526,13 @@ struct ToStartOfNanosecondImpl
         }
         else
         {
-            throw Exception("Illegal type of argument for function " + std::string(name) + ", DateTime64 expected", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for function {}, DateTime64 expected", name);
         }
     }
 
     static inline UInt32 execute(UInt32, const DateLUTImpl &)
     {
-        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
@@ -1363,9 +1363,9 @@ struct DateTimeTransformImpl
         }
         else
         {
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + Transform::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), Transform::name);
         }
     }
 };
