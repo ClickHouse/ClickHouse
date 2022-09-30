@@ -827,8 +827,13 @@ struct JSONExtractTree
         explicit LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) {}
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            auto str = element.getString();
+            // If element is an object we delegate the insertion to JSONExtractRawImpl
+            if (element.isObject())
+                return JSONExtractRawImpl<JSONParser>::insertResultToLowCardinalityFixedStringColumn(dest, element, fixed_length);
+            else if (!element.isString())
+                return false;
 
+            auto str = element.getString();
             if (str.size() > fixed_length)
                 return false;
 
@@ -901,8 +906,11 @@ struct JSONExtractTree
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            if (!element.isString())
+            if (element.isNull())
                 return false;
+
+            if (!element.isString())
+                return JSONExtractRawImpl<JSONParser>::insertResultToFixedStringColumn(dest, element, {});
 
             auto str = element.getString();
             auto & col_str = assert_cast<ColumnFixedString &>(dest);
@@ -1302,6 +1310,37 @@ public:
         buf.finalize();
         chars.push_back(0);
         col_str.getOffsets().push_back(chars.size());
+        return true;
+    }
+
+    // We use insertResultToFixedStringColumn in case we are inserting raw data in a FixedString column
+    static bool insertResultToFixedStringColumn(IColumn & dest, const Element & element, std::string_view)
+    {
+        ColumnFixedString & col_str = assert_cast<ColumnFixedString &>(dest);
+        auto & chars = col_str.getChars();
+        WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
+        traverse(element, buf);
+        buf.finalize();
+        col_str.insertDefault();
+        return true;
+    }
+
+    // We use insertResultToLowCardinalityFixedStringColumn in case we are inserting raw data in a Low Cardinality FixedString column
+    static bool insertResultToLowCardinalityFixedStringColumn(IColumn & dest, const Element & element, size_t fixed_length)
+    {
+        if (element.getObject().size() > fixed_length)
+            return false;
+
+        ColumnFixedString::Chars chars;
+        WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
+        traverse(element, buf);
+        buf.finalize();
+        chars.push_back(0);
+        std::string str = reinterpret_cast<const char *>(chars.data());
+
+        auto padded_str = str.data() + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
+        assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
+
         return true;
     }
 
