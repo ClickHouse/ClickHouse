@@ -65,7 +65,10 @@ CREATE TABLE criteo
     icat24 UInt32,
     icat25 UInt32,
     icat26 UInt32
-) ENGINE = MergeTree(date, intHash32(icat1), (date, intHash32(icat1)), 8192)
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(date)
+ORDER BY (date, intHash32(icat1))
+SETTINGS index_granularity = 8192
 ```
 
 Transform data from the raw log and put it in the second table:
