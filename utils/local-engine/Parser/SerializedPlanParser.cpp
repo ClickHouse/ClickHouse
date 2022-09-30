@@ -31,7 +31,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/BatchParquetFileSource.h>
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTreeFactory.h>
@@ -42,6 +41,8 @@
 #include <Common/MergeTreeTool.h>
 #include <Common/StringUtils.h>
 #include <google/protobuf/util/json_util.h>
+#include <Storages/SubstraitSource/SubstraitFileSource.h>
+
 #include "SerializedPlanParser.h"
 
 namespace DB
@@ -53,7 +54,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_DATA_PART;
     extern const int UNKNOWN_FUNCTION;
-    extern const int NOT_IMPLEMENTED;
 }
 }
 
@@ -200,35 +200,12 @@ QueryPlanPtr SerializedPlanParser::parseReadRealWithLocalFile(const substrait::R
 {
     assert(rel.has_local_files());
     assert(rel.has_base_schema());
-    auto files_info = std::make_shared<FilesInfo>();
-    for (const auto & item : rel.local_files().items())
-    {
-        files_info->files.push_back(item.uri_file());
-    }
     auto header = parseNameStruct(rel.base_schema());
-    PartitionValues partition_values = StringUtils::parsePartitionTablePath(files_info->files[0]);
-    if (partition_values.size() > 1)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "doesn't support multiple level partition.");
-    }
-    ProcessorPtr partition_transform;
-    if (!partition_values.empty())
-    {
-        auto origin_header = header.cloneEmpty();
-        PartitionValue partition_value = partition_values[0];
-        header.erase(partition_value.first);
-        partition_transform
-            = std::make_shared<PartitionColumnFillingTransform>(header, origin_header, partition_value.first, partition_value.second);
-    }
-    auto query_plan = std::make_unique<QueryPlan>();
-    std::shared_ptr<IProcessor> source = std::make_shared<BatchParquetFileSource>(files_info, header, context);
+    auto source = std::make_shared<SubstraitFileSource>(context, header, rel.local_files());
     auto source_pipe = Pipe(source);
-    if (partition_transform)
-    {
-        source_pipe.addTransform(partition_transform);
-    }
-    auto source_step = std::make_unique<ReadFromStorageStep>(std::move(source_pipe), "Parquet");
-    source_step->setStepDescription("Read Parquet");
+    auto source_step = std::make_unique<ReadFromStorageStep>(std::move(source_pipe), "substrait local files");
+    source_step->setStepDescription("read local files");
+    auto query_plan = std::make_unique<QueryPlan>();
     query_plan->addStep(std::move(source_step));
     return query_plan;
 }

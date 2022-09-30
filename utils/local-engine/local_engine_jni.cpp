@@ -21,6 +21,7 @@
 #include <Poco/Logger.h>
 #include <jni/jni_common.h>
 #include <jni/jni_error.h>
+#include <Storages/SubstraitSource/ReadBufferBuilder.h>
 
 bool inside_main = true;
 
@@ -137,6 +138,7 @@ jint JNI_OnLoad(JavaVM * vm, void * /*reserved*/)
         = local_engine::GetMethodID(env, local_engine::SparkRowToCHColumn::spark_row_interator_class, "next", "()[B");
 
     local_engine::JNIUtils::vm = vm;
+    local_engine::registerReadBufferBuildes(local_engine::ReadBufferBuilderFactory::instance());
     return JNI_VERSION_1_8;
 }
 

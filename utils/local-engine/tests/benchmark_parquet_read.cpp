@@ -16,8 +16,9 @@
 #include <Storages/ch_parquet/OptimizedParquetBlockInputFormat.h>
 #include <Storages/ch_parquet/OptimizedArrowColumnToCHColumn.h>
 #include <Storages/ch_parquet/arrow/reader.h>
-#include <Storages/BatchParquetFileSource.h>
+#include <Storages/SubstraitSource/SubstraitFileSource.h>
 #include <Parser/SerializedPlanParser.h>
+#include <substrait/plan.pb.h>
 
 static void BM_ParquetReadString(benchmark::State& state)
 {
@@ -82,12 +83,15 @@ static void BM_OptimizedParquetReadString(benchmark::State& state)
 
     for (auto _ : state)
     {
-        auto files_info = std::make_shared<local_engine::FilesInfo>();
-        files_info->files = {file};
+        substrait::ReadRel::LocalFiles files;
+        substrait::ReadRel::LocalFiles::FileOrFiles * file_item = files.add_items();
+        file_item->set_uri_file(file);
+        substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+        file_item->mutable_parquet()->CopyFrom(parquet_format);
 
         auto builder = std::make_unique<QueryPipelineBuilder>();
-        builder->init(Pipe(std::make_shared<local_engine::BatchParquetFileSource>(
-            files_info, header, local_engine::SerializedPlanParser::global_context)));
+        builder->init(
+            Pipe(std::make_shared<local_engine::SubstraitFileSource>(local_engine::SerializedPlanParser::global_context, header, files)));
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         auto reader = PullingPipelineExecutor(pipeline);
         while (reader.pull(res))
@@ -112,12 +116,15 @@ static void BM_OptimizedParquetReadDate32(benchmark::State& state)
 
     for (auto _ : state)
     {
-        auto files_info = std::make_shared<local_engine::FilesInfo>();
-        files_info->files = {file};
+        substrait::ReadRel::LocalFiles files;
+        substrait::ReadRel::LocalFiles::FileOrFiles * file_item = files.add_items();
+        file_item->set_uri_file(file);
+        substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+        file_item->mutable_parquet()->CopyFrom(parquet_format);
 
         auto builder = std::make_unique<QueryPipelineBuilder>();
-        builder->init(Pipe(std::make_shared<local_engine::BatchParquetFileSource>(
-            files_info, header, local_engine::SerializedPlanParser::global_context)));
+        builder->init(
+            Pipe(std::make_shared<local_engine::SubstraitFileSource>(local_engine::SerializedPlanParser::global_context, header, files)));
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         auto reader = PullingPipelineExecutor(pipeline);
         while (reader.pull(res))

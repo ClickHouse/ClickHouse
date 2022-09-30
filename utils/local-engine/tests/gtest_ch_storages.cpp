@@ -1,12 +1,13 @@
 #include <Functions/FunctionFactory.h>
 #include <Parser/SerializedPlanParser.h>
-#include <Storages/BatchParquetFileSource.h>
+#include <Storages/SubstraitSource/SubstraitFileSource.h>
 #include <gtest/gtest.h>
 #include <Common/DebugUtils.h>
 #include <Storages/CustomMergeTreeSink.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Common/MergeTreeTool.h>
+#include <substrait/plan.pb.h>
 
 using namespace DB;
 using namespace local_engine;
@@ -24,8 +25,12 @@ TEST(TestBatchParquetFileSource, blob)
         "devstoreaccount1;");
 
     auto builder = std::make_unique<QueryPipelineBuilder>();
-    auto files = std::make_shared<FilesInfo>();
-    files->files = {"wasb://libch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet"};
+    substrait::ReadRel::LocalFiles files;
+    substrait::ReadRel::LocalFiles::FileOrFiles * file = files.add_items();
+    std::string file_path = "wasb://libch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet";
+    file->set_uri_file(file_path);
+    substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+    file->mutable_parquet()->CopyFrom(parquet_format);
 
     const auto * type_string = "columns format version: 1\n"
                                "15 columns:\n"
@@ -55,7 +60,7 @@ TEST(TestBatchParquetFileSource, blob)
         columns.emplace_back(std::move(col));
     }
     auto header = Block(std::move(columns));
-    builder->init(Pipe(std::make_shared<BatchParquetFileSource>(files, header, SerializedPlanParser::global_context)));
+    builder->init(Pipe(std::make_shared<local_engine::SubstraitFileSource>(SerializedPlanParser::global_context, header, files)));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     auto executor = PullingPipelineExecutor(pipeline);
@@ -83,9 +88,12 @@ TEST(TestBatchParquetFileSource, s3)
     config->setString("s3.secret_access_key", "password");
 
     auto builder = std::make_unique<QueryPipelineBuilder>();
-    auto files = std::make_shared<FilesInfo>();
-    files->files = {"s3://tpch/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet"};
-    //    files->files = {"file:///home/saber/Downloads/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet"};
+    substrait::ReadRel::LocalFiles files;
+    substrait::ReadRel::LocalFiles::FileOrFiles * file = files.add_items();
+    std::string file_path = "s3://tpch/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet";
+    file->set_uri_file(file_path);
+    substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+    file->mutable_parquet()->CopyFrom(parquet_format);
 
     const auto * type_string = "columns format version: 1\n"
                                "15 columns:\n"
@@ -115,7 +123,7 @@ TEST(TestBatchParquetFileSource, s3)
         columns.emplace_back(std::move(col));
     }
     auto header = Block(std::move(columns));
-    builder->init(Pipe(std::make_shared<BatchParquetFileSource>(files, header, SerializedPlanParser::global_context)));
+    builder->init(Pipe(std::make_shared<SubstraitFileSource>(SerializedPlanParser::global_context, header, files)));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     auto executor = PullingPipelineExecutor(pipeline);
@@ -137,12 +145,18 @@ TEST(TestBatchParquetFileSource, s3)
 TEST(TestBatchParquetFileSource, local_file)
 {
     auto builder = std::make_unique<QueryPipelineBuilder>();
-    auto files = std::make_shared<FilesInfo>();
-    files->files = {
-        "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
-        "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00001-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
-        "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00002-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
-    };
+
+    substrait::ReadRel::LocalFiles files;
+    substrait::ReadRel::LocalFiles::FileOrFiles * file = files.add_items();
+    file->set_uri_file("file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet");
+    substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+    file->mutable_parquet()->CopyFrom(parquet_format);
+    file = files.add_items();
+    file->set_uri_file("file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00001-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet");
+    file->mutable_parquet()->CopyFrom(parquet_format);
+    file = files.add_items();
+    file->set_uri_file("file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00002-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet");
+    file->mutable_parquet()->CopyFrom(parquet_format);
 
     const auto * type_string = "columns format version: 1\n"
                                "2 columns:\n"
@@ -172,7 +186,7 @@ TEST(TestBatchParquetFileSource, local_file)
         columns.emplace_back(std::move(col));
     }
     auto header = Block(std::move(columns));
-    builder->init(Pipe(std::make_shared<BatchParquetFileSource>(files, header, SerializedPlanParser::global_context)));
+    builder->init(Pipe(std::make_shared<SubstraitFileSource>(SerializedPlanParser::global_context, header, files)));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     auto executor = PullingPipelineExecutor(pipeline);
@@ -234,9 +248,12 @@ TEST(TestWrite, MergeTreeWriteTest)
                                                            std::move(settings)
     );
 
-    auto files_info = std::make_shared<FilesInfo>();
-    files_info->files = {"s3://tpch/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet"};
-    auto source = std::make_shared<BatchParquetFileSource>(files_info, metadata->getSampleBlock(), SerializedPlanParser::global_context);
+    substrait::ReadRel::LocalFiles files;
+    substrait::ReadRel::LocalFiles::FileOrFiles * file = files.add_items();
+    file->set_uri_file("s3://tpch/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet");
+    substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+    file->mutable_parquet()->CopyFrom(parquet_format);
+    auto source = std::make_shared<SubstraitFileSource>(SerializedPlanParser::global_context, metadata->getSampleBlock(), files);
 
     QueryPipelineBuilder query_pipeline_builder;
     query_pipeline_builder.init(Pipe(source));

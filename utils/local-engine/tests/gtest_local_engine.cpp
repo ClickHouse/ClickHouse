@@ -14,13 +14,14 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Storages/BatchParquetFileSource.h>
+#include <Storages/SubstraitSource/SubstraitFileSource.h>
 #include <Storages/CustomMergeTreeSink.h>
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
 #include <gtest/gtest.h>
+#include <substrait/plan.pb.h>
 #include "Storages/CustomStorageMergeTree.h"
 #include "testConfig.h"
 
@@ -205,9 +206,14 @@ TEST(TestSelect, MergeTreeWriteTest)
         DB::StorageID("default", "test"), "test-intel/", *metadata, false, global_context, "", param, std::move(settings));
 
     auto sink = std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
-    auto files_info = std::make_shared<FilesInfo>();
-    files_info->files.push_back("/home/kyligence/Documents/test-dataset/intel-gazelle-test-150.snappy.parquet");
-    auto source = std::make_shared<BatchParquetFileSource>(files_info, metadata->getSampleBlock(), SerializedPlanParser::global_context);
+
+    substrait::ReadRel::LocalFiles files;
+    substrait::ReadRel::LocalFiles::FileOrFiles * file = files.add_items();
+    std::string file_path = "file:///home/kyligence/Documents/test-dataset/intel-gazelle-test-150.snappy.parquet";
+    file->set_uri_file(file_path);
+    substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+    file->mutable_parquet()->CopyFrom(parquet_format);
+    auto source = std::make_shared<SubstraitFileSource>(SerializedPlanParser::global_context, metadata->getSampleBlock(), files);
 
     QueryPipelineBuilder query_pipeline;
     query_pipeline.init(Pipe(source));

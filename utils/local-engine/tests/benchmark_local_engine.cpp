@@ -22,7 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Shuffle/ShuffleReader.h>
 #include <Shuffle/ShuffleSplitter.h>
-#include <Storages/BatchParquetFileSource.h>
+#include <Storages/SubstraitSource/SubstraitFileSource.h>
 #include <Storages/CustomMergeTreeSink.h>
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -34,6 +34,7 @@
 #include <Common/MergeTreeTool.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/Stopwatch.h>
+#include <substrait/plan.pb.h>
 #include "testConfig.h"
 
 #if defined(__SSE2__)
@@ -168,13 +169,16 @@ DB::ContextMutablePtr global_context;
 
     for (auto _ : state)
     {
-        auto files = std::make_shared<FilesInfo>();
-        files->files = {
-            "file:///home/hongbin/code/gluten/jvm/src/test/resources/tpch-data/lineitem/"
-            "part-00000-d08071cb-0dfa-42dc-9198-83cb334ccda3-c000.snappy.parquet",
-        };
+        substrait::ReadRel::LocalFiles files;
+        substrait::ReadRel::LocalFiles::FileOrFiles * file = files.add_items();
+        std::string file_path = "file:///home/hongbin/code/gluten/jvm/src/test/resources/tpch-data/lineitem/"
+                                "part-00000-d08071cb-0dfa-42dc-9198-83cb334ccda3-c000.snappy.parquet";
+        file->set_uri_file(file_path);
+        substrait::ReadRel::LocalFiles::FileOrFiles::ParquetReadOptions parquet_format;
+        file->mutable_parquet()->CopyFrom(parquet_format);
         auto builder = std::make_unique<QueryPipelineBuilder>();
-        builder->init(Pipe(std::make_shared<BatchParquetFileSource>(files, header, SerializedPlanParser::global_context)));
+        builder->init(Pipe(std::make_shared<SubstraitFileSource>(SerializedPlanParser::global_context, header, files)));
+
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         auto executor = PullingPipelineExecutor(pipeline);
         auto result = header.cloneEmpty();

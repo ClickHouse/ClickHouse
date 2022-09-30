@@ -30,6 +30,7 @@ include_directories(
 )
 
 add_subdirectory(Storages/ch_parquet)
+add_subdirectory(Storages/SubstraitSource)
 
 add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${builder_sources}
@@ -39,6 +40,7 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${external_sources}
         ${shuffle_sources}
         ${jni_sources}
+        ${substrait_source}
         ${operator_sources}
         local_engine_jni.cpp)
 
@@ -55,6 +57,7 @@ target_link_libraries(${LOCALENGINE_SHARED_LIB} PUBLIC
         substrait
         loggers
         ch_parquet
+        substait_source
 )
 
 # if (USE_LIBCXX)

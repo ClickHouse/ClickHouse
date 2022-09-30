@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Parser/SerializedPlanParser.h>
-#include <Storages/BatchParquetFileSource.h>
+#include <Storages/SubstraitSource/SubstraitFileSource.h>
 #include <gtest/gtest.h>
 #include <Common/DebugUtils.h>
 #include <Storages/CustomMergeTreeSink.h>
@@ -16,6 +16,7 @@
 
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashJoin.h>
+#include <substrait/plan.pb.h>
 
 
 using namespace DB;

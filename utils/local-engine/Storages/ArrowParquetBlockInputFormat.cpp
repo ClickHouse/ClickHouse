@@ -13,8 +13,9 @@ using namespace DB;
 namespace local_engine
 {
 ArrowParquetBlockInputFormat::ArrowParquetBlockInputFormat(
-    DB::ReadBuffer & in_, const DB::Block & header, const DB::FormatSettings & formatSettings)
+    DB::ReadBuffer & in_, const DB::Block & header, const DB::FormatSettings & formatSettings, const std::vector<int> & row_group_indices_)
     : OptimizedParquetBlockInputFormat(in_, header, formatSettings)
+    , row_group_indices(row_group_indices_)
 {
 }
 
@@ -74,8 +75,11 @@ DB::Chunk ArrowParquetBlockInputFormat::generate()
             }
             index += indexes_count;
         }
-        auto row_group_range = boost::irange(0, file_reader->num_row_groups());
-        auto row_group_indices = std::vector(row_group_range.begin(), row_group_range.end());
+        if (row_group_indices.empty())
+        {
+            auto row_group_range = boost::irange(0, file_reader->num_row_groups());
+            row_group_indices = std::vector(row_group_range.begin(), row_group_range.end());
+        }
         auto read_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &current_record_batch_reader);
         if (!read_status.ok())
             throw std::runtime_error{"Error while reading Parquet data: " + read_status.ToString()};
