@@ -15,9 +15,9 @@ namespace ErrorCodes
 struct RetriesInfo
 {
     RetriesInfo() = default;
-    RetriesInfo(std::string name_, Poco::Logger * log_, UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+    RetriesInfo(std::string name_, Poco::Logger * logger_, UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
         : name(std::move(name_))
-        , log(log_)
+        , logger(logger_)
         , max_retries(max_retries_)
         , curr_backoff_ms(initial_backoff_ms_)
         , max_backoff_ms(max_backoff_ms_)
@@ -25,9 +25,9 @@ struct RetriesInfo
     }
 
     std::string name;
-    Poco::Logger * log;
+    Poco::Logger * logger = nullptr;
     UInt64 max_retries = 0;
-    UInt64 curr_backoff_ms = 1;
+    UInt64 curr_backoff_ms = 0;
     UInt64 max_backoff_ms = 0;
     UInt64 retry_count = 0;
 };
@@ -66,9 +66,9 @@ public:
         /// iteration succeeded -> no need to retry
         if (iteration_succeeded)
         {
-            if (retries_info.log)
+            if (retries_info.logger)
                 LOG_DEBUG(
-                    retries_info.log,
+                    retries_info.logger,
                     "{}/{}: succeeded after: iterations={} total_retries={}",
                     retries_info.name,
                     name,
@@ -149,9 +149,9 @@ public:
     {
         if (user_error.code == ErrorCodes::OK)
         {
-            if (retries_info.log)
+            if (retries_info.logger)
                 LOG_DEBUG(
-                    retries_info.log,
+                    retries_info.logger,
                     "{}/{}: {}: count={} timeout={}ms error={} message={}",
                     retries_info.name,
                     name,
@@ -163,9 +163,9 @@ public:
         }
         else
         {
-            if (retries_info.log)
+            if (retries_info.logger)
                 LOG_DEBUG(
-                    retries_info.log,
+                    retries_info.logger,
                     "{}/{}: {}: count={} timeout={}ms error={} message={}",
                     retries_info.name,
                     name,

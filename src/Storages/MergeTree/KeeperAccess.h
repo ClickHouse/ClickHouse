@@ -150,6 +150,8 @@ public:
         zk::Ptr const & keeper_, std::unique_ptr<FaultInjection> fault_policy_, std::string name_, Poco::Logger * logger_ = nullptr)
         : keeper(keeper_), fault_policy(std::move(fault_policy_)), name(std::move(name_)), logger(logger_)
     {
+        if (logger)
+            LOG_DEBUG(logger, "Created KeeperAccess({}): seed={}", name, fault_policy->getSeed());
     }
 
     ~KeeperAccess()
@@ -182,16 +184,22 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<Strings>([&]() { return keeper->getChildren(path, stat, watch, list_request_type); });
     }
 
     zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<zk::FutureExists>([&]() { return keeper->asyncExists(path, watch_callback); });
     }
 
     zk::FutureGet asyncTryGet(const std::string & path)
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<zk::FutureGet>([&]() { return keeper->asyncTryGet(path); });
     }
 
@@ -202,26 +210,36 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr)
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<bool>([&]() { return keeper->tryGet(path, res, stat, watch, code); });
     }
 
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, requests.front()->getPath());
         return access<Coordination::Error>([&]() { return keeper->tryMulti(requests, responses); });
     }
 
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, requests.front()->getPath());
         return access<Coordination::Error>([&]() { return keeper->tryMultiNoThrow(requests, responses); });
     }
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<std::string>([&]() { return keeper->get(path, stat, watch); });
     }
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
+        if (logger)
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<bool>([&]() { return keeper->exists(path, stat, watch); });
     }
 
