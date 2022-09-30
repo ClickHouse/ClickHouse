@@ -30,21 +30,15 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_ENOUGH_SPACE;
-}
-
-
 class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    BufferingToFileTransform(const Block & header, Poco::Logger * log_, std::string path_)
-        : IAccumulatingTransform(header, header), log(log_)
-        , path(std::move(path_)), file_buf_out(path), compressed_buf_out(file_buf_out)
-        , out_stream(std::make_unique<NativeWriter>(compressed_buf_out, 0, header))
+    BufferingToFileTransform(const Block & header, TemporaryFileStream & tmp_stream_, Poco::Logger * log_)
+        : IAccumulatingTransform(header, header)
+        , tmp_stream(tmp_stream_)
+        , log(log_)
     {
-        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", path);
+        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.path());
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
     }
 
@@ -52,71 +46,37 @@ public:
 
     void consume(Chunk chunk) override
     {
-        out_stream->write(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        Block block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        tmp_stream.write(block);
     }
 
     Chunk generate() override
     {
-        if (out_stream)
+        if (!tmp_stream.isWriteFinished())
         {
-            out_stream->flush();
-            compressed_buf_out.next();
-            file_buf_out.next();
+            auto stat = tmp_stream.finishWriting();
 
-            auto stat = updateWriteStat();
+            ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, stat.compressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-                path, ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
-
-            out_stream.reset();
-
-            file_in = std::make_unique<ReadBufferFromFile>(path);
-            compressed_in = std::make_unique<CompressedReadBuffer>(*file_in);
-            block_in = std::make_unique<NativeReader>(*compressed_in, getOutputPort().getHeader(), 0);
+                tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
         }
 
-        if (!block_in)
-            return {};
-
-        auto block = block_in->read();
+        Block block = tmp_stream.read();
         if (!block)
-        {
-            block_in.reset();
             return {};
-        }
 
         UInt64 num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);
     }
 
 private:
-    struct Stat
-    {
-        size_t compressed_size = 0;
-        size_t uncompressed_size = 0;
-    };
-
-    Stat updateWriteStat()
-    {
-        Stat res{compressed_buf_out.getCompressedBytes(), compressed_buf_out.getUncompressedBytes()};
-
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, res.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, res.uncompressed_size);
-
-        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, res.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, res.uncompressed_size);
-        return res;
-    }
+    TemporaryFileStream & tmp_stream;
 
     Poco::Logger * log;
-    std::string path;
-    WriteBufferFromFile file_buf_out;
-    CompressedWriteBuffer compressed_buf_out;
-    std::unique_ptr<NativeWriter> out_stream;
-
-    std::unique_ptr<ReadBufferFromFile> file_in;
-    std::unique_ptr<CompressedReadBuffer> compressed_in;
-    std::unique_ptr<NativeReader> block_in;
 };
 
 MergeSortingTransform::MergeSortingTransform(
@@ -128,13 +88,13 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
-    VolumePtr tmp_volume_,
+    TemporaryDataOnDiskPtr tmp_data_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
-    , tmp_volume(tmp_volume_)
+    , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
 {
 }
@@ -209,17 +169,12 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
-        size_t size = sum_bytes_in_blocks + min_free_disk_space;
-        auto reservation = tmp_volume->reserve(size);
-        if (!reservation)
-            throw Exception("Not enough space for external sort in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
+        /// If there's less free disk space than reserve_size, an exception will be thrown
+        size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
+        auto & tmp_stream = tmp_data->createStream(header_without_constants, CurrentMetrics::TemporaryFilesForSort, reserve_size);
 
-        temporary_files.emplace_back(std::make_unique<TemporaryFileOnDisk>(reservation->getDisk(), CurrentMetrics::TemporaryFilesForSort));
-
-        const std::string & path = temporary_files.back()->path();
-        merge_sorter
-            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
-        auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);
+        merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+        auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, tmp_stream, log);
 
         processors.emplace_back(current_processor);
 
@@ -261,13 +216,14 @@ void MergeSortingTransform::generate()
 {
     if (!generated_prefix)
     {
-        if (temporary_files.empty())
+        size_t num_tmp_files = tmp_data ? tmp_data->getStreams().size() : 0;
+        if (num_tmp_files == 0)
             merge_sorter
                 = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         else
         {
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
-            LOG_INFO(log, "There are {} temporary sorted parts to merge", temporary_files.size());
+            LOG_INFO(log, "There are {} temporary sorted parts to merge", num_tmp_files);
 
             processors.emplace_back(std::make_shared<MergeSorterSource>(
                     header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
