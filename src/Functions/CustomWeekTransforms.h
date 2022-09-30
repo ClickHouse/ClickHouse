@@ -174,10 +174,9 @@ struct CustomWeekTransformImpl
         }
         else
         {
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function "
-                    + Transform::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), Transform::name);
         }
     }
 };
