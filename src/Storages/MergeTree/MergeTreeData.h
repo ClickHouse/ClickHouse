@@ -596,7 +596,12 @@ public:
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
-    void forgetPartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
+    /// NOTE: This method is safe to use only for parts which nobody else holds (like on server start or for parts which was not committed).
+    /// For active parts it's unsafe because this method modifies fields of part (rename) while some other thread can try to read it.
+    void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
+
+    /// Outdate broken part, set remove time to zero (remove as fast as possible) and make clone in detached directory.
+    void outdateBrokenPartAndCloneToDetached(const DataPartPtr & part, const String & prefix);
 
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
