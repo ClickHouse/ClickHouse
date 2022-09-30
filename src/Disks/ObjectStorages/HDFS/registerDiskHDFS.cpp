@@ -5,6 +5,7 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -38,7 +39,7 @@ void registerDiskHDFS(DiskFactory & factory)
         /// FIXME Cache currently unsupported :(
         ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
 
-        auto [_, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context_);
+        auto [_, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context_->getPath());
 
         auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);

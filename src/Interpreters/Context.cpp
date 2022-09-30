@@ -2654,6 +2654,19 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
+DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto disk_selector = getDiskSelector(lock);
+
+    auto disk = disk_selector->tryGet(name);
+    if (!disk)
+        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, creator(getDisksMap(lock)));
+
+    return disk;
+}
+
 StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -2663,7 +2676,7 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
-StoragePolicyPtr Context::getOrSetStoragePolicyForSingleDisk(const String & name) const
+StoragePolicyPtr Context::getOrCreateStoragePolicyForSingleDisk(const String & name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -2691,6 +2704,11 @@ StoragePolicyPtr Context::getOrSetStoragePolicyForSingleDisk(const String & name
 DisksMap Context::getDisksMap() const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
+    return getDisksMap(lock);
+}
+
+DisksMap Context::getDisksMap(std::lock_guard<std::mutex> & lock) const
+{
     return getDiskSelector(lock)->getDisksMap();
 }
 

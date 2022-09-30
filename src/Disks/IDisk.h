@@ -376,6 +376,11 @@ public:
     virtual bool supportsChmod() const { return false; }
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
+    /// Was disk created to be used without storage configuration?
+    bool isCustomDisk() const { return is_custom_disk; }
+
+    void markDiskAsCustom() { is_custom_disk = true; }
+
 protected:
     friend class DiskDecorator;
 
@@ -389,6 +394,7 @@ protected:
 
 private:
     std::shared_ptr<Executor> executor;
+    bool is_custom_disk = false;
 };
 
 using Disks = std::vector<DiskPtr>;

@@ -90,6 +90,7 @@
 #include <typeindex>
 #include <unordered_set>
 #include <filesystem>
+#include <ranges>
 
 
 namespace fs = std::filesystem;
@@ -369,13 +370,15 @@ MergeTreeData::MergeTreeData(
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
-    const auto & settings = getSettings();
+    auto settings = getSettings();
+    const auto & context = getContext();
+
     StoragePolicyPtr storage_policy;
 
     if (settings->disk.changed)
-        storage_policy = getContext()->getOrSetStoragePolicyForSingleDisk(settings->disk);
+        storage_policy = context->getOrCreateStoragePolicyForSingleDisk(settings->disk);
     else
-        storage_policy = getContext()->getStoragePolicy(settings->storage_policy);
+        storage_policy = context->getStoragePolicy(settings->storage_policy);
 
     return storage_policy;
 }
@@ -1271,7 +1274,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken())
+            if (disk->isBroken() || disk->isCustomDisk())
                 continue;
 
             if (!defined_disk_names.contains(disk_name)
@@ -2367,7 +2370,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings.allow_non_metadata_alters)
     {
-
         auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, getContext());
 
         if (!mutation_commands.empty())

@@ -400,8 +400,6 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
 {
     std::shared_ptr<StoragePolicySelector> result = std::make_shared<StoragePolicySelector>(config, config_prefix, disks);
 
-    std::lock_guard lock(mutex);
-
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
@@ -429,8 +427,6 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
 
 StoragePolicyPtr StoragePolicySelector::tryGet(const String & name) const
 {
-    std::lock_guard lock(mutex);
-
     auto it = policies.find(name);
     if (it == policies.end())
         return nullptr;
@@ -449,8 +445,6 @@ StoragePolicyPtr StoragePolicySelector::get(const String & name) const
 
 void StoragePolicySelector::add(StoragePolicyPtr storage_policy)
 {
-    std::lock_guard lock(mutex);
-
     auto [_, inserted] = policies.emplace(storage_policy->getName(), storage_policy);
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StoragePolicy is already present in StoragePolicySelector");

@@ -19,7 +19,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
     }
 }
 
-void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState & state, FormatStateStacked stacked) const
 {
     if (is_standalone)
         format.ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
@@ -30,7 +30,13 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
             format.ostr << ", ";
 
         formatSettingName(it->name, format.ostr);
-        format.ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        if (it->value_ast)
+        {
+            format.ostr << " = ";
+            it->value_ast->formatImpl(format, state, stacked);
+        }
+        else
+            format.ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }
 }
 

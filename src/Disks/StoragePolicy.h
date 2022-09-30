@@ -140,8 +140,6 @@ public:
 
 private:
     StoragePoliciesMap policies;
-
-    mutable std::mutex mutex;
 };
 
 }

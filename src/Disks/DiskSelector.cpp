@@ -121,15 +121,22 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 }
 
 
-DiskPtr DiskSelector::get(const String & name) const
+DiskPtr DiskSelector::tryGet(const String & name) const
 {
     assertInitialized();
     auto it = disks.find(name);
     if (it == disks.end())
-        throw Exception("Unknown disk " + name, ErrorCodes::UNKNOWN_DISK);
+        return nullptr;
     return it->second;
 }
 
+DiskPtr DiskSelector::get(const String & name) const
+{
+    auto disk = tryGet(name);
+    if (!disk)
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "Unknown disk {}", name);
+    return disk;
+}
 
 const DisksMap & DiskSelector::getDisksMap() const
 {
@@ -141,7 +148,9 @@ const DisksMap & DiskSelector::getDisksMap() const
 void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
 {
     assertInitialized();
-    disks.emplace(name, disk);
+    auto [_, inserted] = disks.emplace(name, disk);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk with name `{}` is already in disks map", name);
 }
 
 
