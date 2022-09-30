@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -22,5 +23,7 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
 
 TablesWithColumns getDatabaseAndTablesWithColumns(
     const ASTTableExprConstPtrs & table_expressions, ContextPtr context, bool include_alias_cols, bool include_materialized_cols);
+
+ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query);
 
 }

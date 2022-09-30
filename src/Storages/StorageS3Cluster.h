@@ -46,6 +46,7 @@ private:
     String compression_method;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
+    bool need_to_add_structure_to_query = false;
 };
 
 

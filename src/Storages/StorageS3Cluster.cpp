@@ -5,14 +5,9 @@
 #if USE_AWS_S3
 
 #include "Common/Exception.h"
-#include <Common/Throttler.h>
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
-#include <Core/UUID.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -23,28 +18,54 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
-#include "Processors/ISource.h"
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/getVirtualsForStorage.h>
+#include <Storages/StorageDictionary.h>
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 
-#include <ios>
 #include <memory>
 #include <string>
-#include <thread>
-#include <cassert>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+static ASTPtr addColumnsStructureToQuery(const ASTPtr & query, const String & structure)
+{
+    /// Add argument with table structure to s3Cluster table function in select query.
+    auto result_query = query->clone();
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(result_query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function from s3Cluster, got '{}'", queryToString(query));
+    auto structure_literal = std::make_shared<ASTLiteral>(structure);
+
+    if (expression_list->children.size() < 2 || expression_list->children.size() > 5)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 to 5 arguments in s3Cluster table functions, got {}", expression_list->children.size());
+
+    if (expression_list->children.size() == 2 || expression_list->children.size() == 4)
+    {
+        auto format_literal = std::make_shared<ASTLiteral>("auto");
+        expression_list->children.push_back(format_literal);
+    }
+
+    expression_list->children.push_back(structure_literal);
+    return result_query;
+}
+
 StorageS3Cluster::StorageS3Cluster(
     const StorageS3ClusterConfiguration & configuration_,
     const StorageID & table_id_,
@@ -72,6 +93,7 @@ StorageS3Cluster::StorageS3Cluster(
         auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
             /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
+        need_to_add_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -117,6 +139,11 @@ Pipe StorageS3Cluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
+    ASTPtr query_to_send = query_info.original_query;
+    if (need_to_add_structure_to_query)
+        query_to_send = addColumnsStructureToQuery(
+            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()));
+
     for (const auto & replicas : cluster->getShardsAddresses())
     {
         /// There will be only one replica, because we consider each replica as a shard
@@ -135,7 +162,7 @@ Pipe StorageS3Cluster::read(
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
-                queryToString(query_info.original_query),
+                queryToString(query_to_send),
                 header,
                 context,
                 /*throttler=*/nullptr,
