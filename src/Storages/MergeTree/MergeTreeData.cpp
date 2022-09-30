@@ -3222,9 +3222,8 @@ void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part
     part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
 
     auto lock = lockParts();
-    auto it_part = data_parts_by_info.find(part_to_detach->info);
 
-    if (it_part == data_parts_by_info.end())
+    if (auto it_part = data_parts_by_info.find(part_to_detach->info); it_part == data_parts_by_info.end())
         throw Exception("No such data part " + part_to_detach->getNameWithState(), ErrorCodes::NO_SUCH_DATA_PART);
 
     removePartsFromWorkingSet(nullptr, {part_to_detach}, true, lock);
