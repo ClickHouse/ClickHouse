@@ -47,7 +47,6 @@ class GraceHashJoin final : public IJoin
     class InMemoryJoin;
 
     using Buckets = std::vector<std::shared_ptr<FileBucket>>;
-    using BucketsSnapshot = std::shared_ptr<const Buckets>;
     using InMemoryJoinPtr = std::unique_ptr<InMemoryJoin>;
 
 public:
@@ -107,11 +106,14 @@ private:
     /// Increase number of buckets to match desired_size.
     /// Called when HashJoin in-memory table for one bucket exceeds the limits.
     ///
-    /// NB: after @rehash there may be rows that are written to the buckets that they do not belong to.
+    /// NB: after @rehashBuckets there may be rows that are written to the buckets that they do not belong to.
     /// It is fine; these rows will be written to the corresponding buckets during the third stage.
-    BucketsSnapshot rehash(size_t desired_size);
+    void rehashBuckets();
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
+
+    size_t getNumBuckets() const;
+    Buckets getCurrentBuckets() const;
 
     Poco::Logger * log;
     ContextPtr context;
@@ -121,15 +123,16 @@ private:
     Block right_sample_block;
     Block output_sample_block;
     bool any_take_last_row;
-    size_t initial_num_buckets;
     size_t max_num_buckets;
     size_t max_block_size;
 
     InMemoryJoinPtr first_bucket;
 
     TemporaryDataOnDiskPtr tmp_data;
-    MultiVersion<Buckets> buckets;
-    std::mutex rehash_mutex;
+
+    Buckets buckets;
+    std::shared_mutex rehash_mutex;
+
     std::atomic<bool> started_reading_delayed_blocks{false};
 
     Block totals;
