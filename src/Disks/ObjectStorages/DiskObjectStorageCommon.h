@@ -16,7 +16,7 @@ std::pair<String, DiskPtr> prepareForLocalMetadata(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    ContextPtr context);
+    const String & root_disks_path);
 
 bool isFileWithPersistentCache(const String & path);
 

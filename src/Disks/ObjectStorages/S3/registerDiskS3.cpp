@@ -122,7 +122,7 @@ void registerDiskS3(DiskFactory & factory)
         if (uri.key.back() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 
-        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
+        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context->getPath());
 
         auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);

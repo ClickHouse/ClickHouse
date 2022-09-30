@@ -4,6 +4,8 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
@@ -93,11 +95,14 @@ protected:
 bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
     ParserCompoundIdentifier name_p;
-    ParserLiteralOrMap value_p;
+    ParserLiteralOrMap literal_or_map_p;
     ParserToken s_eq(TokenType::Equals);
+    ParserSetQuery set_p(true);
+    ParserFunction function_p;
 
     ASTPtr name;
     ASTPtr value;
+    ASTPtr function_ast;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -109,7 +114,15 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
     else if (ParserKeyword("FALSE").ignore(pos, expected))
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
-    else if (!value_p.parse(pos, value, expected))
+    /// for SETTINGS disk=disk(type='s3', path='', ...)
+    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+    {
+        tryGetIdentifierNameInto(name, change.name);
+        change.value_ast = function_ast;
+
+        return true;
+    }
+    else if (!literal_or_map_p.parse(pos, value, expected))
         return false;
 
     tryGetIdentifierNameInto(name, change.name);
