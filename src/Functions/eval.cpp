@@ -58,7 +58,7 @@ public:
         }
         else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         {
-            return;
+            
             // TODO: cant get private members of ASTIdentifier
 
             // auto ast_identifier = dynamic_pointer_cast<ASTIdentifier>(ast);
@@ -74,6 +74,7 @@ public:
             //         name_parts[i] = getParamValue(ast_param.name);
             //     }
             // }   
+            return;
         }
         else
         {
@@ -139,6 +140,10 @@ public:
             throw Exception("correlated subquery returned " + toString(block.columns()) + " columns, not 1",
                 ErrorCodes::LOGICAL_ERROR);                
         
+        for (const auto & col : block)
+        {
+            return col.column;
+        }
     }
 
 private:
