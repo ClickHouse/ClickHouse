@@ -495,16 +495,16 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
-option(ENABLE_CH_BUNDLE_BORINGSSL "Provide the user to allow building of OpenSSL library. By default, uses in-house ClickHouse BoringSSL" ON)
+option(ENABLE_EXTERNAL_OPENSSL "Provide the user to allow building of OpenSSL library. By default, uses in-house ClickHouse BoringSSL. It is not recommended and may be insecure" OFF)
 
-message (STATUS "ENABLE_CH_BUNDLE_BORINGSSL: ${ENABLE_CH_BUNDLE_BORINGSSL}")
-if (ENABLE_CH_BUNDLE_BORINGSSL)
+message (STATUS "ENABLE_EXTERNAL_OPENSSL: ${ENABLE_EXTERNAL_OPENSSL}")
+if (NOT ENABLE_EXTERNAL_OPENSSL)
     message (STATUS "Uses in-house ClickHouse BoringSSL library")
 else ()
     message (STATUS "Build and uses OpenSSL library instead of BoringSSL")
 endif ()
 
-if (NOT ENABLE_CH_BUNDLE_BORINGSSL)
+if (ENABLE_EXTERNAL_OPENSSL)
     set(ENABLE_SSL 1)
     target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
 endif ()
