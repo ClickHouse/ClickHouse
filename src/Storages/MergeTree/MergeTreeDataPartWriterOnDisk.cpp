@@ -220,7 +220,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             gin_index_stores[stream_name] = store;
         }
         skip_indices_aggregators.push_back(index_helper->createIndexAggregatorForPart(store));
-
         skip_index_accumulated_marks.push_back(0);
     }
 }
