@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 bool isDiskFunction(ASTPtr ast)
 {
     if (!ast)

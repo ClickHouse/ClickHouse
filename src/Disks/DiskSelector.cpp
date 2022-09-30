@@ -73,12 +73,12 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
     constexpr auto default_disk_name = "default";
-    DisksMap old_disks_minus_new_disks (result->getDisksMap());
+    DisksMap old_disks_minus_new_disks(result->getDisksMap());
 
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Disk name can contain only alphanumeric and '_' ({})", disk_name);
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
         if (!result->getDisksMap().contains(disk_name))
@@ -106,10 +106,15 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeString("Disks ", warning);
 
         int index = 0;
-        for (const auto & [name, _] : old_disks_minus_new_disks)
+        for (const auto & [name, disk] : old_disks_minus_new_disks)
         {
+            /// Custom disks are not present in config.
+            if (disk->isCustomDisk())
+                continue;
+
             if (index++ > 0)
                 writeString(", ", warning);
+
             writeBackQuotedString(name, warning);
         }
 
