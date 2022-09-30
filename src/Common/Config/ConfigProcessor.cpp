@@ -13,6 +13,7 @@
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
+#include <Poco/XML/XMLWriter.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -729,7 +730,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             if (!preprocessed_path_parent.empty())
                 fs::create_directories(preprocessed_path_parent);
         }
-        DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
+        DOMWriter writer;
+        writer.setNewLine("\n");
+        writer.setIndent("    ");
+        writer.setOptions(Poco::XML::XMLWriter::PRETTY_PRINT);
+        writer.writeNode(preprocessed_path, loaded_config.preprocessed_xml);
         LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
     }
     catch (Poco::Exception & e)

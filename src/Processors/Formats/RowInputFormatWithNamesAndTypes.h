@@ -57,6 +57,8 @@ private:
     bool with_names;
     bool with_types;
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
+
+protected:
     std::unordered_map<String, size_t> column_indexes_by_names;
 };
 
