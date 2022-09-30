@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Core/Block.h>
 
@@ -51,7 +52,10 @@ class GraceHashJoin final : public IJoin
 
 public:
     GraceHashJoin(
-        ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_ = false);
+        ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
+        const Block & left_sample_block_, const Block & right_sample_block_,
+        TemporaryDataOnDiskScopePtr tmp_data_,
+        bool any_take_last_row_ = false);
 
     ~GraceHashJoin() override;
 
@@ -123,6 +127,7 @@ private:
 
     InMemoryJoinPtr first_bucket;
 
+    TemporaryDataOnDiskPtr tmp_data;
     MultiVersion<Buckets> buckets;
     std::mutex rehash_mutex;
     std::atomic<bool> started_reading_delayed_blocks{false};

@@ -4,7 +4,7 @@
 #include <Interpreters/Context.h>
 
 #include <Formats/NativeWriter.h>
-#include <Formats/TemporaryFileStream.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ProtocolDefines.h>
@@ -16,6 +16,11 @@
 
 #include <base/FnTraits.h>
 #include <fmt/format.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForJoin;
+}
 
 namespace DB
 {
@@ -30,30 +35,14 @@ namespace ErrorCodes
 namespace
 {
 
-    class FileBlockReader
-    {
-    public:
-        explicit FileBlockReader(const TemporaryFileOnDisk & file, const Block & header)
-            : file_reader{file.getDisk()->readFile(file.getPath())}
-            , compressed_reader{*file_reader}
-            , block_reader{compressed_reader, header, DBMS_TCP_PROTOCOL_VERSION}
-        {
-        }
-
-        Block read() { return block_reader.read(); }
-
-    private:
-        std::unique_ptr<ReadBufferFromFileBase> file_reader;
-        CompressedReadBuffer compressed_reader;
-        NativeReader block_reader;
-    };
-
-    using FileBlockReaderPtr = std::unique_ptr<FileBlockReader>;
-
     class BlocksAccumulator
     {
     public:
-        explicit BlocksAccumulator(size_t desired_block_size_) : desired_block_size(desired_block_size_) { }
+        explicit BlocksAccumulator(size_t desired_block_size_)
+            : desired_block_size(desired_block_size_)
+        {
+            assert(desired_block_size > 0);
+        }
 
         void addBlock(Block block)
         {
@@ -87,9 +76,12 @@ namespace
     class MergingBlockReader
     {
     public:
-        explicit MergingBlockReader(FileBlockReaderPtr reader_, size_t desired_block_size = DEFAULT_BLOCK_SIZE * 8)
-            : reader{std::move(reader_)}, accumulator{desired_block_size}
+        explicit MergingBlockReader(TemporaryFileStream & reader_, size_t desired_block_size = DEFAULT_BLOCK_SIZE * 8)
+            : reader{reader_}
+            , accumulator{desired_block_size}
         {
+            if (!reader.isWriteFinished())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading not finished file");
         }
 
         Block read()
@@ -98,9 +90,9 @@ namespace
                 return {};
 
             Block res;
-            while (!(res = accumulator.peek()))
+            for (; !res; res = accumulator.peek())
             {
-                Block tmp = reader->read();
+                Block tmp = reader.read();
                 if (!tmp)
                 {
                     eof = true;
@@ -113,75 +105,9 @@ namespace
         }
 
     private:
-        FileBlockReaderPtr reader;
+        TemporaryFileStream & reader;
         BlocksAccumulator accumulator;
         bool eof = false;
-    };
-
-    class FileBlockWriter
-    {
-        static std::string buildTemporaryFilePrefix(ContextPtr context, JoinTableSide side, size_t index)
-        {
-            std::string_view suffix = side == JoinTableSide::Left ? "left" : "right";
-            return fmt::format("tmp_{}_gracejoinbuf_{}_{}_", context->getCurrentQueryId(), suffix, index);
-        }
-
-        static CompressionCodecPtr getCompressionCodec(TableJoin & join)
-        {
-            return CompressionCodecFactory::instance().get(join.temporaryFilesCodec(), std::nullopt);
-        }
-
-    public:
-        explicit FileBlockWriter(ContextPtr context, TableJoin & join, JoinTableSide side, size_t index)
-            : disk{join.getTemporaryVolume()->getDisk()}
-            , file{disk, buildTemporaryFilePrefix(context, side, index)}
-            , file_writer{disk->writeFile(file.getPath(), context->getSettingsRef().grace_hash_join_buffer_size)}
-            , compressed_writer{*file_writer, getCompressionCodec(join), context->getSettingsRef().grace_hash_join_buffer_size}
-        {
-        }
-
-        void write(const Block & block)
-        {
-            if (finished.load())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing to finished temporary file");
-            if (!output)
-                reset(block);
-            output->write(block);
-            ++num_blocks;
-        }
-
-        void finalize()
-        {
-            if (finished.exchange(true))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Flushing already finished temporary file");
-            compressed_writer.finalize();
-            file_writer->finalize();
-        }
-
-        MergingBlockReader makeReader() const
-        {
-            if (!finished.load())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading not finished file");
-            return MergingBlockReader{std::make_unique<FileBlockReader>(file, header)};
-        }
-
-        size_t numBlocks() const { return num_blocks; }
-
-    private:
-        void reset(const Block & sample)
-        {
-            header = sample.cloneEmpty();
-            output.emplace(compressed_writer, DBMS_TCP_PROTOCOL_VERSION, header);
-        }
-
-        Block header;
-        DiskPtr disk;
-        TemporaryFileOnDisk file;
-        std::unique_ptr<WriteBufferFromFileBase> file_writer;
-        CompressedWriteBuffer compressed_writer;
-        std::optional<NativeWriter> output;
-        std::atomic<bool> finished{false};
-        size_t num_blocks = 0;
     };
 
     std::deque<size_t> generateRandomPermutation(size_t from, size_t to)
@@ -216,20 +142,23 @@ class GraceHashJoin::FileBucket
         WRITING_BLOCKS,
         JOINING_BLOCKS,
         FINISHED,
-        ANY,
     };
 
 public:
-    explicit FileBucket(ContextPtr context_, TableJoin & join, size_t bucket_index_, const FileBucket * parent_)
+    explicit FileBucket(size_t bucket_index_, TemporaryFileStream & left_file_, TemporaryFileStream & right_file_, const FileBucket * parent_)
         : bucket_index{bucket_index_}
-        , left_file{context_, join, JoinTableSide::Left, bucket_index}
-        , right_file{context_, join, JoinTableSide::Right, bucket_index}
+        , left_file{left_file_}
+        , right_file{right_file_}
         , parent{parent_}
         , state{State::WRITING_BLOCKS}
     {
     }
 
-    void addLeftBlock(const Block & block) { return addBlockImpl(block, left_file_mutex, left_file); }
+    void addLeftBlock(const Block & block)
+    {
+        return addBlockImpl(block, left_file_mutex, left_file);
+    }
+
     void addRightBlock(const Block & block) { return addBlockImpl(block, right_file_mutex, right_file); }
     bool tryAddLeftBlock(const Block & block) { return tryAddBlockImpl(block, left_file_mutex, left_file); }
     bool tryAddRightBlock(const Block & block) { return tryAddBlockImpl(block, right_file_mutex, right_file); }
@@ -237,13 +166,13 @@ public:
     void startJoining()
     {
         ensureState(State::JOINING_BLOCKS);
-        left_file.finalize();
-        right_file.finalize();
+        left_file.finishWriting();
+        right_file.finishWriting();
     }
 
     size_t index() const { return bucket_index; }
     bool finished() const { return state.load() == State::FINISHED; }
-    bool empty() const { return right_file.numBlocks() == 0 && left_file.numBlocks() == 0; }
+    bool empty() const { return is_empty.load(); }
 
     bool tryLockForJoining()
     {
@@ -256,27 +185,30 @@ public:
 
     void finish() { transition(State::JOINING_BLOCKS, State::FINISHED); }
 
-    MergingBlockReader openLeftTableReader() const { return left_file.makeReader(); }
+    MergingBlockReader openLeftTableReader() const { return MergingBlockReader(left_file); }
 
-    MergingBlockReader openRightTableReader() const { return right_file.makeReader(); }
+    MergingBlockReader openRightTableReader() const { return MergingBlockReader(right_file); }
 
     std::mutex & joinMutex() { return join_mutex; }
 
 private:
-    bool tryAddBlockImpl(const Block & block, std::mutex & mutex, FileBlockWriter & writer)
+    bool tryAddBlockImpl(const Block & block, std::mutex & mutex, TemporaryFileStream & writer)
     {
+        if (block.rows())
+            is_empty = false;
         ensureState(State::WRITING_BLOCKS);
         std::unique_lock lock{mutex, std::try_to_lock};
         if (!lock.owns_lock())
-        {
             return false;
-        }
+
         writer.write(block);
         return true;
     }
 
-    void addBlockImpl(const Block & block, std::mutex & mutex, FileBlockWriter & writer)
+    void addBlockImpl(const Block & block, std::mutex & mutex, TemporaryFileStream & writer)
     {
+        if (block.rows())
+            is_empty = false;
         ensureState(State::WRITING_BLOCKS);
         std::unique_lock lock{mutex};
         writer.write(block);
@@ -285,7 +217,7 @@ private:
     void transition(State expected, State desired)
     {
         State prev = state.exchange(desired);
-        if (expected != State::ANY && prev != expected)
+        if (prev != expected)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid state transition");
     }
 
@@ -296,11 +228,16 @@ private:
     }
 
     size_t bucket_index;
-    FileBlockWriter left_file;
-    FileBlockWriter right_file;
+
+    TemporaryFileStream & left_file;
+    TemporaryFileStream & right_file;
     std::mutex left_file_mutex;
     std::mutex right_file_mutex;
+
+    std::atomic_bool is_empty = true;
+
     std::mutex join_mutex; /// Protects external in-memory join
+
     const FileBucket * parent;
     std::atomic<State> state;
 };
@@ -328,16 +265,22 @@ public:
 };
 
 GraceHashJoin::GraceHashJoin(
-    ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
+    ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
+    const Block & left_sample_block_,
+    const Block & right_sample_block_,
+    TemporaryDataOnDiskScopePtr tmp_data_,
+    bool any_take_last_row_)
     : log{&Poco::Logger::get("GraceHashJoin")}
     , context{context_}
     , table_join{std::move(table_join_)}
+    , left_sample_block{left_sample_block_}
     , right_sample_block{right_sample_block_}
     , any_take_last_row{any_take_last_row_}
     , initial_num_buckets{context->getSettingsRef().grace_hash_join_initial_buckets}
     , max_num_buckets{context->getSettingsRef().grace_hash_join_max_buckets}
     , max_block_size{context->getSettingsRef().max_block_size}
     , first_bucket{makeInMemoryJoin()}
+    , tmp_data(std::make_unique<TemporaryDataOnDisk>(tmp_data_, CurrentMetrics::TemporaryFilesForJoin))
 {
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
@@ -350,6 +293,12 @@ GraceHashJoin::GraceHashJoin(
     }
     buckets.set(std::move(tmp));
     LOG_TRACE(log, "Initialize {} buckets", initial_num_buckets);
+
+    {
+        output_sample_block = left_sample_block.cloneEmpty();
+        ExtraBlockPtr not_processed;
+        first_bucket->join->joinBlock(output_sample_block, not_processed);
+    }
 }
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
@@ -443,7 +392,8 @@ void GraceHashJoin::startReadingDelayedBlocks()
 void GraceHashJoin::addBucket(Buckets & destination, const FileBucket * parent)
 {
     size_t index = destination.size();
-    destination.emplace_back(std::make_unique<FileBucket>(context, *table_join, index, parent));
+    destination.emplace_back(std::make_unique<FileBucket>(
+        index, tmp_data->createStream(left_sample_block), tmp_data->createStream(right_sample_block), parent));
 }
 
 void GraceHashJoin::checkTypesOfKeys(const Block & block) const
@@ -454,14 +404,6 @@ void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    if (need_left_sample_block.exchange(false))
-    {
-        left_sample_block = block.cloneEmpty();
-        output_sample_block = block.cloneEmpty();
-        ExtraBlockPtr not_processed;
-        first_bucket->join->joinBlock(output_sample_block, not_processed);
-    }
-
     if (block.rows() == 0)
     {
         ExtraBlockPtr not_processed;

@@ -5,6 +5,13 @@
 #include <Interpreters/Context.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IVolume.h>
+#include <Common/CurrentMetrics.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesUnknown;
+}
 
 namespace DB
 {
@@ -17,7 +24,6 @@ using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
 using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
-
 
 /*
  * Used to account amount of temporary data written to disk.
@@ -71,9 +77,15 @@ public:
     explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
         : TemporaryDataOnDiskScope(std::move(parent_), 0)
     {}
+    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope)
+        : TemporaryDataOnDiskScope(std::move(parent_), 0)
+        , current_metric_scope(metric_scope)
+    {}
 
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
     TemporaryFileStream & createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size = 0);
+
+    TemporaryFileStream & createStream(const Block & header) { return createStream(header, current_metric_scope); }
 
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
@@ -83,6 +95,8 @@ public:
 private:
     mutable std::mutex mutex;
     std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
+
+    typename CurrentMetrics::Value current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
 };
 
 /*
