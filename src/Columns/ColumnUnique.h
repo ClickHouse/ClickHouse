@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Columns/IColumnUnique.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ReverseIndex.h>
@@ -7,16 +8,17 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <base/range.h>
+#include <Common/FieldVisitors.h>
 
+#include <base/range.h>
 #include <base/unaligned.h>
-#include "Columns/ColumnConst.h"
 
 
 namespace DB
@@ -70,10 +72,6 @@ public:
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        return getNestedColumn()->getDataAtWithTerminatingZero(n);
-    }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -115,6 +113,15 @@ public:
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
+    void forEachSubcolumnRecursively(IColumn::ColumnCallback callback) override
+    {
+        callback(column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (auto rhs_concrete = typeid_cast<const ColumnUnique *>(&rhs))
@@ -136,15 +143,16 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
+    /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
-        auto& nested = *getNestedColumn();
+        const IColumn & nested = *getNestedColumn();
 
         for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
+            if (!nested.isNullAt(i) && nested.getDataAt(i) == value)
                 return i;
 
         return {};
@@ -308,17 +316,52 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
     return 0;
 }
 
+
+namespace
+{
+    class FieldVisitorGetData : public StaticVisitor<>
+    {
+    public:
+        StringRef res;
+
+        [[noreturn]] static void throwUnsupported()
+        {
+            throw Exception("Unsupported field type", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        [[noreturn]] void operator() (const Null &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Array &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Tuple &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Map &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Object &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const AggregateFunctionStateData &) { throwUnsupported(); }
+        void operator() (const String & x) { res = {x.data(), x.size()}; }
+        void operator() (const UInt64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UInt128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UInt256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UUID & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Float64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal32> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal64> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal128> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal256> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const bool & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+    };
+}
+
+
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
     if (x.isNull())
         return getNullValueIndex();
 
-    if (valuesHaveFixedSize())
-        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
-
-    const auto & val = x.get<String>();
-    return uniqueInsertData(val.data(), val.size());
+    FieldVisitorGetData visitor;
+    applyVisitor(visitor, x);
+    return uniqueInsertData(visitor.res.data, visitor.res.size);
 }
 
 template <typename ColumnType>

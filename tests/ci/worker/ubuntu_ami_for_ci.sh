@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.293.0
+export RUNNER_VERSION=2.296.2
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -23,6 +23,11 @@ runner_arch() {
       echo arm64;;
   esac
 }
+
+# We have test for cgroups, and it's broken with cgroups v2
+# Ubuntu 22.04 has it enabled by default
+sed -r '/GRUB_CMDLINE_LINUX=/ s/"(.*)"/"\1 systemd.unified_cgroup_hierarchy=0"/' -i /etc/default/grub
+update-grub
 
 apt-get update
 

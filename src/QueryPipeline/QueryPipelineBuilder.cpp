@@ -570,6 +570,11 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
     process_list_element = elem;
 }
 
+void QueryPipelineBuilder::setProgressCallback(ProgressCallback callback)
+{
+    progress_callback = callback;
+}
+
 PipelineExecutorPtr QueryPipelineBuilder::execute()
 {
     if (!isCompleted())
@@ -590,6 +595,7 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());
     res.setProcessListElement(builder.process_list_element);
+    res.setProgressCallback(builder.progress_callback);
     return res;
 }
 
