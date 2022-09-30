@@ -409,7 +409,7 @@ bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
     if (type != "'windows'")
         throw Exception("Supported type argument is windows for  " + fn_name, ErrorCodes::BAD_ARGUMENTS);
     
-    out = std::format("splitByChar(' ' , {})", json_string);
+    out = std::format("if( isEmpty(json_string)  ? NULL   : splitByChar(' ' , {}))", json_string);
 
     return true;
 }
@@ -504,17 +504,13 @@ bool ParseVersion::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
     {
         arg = getConvertedArgument(fn_name, pos);
-        if (arg.front() == '\"' || arg.front() == '\'')
-        {
-            arg.erase(0, 1); // erase the first quote
-            arg.erase(arg.size() - 1); // erase the last quote
-        }
-        out = std::format("substring(arrayStringConcat( arrayMap(x ->leftPad(x, 8, '0') ,arrayMap(x ->empty(x) ? '0' : x, arrayResize(splitByChar('.', '{}') , 4)))),8)", arg);
+    
+        out = std::format("if( length(splitByChar('.', '{0}')) > 4 OR  length(splitByChar('.', '{0}')) < 1 OR match({0}, '.*[a-zA-Z]+.*') = 1 ? toDecimal128OrNull('NULL' , 0)  : toDecimal128OrNull(substring(arrayStringConcat( arrayMap(x ->leftPad(x, 8, '0') ,arrayMap(x ->empty(x) ? '0' : x, arrayResize(splitByChar('.', {0}) , 4)))),8),0))", arg);
     }
     else
     {
         arg = getConvertedArgument(fn_name, pos);
-        out = std::format("substring(arrayStringConcat( arrayMap(x ->leftPad(x, 8, '0') ,arrayMap(x ->empty(x) ? '0' : x, arrayResize(splitByChar('.', {}) , 4)))),8)", arg);
+        out = std::format(" if( length(splitByChar('.', '{0}')) > 4 OR  length(splitByChar('.', '{0}')) < 1  OR match({0}, '.*[a-zA-Z]+.*') = 1 ? toDecimal128OrNull('NULL' , 0)  : toDecimal128OrNull(substring(arrayStringConcat( arrayMap(x ->leftPad(x, 8, '0') ,arrayMap(x ->empty(x) ? '0' : x, arrayResize(splitByChar('.', {0}) , 4)))),8), 0))", arg);
     }
     return true;
 }
