@@ -77,7 +77,6 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
 
     /// StorageS3ClusterConfiguration inherints from StorageS3Configuration, so it is safe to upcast it.
     TableFunctionS3::parseArgumentsImpl(message, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));
-    LOG_DEBUG(&Poco::Logger::get("TableFunctionS3Cluster"), "Structure: {}", configuration.structure);
 }
 
 
