@@ -611,7 +611,7 @@ DataTypePtr QueryFuzzer::getRandomType()
     if (type_id == TypeIndex::Array)
         return std::make_shared<DataTypeArray>(getRandomType());
 
-/// NOLINTNEXTLINE
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define DISPATCH(DECIMAL) \
     if (type_id == TypeIndex::DECIMAL) \
         return std::make_shared<DataTypeDecimal<DECIMAL>>( \
@@ -623,6 +623,7 @@ DataTypePtr QueryFuzzer::getRandomType()
     DISPATCH(Decimal128)
     DISPATCH(Decimal256)
 #undef DISPATCH
+/// NOLINTEND(bugprone-macro-parentheses)
 
     if (type_id == TypeIndex::FixedString)
         return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20);
