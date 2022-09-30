@@ -1011,10 +1011,12 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
 
 
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(
+    std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
     const auto & settings = context->getSettings();
 
+    Block left_sample_block(left_sample_columns);
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
 
     std::vector<String> tried_algorithms;
@@ -1061,7 +1063,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
         if (GraceHashJoin::isSupported(analyzed_join))
-            return std::make_shared<GraceHashJoin>(context, analyzed_join, right_sample_block);
+            return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
@@ -1072,9 +1074,9 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
         };
 
-        auto make_grace_hash_join = [context, analyzed_join, right_sample_block]
+        auto make_grace_hash_join = [context, analyzed_join, left_sample_block, right_sample_block]
         {
-            return std::make_shared<GraceHashJoin>(context, analyzed_join, right_sample_block);
+            return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
         };
 
         if (settings.allow_grace_hash_join && GraceHashJoin::isSupported(analyzed_join))
@@ -1221,7 +1223,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan, getContext());
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, left_columns, joined_plan, getContext());
     return join;
 }
 
