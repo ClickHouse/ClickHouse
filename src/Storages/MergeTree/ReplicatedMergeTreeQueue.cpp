@@ -41,7 +41,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
-    assert(future_parts.empty());
+    chassert(future_parts.empty());
     current_parts.clear();
     virtual_parts.clear();
     queue.clear();
@@ -62,6 +62,7 @@ void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings &
 
 void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
 {
+    clear();
     std::lock_guard lock(state_mutex);
 
     LOG_TRACE(log, "Initializing parts in queue");
