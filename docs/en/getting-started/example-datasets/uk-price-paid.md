@@ -87,7 +87,7 @@ FROM url(
     county String,
     d String,
     e String'
-)
+) SETTINGS max_http_get_redirects=10;
 ```
 
 Wait for the data to insert - it will take a minute or two depending on the network speed.
