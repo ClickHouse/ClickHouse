@@ -357,7 +357,8 @@ void ReplicatedMergeTreeSink::commitPart(
         /// Allocate new block number and check for duplicates
         bool deduplicate_block = !block_id.empty();
         String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
-        auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+        std::optional<EphemeralLockInZooKeeper> block_number_lock
+            = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
 
         /// Prepare transaction to ZooKeeper
         /// It will simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.

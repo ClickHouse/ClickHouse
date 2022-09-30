@@ -175,7 +175,6 @@ public:
                     user_error.code,
                     user_error.message);
         }
-
     }
 
     const auto & getUserError() const { return user_error; }

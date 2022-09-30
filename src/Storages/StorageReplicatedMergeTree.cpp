@@ -5278,7 +5278,6 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
             zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
-    /// todo: temporary, just to compile for now
     return createEphemeralLockInZooKeeper(
         fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *zookeeper, zookeeper_block_id_path);
 }

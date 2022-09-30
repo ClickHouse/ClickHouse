@@ -657,7 +657,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, insert_keeper_max_retries, 9, "Max retries for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \
-    M(UInt64, insert_keeper_fault_injection_mode, 1, "0 - off, 1 - random (see insert_keeper_fault_injection_seed), 2 - each call once", 0) \
+    M(UInt64, insert_keeper_fault_injection_mode, 0, "0 - off, 1 - random (see insert_keeper_fault_injection_seed), 2 - each call once", 0) \
     M(UInt64, insert_keeper_fault_injection_seed, 0, "0 - random seed, otherwise the setting value", 0) \
     M(Float, insert_keeper_fault_injection_probability, 0.1f, "", 0) \
     // End of COMMON_SETTINGS
