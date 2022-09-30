@@ -30,9 +30,6 @@
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2.git
-[submodule "contrib/llvm"]
-	path = contrib/llvm
-	url = https://github.com/ClickHouse/llvm
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse/mariadb-connector-c.git
@@ -284,3 +281,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
+[submodule "contrib/llvm-project"]
+	path = contrib/llvm-project
+	url = https://github.com/ClickHouse/llvm-project.git
