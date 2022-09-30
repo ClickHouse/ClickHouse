@@ -74,10 +74,10 @@ ExpressionTransform × 16
   (MergingAggregated)
   Resize 1 → 16
     MergingAggregatedTransform
-      Resize 18 → 1
+      Resize 3 → 1
         (Union)
           (Aggregating)
-          Resize 16 → 16
+          Resize 16 → 1
             AggregatingTransform × 16
               (Expression)
               ExpressionTransform × 16

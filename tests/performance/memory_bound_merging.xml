@@ -1,6 +1,5 @@
 <test>
   <settings>
-    <enable_memory_bound_merging_of_aggregation_results>1</enable_memory_bound_merging_of_aggregation_results>
     <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
   </settings>
 
