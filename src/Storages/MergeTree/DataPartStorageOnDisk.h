@@ -52,7 +52,10 @@ public:
         MergeTreeDataPartState state,
         Poco::Logger * log) override;
 
-    std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
+    std::optional<String> getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const override;
+
+    bool looksLikeBrokenDetachedPartHasTheSameContent(const String & detached_part_path, std::optional<String> & original_checksums_content,
+                                                      std::optional<Strings> & original_files_list) const override;
 
     void setRelativePath(const std::string & path) override;
     void onRename(const std::string & new_root_path, const std::string & new_part_dir) override;
