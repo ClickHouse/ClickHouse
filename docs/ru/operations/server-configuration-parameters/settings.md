@@ -1342,12 +1342,13 @@ TCP порт для защищённого обмена данными с кли
 
 Если политика не задана, используется [tmp_path](#tmp-path). В противном случае `tmp_path` игнорируется.
 
-    :::note "Примечание"
-    - `move_factor` игнорируется.
-    - `keep_free_space_bytes` игнорируется.
-    - `max_data_part_size_bytes` игнорируется.
-    - В данной политике у вас должен быть ровно один том.
-    :::
+:::note "Примечание"
+- `move_factor` игнорируется.
+- `keep_free_space_bytes` игнорируется.
+- `max_data_part_size_bytes` игнорируется.
+- В данной политике должен быть ровно один том, содержащий только локальный диски.
+:::
+
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/server-configuration-parameters/settings.md).

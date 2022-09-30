@@ -1766,12 +1766,12 @@ public:
                     return {true, is_constant_positive, true};
                 }
             }
-            return {false, true, false};
+            return {false, true, false, false};
         }
 
         // For simplicity, we treat every single value interval as positive monotonic.
         if (applyVisitor(FieldVisitorAccurateEquals(), left_point, right_point))
-            return {true, true, false};
+            return {true, true, false, false};
 
         if (name_view == "minus" || name_view == "plus")
         {
@@ -1797,18 +1797,18 @@ public:
                     // Check if there is an overflow
                     if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                             == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
-                        return {true, true, false};
+                        return {true, true, false, true};
                     else
-                        return {false, true, false};
+                        return {false, true, false, false};
                 }
                 else
                 {
                     // Check if there is an overflow
                     if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                             != applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
-                        return {true, false, false};
+                        return {true, false, false, true};
                     else
-                        return {false, false, false};
+                        return {false, false, false, false};
                 }
             }
             // variable +|- constant
@@ -1829,31 +1829,33 @@ public:
                 // Check if there is an overflow
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                     == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
-                    return {true, true, false};
+                    return {true, true, false, true};
                 else
-                    return {false, true, false};
+                    return {false, true, false, false};
             }
         }
         if (name_view == "divide" || name_view == "intDiv")
         {
+            bool is_strict = name_view == "divide";
+
             // const / variable
             if (left.column && isColumnConst(*left.column))
             {
                 auto constant = (*left.column)[0];
                 if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
-                    return {true, true, false}; // 0 / 0 is undefined, thus it's not always monotonic
+                    return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, Field(0))
                     && applyVisitor(FieldVisitorAccurateLess(), right_point, Field(0)))
                 {
-                    return {true, is_constant_positive, false};
+                    return {true, is_constant_positive, false, is_strict};
                 }
                 else if (
                     applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
                     && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
                 {
-                    return {true, !is_constant_positive, false};
+                    return {true, !is_constant_positive, false, is_strict};
                 }
             }
             // variable / constant
@@ -1861,11 +1863,11 @@ public:
             {
                 auto constant = (*right.column)[0];
                 if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
-                    return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
+                    return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
                 // division is saturated to `inf`, thus it doesn't have overflow issues.
-                return {true, is_constant_positive, true};
+                return {true, is_constant_positive, true, is_strict};
             }
         }
         return {false, true, false};
