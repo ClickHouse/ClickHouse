@@ -1243,7 +1243,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const DataPartPtr & part : unexpected_parts)
     {
         LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}", part->name, part->name);
-        forgetPartAndMoveToDetached(part, "ignored", true);
+        forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", true);
     }
 }
 
@@ -5017,7 +5017,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
         if (part->getState() == DataPartState::Active)
             active_parts_names.push_back(part->name);
 
-        forgetPartAndMoveToDetached(part);
+        forcefullyMovePartToDetachedAndRemoveFromMemory(part);
     }
 
     LOG_INFO(log, "Moved all parts to detached/");
