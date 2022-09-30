@@ -9,29 +9,49 @@
 namespace DB
 {
 
-class FaultInjectionPolicy
+class FaultInjection
 {
 public:
-    virtual ~FaultInjectionPolicy() = default;
+    explicit FaultInjection(UInt64 seed_ = 0) : seed(seed_)
+    {
+        if (0 == seed)
+            seed = randomSeed();
+    }
+    virtual ~FaultInjection() = default;
     virtual void beforeOperation() = 0;
     virtual void afterOperation() = 0;
     virtual void reset() = 0;
+    UInt64 getSeed() const { return seed; }
+
+protected:
+    UInt64 seed = 0;
 };
 
-class NoOpPolicy : public FaultInjectionPolicy
+class NoFaultInjection : public FaultInjection
 {
 public:
-    ~NoOpPolicy() override = default;
+    ~NoFaultInjection() override = default;
     void beforeOperation() override { }
     void afterOperation() override { }
     void reset() override { }
 };
 
-class EachCallOnce : public FaultInjectionPolicy
+class EachCallOnce : public FaultInjection
 {
 public:
+    explicit EachCallOnce(UInt64 seed_) : FaultInjection(seed_) { }
     ~EachCallOnce() override = default;
     void beforeOperation() override
+    {
+        if (failed == succeeded)
+        {
+            /// todo: randomly decide if we should fail here or in afterOperation()
+            ++failed;
+            throw zkutil::KeeperException("Fault injection", Coordination::Error::ZSESSIONEXPIRED);
+        }
+        ++succeeded;
+    }
+    void afterOperation() override
     {
         if (failed == succeeded)
         {
@@ -40,7 +60,6 @@ public:
         }
         ++succeeded;
     }
-    void afterOperation() override { }
     void reset() override
     {
         succeeded = 0;
@@ -52,22 +71,21 @@ private:
     size_t failed = 0;
 };
 
-class Rand : public FaultInjectionPolicy
+class Random : public FaultInjection
 {
 public:
-    static std::unique_ptr<Rand> create(UInt64 seed, double probability)
+    static std::unique_ptr<Random> create(UInt64 seed_, double probability)
     {
-        if (0 == seed)
-            seed = randomSeed();
+        if (probability < 0.0)
+            probability = .0;
+        if (probability > 1.0)
+            probability = 1.0;
 
-        if (probability < 0.0 || probability > 1.0)
-            probability = 0.01;
-
-        return std::make_unique<Rand>(seed, probability);
+        return std::make_unique<Random>(seed_, probability);
     }
 
-    explicit Rand(const UInt64 seed, double probability) : rndgen(seed), distribution(probability) { }
-    ~Rand() override = default;
+    explicit Random(const UInt64 seed_, double probability) : FaultInjection(seed_), rndgen(getSeed()), distribution(probability) { }
+    ~Random() override = default;
 
     void beforeOperation() override
     {
@@ -91,20 +109,45 @@ class KeeperAccess
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
-    std::unique_ptr<FaultInjectionPolicy> fault_policy;
+    std::unique_ptr<FaultInjection> fault_policy;
     std::string name;
     Poco::Logger * logger = nullptr;
     UInt64 calls_total = 0;
     UInt64 calls_without_fault_injection = 0;
 
 public:
+    using Ptr = std::shared_ptr<KeeperAccess>;
+
+    static KeeperAccess::Ptr create(
+        int fault_injection_mode,
+        UInt64 fault_injection_seed,
+        double fault_injection_probability,
+        const zk::Ptr & zookeeper,
+        std::string name,
+        Poco::Logger * logger)
+    {
+        switch (fault_injection_mode)
+        {
+            case 1:
+                return std::make_shared<KeeperAccess>(
+                    zookeeper, Random::create(fault_injection_seed, fault_injection_probability), std::move(name), logger);
+            case 2:
+                return std::make_shared<KeeperAccess>(
+                    zookeeper, std::make_unique<EachCallOnce>(fault_injection_seed), std::move(name), logger);
+
+            default:
+                return std::make_shared<KeeperAccess>(zookeeper, std::move(name), logger);
+        }
+        __builtin_unreachable();
+    }
+
     explicit KeeperAccess(zk::Ptr const & keeper_, std::string name_ = "", Poco::Logger * logger_ = nullptr)
-        : keeper(keeper_), fault_policy(std::make_unique<NoOpPolicy>()), name(std::move(name_)), logger(logger_)
+        : keeper(keeper_), fault_policy(std::make_unique<NoFaultInjection>()), name(std::move(name_)), logger(logger_)
     {
     }
 
     explicit KeeperAccess(
-        zk::Ptr const & keeper_, std::unique_ptr<FaultInjectionPolicy> fault_policy_, std::string name_, Poco::Logger * logger_ = nullptr)
+        zk::Ptr const & keeper_, std::unique_ptr<FaultInjection> fault_policy_, std::string name_, Poco::Logger * logger_ = nullptr)
         : keeper(keeper_), fault_policy(std::move(fault_policy_)), name(std::move(name_)), logger(logger_)
     {
     }
@@ -114,15 +157,16 @@ public:
         if (logger)
             LOG_DEBUG(
                 logger,
-                "KeeperAccess({}): calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
+                "KeeperAccess({}): seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
                 name,
+                fault_policy->getSeed(),
                 calls_total,
                 calls_without_fault_injection,
                 calls_total - calls_without_fault_injection,
                 float(calls_total - calls_without_fault_injection) / calls_total);
     }
 
-    /// todo: remove getKeeper(), it's a temporary measure
+    /// todo: remove getKeeper(), it should be a temporary measure
     zk::Ptr getKeeper() const { return keeper; }
     void setKeeper(zk::Ptr const & keeper_) { keeper = keeper_; }
     void resetFaultInjection() { fault_policy->reset(); }
@@ -194,5 +238,5 @@ private:
     }
 };
 
-using KeeperAccessPtr = std::shared_ptr<KeeperAccess>;
+using KeeperAccessPtr = KeeperAccess::Ptr;
 }

@@ -184,6 +184,24 @@ public:
 
     void requestUnconditionalRetry() { unconditional_retry = true; }
 
+    void retryLoop(auto && f)
+    {
+        while (canTry())
+        {
+            try
+            {
+                f();
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                if (!Coordination::isHardwareError(e.code))
+                    throw;
+
+                setKeeperError(e.code, e.message());
+            }
+        }
+    }
+
 private:
     std::string name;
     RetriesInfo & retries_info;

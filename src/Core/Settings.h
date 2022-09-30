@@ -654,12 +654,12 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, multiple_joins_try_to_keep_original_names, false, "Do not add aliases to top level expression list on multiple joins rewrite", 0) \
     M(Bool, optimize_distinct_in_order, true, "Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
-    M(UInt64, insert_keeper_max_retries, 9, "Max retries to write part into zk during insert", 0) \
-    M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Min milliseconds for backoff, when retrying write part into zk", 0) \
-    M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max milliseconds for backoff, when retrying write part into zk", 0) \
-    M(UInt64, insert_keeper_fault_injection_mode, 2, "0 - off, 1 - each call once, 2 - random (see insert_keeper_fault_injection_seed)", 0) \
-    M(UInt64, insert_keeper_fault_injection_seed, 0, "0 - random seed, otherwise the seed", 0) \
-    M(Float, insert_keeper_fault_injection_bernoulli_distribution_param, 0.1f, "", 0) \
+    M(UInt64, insert_keeper_max_retries, 9, "Max retries for keeper operations during insert", 0) \
+    M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
+    M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \
+    M(UInt64, insert_keeper_fault_injection_mode, 1, "0 - off, 1 - random (see insert_keeper_fault_injection_seed), 2 - each call once", 0) \
+    M(UInt64, insert_keeper_fault_injection_seed, 0, "0 - random seed, otherwise the setting value", 0) \
+    M(Float, insert_keeper_fault_injection_probability, 0.1f, "", 0) \
     // End of COMMON_SETTINGS
     // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 
