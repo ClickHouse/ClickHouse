@@ -253,6 +253,18 @@ PINEAPPLE
 -- extract_all (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractallfunction); TODO: captureGroups not supported yet
 [['T','h','e'],['p','ric','e'],['P','INEAPPL','E'],['i','c','e'],['c','rea','m']]
 
+-- extract_json (https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query/extractjsonfunction)
+
+
+John
+iPhone
+\N
+26
+26
+26
+26
+\N
+
 -- split (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/splitfunction)
 ['aa','bb']
 ['bbb']
@@ -308,6 +320,7 @@ Number was: 1
 -- parse_version()
 1000000020000000300000040
 1000000020000000000000000
+1000000020000000000000000
 1000000020000000300000004
 1000000020000000000000000
 1000000020000000300000000
@@ -315,12 +328,19 @@ Number was: 1
 -- parse_json()
 [1,2,3]
 [{"a":123.5,"b":"{\\"c\\":456}"}]
-['echo','"hello','world!"','print$?']
+-- parse_command_line()
 -- reverse()
-Peter	Nara	Skilled Manual	Graduate Degree	26
-Latoya	Shen	Professional	Graduate Degree	25
 321
 43.321
+
+dsa
+][
+]3,2,1[
+]\'redaV\',\'htraD\'[
+000000000.00:00:21 51-01-7102
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Latoya	Shen	Professional	Graduate Degree	25
 -- parse_csv()
+['aaa']
 ['aa','b','cc']
 ['record1','a','b','c']
