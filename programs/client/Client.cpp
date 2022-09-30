@@ -150,7 +150,7 @@ std::vector<String> Client::loadWarningMessages()
 
                     size_t rows = packet.block.rows();
                     for (size_t i = 0; i < rows; ++i)
-                        messages.emplace_back(column.getDataAt(i).toString());
+                        messages.emplace_back(column[i].get<String>());
                 }
                 continue;
 
@@ -842,6 +842,7 @@ void Client::addOptions(OptionsDescription & options_description)
 
         ("no-warnings", "disable warnings when client connects to server")
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
+        ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
     ;
 
     /// Commandline options related to external tables.
@@ -976,6 +977,13 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
         fake_drop = true;
+    if (options.count("accept-invalid-certificate"))
+    {
+        config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
+        config().setString("openSSL.client.verificationMode", "none");
+    }
+    else
+        config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {

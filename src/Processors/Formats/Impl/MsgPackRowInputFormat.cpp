@@ -2,6 +2,15 @@
 
 #if USE_MSGPACK
 
+/// FIXME: there is some issue with clang-15, that incorrectly detect a
+/// "Attempt to free released memory" in msgpack::unpack(), because of delete
+/// operator for zone (from msgpack/v1/detail/cpp11_zone.hpp), hence NOLINT
+///
+/// NOTE: that I was not able to suppress it locally, only with
+/// NOLINTBEGIN/NOLINTEND
+//
+// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete)
+
 #include <cstdlib>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
@@ -235,8 +244,10 @@ static void insertNull(IColumn & column, DataTypePtr type)
     assert_cast<ColumnNullable &>(column).insertDefault();
 }
 
-static void insertUUID(IColumn & column, DataTypePtr /*type*/, const char * value, size_t size)
+static void insertUUID(IColumn & column, DataTypePtr type, const char * value, size_t size)
 {
+    if (!isUUID(type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
     readBinaryBigEndian(uuid.toUnderType().items[0], buf);
@@ -550,6 +561,8 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 }
 
 }
+
+// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 
 #else
 

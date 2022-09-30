@@ -1818,10 +1818,35 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …)
+## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
 
-Evaluate external model.
-Accepts a model name and model arguments. Returns Float64.
+Evaluate external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learing.
+Accepts a path to a catboost model and model arguments (features). Returns Float64.
+
+``` sql
+SELECT feat1, ..., feat_n, catboostEvaluate('/path/to/model.bin', feat_1, ..., feat_n) AS prediction
+FROM data_table
+```
+
+**Prerequisites**
+
+1. Build the catboost evaluation library
+
+Before evaluating catboost models, the `libcatboostmodel.<so|dylib>` library must be made available. See [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) how to compile it.
+
+Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse configuration:
+
+``` xml
+<clickhouse>
+...
+    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
+...
+</clickhouse>
+```
+
+2. Train a catboost model using libcatboost
+
+See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
 ## throwIf(x\[, message\[, error_code\]\])
 

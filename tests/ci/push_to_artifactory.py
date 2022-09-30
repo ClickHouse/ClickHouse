@@ -8,8 +8,8 @@ from collections import namedtuple
 from typing import Dict, List, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
-from build_download_helper import dowload_build_with_progress
-from env_helper import RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOWNLOAD
+from build_download_helper import download_build_with_progress
+from env_helper import S3_ARTIFACT_DOWNLOAD_TEMPLATE, RUNNER_TEMP
 from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
@@ -97,18 +97,6 @@ class Packages:
 
 
 class S3:
-    template = (
-        f"{S3_DOWNLOAD}/"
-        # "clickhouse-builds/"
-        f"{S3_BUILDS_BUCKET}/"
-        # "33333/" or "21.11/" from --release, if pull request is omitted
-        "{pr}/"
-        # "2bef313f75e4cacc6ea2ef2133e8849ecf0385ec/"
-        "{commit}/"
-        # "package_release/clickhouse-common-static_21.11.5.0_amd64.deb"
-        "{s3_path_suffix}"
-    )
-
     def __init__(
         self,
         pr: int,
@@ -117,7 +105,7 @@ class S3:
         force_download: bool,
     ):
         self._common = dict(
-            pr=pr,
+            pr_or_release=pr,
             commit=commit,
         )
         self.force_download = force_download
@@ -133,18 +121,19 @@ class S3:
                 self.packages.replace_with_fallback(package_file)
 
             return
-        url = self.template.format_map(
-            {**self._common, "s3_path_suffix": s3_path_suffix}
+        build_name, artifact = s3_path_suffix.split("/")
+        url = S3_ARTIFACT_DOWNLOAD_TEMPLATE.format_map(
+            {**self._common, "build_name": build_name, "artifact": artifact}
         )
         try:
-            dowload_build_with_progress(url, path)
+            download_build_with_progress(url, path)
         except Exception as e:
             if "Cannot download dataset from" in e.args[0]:
                 new_url = Packages.fallback_to_all(url)
                 logging.warning(
                     "Fallback downloading %s for old release", fallback_path
                 )
-                dowload_build_with_progress(new_url, fallback_path)
+                download_build_with_progress(new_url, fallback_path)
                 self.packages.replace_with_fallback(package_file)
 
     def download_deb(self):
