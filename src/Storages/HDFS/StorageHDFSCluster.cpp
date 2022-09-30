@@ -25,12 +25,41 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/StorageDictionary.h>
 
 #include <memory>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+static ASTPtr addColumnsStructureToQuery(const ASTPtr & query, const String & structure)
+{
+    /// Add argument with table structure to hdfsCluster table function in select query.
+    auto result_query = query->clone();
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(result_query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function hdfsCluster, got '{}'", queryToString(query));
+
+    auto structure_literal = std::make_shared<ASTLiteral>(structure);
+
+    if (expression_list->children.size() != 2 && expression_list->children.size() != 3)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 or 3 arguments in hdfsCluster table functions, got {}", expression_list->children.size());
+
+    if (expression_list->children.size() == 2)
+    {
+        auto format_literal = std::make_shared<ASTLiteral>("auto");
+        expression_list->children.push_back(format_literal);
+    }
+
+    expression_list->children.push_back(structure_literal);
+    return result_query;
+}
 
 StorageHDFSCluster::StorageHDFSCluster(
     ContextPtr context_,
@@ -56,6 +85,7 @@ StorageHDFSCluster::StorageHDFSCluster(
     {
         auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
         storage_metadata.setColumns(columns);
+        need_to_add_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -92,6 +122,11 @@ Pipe StorageHDFSCluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
+    auto query_to_send = query_info.original_query;
+    if (need_to_add_structure_to_query)
+        query_to_send = addColumnsStructureToQuery(
+            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()));
+
     for (const auto & replicas : cluster->getShardsAddresses())
     {
         /// There will be only one replica, because we consider each replica as a shard
@@ -110,7 +145,7 @@ Pipe StorageHDFSCluster::read(
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
-                queryToString(query_info.original_query),
+                queryToString(query_to_send),
                 header,
                 context,
                 /*throttler=*/nullptr,

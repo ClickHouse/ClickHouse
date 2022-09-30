@@ -48,7 +48,7 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
     const auto message = fmt::format(
         "The signature of table function {} shall be the following:\n" \
         " - cluster, uri\n",\
-        " - cluster, format\n",\
+        " - cluster, uri, format\n",\
         " - cluster, uri, format, structure\n",\
         " - cluster, uri, format, structure, compression_method",
         getName());
