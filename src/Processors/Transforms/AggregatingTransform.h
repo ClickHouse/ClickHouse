@@ -14,7 +14,7 @@ class AggregatedChunkInfo : public ChunkInfo
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
-    UInt64 chunk_num = 0; // chunk number within its bucket (for cases when we split buckets into multiple chunks of smaller size)
+    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
 
 using AggregatorList = std::list<Aggregator>;

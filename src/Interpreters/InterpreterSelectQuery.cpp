@@ -2443,15 +2443,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     const auto & keys = query_analyzer->aggregationKeys().getNames();
 
-    size_t aggregation_in_order_max_block_bytes = settings.aggregation_in_order_max_block_bytes;
-    if (settings.enable_memory_bound_merging_of_aggregation_results)
-    {
-        static constexpr size_t tenMiB = 10 << 20;
-        if (context->isDistributed() && query_info.getCluster() && query_info.getCluster()->getShardCount())
-            aggregation_in_order_max_block_bytes /= query_info.getCluster()->getShardCount();
-        aggregation_in_order_max_block_bytes = std::max(aggregation_in_order_max_block_bytes, tenMiB);
-    }
-
     auto aggregator_params = getAggregatorParams(
         query_ptr,
         *query_analyzer,
@@ -2514,7 +2505,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         std::move(grouping_sets_params),
         final,
         settings.max_block_size,
-        aggregation_in_order_max_block_bytes,
+        settings.aggregation_in_order_max_block_bytes,
         merge_threads,
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,

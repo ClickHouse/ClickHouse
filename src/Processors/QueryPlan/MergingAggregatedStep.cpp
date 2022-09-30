@@ -104,8 +104,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
         if (should_produce_results_in_order_of_bucket_number)
         {
-            pipeline.addTransform(std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(
-                pipeline.getHeader(), pipeline.getNumStreams(), group_by_sort_description));
+            pipeline.addTransform(
+                std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(pipeline.getHeader(), pipeline.getNumStreams()));
         }
 
         return;

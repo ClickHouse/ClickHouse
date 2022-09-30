@@ -367,8 +367,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             if (memoryBoundMergingWillBeUsed())
             {
-                pipeline.addTransform(std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(
-                    pipeline.getHeader(), pipeline.getNumStreams(), group_by_sort_description));
+                pipeline.addTransform(
+                    std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(pipeline.getHeader(), pipeline.getNumStreams()));
             }
 
             aggregating_sorted = collector.detachProcessors(1);

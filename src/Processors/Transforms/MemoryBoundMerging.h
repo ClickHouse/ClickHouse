@@ -23,12 +23,10 @@ namespace ErrorCodes
 class SortingAggregatedForMemoryBoundMergingTransform : public IProcessor
 {
 public:
-    explicit SortingAggregatedForMemoryBoundMergingTransform(
-        const Block & header_, size_t num_inputs_, const SortDescription & group_by_sort_description_)
+    explicit SortingAggregatedForMemoryBoundMergingTransform(const Block & header_, size_t num_inputs_)
         : IProcessor(InputPorts(num_inputs_, header_), {header_})
         , header(header_)
         , num_inputs(num_inputs_)
-        , group_by_sort_description(group_by_sort_description_)
         , last_chunk_id(num_inputs, {std::numeric_limits<Int32>::min(), 0})
         , is_input_finished(num_inputs, false)
     {
@@ -194,8 +192,8 @@ private:
 
     struct ChunkId
     {
-        Int32 bucket_id; // -1 for single-level HT, or 0..256 for two-level
-        UInt64 chunk_num; // chunk number within its bucket
+        Int32 bucket_id;
+        UInt64 chunk_num;
 
         bool operator<(const ChunkId & other) const
         {
@@ -205,7 +203,6 @@ private:
 
     Block header;
     size_t num_inputs;
-    SortDescription group_by_sort_description;
 
     std::vector<ChunkId> last_chunk_id;
     std::vector<bool> is_input_finished;
