@@ -34,13 +34,13 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState & state,
             first = false;
 
         formatSettingName(change.name, format.ostr);
-        if (it->value_ast)
+        if (change.value_ast)
         {
             format.ostr << " = ";
-            it->value_ast->formatImpl(format, state, stacked);
+            change.value_ast->formatImpl(format, state, stacked);
         }
         else
-            format.ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
+            format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
     }
 
     for (const auto & [name, value] : query_parameters)

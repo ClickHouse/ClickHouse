@@ -238,6 +238,14 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     node1.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
     assert int(node1.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
 
+    # check reload config does not wipe custom disk
+
+    node1.query("SYSTEM RELOAD CONFIG")
+    assert not node1.contains_in_log(
+        "disappeared from configuration, this change will be applied after restart of ClickHouse"
+    )
+    assert int(node1.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
+
     # check replicated merge tree on cluster
 
     replica = "{replica}"
