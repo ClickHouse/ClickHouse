@@ -4909,12 +4909,14 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
+    LOG_TRACE(log, "Trying reserve {} bytes preffering TTL rules", expected_size);
     ReservationPtr reservation;
 
     auto move_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
 
     if (move_ttl_entry)
     {
+        LOG_TRACE(log, "Got move TTL entry, will try to reserver destination for move");
         SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry, is_insert);
         if (!destination_ptr)
         {
@@ -4935,10 +4937,15 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
         }
         else
         {
+            LOG_TRACE(log, "Reserving bytes on selected destination");
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
+            {
+                LOG_TRACE(log, "Reservation successful");
                 return reservation;
+            }
             else
+            {
                 if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
                     LOG_WARNING(
                         log,
@@ -4951,15 +4958,22 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
                         "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
                         move_ttl_entry->destination_name,
                         *std::atomic_load(&log_name));
+            }
         }
     }
 
     // Prefer selected_disk
     if (selected_disk)
+    {
+        LOG_DEBUG(log, "Disk for reservation provided: {} (with type {})", selected_disk->getName(), toString(selected_disk->getDataSourceDescription().type));
         reservation = selected_disk->reserve(expected_size);
+    }
 
     if (!reservation)
+    {
+        LOG_DEBUG(log, "No reservation, reserving using storage policy from min volume index {}", min_volume_index);
         reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
+    }
 
     return reservation;
 }
@@ -6130,6 +6144,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (format_version != src_data->format_version)
         throw Exception("Tables have different format_version", ErrorCodes::BAD_ARGUMENTS);
 
+    if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
+        throw Exception("Tables have different primary key", ErrorCodes::BAD_ARGUMENTS);
+
     return *src_data;
 }
 
@@ -6146,7 +6163,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeTransactionPtr & txn,
     HardlinkedFiles * hardlinked_files,
-    bool copy_instead_of_hardlink)
+    bool copy_instead_of_hardlink,
+    const NameSet & files_to_copy_instead_of_hardlinks)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
     bool does_storage_policy_allow_same_disk = false;
@@ -6190,7 +6208,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
+    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 
@@ -6201,7 +6219,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
         for (auto it = src_part->data_part_storage->iterate(); it->isValid(); it->next())
         {
-            if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+            if (!files_to_copy_instead_of_hardlinks.contains(it->name())
+                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+                && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
                 hardlinked_files->hardlinks_from_source_part.insert(it->name());
         }
     }
@@ -6376,7 +6396,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             part->data_part_storage->getPartDirectory(),
             /*make_source_readonly*/ true,
             callback,
-            /*copy_instead_of_hardlink*/ false);
+            /*copy_instead_of_hardlink*/ false,
+            {});
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
