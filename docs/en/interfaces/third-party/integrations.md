@@ -103,6 +103,7 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
         -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
         -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
         -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
+        -   [Linq To DB](https://github.com/linq2db/linq2db)
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)

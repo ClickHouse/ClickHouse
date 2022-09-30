@@ -220,7 +220,7 @@ template <typename T> struct HashCRC32;
 
 template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
-inline size_t hashCRC32(T key)
+inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
     union
     {
@@ -229,14 +229,14 @@ inline size_t hashCRC32(T key)
     } u;
     u.out = 0;
     u.in = key;
-    return intHashCRC32(u.out);
+    return intHashCRC32(u.out, updated_value);
 }
 
 template <typename T>
 requires (sizeof(T) > sizeof(UInt64))
-inline size_t hashCRC32(T key)
+inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
-    return intHashCRC32(key, -1);
+    return intHashCRC32(key, updated_value);
 }
 
 #define DEFINE_HASH(T) \
@@ -444,7 +444,14 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
-            return intHash32<salt>(key);
+            union
+            {
+                T in;
+                DB::UInt64 out;
+            } u;
+            u.out = 0;
+            u.in = key;
+            return intHash32<salt>(u.out);
         }
 
         assert(false);

@@ -880,7 +880,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         }
         else
         {
-            value_to_insert = value.get<ValueType>();
+            value_to_insert = static_cast<ValueType>(value.get<ValueType>());
         }
 
         container.back() = value_to_insert;

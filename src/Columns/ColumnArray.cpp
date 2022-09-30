@@ -50,7 +50,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    if (!offsets_concrete->empty() && data)
+    if (!offsets_concrete->empty() && data && !data->empty())
     {
         Offset last_offset = offsets_concrete->getData().back();
 
@@ -141,7 +141,7 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = DB::get<Array &>(res);
+    Array & res_arr = res.get<Array &>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -151,23 +151,24 @@ void ColumnArray::get(size_t n, Field & res) const
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
+    assert(n < size());
+
     /** Returns the range of memory that covers all elements of the array.
       * Works for arrays of fixed length values.
-      * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
-      *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t offset_of_first_elem = offsetAt(n);
-    StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+    /// We are using pointer arithmetic on the addresses of the array elements.
+    if (!data->isFixedAndContiguous())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 
     size_t array_size = sizeAt(n);
     if (array_size == 0)
-        return StringRef(first.data, 0);
+        return StringRef(nullptr, 0);
 
-    size_t offset_of_last_elem = getOffsets()[n] - 1;
-    StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
+    size_t offset_of_first_elem = offsetAt(n);
+    StringRef first = getData().getDataAt(offset_of_first_elem);
 
-    return StringRef(first.data, last.data + last.size - first.data);
+    return StringRef(first.data, first.size * array_size);
 }
 
 
@@ -183,7 +184,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
     /** Similarly - only for arrays of fixed length values.
       */
     if (!data->isFixedAndContiguous())
-        throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
 
@@ -296,7 +297,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = DB::get<const Array &>(x);
+    const Array & array = x.get<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);

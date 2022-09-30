@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET send_logs_level = 'fatal';
-
 SELECT base58Encode('Hold my beer...');
 SELECT base58Encode('Hold my beer...', 'Second arg'); -- { serverError 42 }
 SELECT base58Decode('Hold my beer...'); -- { serverError 36 }
