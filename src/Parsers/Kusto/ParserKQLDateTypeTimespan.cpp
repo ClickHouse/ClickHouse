@@ -27,6 +27,12 @@ bool ParserKQLDateTypeTimespan :: parseImpl(Pos & pos,  [[maybe_unused]] ASTPtr 
     return true;
 }
 
+ParserKQLDateTypeTimespan::KQLTimespanUint ParserKQLDateTypeTimespan :: getTimespanUnit( const String & text)  
+{
+    bool res [[maybe_unused]] = parseConstKQLTimespan(text);
+    return  time_span_unit;
+}
+
 double ParserKQLDateTypeTimespan :: toSeconds()
 {
     switch (time_span_unit) 
@@ -126,9 +132,9 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
     else if (*(ptr + number_len) == '\0')
     {
         if (sign)
-            time_span = -(std::stoi(String(ptr, ptr + number_len)));
+            time_span = -(std::stoi(String(ptr, ptr + number_len))) * 86400 ;
         else
-            time_span = std::stoi(String(ptr, ptr + number_len));
+            time_span = std::stoi(String(ptr, ptr + number_len)) * 86400;
 
         time_span_unit = KQLTimespanUint::second;
         return true;
