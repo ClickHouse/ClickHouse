@@ -16,6 +16,8 @@
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <format>
+#include <boost/lexical_cast.hpp>
+
 
 namespace DB
 {
@@ -33,6 +35,9 @@ bool Bin::convertImpl(String & out,IParser::Pos & pos)
 
     ++pos;
     String round_to = getConvertedArgument(fn_name, pos);
+
+    //remove sapce between minus and number 
+    round_to.erase(std::remove_if(round_to.begin(), round_to.end(), isspace) , round_to.end());
 
     auto t = std::format("toFloat64({})", value);
 

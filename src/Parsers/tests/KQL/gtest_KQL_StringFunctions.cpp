@@ -119,6 +119,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
             "SELECT toInt64(toFloat64(4.5) / 1) * 1"
         },
         {
+            "print bin(4.5, -1)",
+            "SELECT toInt64(toFloat64(4.5) / -1) * -1"
+        },
+        {
             "print bin(time(16d), 7d)",
             "SELECT concat(toString(toInt32(((toInt64(toFloat64(CAST('1382400', 'Float64')) / 604800) * 604800) AS x) / 3600)), ':', toString(toInt32((x % 3600) / 60)), ':', toString(toInt32((x % 3600) % 60)))"
         },

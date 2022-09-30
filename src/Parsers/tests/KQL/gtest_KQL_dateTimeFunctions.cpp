@@ -212,7 +212,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "hits | project bin(datetime(EventTime), 1m)",
-            "SELECT toDateTime64(toInt64(toFloat64(parseDateTime64BestEffortOrNull(CAST(EventTime, 'String'), 9, 'UTC')) / 60) * 60, 9, 'UTC')\nFROM hits"
+            "SELECT toDateTime64(toInt64(toFloat64(if((toTypeName(EventTime) = 'Int64') OR (toTypeName(EventTime) = 'Int32') OR (toTypeName(EventTime) = 'Float64') OR (toTypeName(EventTime) = 'UInt32') OR (toTypeName(EventTime) = 'UInt64'), toDateTime64(EventTime, 9, 'UTC'), parseDateTime64BestEffortOrNull(CAST(EventTime, 'String'), 9, 'UTC'))) / 60) * 60, 9, 'UTC')\nFROM hits"
         }
 
-})));   
+})));
