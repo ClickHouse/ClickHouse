@@ -488,7 +488,7 @@ void LocalServer::processConfig()
     }
     else
     {
-        need_render_progress = config().getBool("progress", false);
+        need_render_progress = config().getBool("progress", true);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;

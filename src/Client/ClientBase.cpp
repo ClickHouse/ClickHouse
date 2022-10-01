@@ -415,7 +415,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && (stdout_is_a_tty || is_interactive) && (!select_into_file || select_into_file_and_stdout))
-        progress_indication.clearProgressOutput();
+        progress_indication.clearProgressOutput(*tty_buf);
 
     try
     {
@@ -436,7 +436,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         if (select_into_file && !select_into_file_and_stdout)
             std::cerr << "\r";
-        progress_indication.writeProgress();
+        progress_indication.writeProgress(*tty_buf);
     }
 }
 
@@ -444,7 +444,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
-    progress_indication.clearProgressOutput();
+    if (need_render_progress)
+        progress_indication.clearProgressOutput(*tty_buf);
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
@@ -637,6 +638,33 @@ void ClientBase::initLogsOutputStream()
         }
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
+    }
+}
+
+void ClientBase::initTtyBuffer()
+{
+    if (!tty_buf)
+    {
+        static constexpr auto tty_file_name = "/dev/tty";
+
+        /// Output all progress bar commands to stderr at once to avoid flicker.
+        /// This size is usually greater than the window size.
+        static constexpr size_t buf_size = 1024;
+
+        std::error_code ec;
+        std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
+
+        if (!ec && exists(tty) && is_character_file(tty)
+            && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
+        {
+            tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+        }
+        else if (stderr_is_a_tty)
+        {
+            tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+        }
+        else
+            need_render_progress = false;
     }
 }
 
@@ -939,13 +967,14 @@ void ClientBase::onProgress(const Progress & value)
         output_format->onProgress(value);
 
     if (need_render_progress)
-        progress_indication.writeProgress();
+        progress_indication.writeProgress(*tty_buf);
 }
 
 
 void ClientBase::onEndOfStream()
 {
-    progress_indication.clearProgressOutput();
+    if (need_render_progress)
+        progress_indication.clearProgressOutput(*tty_buf);
 
     if (output_format)
         output_format->finalize();
@@ -953,10 +982,7 @@ void ClientBase::onEndOfStream()
     resetOutput();
 
     if (is_interactive && !written_first_block)
-    {
-        progress_indication.clearProgressOutput();
         std::cout << "Ok." << std::endl;
-    }
 }
 
 
@@ -1000,14 +1026,15 @@ void ClientBase::onProfileEvents(Block & block)
         progress_indication.updateThreadEventData(thread_times);
 
         if (need_render_progress)
-            progress_indication.writeProgress();
+            progress_indication.writeProgress(*tty_buf);
 
         if (profile_events.print)
         {
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
                 initLogsOutputStream();
-                progress_indication.clearProgressOutput();
+                if (need_render_progress)
+                    progress_indication.clearProgressOutput(*tty_buf);
                 logs_out_stream->writeProfileEvents(block);
                 logs_out_stream->flush();
 
@@ -1181,7 +1208,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         progress_indication.updateProgress(Progress(file_progress));
 
         /// Set callback to be called on file progress.
-        progress_indication.setFileProgressCallback(global_context, true);
+        progress_indication.setFileProgressCallback(global_context, *tty_buf);
     }
 
     /// If data fetched from file (maybe compressed file)
@@ -1433,12 +1460,10 @@ bool ClientBase::receiveEndOfQuery()
 void ClientBase::cancelQuery()
 {
     connection->sendCancel();
-    if (is_interactive)
-    {
-        progress_indication.clearProgressOutput();
-        std::cout << "Cancelling query." << std::endl;
+    if (need_render_progress)
+        progress_indication.clearProgressOutput(*tty_buf);
 
-    }
+    std::cout << "Cancelling query." << std::endl;
     cancelled = true;
 }
 
@@ -1556,7 +1581,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     if (profile_events.last_block)
     {
         initLogsOutputStream();
-        progress_indication.clearProgressOutput();
+        if (need_render_progress)
+            progress_indication.clearProgressOutput(*tty_buf);
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
 
@@ -2216,6 +2242,8 @@ void ClientBase::init(int argc, char ** argv)
     stdout_is_a_tty = isatty(STDOUT_FILENO);
     stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
+    if (need_render_progress)
+        initTtyBuffer();
 
     Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
@@ -2243,7 +2271,7 @@ void ClientBase::init(int argc, char ** argv)
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
-        ("progress", "print progress of queries execution")
+        ("progress", po::value<bool>()->implicit_value(true), "print progress of queries execution")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -2348,7 +2376,7 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("profile-events-delay-ms"))
         config().setInt("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
-        config().setBool("progress", true);
+        config().setBool("progress", options["progress"].as<bool>());
     if (options.count("echo"))
         config().setBool("echo", true);
     if (options.count("disable_suggestion"))

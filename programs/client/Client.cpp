@@ -1025,7 +1025,7 @@ void Client::processConfig()
     }
     else
     {
-        need_render_progress = config().getBool("progress", false);
+        need_render_progress = config().getBool("progress", true);
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
