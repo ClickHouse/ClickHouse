@@ -71,7 +71,12 @@ public:
     virtual const String & getName() const = 0;
 
     /// Reserve the specified number of bytes.
+    /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
+
+    /// Whether this is a disk or a volume.
+    virtual bool isDisk() const { return false; }
+    virtual bool isVolume() const { return false; }
 
     virtual ~Space() = default;
 };
@@ -106,6 +111,9 @@ public:
         : executor(executor_)
     {
     }
+
+    /// This is a disk.
+    bool isDisk() const override { return true; }
 
     virtual DiskTransactionPtr createTransaction();
 
@@ -239,7 +247,16 @@ public:
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
+    struct LocalPathWithObjectStoragePaths
+     {
+         std::string local_path;
+         std::string common_prefix_for_objects;
+         StoredObjects objects;
+
+         LocalPathWithObjectStoragePaths(
+             const std::string & local_path_, const std::string & common_prefix_for_objects_, StoredObjects && objects_)
+             : local_path(local_path_), common_prefix_for_objects(common_prefix_for_objects_), objects(std::move(objects_)) {}
+     };
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {

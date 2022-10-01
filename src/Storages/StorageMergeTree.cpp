@@ -337,6 +337,13 @@ void StorageMergeTree::alter(
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
         }
 
+        {
+            /// Reset Object columns, because column of type
+            /// Object may be added or dropped by alter.
+            auto parts_lock = lockParts();
+            resetObjectColumnsFromActiveParts(parts_lock);
+        }
+
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())
@@ -1596,7 +1603,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             Int64 temp_index = insert_increment.get();
             MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {}, false, {});
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
@@ -1692,7 +1699,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, local_context->getCurrentTransaction(), {}, false, {});
         dst_parts.emplace_back(std::move(dst_part));
         dst_parts_locks.emplace_back(std::move(part_lock));
     }
@@ -1820,7 +1827,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     for (const auto & data_part : data_parts)
         min_data_version = std::min(min_data_version, data_part->info.getDataVersion());
 
-    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup));
+    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, local_context));
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version + 1, data_path_in_backup));
 }
 
