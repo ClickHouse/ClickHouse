@@ -178,7 +178,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         [&]()
         {
             zookeeper->setKeeper(storage.getZooKeeper());
-            checkQuorumPrecondition(zookeeper);
+            replicas_num = checkQuorumPrecondition(zookeeper);
         });
 
     deduceTypesOfObjectColumns(storage_snapshot, block);
