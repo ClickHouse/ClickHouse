@@ -3,7 +3,6 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
-#include <Common/checkStackSize.h>
 #include <Core/SettingsEnums.h>
 
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
