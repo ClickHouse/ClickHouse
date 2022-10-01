@@ -3533,7 +3533,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr q
     auto parts_to_delay_insert = query_settings.parts_to_delay_insert ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
     auto parts_to_throw_insert = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
 
-    size_t average_part_size = size_of_partition / parts_count_in_partition;
+    size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     bool parts_are_large_enough_in_average = settings->max_avg_part_size_for_too_many_parts
         && average_part_size > settings->max_avg_part_size_for_too_many_parts;
 
