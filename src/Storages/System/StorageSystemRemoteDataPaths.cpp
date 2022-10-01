@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & table_id_)
     : IStorage(table_id_)
 {

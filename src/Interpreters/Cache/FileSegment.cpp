@@ -499,10 +499,10 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset, size_t max_wait_
     }
 
     LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded is finished", offset);
- }
+}
 
- void FileSegment::cancelBackgroundDownloadIfExists(std::unique_lock<std::mutex> & /* segment_lock */)
- {
+void FileSegment::cancelBackgroundDownloadIfExists(std::unique_lock<std::mutex> & /* segment_lock */)
+{
     /// Background download might be cancelled in case file segment was detached
     /// (e.g. removed from cache, etc see detach() method comment ).
     /// In this case we need to wait for all the current tasks to finish.
