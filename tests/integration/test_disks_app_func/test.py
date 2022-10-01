@@ -130,9 +130,27 @@ def test_disks_app_func_cp(started_cluster):
             "path1",
         ]
     )
+    
+    source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--send-logs",
+            "--disk",
+            "test1",
+            "remove",
+            "path1",
+        ]
+    )
 
     out = source.exec_in_container(
         ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
+    )
+
+    assert "path1" not in out
+    
+    out = source.exec_in_container(
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test1", "list", "."]
     )
 
     assert "path1" not in out
