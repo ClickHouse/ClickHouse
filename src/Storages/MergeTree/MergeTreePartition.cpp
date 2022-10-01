@@ -434,12 +434,12 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     }
 }
 
-void MergeTreePartition::createAndValidateMinMaxPartitionIds(const StorageMetadataPtr & metadata_snapshot, Block block, ContextPtr context)
+void MergeTreePartition::createAndValidateMinMaxPartitionIds(const StorageMetadataPtr & metadata_snapshot, Block block_with_min_max_partition_ids, ContextPtr context)
 {
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    auto partition_key_names_and_types = executePartitionByExpression(metadata_snapshot, block, context);
+    auto partition_key_names_and_types = executePartitionByExpression(metadata_snapshot, block_with_min_max_partition_ids, context);
     value.resize(partition_key_names_and_types.size());
 
     /// Executing partition_by expression adds new columns to passed block according to partition functions.
@@ -450,7 +450,7 @@ void MergeTreePartition::createAndValidateMinMaxPartitionIds(const StorageMetada
     size_t i = 0;
     for (const auto & element : partition_key_names_and_types)
     {
-        auto & partition_column = block.getByName(element.name);
+        auto & partition_column = block_with_min_max_partition_ids.getByName(element.name);
 
         if (element.name.starts_with(modulo_legacy_function_name))
             partition_column.name = "modulo" + partition_column.name.substr(std::strlen(modulo_legacy_function_name));
