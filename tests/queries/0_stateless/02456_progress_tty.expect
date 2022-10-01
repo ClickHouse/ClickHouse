@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+#exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+set stty_init "rows 25 cols 80"
+
+expect_after {
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
+}
+
+# Progress is displayed by default
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null"
+expect "Progress: "
+expect "█"
+
+# It is true even if we redirect both stdout and stderr to /dev/null
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1"
+expect "Progress: "
+expect "█"
+
+# The option --progress has implicit value of true
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --progress --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1"
+expect "Progress: "
+expect "█"
+
+# But we can set it to false
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --progress false --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null"
+expect -exact "3\n"
+
+# As well as to 0 for the same effect
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --progress 0 --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null"
+expect -exact "3\n"
+
+# If we set it to 1, the progress will be displayed as well
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --progress 1 --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1"
+expect "Progress: "
+expect "█"
