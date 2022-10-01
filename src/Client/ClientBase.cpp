@@ -648,7 +648,7 @@ void ClientBase::initTtyBuffer()
     {
         static constexpr auto tty_file_name = "/dev/tty";
 
-        /// Output all progress bar commands to stderr at once to avoid flicker.
+        /// Output all progress bar commands to terminal at once to avoid flicker.
         /// This size is usually greater than the window size.
         static constexpr size_t buf_size = 1024;
 
