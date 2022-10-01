@@ -3,11 +3,11 @@ DROP TABLE IF EXISTS test;
 EXPLAIN SYNTAX
 CREATE TABLE test (a Int32)
 ENGINE = MergeTree() order by tuple()
-SETTINGS disk = disk(type=local, path='/home/ubuntu/disk_path/');
+SETTINGS disk = disk(type=local, path='/disk_path/');
 
 CREATE TABLE test (a Int32)
 ENGINE = MergeTree() order by tuple()
-SETTINGS disk = disk(type=local, path='/home/ubuntu/disk_path/');
+SETTINGS disk = disk(type=local, path='/disk_path/');
 
 INSERT INTO test SELECT number FROM numbers(100);
 SELECT count() FROM test;
