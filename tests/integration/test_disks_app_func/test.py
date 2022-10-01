@@ -143,6 +143,8 @@ def test_disks_app_func_cp(started_cluster):
         ]
     )
 
+    # alesapin: Why we need list one more time?
+    # kssenii: it is an assertion that the file is indeed deleted
     out = source.exec_in_container(
         ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
     )
