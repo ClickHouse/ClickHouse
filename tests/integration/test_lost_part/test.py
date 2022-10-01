@@ -40,7 +40,8 @@ def remove_part_from_disk(node, table, part_name):
 def test_lost_part_same_replica(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt0 (id UInt64, date Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{}') ORDER BY tuple() PARTITION BY date".format(
+            "CREATE TABLE mt0 (id UInt64, date Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{}') ORDER BY tuple() PARTITION BY date "
+            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
                 node.name
             )
         )
@@ -104,7 +105,8 @@ def test_lost_part_same_replica(start_cluster):
 def test_lost_part_other_replica(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt1 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t1', '{}') ORDER BY tuple()".format(
+            "CREATE TABLE mt1 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t1', '{}') ORDER BY tuple() "
+            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
                 node.name
             )
         )
@@ -168,7 +170,8 @@ def test_lost_part_other_replica(start_cluster):
 def test_lost_part_mutation(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt2 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t2', '{}') ORDER BY tuple()".format(
+            "CREATE TABLE mt2 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t2', '{}') ORDER BY tuple() "
+            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
                 node.name
             )
         )
@@ -225,7 +228,9 @@ def test_lost_last_part(start_cluster):
     for node in [node1, node2]:
         node.query(
             "CREATE TABLE mt3 (id UInt64, p String) ENGINE ReplicatedMergeTree('/clickhouse/tables/t3', '{}') "
-            "ORDER BY tuple() PARTITION BY p".format(node.name)
+            "ORDER BY tuple() PARTITION BY p SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
+                node.name
+            )
         )
 
     node1.query("SYSTEM STOP MERGES mt3")

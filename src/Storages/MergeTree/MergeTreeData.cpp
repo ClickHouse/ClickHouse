@@ -3220,13 +3220,7 @@ void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part
         LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
 
     part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
-
-    auto lock = lockParts();
-
-    if (auto it_part = data_parts_by_info.find(part_to_detach->info); it_part == data_parts_by_info.end())
-        throw Exception("No such data part " + part_to_detach->getNameWithState(), ErrorCodes::NO_SUCH_DATA_PART);
-
-    removePartsFromWorkingSet(nullptr, {part_to_detach}, true, lock);
+    removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true);
 }
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
